@@ -279,6 +279,9 @@ pub(crate) struct TourPlay {
     chords_tab: u8,
     ln_tab: u8,
     an_frets: [Option<u8>; 6],
+    /// the side pages that were open (preferences, the BACKLINE page, Winamp skins, the log, storage): the tour
+    /// closes them so every window it points at can be seen, and opens them again at the end
+    pages: (bool, bool, bool, bool, bool),
     /// the step whose action has been done, and whether the tour paused its song or started the band
     acted: Option<usize>,
     /// when the step's action began, and how many of the analyzer's notes are on the neck so far
@@ -325,6 +328,7 @@ impl App {
             chords_tab: self.chords_tab,
             ln_tab: self.ln_tab,
             an_frets: self.an_frets,
+            pages: (self.show_prefs, self.show_tl, self.show_winamp, self.show_log, self.show_cache),
             acted: None,
             act_at: None,
             placed: 0,
@@ -473,6 +477,7 @@ impl App {
         self.chords_tab = s.chords_tab;
         self.ln_tab = s.ln_tab;
         self.an_frets = s.an_frets;
+        (self.show_prefs, self.show_tl, self.show_winamp, self.show_log, self.show_cache) = s.pages;
         if s.song.is_some() {
             self.apply(Action::StopBtn);
         }
@@ -658,6 +663,8 @@ impl App {
         let list = steps(kind);
         let i = i.min(list.len() - 1);
         let step = &list[i];
+        // the library window shows the library, not a side page, while the tour points at things
+        (self.show_prefs, self.show_tl, self.show_winamp, self.show_log, self.show_cache) = (false, false, false, false, false);
         self.tour_scene(step.scene);
         self.tour_demo(step.speed, step.ab, step.eq);
         self.tour_act(i, step.act);
