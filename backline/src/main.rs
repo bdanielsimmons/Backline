@@ -2306,8 +2306,9 @@ struct App {
     tour_restore: Option<(bool, bool, bool, u8)>,
     /// what was playing before the tour (it plays its own song), put back when it ends
     tour_play: Option<tour::TourPlay>,
-    /// recording a demo of a tour (BACKLINE_DEMO)
+    /// recording a demo of a tour (BACKLINE_DEMO), and the tour's song, the demo library's only track
     demo_rec: Option<tour::DemoRec>,
+    demo_track: Option<Track>,
     tour_seen: bool,
     help_tab: usize,
     /// (track id, cents from A440, confidence) from the tuning check
@@ -2757,6 +2758,7 @@ impl App {
             tour_restore: None,
             tour_play: None,
             demo_rec: tour::demo_kind().map(tour::DemoRec::new),
+            demo_track: None,
             tour_seen: false,
             help_tab: 0,
             tuning: None,
@@ -3393,7 +3395,12 @@ impl App {
                     self.auth = Auth::LoggedOut;
                     self.login_err = e;
                 }
-                Msg::Page(p, push) => {
+                Msg::Page(mut p, push) => {
+                    // recording a demo: the library holds only the tour's song
+                    if p.library && tour::demo_kind().is_some() {
+                        p.tracks = self.demo_track.iter().cloned().collect();
+                        p.total = p.tracks.len();
+                    }
                     crate::api::log(&format!(
                         "page '{}': {} rows, {} tracks (of {})",
                         p.title,

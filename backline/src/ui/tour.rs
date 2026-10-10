@@ -71,6 +71,9 @@ struct Step {
     act: u8,
 }
 
+/// The changes the band plays in the tour (and the demo's one tune).
+pub(crate) const CHEROKEE: &str = "T44 *A | Bb6 | Fm7 Bb7 | Ebmaj7 | Ebm7 Ab7 | Bb6 | C7 | Cm7 | F7 | Bb6 | Fm7 Bb7 | Ebmaj7 | Ebm7 Ab7 | Bb6 | Cm7 F7 | Bb6 | % | *B | C#m7 | F#7 | Bmaj7 | % | Bm7 | E7 | Amaj7 | % | Am7 | D7 | Gmaj7 | % | Gm7 | C7 | Cm7 | F7 |";
+
 /// A step with nothing being demonstrated (fill in the rest).
 const BASE: Step = Step { key: "", scene: Scene::Normal, title: "", text: "", speed: 0, ab: false, eq: None, act: 0 };
 
@@ -242,7 +245,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "SHEET",
         scene: Scene::Sheet,
         title: "11. THE LEAD SHEET AND THE BAND",
-        text: "Every tune can have a chart, and a little band plays it at your tempo: bass, chords and drums. Drag across bars to loop just those. This one is a ii-V-I.",
+        text: "Every tune can have a chart, and a little band plays it at your tempo: bass, chords and drums. Drag across bars to loop just those. Here: Cherokee.",
         act: 3,
         ..BASE
     },
@@ -278,6 +281,9 @@ pub(crate) struct TourPlay {
     an_frets: [Option<u8>; 6],
     /// the step whose action has been done, and whether the tour paused its song or started the band
     acted: Option<usize>,
+    /// when the step's action began, and how many of the analyzer's notes are on the neck so far
+    act_at: Option<std::time::Instant>,
+    placed: usize,
     paused: bool,
     band: bool,
     /// the tour's song, once it is the one playing
@@ -320,6 +326,8 @@ impl App {
             ln_tab: self.ln_tab,
             an_frets: self.an_frets,
             acted: None,
+            act_at: None,
+            placed: 0,
             paused: false,
             band: false,
             song: None,
@@ -357,6 +365,16 @@ impl App {
         let mut track = crate::sources::ext_for_file(&path).to_track();
         // its own cover, drawn for Backline
         track.cover = crate::tour_song::COVER.to_string();
+        // recording a demo: this song is all the library shows
+        if self.demo_rec.is_some() {
+            self.demo_track = Some(track.clone());
+            if let Some(p) = self.page.as_ref().filter(|p| p.library) {
+                let mut p = (**p).clone();
+                p.tracks = vec![track.clone()];
+                p.total = 1;
+                self.page = Some(std::sync::Arc::new(p));
+            }
+        }
         if let Some(s) = self.tour_play.as_mut() {
             s.song = Some(track.id);
         }
@@ -415,10 +433,37 @@ impl App {
         }
     }
 
+    /// The analyzer step: Dm7 (x 5 7 5 6 5) goes on the neck a note at a time, each one heard as it lands, then the
+    /// whole chord is strummed.
+    fn tour_place_notes(&mut self) {
+        const GRIP: [Option<u8>; 6] = [None, Some(5), Some(7), Some(5), Some(6), Some(5)];
+        let Some(s) = self.tour_play.as_ref() else { return };
+        let (Some(at), placed) = (s.act_at, s.placed) else { return };
+        let notes: Vec<(usize, u8)> = GRIP.iter().enumerate().filter_map(|(s, f)| f.map(|f| (s, f))).collect();
+        let due = ((at.elapsed().as_secs_f32() - 0.6) / 0.7).max(0.0) as usize;
+        if placed < notes.len() && due > placed {
+            let (string, fret) = notes[placed];
+            self.an_frets[string] = Some(fret);
+            self.apply(Action::PlayNotes(vec![crate::theory::STANDARD[string] + fret as i32]));
+            if let Some(s) = self.tour_play.as_mut() {
+                s.placed += 1;
+            }
+        } else if placed == notes.len() && due > placed + 1 {
+            let all: Vec<i32> = notes.iter().map(|(s, f)| crate::theory::STANDARD[*s] + *f as i32).collect();
+            self.apply(Action::PlayNotes(all));
+            if let Some(s) = self.tour_play.as_mut() {
+                s.placed += 1;
+            }
+        }
+    }
+
     /// Put back what was playing before the tour: the queue, the song (playing again where it was if it was
     /// playing), the speed, the loop and the equalizer.
     fn tour_unplay(&mut self) {
         let Some(s) = self.tour_play.take() else { return };
+        if self.seq_play.is_some() {
+            self.apply(Action::StopSequence);
+        }
         if s.band && self.band_on {
             self.apply(Action::Opt(crate::extras::Opt::Band));
         }
@@ -503,9 +548,8 @@ impl App {
             }
             Scene::Sheet => {
                 self.rtab = 1;
-                if self.prac_chart.as_ref().map(|c| c.0.as_str()) != Some("II V I IN C") {
-                    self.prac_chart =
-                        Some(("II V I IN C".to_string(), crate::lines::progression_chart("II V I", 0, false, true, false)));
+                if self.prac_chart.as_ref().map(|c| c.0.as_str()) != Some("CHEROKEE") {
+                    self.prac_chart = Some(("CHEROKEE".to_string(), CHEROKEE.to_string()));
                 }
             }
             _ => {}
@@ -516,10 +560,28 @@ impl App {
     /// Leaving those steps stops the band and lets the song go on.
     fn tour_act(&mut self, i: usize, act: u8) {
         let Some(s) = self.tour_play.as_ref() else { return };
-        if s.acted == Some(i) || s.song.is_none() {
+        if s.song.is_none() {
             return;
         }
         let (was_paused, had_band) = (s.paused, s.band);
+        if s.acted == Some(i) {
+            // the song stays paused through these steps, whatever else happens
+            if act != 0 && !self.paused && !self.stopped {
+                self.apply(Action::PauseBtn);
+            }
+            if act == 4 {
+                self.tour_place_notes();
+            }
+            return;
+        }
+        // a line still going round from the step before stops here
+        if self.seq_play.is_some() {
+            self.apply(Action::StopSequence);
+        }
+        if let Some(s) = self.tour_play.as_mut() {
+            s.act_at = Some(std::time::Instant::now());
+            s.placed = 0;
+        }
         if let Some(s) = self.tour_play.as_mut() {
             s.acted = Some(i);
         }
@@ -555,12 +617,8 @@ impl App {
                 }
             }
             4 => {
-                // Dm7 on the neck: x 5 7 5 6 5, strummed
-                let grip = [None, Some(5), Some(7), Some(5), Some(6), Some(5)];
-                self.an_frets = grip;
-                let notes: Vec<i32> =
-                    grip.iter().enumerate().filter_map(|(s, f)| f.map(|f| crate::theory::STANDARD[s] + f as i32)).collect();
-                self.apply(Action::PlayNotes(notes));
+                // the neck starts empty; the notes go on one by one (tour_place_notes)
+                self.an_frets = [None; 6];
             }
             2 => {
                 // the line on show: a pattern from the book when one was added, else one from Slonimsky's system
@@ -905,6 +963,17 @@ impl App {
         let now = std::time::Instant::now();
         match rec.phase {
             0 if rec.start.elapsed().as_secs_f32() > 1.5 => {
+                // the demo's one tune, with a chart the band can play
+                if !self.store.tunes.iter().any(|t| t.name == "Cherokee") {
+                    self.store.tunes.push(crate::store::Tune {
+                        name: "Cherokee".into(),
+                        key: "Bb".into(),
+                        chart: CHEROKEE.into(),
+                        written_by: "Ray Noble".into(),
+                        year: "1938".into(),
+                        ..Default::default()
+                    });
+                }
                 crate::player::rec_start();
                 self.tour_start(rec.kind);
                 rec.phase = 1;
