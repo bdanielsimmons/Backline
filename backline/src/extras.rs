@@ -333,7 +333,9 @@ impl App {
         }
         if let Some(t) = self.cur_track() {
             let v = self.version_of(&t);
-            self.store.last = Some(Last { version: v, pos: self.pos(), speed: self.speed });
+            let queue: Vec<_> = self.queue.iter().map(|q| self.version_of(q)).collect();
+            let index = self.cur.unwrap_or(0);
+            self.store.last = Some(Last { version: v, pos: self.pos(), speed: self.speed, queue, index });
             self.store_dirty = true;
             self.last_cap = Instant::now();
         }
@@ -1467,6 +1469,8 @@ impl App {
             }
             Action::ApplyUpdate => {
                 self.flush_practice();
+                // the queue and the song come back after the restart
+                self.capture_last();
                 self.save_settings();
                 self.store.save();
                 match crate::update::apply() {
@@ -1872,13 +1876,17 @@ impl App {
             }
             Action::Continue => {
                 let Some(l) = self.store.last.clone() else { return };
-                self.register(&l.version);
-                self.queue = Arc::new(vec![l.version.to_track()]);
+                // the queue it was in when there is one, else just the song
+                let (queue, index) = if l.queue.is_empty() { (vec![l.version.clone()], 0) } else { (l.queue.clone(), l.index) };
+                for v in &queue {
+                    self.register(v);
+                }
+                self.queue = Arc::new(queue.iter().map(|v| v.to_track()).collect());
                 self.orig_queue = None;
                 self.shuffle = false;
                 self.speed = if l.speed == 0 { 100 } else { l.speed.clamp(25, 250) };
                 self.practice = true;
-                self.play_index(0);
+                self.play_index(index.min(self.queue.len().saturating_sub(1)));
                 if l.pos > 3.0 {
                     let t = (l.pos - 2.0).max(0.0);
                     if self.buffering {

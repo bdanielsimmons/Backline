@@ -182,6 +182,9 @@ pub struct Last {
     pub version: Version,
     pub pos: f32,
     pub speed: u32,
+    /// the whole queue it was in, and its place there (so the queue comes back after a restart or an update)
+    pub queue: Vec<Version>,
+    pub index: usize,
 }
 
 #[derive(Serialize, Deserialize, Default)]

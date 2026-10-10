@@ -417,14 +417,11 @@ impl App {
         crate::tour::mark("APPMENU", Rect::from_min_max(Pos2::new(r.min.x, top), Pos2::new(r.max.x, ui.cursor().min.y)));
         if side {
             // the BACKLINE tab's own pages
-            let items =
-                [(Sec::Tidal, "SKINS & SETTINGS"), (Sec::Tidal, "WINAMP SKINS"), (Sec::Tidal, "STORAGE"), (Sec::Tidal, "LOG")];
+            let items = [(Sec::Tidal, "SKINS & SETTINGS"), (Sec::Tidal, "WINAMP SKINS"), (Sec::Tidal, "LOG")];
             let cur = if self.show_winamp {
                 1
-            } else if self.show_cache {
-                2
             } else if self.show_log {
-                3
+                2
             } else {
                 0
             };
@@ -433,7 +430,6 @@ impl App {
                     acts.push(match i {
                         0 => Action::BacklinePage,
                         1 => Action::WaOpen,
-                        2 => Action::ToggleCacheView,
                         _ => Action::ShowLog,
                     });
                 }

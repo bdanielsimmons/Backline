@@ -73,6 +73,8 @@ mod palette;
 mod player_win;
 #[path = "ui/prefs.rs"]
 mod prefs;
+#[path = "ui/setup.rs"]
+mod setup;
 #[path = "ui/skin.rs"]
 mod skin;
 #[path = "ui/tools.rs"]
@@ -327,6 +329,9 @@ enum Action {
     Section(Sec),
     AddFiles,
     AddFolder,
+    /// the old storage page (kept so its code still has a way in; nothing opens it now)
+    #[allow(dead_code)]
+    OldCacheView,
     Rescan,
     ForgetFolder(usize),
     AddYt,
@@ -2321,6 +2326,10 @@ struct App {
     thumb: Option<media::ThumbBar>,
     thumb_tried: bool,
     tour_seen: bool,
+    /// the setup wizard's step while it is open (the first run opens it), a desktop shortcut wanted, a message
+    setup_step: Option<u8>,
+    setup_desktop: bool,
+    setup_note: String,
     help_tab: usize,
     /// (track id, cents from A440, confidence) from the tuning check
     tuning: Option<(i64, i32, f32)>,
@@ -2774,6 +2783,9 @@ impl App {
             thumb: None,
             thumb_tried: false,
             tour_seen: false,
+            setup_step: None,
+            setup_desktop: true,
+            setup_note: String::new(),
             help_tab: 0,
             tuning: None,
             tuning_busy: false,
@@ -3005,6 +3017,14 @@ impl App {
         if st.get("binds").is_some() {
             app.binds = prefs::binds_from_json(&st["binds"]);
         }
+        // the very first run (no settings yet): the setup wizard; or one left half done (the installed copy
+        // carries on where the first left off)
+        let first_run = !api::config_dir().join("settings.json").exists();
+        app.setup_step = match st["setup_step"].as_u64() {
+            Some(s) => Some(s.min(5) as u8),
+            None if first_run && tour::demo_kind().is_none() => Some(0),
+            None => None,
+        };
         if let Some(b) = st["tour_seen"].as_bool() {
             app.tour_seen = b;
         }
@@ -3146,6 +3166,14 @@ impl App {
                 media::spawn(app.tx.clone(), app.ctx.clone());
             }
         }
+        // the queue from last time, ready to play (CONTINUE picks up the song where it was)
+        if let Some(l) = app.store.last.clone().filter(|l| !l.queue.is_empty()) {
+            for v in &l.queue {
+                app.register(v);
+            }
+            app.queue = Arc::new(l.queue.iter().map(|v| v.to_track()).collect());
+            app.cur = Some(l.index.min(l.queue.len() - 1));
+        }
         crate::api::log(&format!("backline {} started (token saved: {})", VERSION, app.api.has_token()));
         app.play_intro();
         if app.api.has_token() {
@@ -3180,6 +3208,7 @@ impl App {
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
             "tour_seen": self.tour_seen,
+            "setup_step": self.setup_step,
             "auto_restart": self.auto_restart,
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
@@ -4367,6 +4396,12 @@ impl App {
             }
             Action::ToggleEq => self.show_eq = !self.show_eq,
             Action::ToggleCacheView => {
+                // storage lives in Preferences now
+                self.show_prefs = true;
+                self.show_cache = false;
+                return;
+            }
+            Action::OldCacheView => {
                 self.show_cache = !self.show_cache;
                 if self.show_cache {
                     self.show_tl = false;
@@ -4857,8 +4892,9 @@ impl eframe::App for App {
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
-        // first time in: open the help on the tour page
-        if !self.tour_seen && (self.auth == Auth::In || self.offline) && self.frames >= 10 {
+        self.setup_overlay(ctx, &mut acts);
+        // first time in (after the setup, which offers the tour itself): open the help on the tour page
+        if !self.tour_seen && self.setup_step.is_none() && (self.auth == Auth::In || self.offline) && self.frames >= 10 {
             self.tour_seen = true;
             self.help_tab = 0;
             self.show_help = true;

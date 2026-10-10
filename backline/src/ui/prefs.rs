@@ -249,6 +249,49 @@ impl App {
                     ui.set_height(size.y - 24.0);
                     title_line(ui, "PREFERENCES", 3.0, pal().ink);
                     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(size.y - 90.0).show(ui, |ui| {
+                        section_header(ui, "SETUP");
+                        ui.horizontal_wrapped(|ui| {
+                            if retro_btn(ui, "RUN SETUP AGAIN", false).tip("The first-run wizard: look, listening or practice, your music, where it lives").clicked() {
+                                self.show_prefs = false;
+                                self.setup_step = Some(0);
+                                self.dirty = true;
+                            }
+                        });
+
+                        section_header(ui, "STORAGE");
+                        if self.cache_at.elapsed() > std::time::Duration::from_secs(1) {
+                            self.cache_stats = crate::cache::stats();
+                            self.cache_at = std::time::Instant::now();
+                        }
+                        let (n, bytes) = self.cache_stats;
+                        para(ui, "Songs stream without being kept. Switch SAVING on to keep each one you play on this computer: it starts at once and plays with no internet.", pal().ink2);
+                        ui.horizontal_wrapped(|ui| {
+                            if retro_btn(ui, if self.keep_cache { "SAVING: ON" } else { "SAVING: OFF" }, self.keep_cache).clicked() {
+                                acts.push(Action::ToggleKeep);
+                            }
+                            if retro_btn(ui, "OPEN FOLDER", false).clicked() {
+                                acts.push(Action::OpenCache);
+                            }
+                            if retro_btn(ui, "CLEAR SAVED SONGS", false).clicked() {
+                                acts.push(Action::ClearCache);
+                            }
+                            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems (frees disk space)").clicked() {
+                                acts.push(Action::StemClear);
+                            }
+                        });
+                        para(
+                            ui,
+                            &format!(
+                                "{} songs saved, {} used. Separated stems: {}.",
+                                n,
+                                crate::cache::fmt_size(bytes),
+                                crate::cache::fmt_size(crate::stems::stems_size())
+                            ),
+                            pal().ink,
+                        );
+                        para(ui, &format!("Saved songs: {}", crate::cache::dir().display()), pal().dim);
+                        para(ui, &format!("Settings and library: {}", crate::api::config_dir().display()), pal().dim);
+
                         section_header(ui, "UPDATES");
                         let status = match self.upd_state {
                             1 => "Downloading an update...".to_string(),
