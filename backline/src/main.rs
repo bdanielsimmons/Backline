@@ -1448,21 +1448,22 @@ fn app_icon() -> egui::IconData {
             let dy = y as f32 + 0.5 - 16.0;
             let d = (dx * dx + dy * dy).sqrt();
             let mut c: Option<[u8; 3]> = None;
+            // black outside, white inside, a bright shine at the top left and a black play triangle
             if d <= 15.5 {
                 c = Some([8, 8, 10]);
             }
             if d <= 14.0 {
-                c = Some([186, 184, 136]);
+                c = Some([250, 250, 250]);
             }
             if d <= 12.5 {
-                c = Some([150, 146, 92]);
+                c = Some([222, 222, 224]);
             }
             if d <= 9.0 && dy < -3.0 && dx < 0.0 && d > 6.0 {
-                c = Some([190, 186, 128]);
+                c = Some([255, 255, 255]);
             }
             let fx = x as f32 + 0.5;
             if fx >= 12.0 && fx <= 23.0 && dy.abs() <= (23.5 - fx) * 0.78 {
-                c = Some([34, 32, 16]);
+                c = Some([16, 16, 18]);
             }
             if let Some(c) = c {
                 let i = (y * n + x) * 4;
@@ -2309,6 +2310,11 @@ struct App {
     /// recording a demo of a tour (BACKLINE_DEMO), and the tour's song, the demo library's only track
     demo_rec: Option<tour::DemoRec>,
     demo_track: Option<Track>,
+    /// Windows' media controls, showing the song and whether it plays
+    media: Option<media::Controls>,
+    /// previous / play-pause / next under the taskbar thumbnail (put on a moment after start, once its button exists)
+    thumb: Option<media::ThumbBar>,
+    thumb_tried: bool,
     tour_seen: bool,
     help_tab: usize,
     /// (track id, cents from A440, confidence) from the tuning check
@@ -2759,6 +2765,9 @@ impl App {
             tour_play: None,
             demo_rec: tour::demo_kind().map(tour::DemoRec::new),
             demo_track: None,
+            media: None,
+            thumb: None,
+            thumb_tried: false,
             tour_seen: false,
             help_tab: 0,
             tuning: None,
@@ -3124,7 +3133,14 @@ impl App {
         cache::scan();
         app.player.send(Cmd::Volume(app.volume * app.volume));
         app.apply_eq();
-        media::spawn(app.tx.clone(), app.ctx.clone());
+        // Windows' media controls (not while recording a demo, which plays in the background); the hotkeys only
+        // when they can't be had
+        if tour::demo_kind().is_none() {
+            app.media = media::controls(cc, app.tx.clone(), app.ctx.clone());
+            if app.media.is_none() {
+                media::spawn(app.tx.clone(), app.ctx.clone());
+            }
+        }
         crate::api::log(&format!("backline {} started (token saved: {})", VERSION, app.api.has_token()));
         app.play_intro();
         if app.api.has_token() {
@@ -4567,9 +4583,28 @@ impl eframe::App for App {
         self.sleep_tick();
         self.tick_practice();
         let mut title = match self.cur_track() {
-            Some(t) if !self.stopped => format!("{} - {}  |  Backline", t.artists_text(), t.title),
-            _ => format!("Backline {}", VERSION),
+            Some(t) if !self.stopped => {
+                format!("{} - {} ({})", t.artists_text(), t.title, if self.paused { "Paused" } else { "Now Playing" })
+            }
+            _ => "Backline".to_string(),
         };
+        // the same in Windows' media flyout: playing whenever sound plays (a practice loop too), paused, or nothing
+        let now: media::Shown = match self.cur_track().filter(|_| !self.stopped) {
+            Some(t) => (Some((t.artists_text(), t.title.clone(), cover_url(&t.cover, 320))), if self.paused { 2 } else { 1 }),
+            None => (None, 0),
+        };
+        let playing = now.1 == 1;
+        if let Some(m) = self.media.as_mut() {
+            media::show(m, now);
+        }
+        // the taskbar buttons, once the taskbar has made the window's button (a couple of seconds in)
+        if !self.thumb_tried && self.media.is_some() && ctx.input(|i| i.time) > 2.0 {
+            self.thumb_tried = true;
+            self.thumb = media::thumb_bar(self.tx.clone(), ctx.clone());
+        }
+        if let Some(tb) = self.thumb.as_mut() {
+            media::thumb_show(tb, playing);
+        }
         if let (true, Some(end)) = (self.pomo > 0, self.pomo_end) {
             let left = end.saturating_duration_since(Instant::now()).as_secs();
             title = format!("{}:{:02} {}  |  {}", left / 60, left % 60, if self.pomo == 1 { "FOCUS" } else { "REST" }, title);

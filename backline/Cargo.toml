@@ -35,6 +35,11 @@ lofty = "0.22"
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { version = "0.15", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+souvlaki = { version = "0.8", default-features = false }
+windows = { version = "0.44", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Com"] }
+raw-window-handle = "0.6"
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
