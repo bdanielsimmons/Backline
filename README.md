@@ -11,6 +11,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Right-click a practice progression to add it to My progressions, or make it a tune with its lead sheet in the key you picked
 - The practice tour now shows the CHORDS tab (strumming a chord), LINES (playing a line) and the lead sheet with the band playing a ii-V-I
 - Tidalite is now called Backline - your library, login, skins and settings move across by themselves
 - Tracks stream without being saved to disk; switch SAVING on under DISK to keep them
@@ -20,7 +21,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Charts can change time signature bar by bar (iReal Pro imports keep them)
 - Tunes have WRITTEN BY, YEAR, FROM and STYLE, filled in for you when they can be found
 - Set your own key and BPM for any song (right-click > Key and BPM...), kept on this computer
-- A new tune opens straight to its lead sheet, ready to fill in
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
