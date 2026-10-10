@@ -750,12 +750,45 @@ impl App {
             let title = format!("{} IN {}", prog, theory::note_name(key, sharps));
             ui.horizontal_wrapped(|ui| {
                 let picked = self.prac_chart.as_ref().is_some_and(|c| c.0 == title);
-                if retro_btn_w(ui, prog, 230.0, picked).tip("Put it on the lead sheet, for the band").clicked() {
+                let b = retro_btn_w(ui, prog, 230.0, picked).tip("Put it on the lead sheet, for the band. Right-click for more");
+                if b.clicked() {
                     self.prac_chart = Some((title.clone(), lines::progression_chart(prog, key, minor, sev, self.prog_all)));
                     self.chart_sel = None;
                     self.chart_tr = 0;
                     acts.push(Action::RightTab(1));
                 }
+                // right-click: keep it with your own, or write it up as a tune with its lead sheet
+                b.context_menu(|ui| {
+                    if !mine && crate::menu_item(ui, "Add to my progressions") {
+                        if !self.store.my_progs.iter().any(|p| p == prog) {
+                            self.store.my_progs.push(prog.clone());
+                            self.store_dirty = true;
+                        }
+                        self.set_note("ADDED TO MY PROGRESSIONS");
+                        ui.close_menu();
+                    }
+                    if crate::menu_item(ui, "Make it a tune (with its lead sheet)") {
+                        let mut name = title.clone();
+                        let mut k = 2;
+                        while self.store.tunes.iter().any(|t| t.name.eq_ignore_ascii_case(&name)) {
+                            name = format!("{} ({})", title, k);
+                            k += 1;
+                        }
+                        self.store.tunes.push(crate::store::Tune {
+                            name: name.clone(),
+                            key: format!("{}{}", theory::note_name(key, sharps), if minor { "m" } else { "" }),
+                            chart: lines::progression_chart(prog, key, minor, sev, self.prog_all),
+                            notes: format!("Practice progression: {}", prog),
+                            ..Default::default()
+                        });
+                        self.store_dirty = true;
+                        let i = self.store.tunes.len() - 1;
+                        self.set_note(&format!("NEW TUNE: {}", name.to_uppercase()));
+                        acts.push(Action::OpenTune(Some(i)));
+                        acts.push(Action::RightTab(1));
+                        ui.close_menu();
+                    }
+                });
                 let voiced: Vec<Vec<i32>> =
                     chords.iter().filter_map(|c| theory::chord_notes(c)).map(|c| crate::chords::piano_voicing(&c)).collect();
                 self.seq_button(ui, acts, "HEAR", "Each chord in turn", &tag, || voiced.clone(), 1.0);
