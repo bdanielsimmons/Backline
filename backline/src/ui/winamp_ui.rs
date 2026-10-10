@@ -1315,8 +1315,18 @@ impl App {
             if h.hovered() {
                 clip.rect_filled(r, 0.0, pal().row_sel);
             }
-            let col = if cur == Some(i) { pal().bar_txt } else { pal().ink };
-            let label = format!("{:>w$}. {} - {}", i + 1, tr.artists_text(), tr.title, w = digits);
+            // the song playing: a bar across the row, a stripe at its left and an arrow before its name
+            let now = cur == Some(i);
+            if now {
+                clip.rect_filled(r, 0.0, pal().bar_txt.gamma_multiply(0.22));
+                clip.rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0 * k, r.height())), 0.0, pal().bar_txt);
+            }
+            let col = if now { pal().bar_txt } else { pal().ink };
+            let label = if now {
+                format!("{:>w$}. > {} - {}", i + 1, tr.artists_text(), tr.title, w = digits)
+            } else {
+                format!("{:>w$}. {} - {}", i + 1, tr.artists_text(), tr.title, w = digits)
+            };
             let dur = fmt_time(tr.duration);
             let dw = sans_text(&clip, Pos2::new(r.max.x - 4.0, r.center().y), Align::Max, &dur, size, 80.0, col);
             sans_text(&clip, Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &label, size, r.width() - dw - 16.0, col);

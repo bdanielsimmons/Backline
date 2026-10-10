@@ -1139,6 +1139,11 @@ fn list_row(
     if let Some(c) = bg {
         fill_rect(p, rect, c);
     }
+    // the song playing stands out in any skin: a bar across the row and a stripe down its left edge
+    if state == RowState::Playing {
+        fill_rect(p, rect, pal().bar_txt.gamma_multiply(0.16));
+        fill_rect(p, Rect::from_min_size(rect.min, Vec2::new(thick(3.0), rect.height())), pal().bar_txt);
+    }
     let (fg, fg2) = match state {
         RowState::Playing => (pal().bar_txt, pal().bar_txt),
         RowState::Played => (pal().dim, pal().dim),
