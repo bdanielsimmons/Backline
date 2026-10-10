@@ -2406,6 +2406,13 @@ struct App {
     /// the CHORDS tab: which side (find / name), the chord typed, the notes clicked on the neck and the piano,
     /// and guitar shapes already worked out
     chords_tab: u8,
+    /// the chord finder's funnel: the root and the kind of chord picked
+    cf_root: Option<i32>,
+    cf_fam: Option<usize>,
+    /// BUILD YOUR OWN cluster: how many notes, each step (true = a semitone), the note it starts on
+    cb_size: u8,
+    cb_steps: [bool; 4],
+    cb_lo: i32,
     chord_q: String,
     an_frets: [Option<u8>; 6],
     /// how chord names are written, the details panel, the neck's size, how strong the hover rings are
@@ -2850,6 +2857,11 @@ impl App {
             chart_edit: false,
             bar_edit: None,
             chords_tab: 0,
+            cf_root: None,
+            cf_fam: None,
+            cb_size: 3,
+            cb_steps: [true, false, true, false],
+            cb_lo: 0,
             chord_q: "Dm7".to_string(),
             an_frets: [None; 6],
             chord_sp: theory::Spelling { slash: true, ..theory::Spelling::default() },

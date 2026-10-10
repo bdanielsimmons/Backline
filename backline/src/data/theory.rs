@@ -321,28 +321,50 @@ pub fn chords_containing(notes: &[i32], bass: Option<i32>) -> Vec<(String, bool)
     suggestions(notes, bass).into_iter().map(|s| (s.key(), s.exact)).collect()
 }
 
-/// The chord types for the finder's buttons: what is shown, and what is added to the root to name the chord.
-pub const FINDER_TYPES: [(&str, &str); 20] = [
-    ("MAJ", ""),
-    ("MIN", "m"),
-    ("7", "7"),
-    ("MAJ7", "maj7"),
-    ("MIN7", "m7"),
-    ("M7b5", "m7b5"),
-    ("DIM7", "dim7"),
-    ("DIM", "dim"),
-    ("AUG", "aug"),
-    ("SUS2", "sus2"),
-    ("SUS4", "sus4"),
-    ("7SUS4", "7sus4"),
-    ("6", "6"),
-    ("MIN6", "m6"),
-    ("ADD9", "add9"),
-    ("9", "9"),
-    ("MAJ9", "maj9"),
-    ("MIN9", "m9"),
-    ("13", "13"),
-    ("7#9", "7#9"),
+/// The chord finder's funnel: kinds of chord, each with its chords (label, what follows the root).
+pub const FINDER_FAMILIES: [(&str, &[(&str, &str)]); 6] = [
+    (
+        "MAJOR",
+        &[
+            ("MAJOR", ""),
+            ("6", "6"),
+            ("6/9", "69"),
+            ("ADD9", "add9"),
+            ("MAJ7", "maj7"),
+            ("MAJ9", "maj9"),
+            ("MAJ7#11", "maj7#11"),
+            ("MAJ13", "maj13"),
+        ],
+    ),
+    (
+        "MINOR",
+        &[
+            ("MINOR", "m"),
+            ("MIN6", "m6"),
+            ("MIN ADD9", "madd9"),
+            ("MIN7", "m7"),
+            ("MIN9", "m9"),
+            ("MIN11", "m11"),
+            ("MIN(MAJ7)", "m(maj7)"),
+        ],
+    ),
+    (
+        "DOMINANT",
+        &[
+            ("7", "7"),
+            ("9", "9"),
+            ("13", "13"),
+            ("7b9", "7b9"),
+            ("7#9", "7#9"),
+            ("7#11", "7#11"),
+            ("7b5", "7b5"),
+            ("7#5", "7#5"),
+            ("7b13", "7b13"),
+        ],
+    ),
+    ("SUSPENDED", &[("SUS2", "sus2"), ("SUS4", "sus4"), ("7SUS4", "7sus4"), ("9SUS4", "9sus4")]),
+    ("DIMINISHED", &[("DIM", "dim"), ("DIM7", "dim7"), ("HALF-DIM (MIN7b5)", "m7b5")]),
+    ("AUGMENTED", &[("AUG", "aug"), ("AUG7", "aug7"), ("MAJ7#5", "maj7#5")]),
 ];
 
 /// Standard guitar tuning, low string first (MIDI notes).
@@ -973,6 +995,25 @@ mod tests {
                 assert_eq!(low.rem_euclid(12), c.bass, "{} {:?}", name, s);
                 let lo = played.iter().map(|p| p.1).filter(|f| *f > 0).min().unwrap_or(0);
                 assert!(!(played.iter().any(|p| p.1 == 0) && lo > 4), "{} {:?}", name, s);
+            }
+        }
+    }
+
+    #[test]
+    fn every_finder_chord_reads() {
+        // each chord in the funnel is read as its kind (thirds and sevenths where they belong)
+        for (fam, chords) in FINDER_FAMILIES {
+            for (label, suffix) in chords {
+                let c = chord_notes(&format!("C{}", suffix)).unwrap_or_else(|| panic!("{} {}", fam, label));
+                let has = |x: i32| c.pcs.contains(&x);
+                match fam {
+                    "MAJOR" => assert!(has(4) && !has(3) && !has(10), "{}", label),
+                    "MINOR" => assert!(has(3) && !has(4), "{}", label),
+                    "DOMINANT" => assert!(has(4) && has(10), "{}", label),
+                    "SUSPENDED" => assert!(!has(3) && !has(4), "{}", label),
+                    "DIMINISHED" => assert!(has(3) && has(6), "{}", label),
+                    _ => assert!(has(4) && has(8), "{}", label),
+                }
             }
         }
     }

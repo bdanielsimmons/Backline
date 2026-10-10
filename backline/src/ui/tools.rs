@@ -657,7 +657,7 @@ impl App {
                 }
                 if let Some((a, b)) = self.chart_sel {
                     if retro_btn(ui, &format!("LOOPING BARS {}-{}  X", a + 1, b + 1), true)
-                        .tip("Drag across bars to loop part of the tune; click to play the whole tune again")
+                        .tip("Drag across bars to loop part of the tune. To play the whole tune again: click here, right-click a bar, double-click the sheet or press Esc over it")
                         .clicked()
                     {
                         self.chart_sel = None;
@@ -797,6 +797,10 @@ impl App {
         if self.chart_drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
             self.chart_drag = None;
         }
+        // Esc with the mouse over the sheet lets go of the loop too
+        if self.chart_sel.is_some() && ui.rect_contains_pointer(ui.max_rect()) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.chart_sel = None;
+        }
         if self.chart_sel.is_some_and(|(_, b)| b >= chart.bars.len()) {
             self.chart_sel = None;
         }
@@ -864,6 +868,19 @@ impl App {
                             }
                         }
                     }
+                    // a double click anywhere on the sheet lets go of the loop
+                    if drag.double_clicked() && self.chart_sel.is_some() {
+                        self.chart_sel = None;
+                    }
+                    let looping = self.chart_sel.is_some();
+                    if ti.is_none() && looping {
+                        drag.context_menu(|ui| {
+                            if crate::menu_item(ui, "Clear the loop (play the whole tune)") {
+                                self.chart_sel = None;
+                                ui.close_menu();
+                            }
+                        });
+                    }
                     if ti.is_some() {
                         let rsp = drag.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
                         if rsp.clicked() {
@@ -872,6 +889,10 @@ impl App {
                             self.ed.cur = bar.chords.join(" ").chars().count();
                         }
                         rsp.context_menu(|ui| {
+                            if looping && crate::menu_item(ui, "Clear the loop (play the whole tune)") {
+                                self.chart_sel = None;
+                                ui.close_menu();
+                            }
                             for (lab, op) in [
                                 ("Insert a bar after (copy)", "ins"),
                                 ("Delete this bar", "del"),

@@ -373,27 +373,65 @@ impl App {
     }
 
     fn chord_find(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        // the root, then the kind of chord: a filter to find one and see it
+        // a funnel: the root, then the kind of chord, then that kind's chords - each step opens under the one before
         let cur = theory::chord_notes(self.chord_q.trim());
-        let cur_root = cur.as_ref().map(|c| c.root);
+        let suffix_now = crate::chart::split_root(self.chord_q.trim()).1.to_string();
+        // a chord typed or picked elsewhere sets the funnel too
+        if let Some(c) = &cur {
+            self.cf_root = Some(c.root);
+            if let Some(f) = theory::FINDER_FAMILIES.iter().position(|(_, l)| l.iter().any(|(_, s)| *s == suffix_now)) {
+                self.cf_fam = Some(f);
+            }
+        }
+        let rule = |ui: &mut egui::Ui| {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 9.0), Sense::hover());
+            ui.painter().line_segment(
+                [Pos2::new(r.min.x + 4.0, r.center().y), Pos2::new(r.max.x - 4.0, r.center().y)],
+                Stroke::new(1.0_f32, pal().edge),
+            );
+        };
         ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "1  ROOT", 90.0);
             for pc in 0..12 {
                 let name = theory::note_name(pc, false);
-                if retro_btn_w(ui, name, 40.0, cur_root == Some(pc)).clicked() {
-                    let suffix = self.finder_suffix();
-                    self.chord_q = format!("{}{}", name, suffix);
+                if retro_btn_w(ui, name, 40.0, self.cf_root == Some(pc)).clicked() {
+                    self.cf_root = Some(pc);
+                    // the same kind of chord on the new root, when one was picked
+                    if cur.is_some() && self.cf_fam.is_some() {
+                        self.chord_q = format!("{}{}", name, suffix_now);
+                    }
                 }
             }
         });
-        ui.horizontal_wrapped(|ui| {
-            let suffix_now = self.finder_suffix();
-            for (label, suffix) in theory::FINDER_TYPES {
-                if retro_btn(ui, label, suffix_now == suffix && cur.is_some()).clicked() {
-                    let root = theory::note_name(cur_root.unwrap_or(0), false);
-                    self.chord_q = format!("{}{}", root, suffix);
+        if let Some(root) = self.cf_root {
+            rule(ui);
+            ui.horizontal_wrapped(|ui| {
+                crate::views::label(ui, "2  KIND", 90.0);
+                for (i, (name, _)) in theory::FINDER_FAMILIES.iter().enumerate() {
+                    if retro_btn(ui, name, self.cf_fam == Some(i)).clicked() && self.cf_fam != Some(i) {
+                        self.cf_fam = Some(i);
+                        self.chord_q.clear();
+                    }
                 }
+            });
+            if let Some(f) = self.cf_fam {
+                rule(ui);
+                ui.horizontal_wrapped(|ui| {
+                    crate::views::label(ui, "3  CHORD", 90.0);
+                    let rn = theory::note_name(root, false);
+                    for (_, suffix) in theory::FINDER_FAMILIES[f.min(theory::FINDER_FAMILIES.len() - 1)].1 {
+                        let name = format!("{}{}", rn, suffix);
+                        if retro_btn(ui, &name, cur.is_some() && suffix_now == *suffix).clicked() {
+                            self.chord_q = name.clone();
+                            if let Some(c) = theory::chord_notes(&name) {
+                                acts.push(Action::PlayNotes(piano_voicing(&c)));
+                            }
+                        }
+                    }
+                });
             }
-        });
+            rule(ui);
+        }
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 90.0).max(120.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
@@ -414,7 +452,7 @@ impl App {
         });
         let Some(c) = theory::chord_notes(self.chord_q.trim()) else {
             ui.add_space(8.0);
-            para(ui, "Pick a root and a kind of chord above (or type one) to see it on the neck, its shapes and the scales that fit it.", pal().ink2);
+            para(ui, "Pick a root, then a kind of chord, then a chord (or type one) to see it on the neck and the piano, its shapes and the scales that fit it.", pal().ink2);
             return;
         };
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -438,6 +476,11 @@ impl App {
                 &c.pcs,
                 true,
             );
+            // the chord on a piano, to look at (not to click)
+            section_header(ui, "ON THE PIANO");
+            let pw = ui.available_width().min(560.0);
+            let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 86.0), Sense::hover());
+            piano_span(ui, pr.shrink2(Vec2::new(4.0, 4.0)), &piano_voicing(&c), false, "find_piano", Some(c.root), 48, 2);
             ui.add_space(6.0);
             section_header(ui, "GUITAR");
             let q = self.chord_q.trim().to_string();
@@ -675,19 +718,14 @@ impl App {
         });
     }
 
-    /// The kind of chord in the finder now (what follows its root), or "" for a plain major chord.
-    fn finder_suffix(&self) -> &'static str {
-        let q = self.chord_q.trim();
-        let rest = crate::chart::split_root(q).1;
-        theory::FINDER_TYPES.iter().map(|t| t.1).find(|s| *s == rest).unwrap_or("")
-    }
-
     /// CLUSTERS, after Robbie Barnby's "Cluster Voicings for Advanced Guitar": two notes a semitone (red) or a tone
     /// (blue) apart, over a bass. Four ways in: the clusters inside each parent scale's modes; one cluster fixed
     /// with the bass moving; one bass fixed with the cluster moving; and the changes of a tune, voiced with clusters
     /// (and played through, to practise them).
     fn clusters(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        if let Some(v) = tab_row(ui, &["PARENT SCALES", "FIXED CLUSTER", "FIXED BASS", "IN A TUNE"], self.cl_view as usize) {
+        if let Some(v) =
+            tab_row(ui, &["PARENT SCALES", "FIXED CLUSTER", "FIXED BASS", "IN A TUNE", "BUILD YOUR OWN"], self.cl_view as usize)
+        {
             self.cl_view = v as u8;
         }
         ui.horizontal_wrapped(|ui| {
@@ -706,7 +744,8 @@ impl App {
             0 => self.cl_parents(ui, acts),
             1 => self.cl_fixed_cluster(ui, acts),
             2 => self.cl_fixed_bass(ui, acts),
-            _ => self.cl_tune(ui, acts),
+            3 => self.cl_tune(ui, acts),
+            _ => self.cl_build(ui, acts),
         });
     }
 
@@ -899,74 +938,255 @@ impl App {
         }
     }
 
-    /// FIXED CLUSTER: one cluster held while the bass moves through all twelve notes.
+    /// FIXED CLUSTER: one cluster held while the bass moves underneath it.
     fn cl_fixed_cluster(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         para(ui, "Lock two notes in place and move the bass under them. Each bass turns the same two notes into different degrees, so they imply a different chord.", pal().ink2);
         let sharps = self.chord_sp.sharps;
-        if let Some(pc) = Self::note_row(ui, "CLUSTER FROM", self.cl_low, sharps) {
-            self.cl_low = pc;
-        }
-        let pair = [self.cl_low, (self.cl_low + self.cl_gap()).rem_euclid(12)];
-        // the twelve basses; the ones no mode holds are marked X
+        let gap = self.cl_gap();
+        let col = if gap == 1 { CL_SEMI } else { CL_TONE };
+        let pair = [self.cl_low, (self.cl_low + gap).rem_euclid(12)];
+        // the cluster, on top: click a key and the cluster starts there
         ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "BASS", 100.0);
-            for pc in 0..12 {
-                let none = theory::modes_holding(pc, &pair).0.iter().all(|(_, m)| m.is_empty());
-                let label =
-                    if none { format!("{} X", theory::note_name(pc, sharps)) } else { theory::note_name(pc, sharps).to_string() };
-                if retro_btn(ui, &label, self.cl_bass == pc).tip("Over this bass").clicked() {
-                    self.cl_bass = pc;
-                }
+            crate::views::label(ui, "YOUR CLUSTER", 130.0);
+            if let Some(pc) = octave_keys(ui, "cl_top", &[(pair[0], col), (pair[1], col)], &[]) {
+                self.cl_low = pc;
             }
+            crate::views::label(
+                ui,
+                &format!("{} + {}", theory::note_name(pair[0], sharps), theory::note_name(pair[1], sharps)),
+                110.0,
+            );
         });
-        ui.horizontal(|ui| {
-            if retro_btn_w(ui, "<", 34.0, false).clicked() {
+        // the bass, underneath: step it along
+        let x: Vec<i32> = (0..12).filter(|pc| theory::modes_holding(*pc, &pair).0.iter().all(|(_, m)| m.is_empty())).collect();
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "THE BASS UNDER IT", 130.0);
+            if retro_btn_w(ui, "<", 30.0, false).tip("The bass a half step down").clicked() {
                 self.cl_bass = (self.cl_bass + 11) % 12;
             }
-            if retro_btn_w(ui, ">", 34.0, false).tip("The next bass, a half step up").clicked() {
+            if let Some(pc) = octave_keys(ui, "cl_bass", &[(self.cl_bass, CL_BASS)], &x) {
+                self.cl_bass = pc;
+            }
+            if retro_btn_w(ui, ">", 30.0, false).tip("The bass a half step up").clicked() {
                 self.cl_bass = (self.cl_bass + 1) % 12;
             }
+            crate::views::label(ui, theory::note_name(self.cl_bass, sharps), 50.0);
         });
+        crate::views::dim_line(ui, "X ON A KEY: NO SCALE HOLDS THE CLUSTER OVER THAT BASS", 1.0, pal().dim);
         ui.add_space(6.0);
         let bass = self.cl_bass;
         self.cluster_card(ui, acts, bass, pair);
     }
 
-    /// FIXED BASS: one bass held while the cluster moves up a half step at a time.
+    /// FIXED BASS: one bass held while the cluster moves on top of it.
     fn cl_fixed_bass(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Keep the bass and move the two notes over it chromatically. Each spot is a different pair of degrees over the same root, and a different chord type.", pal().ink2);
+        para(ui, "Keep the bass and move the two notes over it. Each spot is a different pair of degrees over the same root, and a different chord type.", pal().ink2);
         let sharps = self.chord_sp.sharps;
-        if let Some(pc) = Self::note_row(ui, "BASS", self.cl_bass, sharps) {
-            self.cl_bass = pc;
-        }
+        let gap = self.cl_gap();
+        let col = if gap == 1 { CL_SEMI } else { CL_TONE };
         let bass = self.cl_bass;
-        let step = self.cl_gap();
+        let pair = [self.cl_low, (self.cl_low + gap).rem_euclid(12)];
+        // the cluster on top, stepped along over the bass
         ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "CLUSTER", 100.0);
-            for k in 0..12 {
-                let lo = (bass + 11 + k).rem_euclid(12);
-                let hi = (lo + step).rem_euclid(12);
-                let label = format!(
-                    "{}+{}",
-                    theory::degree_word(lo, bass).split(' ').next().unwrap_or(""),
-                    theory::degree_word(hi, bass).split(' ').next().unwrap_or("")
-                );
-                if retro_btn(ui, &label, self.cl_low == lo).clicked() {
-                    self.cl_low = lo;
+            crate::views::label(ui, "YOUR CLUSTER", 130.0);
+            if retro_btn_w(ui, "<", 30.0, false).tip("The cluster a half step down").clicked() {
+                self.cl_low = (self.cl_low + 11) % 12;
+            }
+            if let Some(pc) = octave_keys(ui, "cl_top2", &[(pair[0], col), (pair[1], col)], &[]) {
+                self.cl_low = pc;
+            }
+            if retro_btn_w(ui, ">", 30.0, false).tip("The cluster a half step up").clicked() {
+                self.cl_low = (self.cl_low + 1) % 12;
+            }
+            crate::views::label(
+                ui,
+                &format!(
+                    "{} + {}",
+                    theory::degree_word(pair[0], bass).split(' ').next().unwrap_or(""),
+                    theory::degree_word(pair[1], bass).split(' ').next().unwrap_or("")
+                ),
+                120.0,
+            );
+        });
+        // the bass underneath, held
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "THE BASS UNDER IT", 130.0);
+            if let Some(pc) = octave_keys(ui, "cl_bass2", &[(bass, CL_BASS)], &[]) {
+                self.cl_bass = pc;
+            }
+            crate::views::label(ui, theory::note_name(bass, sharps), 50.0);
+        });
+        ui.add_space(6.0);
+        let pair = [self.cl_low, (self.cl_low + gap).rem_euclid(12)];
+        self.cluster_card(ui, acts, self.cl_bass, pair);
+    }
+
+    /// BUILD YOUR OWN: a cluster of 2 to 5 notes made of semitone and tone steps, over a bass - what it holds, where it
+    /// fits, how to grip it.
+    fn cl_build(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        para(ui, "A cluster is notes stacked a step apart: each step is a semitone (H, a half step - it rubs) or a tone (W, a whole step - it shimmers). Two notes give one step, three give two (HH, HW, WH, WW), four give eight shapes, five give sixteen. The more semitones, the more crunch; all tones is soft and open.", pal().ink2);
+        let sharps = self.chord_sp.sharps;
+        let size = self.cb_size.clamp(2, 5) as usize;
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "NOTES", 130.0);
+            for n in 2u8..=5 {
+                if retro_btn_w(ui, &n.to_string(), 36.0, size == n as usize).clicked() {
+                    self.cb_size = n;
                 }
             }
         });
-        ui.horizontal(|ui| {
-            if retro_btn_w(ui, "<", 34.0, false).clicked() {
-                self.cl_low = (self.cl_low + 11) % 12;
+        // the steps, one per gap
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "STEPS (LOW TO HIGH)", 130.0);
+            for k in 0..size - 1 {
+                let semi = self.cb_steps[k];
+                if retro_btn_w(ui, if semi { "H" } else { "W" }, 36.0, semi)
+                    .tip("Click to switch: H a semitone, W a tone")
+                    .clicked()
+                {
+                    self.cb_steps[k] = !semi;
+                }
             }
-            if retro_btn_w(ui, ">", 34.0, false).tip("Move the cluster up a half step").clicked() {
-                self.cl_low = (self.cl_low + 1) % 12;
+            let shape: String = (0..size - 1).map(|k| if self.cb_steps[k] { 'H' } else { 'W' }).collect();
+            crate::views::dim_line(ui, &format!("SHAPE {}", shape), 1.0, pal().dim);
+        });
+        // the notes of the cluster
+        let mut notes = vec![self.cb_lo];
+        for k in 0..size - 1 {
+            let last = *notes.last().unwrap_or(&0);
+            notes.push(last + if self.cb_steps[k] { 1 } else { 2 });
+        }
+        let pcs: Vec<i32> = notes.iter().map(|n| n.rem_euclid(12)).collect();
+        let marks: Vec<(i32, Color32)> = notes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                (
+                    n.rem_euclid(12),
+                    if i > 0 && self.cb_steps[i - 1] || i + 1 < size && self.cb_steps[i] { CL_SEMI } else { CL_TONE },
+                )
+            })
+            .collect();
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "STARTS ON", 130.0);
+            if let Some(pc) = octave_keys(ui, "cb_top", &marks, &[]) {
+                self.cb_lo = pc;
+            }
+            crate::views::label(ui, &pcs.iter().map(|p| theory::note_name(*p, sharps)).collect::<Vec<_>>().join(" "), 150.0);
+        });
+        let bass = self.cl_bass;
+        let x: Vec<i32> = (0..12).filter(|b| theory::modes_holding(*b, &pcs).0.iter().all(|(_, m)| m.is_empty())).collect();
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "THE BASS UNDER IT", 130.0);
+            if retro_btn_w(ui, "<", 30.0, false).clicked() {
+                self.cl_bass = (self.cl_bass + 11) % 12;
+            }
+            if let Some(pc) = octave_keys(ui, "cb_bass", &[(bass, CL_BASS)], &x) {
+                self.cl_bass = pc;
+            }
+            if retro_btn_w(ui, ">", 30.0, false).clicked() {
+                self.cl_bass = (self.cl_bass + 1) % 12;
+            }
+            crate::views::label(ui, theory::note_name(bass, sharps), 50.0);
+        });
+        // what it is over this bass
+        let bass = self.cl_bass;
+        section_header(
+            ui,
+            &format!(
+                "{} OVER {} = {}",
+                pcs.iter().map(|p| theory::note_name(*p, sharps)).collect::<Vec<_>>().join(" "),
+                theory::note_name(bass, sharps),
+                pcs.iter()
+                    .map(|p| theory::degree_word(*p, bass).split(' ').next().unwrap_or("").to_uppercase())
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            ),
+        );
+        let (parents, others) = theory::modes_holding(bass, &pcs);
+        let mut any = false;
+        for (parent, modes) in &parents {
+            if modes.is_empty() {
+                continue;
+            }
+            any = true;
+            ui.horizontal_wrapped(|ui| {
+                crate::views::label(ui, &format!("{} MODES:", parent.to_uppercase()), 210.0);
+                crate::views::label(
+                    ui,
+                    &modes.iter().map(|m| format!("{} {}", theory::note_name(bass, sharps), m)).collect::<Vec<_>>().join(", "),
+                    520.0,
+                );
+            });
+        }
+        if !others.is_empty() {
+            any = true;
+            ui.horizontal_wrapped(|ui| {
+                crate::views::label(ui, "OTHER:", 210.0);
+                crate::views::label(
+                    ui,
+                    &others.iter().map(|m| format!("{} {}", theory::note_name(bass, sharps), m)).collect::<Vec<_>>().join(", "),
+                    520.0,
+                );
+            });
+        }
+        if !any {
+            para(ui, "X - no parent scale holds all of these over this bass. Move the bass (keys with X won't work either) or switch a step: three semitones in a row (HH) fit none of them.", pal().red);
+        }
+        // hear it, and see it
+        let mut sounding = vec![40 + (bass - 4).rem_euclid(12)];
+        let mut prev = 59;
+        for n in &notes {
+            let mut m = 60 + n.rem_euclid(12);
+            while m <= prev {
+                m += 12;
+            }
+            sounding.push(m);
+            prev = m;
+        }
+        ui.horizontal(|ui| {
+            if retro_btn(ui, "HEAR IT", false).clicked() {
+                acts.push(Action::PlayNotes(sounding.clone()));
             }
         });
-        ui.add_space(6.0);
-        let pair = [self.cl_low, (self.cl_low + step).rem_euclid(12)];
-        self.cluster_card(ui, acts, bass, pair);
+        let pw = ui.available_width().min(560.0);
+        let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 86.0), Sense::hover());
+        piano_span(ui, pr.shrink2(Vec2::new(4.0, 4.0)), &sounding, false, "cb_piano", Some(bass), 36, 4);
+        // grips, when the hand can reach one
+        let mut all = vec![bass];
+        for p in &pcs {
+            if !all.contains(p) {
+                all.push(*p);
+            }
+        }
+        let cn = theory::ChordNotes { root: bass, bass, pcs: all.clone(), named: Vec::new() };
+        let grips = theory::guitar_shapes(&cn, &theory::STANDARD);
+        section_header(ui, "ON THE GUITAR");
+        if grips.is_empty() {
+            para(ui, "No grip in one hand-span for this one. Spread it out: the bass on the 6th or 5th string, the cluster on the higher strings, and let open strings take some of its notes - neighbouring strings are a 4th apart, so a cluster's notes can sit on different strings at nearly the same fret.", pal().ink2);
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                for g in &grips {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(112.0, 132.0), Sense::click());
+                    chord_box_coloured(ui.painter(), r, g, &|m| {
+                        let pc = m.rem_euclid(12);
+                        let col = if pc == bass && !pcs.contains(&pc) {
+                            Color32::from_gray(245)
+                        } else if pcs.contains(&pc) {
+                            CL_SEMI
+                        } else {
+                            Color32::from_gray(245)
+                        };
+                        (degree(m, bass).0.to_string(), col)
+                    });
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear it").clicked() {
+                        acts.push(Action::PlayNotes(grip_notes(g)));
+                    }
+                    ui.add_space(6.0);
+                }
+            });
+        }
+        para(ui, "To make your own: pick a sound (H for bite, W for air), find a bass where the modes line up (no X), then try the same cluster over every bass - and the same bass under every cluster - to hear what each one turns into.", pal().ink2);
     }
 
     /// IN A TUNE: the changes of the open tune (or ones you type), each voiced with clusters from the modes it can
@@ -1191,22 +1411,29 @@ impl App {
         grips: &[(String, [Option<u8>; 6], i32, Vec<i32>)],
         lit: Option<usize>,
     ) {
-        ui.horizontal_wrapped(|ui| {
-            for (i, (name, g, root, pcs)) in grips.iter().enumerate() {
-                ui.vertical(|ui| {
-                    crate::views::label(ui, name, 100.0);
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(96.0, 116.0), Sense::click());
-                    if lit == Some(i) {
-                        ui.painter().rect_filled(r.expand(3.0), 4.0, pal().bar_txt.gamma_multiply(0.25));
-                        ui.painter().rect_stroke(r.expand(3.0), 4.0, Stroke::new(2.5_f32, pal().bar_txt));
-                    }
-                    chord_box_labelled(ui.painter(), r, g, &|m| degree_in(m, *root, pcs).0.to_string());
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        acts.push(Action::PlayNotes(grip_notes(g)));
-                    }
-                });
-            }
-        });
+        // as many to a row as fit in what can be seen (the panel can be wider than its visible part)
+        let seen = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x).max(120.0);
+        let per = ((seen / 112.0).floor() as usize).max(1);
+        for (row, chunk) in grips.chunks(per).enumerate() {
+            ui.horizontal(|ui| {
+                for (j, (name, g, root, pcs)) in chunk.iter().enumerate() {
+                    let i = row * per + j;
+                    ui.vertical(|ui| {
+                        crate::views::label(ui, name, 100.0);
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(96.0, 116.0), Sense::click());
+                        if lit == Some(i) {
+                            ui.painter().rect_filled(r.expand(3.0), 4.0, pal().bar_txt.gamma_multiply(0.25));
+                            ui.painter().rect_stroke(r.expand(3.0), 4.0, Stroke::new(2.5_f32, pal().bar_txt));
+                        }
+                        chord_box_labelled(ui.painter(), r, g, &|m| degree_in(m, *root, pcs).0.to_string());
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            acts.push(Action::PlayNotes(grip_notes(g)));
+                        }
+                    });
+                }
+            });
+            ui.add_space(4.0);
+        }
     }
 
     fn band_bpm(&self) -> f32 {
@@ -1459,6 +1686,49 @@ fn neck_spot(g: &[Option<u8>; 6]) -> u8 {
 fn neck_centre(g: &[Option<u8>; 6]) -> f32 {
     let f: Vec<f32> = g.iter().flatten().map(|f| *f as f32).collect();
     f.iter().sum::<f32>() / f.len().max(1) as f32
+}
+
+/// The colours clusters are drawn in: a semitone pair red, a tone pair blue, the bass orange.
+const CL_SEMI: Color32 = Color32::from_rgb(240, 96, 96);
+const CL_TONE: Color32 = Color32::from_rgb(70, 150, 255);
+const CL_BASS: Color32 = Color32::from_rgb(255, 170, 60);
+
+/// One octave of keys, C to B, to pick a note on: `marks` colours keys, `faded` keys are dimmed with an X.
+/// A click gives that key's pitch class.
+fn octave_keys(ui: &mut egui::Ui, id: &str, marks: &[(i32, Color32)], faded: &[i32]) -> Option<i32> {
+    let (w, h) = (196.0_f32, 46.0_f32);
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let p = ui.painter();
+    let ww = w / 7.0;
+    const WHITE: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+    const BLACK: [(i32, f32); 5] = [(1, 1.0), (3, 2.0), (6, 4.0), (8, 5.0), (10, 6.0)];
+    let mark = |pc: i32| marks.iter().find(|m| m.0.rem_euclid(12) == pc).map(|m| m.1);
+    let black_rect =
+        |at: f32| Rect::from_min_size(Pos2::new(r.min.x + at * ww - ww * 0.32, r.min.y), Vec2::new(ww * 0.64, h * 0.6));
+    for (i, pc) in WHITE.iter().enumerate() {
+        let k = Rect::from_min_size(Pos2::new(r.min.x + i as f32 * ww, r.min.y), Vec2::new(ww - 1.0, h));
+        p.rect_filled(k, 2.0, mark(*pc).unwrap_or(Color32::from_gray(236)));
+        if faded.contains(pc) {
+            p.rect_filled(k, 2.0, Color32::from_black_alpha(90));
+            ptext(p, Pos2::new(k.center().x, k.max.y - 9.0), Align::Center, "x", 1.0, Color32::from_gray(40));
+        }
+    }
+    for (pc, at) in BLACK {
+        let k = black_rect(at);
+        p.rect_filled(k, 2.0, mark(pc).unwrap_or(Color32::from_gray(28)));
+        if faded.contains(&pc) {
+            p.rect_filled(k, 2.0, Color32::from_black_alpha(90));
+            ptext(p, Pos2::new(k.center().x, k.max.y - 7.0), Align::Center, "x", 1.0, Color32::from_gray(200));
+        }
+    }
+    let pos = resp.interact_pointer_pos().filter(|_| resp.clicked())?;
+    let _ = id;
+    if let Some((pc, _)) = BLACK.iter().find(|(_, at)| black_rect(*at).contains(pos)) {
+        return Some(*pc);
+    }
+    let i = (((pos.x - r.min.x) / ww).floor() as usize).min(6);
+    Some(WHITE[i])
 }
 
 fn grip_notes(g: &[Option<u8>; 6]) -> Vec<i32> {
