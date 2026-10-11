@@ -252,6 +252,21 @@ impl App {
                 label(ui, "BPM", 40.0);
                 let s = self.mt_bpm.to_string();
                 self.num_step(ui, acts, F_BPM, 52.0, Knob::MetroBpm, s, "The metronome's own tempo (the song's is set apart)");
+                // its own volume: louder or softer against the song, without touching the main volume
+                label(ui, "VOL", 36.0);
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(110.0, crate::bh()), Sense::click_and_drag());
+                crate::inset(ui.painter(), r, pal().lcd);
+                let inner = r.shrink(4.0);
+                let fill = Rect::from_min_size(inner.min, Vec2::new(inner.width() * self.mt_vol, inner.height()));
+                ui.painter().rect_filled(fill, 0.0, pal().ink2);
+                let resp = resp
+                    .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
+                    .tip("The metronome's own volume (the main volume doesn't change it)");
+                if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
+                    self.mt_vol = ((p.x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
+                    self.player.send(crate::player::Cmd::MetroVolume(self.mt_vol * self.mt_vol));
+                    self.dirty = true;
+                }
                 if retro_btn_w(ui, "TAP", 52.0, false).tip("Tap along with the music to find the tempo").clicked() {
                     acts.push(Action::TapTempo);
                 }

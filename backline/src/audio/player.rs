@@ -20,6 +20,8 @@ pub enum Cmd {
     Resume,
     Seek(f32),
     Volume(f32),
+    /// the metronome's own volume (0..1): apart from the main volume
+    MetroVolume(f32),
     /// A side sound on its own sink (slot 0 metronome, 1 band): `lead` plays once, then `body` repeats
     /// forever. An empty body switches the slot off. (slot, lead, body, gain)
     Pcm(u8, Vec<i16>, Vec<i16>, f32),
@@ -1171,6 +1173,7 @@ impl Player {
             };
             let mut sink: Option<Sink> = None;
             let mut vol = 0.64f32;
+            let mut metro_vol = 0.8f32;
             let mut slots: [Option<(Sink, f32)>; 2] = [None, None];
             let mut once: Vec<Sink> = Vec::new();
             let mut user_paused = false;
@@ -1298,8 +1301,15 @@ impl Player {
                         if let Some(s) = &sink {
                             s.set_volume(out(v));
                         }
-                        for (m, g) in slots.iter().flatten() {
+                        // the band follows the main volume; the metronome (slot 0) has its own
+                        if let Some((m, g)) = &slots[1] {
                             m.set_volume(out((v * g).min(1.0)));
+                        }
+                    }
+                    Ok(Cmd::MetroVolume(v)) => {
+                        metro_vol = v.clamp(0.0, 1.0);
+                        if let Some((m, _)) = &slots[0] {
+                            m.set_volume(out(metro_vol));
                         }
                     }
                     Ok(Cmd::Pcm(slot, lead, body, gain)) => {
@@ -1311,7 +1321,7 @@ impl Player {
                         if !body.is_empty() {
                             rec_sound(&lead, &body, gain, Some(slot));
                             if let Ok(m) = Sink::try_new(&handle) {
-                                m.set_volume(out((vol * gain).min(1.0)));
+                                m.set_volume(out(if slot == 0 { metro_vol } else { (vol * gain).min(1.0) }));
                                 if !lead.is_empty() {
                                     m.append(rodio::buffer::SamplesBuffer::new(1, 44100, lead));
                                 }

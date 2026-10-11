@@ -2382,6 +2382,8 @@ struct App {
     q_next: u64,
     /// a song you queued leaves the queue once playing moves on past it (Preferences)
     q_drop: bool,
+    /// the metronome's own volume (0..1), apart from the main volume
+    mt_vol: f32,
     sleep_at: Option<Instant>,
     sleep_mins: u32,
     mini: bool,
@@ -2964,6 +2966,7 @@ impl App {
             q_drag: None,
             q_manual: 0,
             q_drop: true,
+            mt_vol: 0.8,
             q_added: HashSet::new(),
             q_next: 0,
             sleep_at: None,
@@ -3321,6 +3324,10 @@ impl App {
         }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
+        if let Some(v) = st["mt_vol"].as_f64() {
+            app.mt_vol = v as f32;
+        }
+        app.player.send(Cmd::MetroVolume(app.mt_vol * app.mt_vol));
         if let Some(b) = st["q_drop"].as_bool() {
             app.q_drop = b;
         }
@@ -3549,6 +3556,7 @@ impl App {
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
             "q_drop": self.q_drop,
+            "mt_vol": self.mt_vol,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],
