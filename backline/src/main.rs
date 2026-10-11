@@ -2784,7 +2784,7 @@ struct App {
 /// Audio bytes for a track: a file on this computer, from the local cache if it's stored,
 /// a YouTube clip (downloaded once with yt-dlp), or otherwise downloaded from Tidal
 /// (and then stored, unless caching is switched off).
-fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: Option<Src>) -> Result<Vec<u8>, String> {
+pub(crate) fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: Option<Src>) -> Result<Vec<u8>, String> {
     match src {
         Some(Src::File(p)) => {
             return std::fs::read(&p).map_err(|e| format!("can't open {}: {}", p.display(), e));

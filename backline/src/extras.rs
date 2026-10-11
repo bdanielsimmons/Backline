@@ -2272,20 +2272,22 @@ impl App {
                     self.set_note("PLAY A TRACK FIRST");
                     return;
                 };
-                let bytes = match self.srcmap.get(&t.id) {
-                    Some(Src::File(p)) => std::fs::read(p).ok(),
-                    _ => cache::get(t.id),
-                };
-                let Some(bytes) = bytes else {
-                    self.set_note("PLAY THE TRACK ONCE SO IT IS STORED, THEN SPLIT");
-                    return;
-                };
                 self.stem_busy = 2;
                 self.set_note("SPLITTING - KEEP PRACTICING, IT TAKES A FEW MINUTES");
                 let id = t.id;
+                // the stored copy, or (not stored: storing tracks is off, or it never finished) the track fetched
+                // again for the split
+                let src = self.srcmap.get(&t.id).cloned();
+                let (lossless, api) = (self.prefer_lossless, self.api.clone());
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Stems(id, stems::separate(bytes, id)));
+                    api::log(&format!("stems: split {} asked for", id));
+                    let r = crate::fetch_audio(&api, id, lossless, false, src).and_then(|b| {
+                        api::log(&format!("stems: {} bytes of audio, splitting", b.len()));
+                        stems::separate(b, id)
+                    });
+                    api::log(&format!("stems: {} -> {:?}", id, r));
+                    let _ = tx.send(Msg::Stems(id, r));
                     ctx.request_repaint();
                 });
             }
