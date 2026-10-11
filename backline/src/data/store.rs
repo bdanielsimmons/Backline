@@ -7,6 +7,150 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
+/// The share file's format. Raise it when what a share file holds changes: an older Backline still reads what it
+/// knows from a newer file (unknown parts are skipped) and says so; a newer Backline reads every older file.
+pub const SHARE_VERSION: u32 = 1;
+
+/// Your loops and playlists as one file, to take to another computer (no account: send the file however you like).
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Share {
+    /// "backline-share", so a stray file isn't read as one
+    pub kind: String,
+    /// the format it was written in (`SHARE_VERSION` then; 0 = before versions were kept, read as 1)
+    pub version: u32,
+    pub loops: HashMap<i64, Vec<Section>>,
+    /// the songs the loops are on (title, artist, where it comes from), so they can be played there
+    pub songs: HashMap<i64, Version>,
+    pub playlists: Vec<Playlist>,
+}
+
+/// What an import added (loops, new playlists, songs put into playlists you already had), and what it found about
+/// the songs: files matched to your own copies, files not on this computer, Tidal songs (they need a Tidal login).
+#[derive(Debug, PartialEq, Default)]
+pub struct Took {
+    pub loops: usize,
+    pub playlists: usize,
+    pub items: usize,
+    pub relinked: usize,
+    pub missing: usize,
+    pub tidal: usize,
+}
+
+impl Store {
+    /// Everything to share: every loop (with its song) and every playlist.
+    pub fn share(&self) -> Share {
+        let songs = self.sections.keys().filter_map(|id| self.songs.get(id).map(|v| (*id, v.clone()))).collect();
+        Share {
+            kind: "backline-share".to_string(),
+            version: SHARE_VERSION,
+            loops: self.sections.clone(),
+            songs,
+            playlists: self.playlists.clone(),
+        }
+    }
+
+    /// Bring in a shared file: loops you don't have yet (same song, same start and end) are added, songs you don't
+    /// know are learned, a playlist with a new name is added whole, and one you already have gets the songs it
+    /// lacks. Nothing of yours is changed or removed, so importing the same file twice adds nothing.
+    pub fn take_share(&mut self, mut s: Share) -> Took {
+        let mut took = Took::default();
+        // every song in the file, once
+        let mut all: HashMap<i64, Version> = s.songs.clone();
+        for v in s.playlists.iter().flat_map(|p| &p.items) {
+            all.entry(v.id).or_insert_with(|| v.clone());
+        }
+        // a file is known by where it is, which differs from computer to computer: matched to your own copy (same
+        // file name, or same title and artist) it takes that copy's place everywhere in the file
+        let mut moved: HashMap<i64, (i64, String)> = HashMap::new();
+        for v in all.values() {
+            match v.kind.as_str() {
+                "file" if !std::path::Path::new(&v.src).exists() => {
+                    let name = |p: &str| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_lowercase());
+                    let same = |e: &&Ext| {
+                        (name(&e.src).is_some() && name(&e.src) == name(&v.src))
+                            || (!v.title.is_empty()
+                                && e.title.eq_ignore_ascii_case(&v.title)
+                                && e.artist.eq_ignore_ascii_case(&v.artist))
+                    };
+                    match self.files.iter().find(same) {
+                        Some(e) => {
+                            moved.insert(v.id, (e.id, e.src.clone()));
+                            took.relinked += 1;
+                        }
+                        None => took.missing += 1,
+                    }
+                }
+                // YouTube and SoundCloud: the same everywhere; put in your lists so they show and play
+                "yt" | "sc" => {
+                    let list = if v.kind == "yt" { &mut self.yt } else { &mut self.sc };
+                    if !list.iter().any(|e| e.id == v.id) {
+                        list.push(Ext {
+                            kind: v.kind.clone(),
+                            id: v.id,
+                            src: v.src.clone(),
+                            title: v.title.clone(),
+                            artist: v.artist.clone(),
+                            dur: v.dur,
+                            cover: v.cover.clone(),
+                        });
+                    }
+                }
+                _ if v.id > 0 => took.tidal += 1,
+                _ => {}
+            }
+        }
+        let fix = |v: &mut Version| {
+            if let Some((id, src)) = moved.get(&v.id) {
+                v.id = *id;
+                v.src = src.clone();
+            }
+        };
+        s.loops = s.loops.into_iter().map(|(id, l)| (moved.get(&id).map_or(id, |m| m.0), l)).collect();
+        s.songs = s
+            .songs
+            .into_iter()
+            .map(|(id, mut v)| {
+                fix(&mut v);
+                (moved.get(&id).map_or(id, |m| m.0), v)
+            })
+            .collect();
+        for v in s.playlists.iter_mut().flat_map(|p| p.items.iter_mut()) {
+            fix(v);
+        }
+        for (id, loops) in s.loops {
+            let mine = self.sections.entry(id).or_default();
+            for l in loops {
+                if !mine.iter().any(|m| (m.a - l.a).abs() < 0.05 && (m.b - l.b).abs() < 0.05) {
+                    mine.push(l);
+                    took.loops += 1;
+                }
+            }
+        }
+        for (id, v) in s.songs {
+            self.songs.entry(id).or_insert(v);
+        }
+        let same = |a: &Version, b: &Version| a.id == b.id && a.loop_ab == b.loop_ab;
+        for p in s.playlists {
+            match self.playlists.iter_mut().find(|m| m.name == p.name) {
+                Some(m) => {
+                    for v in p.items {
+                        if !m.items.iter().any(|x| same(x, &v)) {
+                            m.items.push(v);
+                            took.items += 1;
+                        }
+                    }
+                }
+                None => {
+                    self.playlists.push(p);
+                    took.playlists += 1;
+                }
+            }
+        }
+        took
+    }
+}
+
 /// A playlist you built inside the player: any mix of Tidal, SoundCloud, YouTube and file tracks.
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
@@ -438,6 +582,54 @@ pub fn hash_id(s: &str) -> i64 {
         h = h.wrapping_mul(0x100000001b3);
     }
     -((h & 0x3fff_ffff_ffff_ffff) as i64) - 1
+}
+
+#[cfg(test)]
+mod share_tests {
+    use super::*;
+
+    #[test]
+    fn sharing_adds_only_what_is_new() {
+        let mut a = Store::default();
+        a.sections.insert(1, vec![Section { name: "head".into(), a: 10.0, b: 20.0, ..Default::default() }]);
+        a.songs.insert(1, Version { id: 1, title: "Song".into(), ..Default::default() });
+        a.playlists.push(Playlist { name: "Videos".into(), items: vec![Version { id: 1, ..Default::default() }] });
+        let mut b = Store::default();
+        b.sections.insert(1, vec![Section { name: "head".into(), a: 10.0, b: 20.0, ..Default::default() }]);
+        b.playlists.push(Playlist { name: "Videos".into(), items: Vec::new() });
+        let took = b.take_share(a.share());
+        assert_eq!(took, Took { loops: 0, playlists: 0, items: 1, tidal: 1, ..Default::default() });
+        assert_eq!(b.songs.get(&1).map(|v| v.title.as_str()), Some("Song"));
+        // the file passes through JSON, and a second import adds nothing
+        let text = serde_json::to_string(&a.share()).unwrap();
+        let again: Share = serde_json::from_str(&text).unwrap();
+        assert_eq!(again.version, SHARE_VERSION);
+        let t = b.take_share(again);
+        assert_eq!((t.loops, t.playlists, t.items), (0, 0, 0));
+    }
+
+    #[test]
+    fn a_file_is_matched_to_your_own_copy() {
+        let mut a = Store::default();
+        let theirs = Version {
+            kind: "file".into(),
+            id: -5,
+            src: r"Z:\nowhere\Funky Riff.mp3".into(),
+            title: "Funky Riff".into(),
+            ..Default::default()
+        };
+        a.sections.insert(-5, vec![Section { name: "riff".into(), a: 1.0, b: 2.0, ..Default::default() }]);
+        a.songs.insert(-5, theirs.clone());
+        let mut b = Store::default();
+        b.files.push(Ext { kind: "file".into(), id: -9, src: r"C:\music\funky riff.mp3".into(), ..Default::default() });
+        let took = b.take_share(a.share());
+        assert_eq!((took.relinked, took.missing, took.loops), (1, 0, 1));
+        assert!(b.sections.contains_key(&-9) && !b.sections.contains_key(&-5));
+        // a newer file with parts this one doesn't know still reads
+        let newer = r#"{"kind":"backline-share","version":99,"loops":{},"playlists":[],"future_thing":[1,2]}"#;
+        let s: Share = serde_json::from_str(newer).unwrap();
+        assert_eq!(s.version, 99);
+    }
 }
 
 #[cfg(test)]

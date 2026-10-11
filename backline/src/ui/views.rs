@@ -907,6 +907,24 @@ impl App {
         ui.add_space(20.0);
     }
 
+    /// Take your loops and playlists to another computer: a file to save, send however you like, and open there.
+    fn share_buttons(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "EXPORT LOOPS & PLAYLISTS...", false)
+                .tip("Save every loop and playlist to one file: email it, put it on a USB stick or OneDrive, then IMPORT it on the other computer")
+                .clicked()
+            {
+                acts.push(Action::ShareExport);
+            }
+            if retro_btn(ui, "IMPORT...", false)
+                .tip("Bring in a file from another computer: adds the loops and playlists you don't have, changes nothing you do")
+                .clicked()
+            {
+                acts.push(Action::ShareImport);
+            }
+        });
+    }
+
     // ------------------------------------------------------------ PLAYLISTS
     pub(crate) fn playlists_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
@@ -1001,6 +1019,7 @@ impl App {
             }
         });
         if self.pl_pick.is_none() {
+            self.share_buttons(ui, acts);
             ui.horizontal_wrapped(|ui| {
                 if retro_btn(ui, "SAVE QUEUE AS PLAYLIST", false)
                     .tip("Turns what is in the queue right now into a playlist (type a name above first, or it gets a number)")
@@ -1466,6 +1485,7 @@ impl App {
         ui.add_space(6.0);
         title_line(ui, "LOOPS", 3.0, pal().ink);
         para(ui, "The songs you saved loops on or practised, no tune needed. Click a loop to jump straight to it. Click a song to play it. Right-click for more.", pal().ink2);
+        self.share_buttons(ui, acts);
         self.name_old_loops();
         let today = store::today_days();
         let week_start = store::date_str(today - 6);

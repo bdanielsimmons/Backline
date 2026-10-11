@@ -948,6 +948,36 @@ impl App {
 
     pub(crate) fn drain_extra(&mut self, m: Msg) {
         match m {
+            Msg::ShareSaved(r) => match r {
+                Ok(p) => self.set_note(&format!("SAVED: {} - OPEN IT IN BACKLINE ON THE OTHER COMPUTER (IMPORT)", p)),
+                Err(e) => self.set_err(format!("EXPORT: {}", e)),
+            },
+            Msg::ShareIn(r) => match r {
+                Ok(s) => {
+                    let newer = s.version > crate::store::SHARE_VERSION;
+                    let t = self.store.take_share(s);
+                    self.store_dirty = true;
+                    self.serial += 1;
+                    let mut note = format!(
+                        "IMPORTED: {} NEW LOOPS, {} NEW PLAYLISTS, {} SONGS ADDED TO PLAYLISTS",
+                        t.loops, t.playlists, t.items
+                    );
+                    if t.relinked > 0 {
+                        note += &format!(" - {} FILES MATCHED TO YOURS", t.relinked);
+                    }
+                    if t.missing > 0 {
+                        note += &format!(" - {} FILES AREN'T ON THIS COMPUTER (ADD THEM IN FILES, THEN IMPORT AGAIN)", t.missing);
+                    }
+                    if t.tidal > 0 && !self.api.has_token() {
+                        note += &format!(" - {} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal);
+                    }
+                    if newer {
+                        note += " - MADE BY A NEWER BACKLINE: UPDATE TO BRING IN EVERYTHING";
+                    }
+                    self.set_note(&note);
+                }
+                Err(e) => self.set_err(format!("IMPORT: {}", e)),
+            },
             Msg::TidalLists(r) => {
                 self.tidal_lists_busy = false;
                 match r {
@@ -1536,6 +1566,52 @@ impl App {
                 self.pl_pick = None;
                 self.pl_loop = None;
                 self.new_pl.clear();
+            }
+            Action::ShareExport => {
+                let text = match serde_json::to_string_pretty(&self.store.share()) {
+                    Ok(t) => t,
+                    Err(e) => return self.set_err(format!("EXPORT: {}", e)),
+                };
+                let (y, m, d, ..) = crate::store::now_local();
+                let file = format!("Backline loops and playlists {:04}-{:02}-{:02}.backline", y, m, d);
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let Some(path) = rfd::FileDialog::new()
+                        .set_title("Save your loops and playlists")
+                        .set_file_name(&file)
+                        .add_filter("Backline loops and playlists", &["backline"])
+                        .save_file()
+                    else {
+                        return;
+                    };
+                    let r = std::fs::write(&path, text).map(|_| path.to_string_lossy().to_string()).map_err(|e| e.to_string());
+                    let _ = tx.send(Msg::ShareSaved(r));
+                    ctx.request_repaint();
+                });
+            }
+            Action::ShareImport => {
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let Some(path) = rfd::FileDialog::new()
+                        .set_title("Bring in loops and playlists")
+                        .add_filter("Backline loops and playlists", &["backline", "json"])
+                        .pick_file()
+                    else {
+                        return;
+                    };
+                    let r = std::fs::read_to_string(&path)
+                        .map_err(|e| e.to_string())
+                        .and_then(|t| serde_json::from_str::<crate::store::Share>(&t).map_err(|e| e.to_string()))
+                        .and_then(|s| {
+                            if s.kind == "backline-share" {
+                                Ok(s)
+                            } else {
+                                Err("that isn't a Backline loops and playlists file".to_string())
+                            }
+                        });
+                    let _ = tx.send(Msg::ShareIn(r));
+                    ctx.request_repaint();
+                });
             }
             Action::PlaylistPickLoop(t, a, b, name) => {
                 self.set_note(&format!("PICK A PLAYLIST FOR THE LOOP: {}", name.to_uppercase()));

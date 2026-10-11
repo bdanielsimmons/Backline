@@ -149,6 +149,9 @@ enum Msg {
     Lyrics(i64, Result<(Vec<(f32, String)>, bool), String>),
     Media(u8),
     LikeFailed(i64, bool, String),
+    /// a share file written (where), or read (its contents)
+    ShareSaved(Result<String, String>),
+    ShareIn(Result<store::Share, String>),
     /// your own Tidal playlists, for adding to: (id, name)
     TidalLists(Result<Vec<(String, String)>, String>),
     /// a song put in a Tidal playlist: what to say
@@ -368,6 +371,9 @@ enum Action {
     TogglePrefs,
     FindTuning,
     PlaylistPick(Track),
+    /// save your loops and playlists to a file / bring in a file from another computer
+    ShareExport,
+    ShareImport,
     /// pick one of your Tidal playlists for a song
     PlaylistPickTidal(Track),
     /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
