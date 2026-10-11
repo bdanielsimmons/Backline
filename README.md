@@ -11,6 +11,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Song names in Japanese, Chinese, Korean, Greek, Cyrillic and other scripts show properly instead of empty boxes
 - In LINES, type any tempo, and pick a feel - quarters to sixteenths, quintuplets, sextuplets, septuplets, or any number of notes a beat from 1 to 16
 - Right-click a practice progression to add it to My progressions, or make it a tune with its lead sheet in the key you picked
 - The practice tour now shows the CHORDS tab (strumming a chord), LINES (playing a line) and the lead sheet with the band playing a ii-V-I
