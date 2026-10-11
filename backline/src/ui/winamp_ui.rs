@@ -1301,6 +1301,7 @@ impl App {
         }
         let digits = format!("{}", queue.len()).len();
         let clip = p.with_clip_rect(list);
+        let mut rects: Vec<(usize, Rect)> = Vec::new();
         for (n, i) in (first.floor() as usize..queue.len()).take(rows + 1).enumerate() {
             let tr = &queue[i];
             let y = list.min.y + 2.0 + n as f32 * row_h - (first.fract() * row_h);
@@ -1309,9 +1310,13 @@ impl App {
                 break;
             }
             let h = ui
-                .interact(r.intersect(list), id.with(("row", i)), Sense::click())
+                .interact(r.intersect(list), id.with(("row", i)), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip("Click to play, right-click for more");
+                .tip("Click to play, drag to move, right-click for more");
+            rects.push((i, r));
+            if h.drag_started() {
+                self.q_drag = Some(i);
+            }
             if h.hovered() {
                 clip.rect_filled(r, 0.0, pal().row_sel);
             }
@@ -1324,6 +1329,8 @@ impl App {
             let col = if now { pal().bar_txt } else { pal().ink };
             let label = if now {
                 format!("{:>w$}. > {} - {}", i + 1, tr.artists_text(), tr.title, w = digits)
+            } else if self.queued(i) {
+                format!("{:>w$}. QUEUED  {} - {}", i + 1, tr.artists_text(), tr.title, w = digits)
             } else {
                 format!("{:>w$}. {} - {}", i + 1, tr.artists_text(), tr.title, w = digits)
             };
@@ -1334,14 +1341,42 @@ impl App {
                 acts.push(Action::PlayIndex(i));
             }
             let tidal = self.ext_of(tr.id).is_none();
+            let link = track_link(tr, self.ext_of(tr.id).as_ref());
             let tr = tr.clone();
             h.context_menu(|ui| {
+                crate::player_win::queue_moves(ui, acts, i, cur);
                 goto_items(ui, acts, &tr, tidal);
+                link_item(ui, acts, link.clone());
                 if menu_item(ui, "Remove from the queue") {
                     acts.push(Action::Remove(i));
                     ui.close_menu();
                 }
             });
+        }
+        // drag to reorder: a line where it will land, moved on release
+        if let Some(from) = self.q_drag {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let released = ui.input(|i| i.pointer.any_released());
+            if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
+                let ins = rects
+                    .iter()
+                    .find(|(_, rc)| pp.y < rc.center().y)
+                    .map(|(i, rc)| (*i, rc.min.y))
+                    .or_else(|| rects.last().map(|(i, rc)| (*i + 1, rc.max.y)));
+                if let Some((ins_i, y)) = ins {
+                    clip.rect_filled(
+                        Rect::from_min_size(Pos2::new(list.min.x, y - 1.0), Vec2::new(list.width(), 2.0)),
+                        0.0,
+                        pal().bar_txt,
+                    );
+                    if released {
+                        acts.push(Action::MoveQueue(from, ins_i));
+                    }
+                }
+            }
+            if released || !ui.input(|i| i.pointer.any_down()) {
+                self.q_drag = None;
+            }
         }
         // the scrollbar: the skin's handle, riding the right edge
         let track = Rect::from_min_max(Pos2::new(rcol.min.x + 5.0 * k, rcol.min.y), Pos2::new(rcol.min.x + 13.0 * k, rcol.max.y));

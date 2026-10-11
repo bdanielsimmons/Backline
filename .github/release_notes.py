@@ -43,7 +43,7 @@ if new:
 out += ["## Changes", *(changes or ["- Rebuild, no code changes"]), ""]
 out += [
     "## Downloads",
-    "- **Windows:** `backline-practice.exe` (everything) or `backline-simple.exe` (no practice tools)",
+    "- **Windows:** `backline-setup.msi` installs it (Start Menu shortcut, updates itself), or run `backline-practice.exe` (everything) / `backline-simple.exe` (no practice tools) as they are",
     "- **Mac** (Apple Silicon and Intel): the `.tar.gz` files. Unpack, then right-click the app and choose Open"
     " the first time (it isn't signed).",
 ]

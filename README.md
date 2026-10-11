@@ -14,7 +14,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - In LINES, type any tempo, and pick a feel - quarters to sixteenths, quintuplets, sextuplets, septuplets, or any number of notes a beat from 1 to 16
 - Right-click a practice progression to add it to My progressions, or make it a tune with its lead sheet in the key you picked
 - The practice tour now shows the CHORDS tab (strumming a chord), LINES (playing a line) and the lead sheet with the band playing a ii-V-I
-- Tidalite is now called Backline - your library, login, skins and settings move across by themselves
 - Tracks stream without being saved to disk; switch SAVING on under DISK to keep them
 - LINES under PRACTICE - Slonimsky's Diary (lines from Slonimsky's system, or a pattern book you add) and scales in intervals, in notation and tab, looped, counted
 - Practice progressions under TUNES - fold open a group, pick a key, hear it, or send it to the lead sheet for the band
@@ -185,8 +184,7 @@ FULLSCREEN fills the screen. LIKE hearts the song.
 ## Diagnostics
 
 LOG in the library window shows what the app is doing; COPY LOG puts it on the clipboard.
-Everything is also saved in `%APPDATA%\backline\log.txt`. Your login lives in `%APPDATA%\backline\session.json`
-(migrated automatically from the old `tidalfast` folder).
+Everything is also saved in `%APPDATA%\backline\log.txt`. Your login lives in `%APPDATA%\backline\session.json`.
 
 ## Build it yourself
 

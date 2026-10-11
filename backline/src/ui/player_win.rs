@@ -605,11 +605,12 @@ impl App {
                                 Some(c) if i < c => RowState::Played,
                                 _ => RowState::Normal,
                             };
+                            let queued = self.queued(i);
                             let r = list_row(
                                 ui,
                                 i,
                                 Some(i + 1),
-                                || format!("{} - {}", t.artists_text(), t.title),
+                                || format!("{}{} - {}", if queued { "QUEUED  " } else { "" }, t.artists_text(), t.title),
                                 || fmt_time(t.duration),
                                 state,
                                 true,
@@ -636,6 +637,7 @@ impl App {
                                         acts.push(Action::PlayIndex(i));
                                         ui.close_menu();
                                     }
+                                    queue_moves(ui, acts, i, cur);
                                     if PRACTICE && menu_item(ui, "Add to a tune...") {
                                         acts.push(Action::PickTune(t.clone()));
                                         ui.close_menu();
@@ -708,5 +710,27 @@ impl App {
                 );
             });
         });
+    }
+}
+
+/// In a queue's right-click menu: move a song up to play next, or behind the songs you queued (not the one playing,
+/// nor ones already played).
+pub(crate) fn queue_moves(ui: &mut egui::Ui, acts: &mut Vec<Action>, i: usize, cur: Option<usize>) {
+    if cur.is_some_and(|c| i > c) {
+        if menu_item(ui, "Play next") {
+            acts.push(Action::QueueNext(i));
+            ui.close_menu();
+        }
+        if menu_item(ui, "Add to queue (after the songs you queued)") {
+            acts.push(Action::QueueLater(i));
+            ui.close_menu();
+        }
+    }
+}
+
+impl App {
+    /// A song you queued yourself (Play next / Add to queue), waiting to play.
+    pub(crate) fn queued(&self, i: usize) -> bool {
+        self.cur.is_some_and(|c| i > c && i <= c + self.q_manual)
     }
 }

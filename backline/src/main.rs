@@ -287,6 +287,9 @@ enum Action {
     ToggleLyrics,
     ToggleFullscreen,
     ToggleLike(Track),
+    /// move a song in the queue to play right after the one playing / after the songs you queued
+    QueueNext(usize),
+    QueueLater(usize),
     MoveQueue(usize, usize),
     Skin,
     SkinSet(usize),
@@ -2241,6 +2244,9 @@ struct App {
 
     liked: HashSet<i64>,
     q_drag: Option<usize>,
+    /// how many songs right after the one playing you queued yourself (Play next / Add to queue): they play before
+    /// the rest of the album, playlist or radio, and new ones you add go after them
+    q_manual: usize,
     sleep_at: Option<Instant>,
     sleep_mins: u32,
     mini: bool,
@@ -2722,6 +2728,7 @@ impl App {
             lyric_free: 0.0,
             liked: HashSet::new(),
             q_drag: None,
+            q_manual: 0,
             sleep_at: None,
             sleep_mins: 0,
             mini: false,
@@ -3609,6 +3616,10 @@ impl App {
 
     fn play_index(&mut self, i: usize) {
         let Some(t) = self.queue.get(i).cloned() else { return };
+        self.q_manual = match self.cur {
+            Some(c) if i == c + 1 => self.q_manual.saturating_sub(1),
+            _ => 0,
+        };
         self.cur = Some(i);
         self.on_track_change(&t);
         self.q_scroll = true;
@@ -4114,6 +4125,8 @@ impl App {
             }
             Action::Forward => self.hist_go(false),
             Action::Play(tracks, i) => {
+                // a new list: the songs you queued by hand go with the old one
+                self.q_manual = 0;
                 if tracks.is_empty() {
                     return;
                 }
@@ -4152,6 +4165,7 @@ impl App {
                 if self.cur.is_none() {
                     self.play_index(0);
                 } else {
+                    self.q_manual += 1;
                     self.refresh_prefetch();
                 }
             }
@@ -4159,9 +4173,18 @@ impl App {
                 if let Some(o) = self.orig_queue.as_mut() {
                     o.push(t.clone());
                 }
-                Arc::make_mut(&mut self.queue).push(t);
-                if self.cur.is_none() {
-                    self.play_index(0);
+                match self.cur {
+                    // after the songs you queued, before the rest of the album, playlist or radio
+                    Some(c) => {
+                        let at = (c + 1 + self.q_manual).min(self.queue.len());
+                        Arc::make_mut(&mut self.queue).insert(at, t);
+                        self.q_manual += 1;
+                        self.refresh_prefetch();
+                    }
+                    None => {
+                        Arc::make_mut(&mut self.queue).push(t);
+                        self.play_index(0);
+                    }
                 }
             }
             Action::Remove(i) => {
@@ -4182,6 +4205,7 @@ impl App {
                 self.refresh_prefetch();
             }
             Action::ClearQueue => {
+                self.q_manual = 0;
                 if let Some(t) = self.cur_track() {
                     self.queue = Arc::new(vec![t]);
                     self.cur = Some(0);
@@ -4327,11 +4351,37 @@ impl App {
                 });
                 self.set_note(if like { "ADDED TO MY TRACKS" } else { "REMOVED FROM MY TRACKS" });
             }
+            Action::QueueNext(i) => {
+                if let Some(c) = self.cur {
+                    let inside = i > c && i <= c + self.q_manual;
+                    self.apply(Action::MoveQueue(i, c + 1));
+                    if !inside {
+                        self.q_manual += 1;
+                    }
+                }
+            }
+            Action::QueueLater(i) => {
+                if let Some(c) = self.cur {
+                    let q = self.q_manual;
+                    // already among the ones you queued: it just goes to the back of them
+                    let inside = i > c && i <= c + q;
+                    self.apply(Action::MoveQueue(i, c + 1 + q));
+                    if !inside {
+                        self.q_manual += 1;
+                    }
+                }
+            }
             Action::MoveQueue(from, ins) => {
                 let n = self.queue.len();
                 if from >= n {
                     return;
                 }
+                // the song playing stays put, and nothing goes above it (as in Tidal)
+                let ins = match self.cur {
+                    Some(c) if from <= c => return,
+                    Some(c) => ins.max(c + 1),
+                    None => ins,
+                };
                 let ins = ins.min(n);
                 let to = if ins > from { ins - 1 } else { ins };
                 if to == from {
@@ -5052,8 +5102,6 @@ fn setup_style(ctx: &egui::Context) {
 }
 
 fn main() -> eframe::Result<()> {
-    // the settings folder from when the app had its old name comes across before anything reads or writes it
-    api::migrate_config();
     std::panic::set_hook(Box::new(|info| {
         let loc = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
         let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {

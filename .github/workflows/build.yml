@@ -45,17 +45,19 @@ jobs:
           if [ "${{ matrix.os_name }}" = "windows" ]; then
             cargo build --release ${{ matrix.flags }}
             cp target/release/backline.exe "$out/backline-${{ matrix.flavor }}.exe"
-            # the app used to be called Tidalite: older copies update from files with the old name
-            cp target/release/backline.exe "$out/tidalite-${{ matrix.flavor }}.exe"
+            # the installer (practice edition): per-user, so the app can keep updating itself where it lands
+            if [ "${{ matrix.flavor }}" = "practice" ]; then
+              dotnet tool install --global wix --version 4.0.5
+              export PATH="$PATH:$USERPROFILE/.dotnet/tools"
+              wix build installer/backline.wxs -arch x64                 -d Exe="$(cygpath -w "$PWD/target/release/backline.exe")"                 -d Icon="$(cygpath -w "$PWD/icon.ico")"                 -d Version="9.0.${{ github.run_number }}"                 -o "$(cygpath -w "$out/backline-setup.msi")"
+            fi
           else
             # one app that runs on both Apple Silicon and Intel Macs
             cargo build --release ${{ matrix.flags }} --target aarch64-apple-darwin
             cargo build --release ${{ matrix.flags }} --target x86_64-apple-darwin
             lipo -create -output "$out/backline" target/aarch64-apple-darwin/release/backline target/x86_64-apple-darwin/release/backline
             chmod +x "$out/backline"
-            (cd "$out" && tar -czf "backline-${{ matrix.flavor }}-mac.tar.gz" backline)
-            # older copies (when it was called Tidalite) look for this file holding a program named tidalite
-            (cd "$out" && mv backline tidalite && tar -czf "tidalite-${{ matrix.flavor }}-mac.tar.gz" tidalite && rm tidalite)
+            (cd "$out" && tar -czf "backline-${{ matrix.flavor }}-mac.tar.gz" backline && rm backline)
           fi
       - uses: actions/upload-artifact@v6
         with:

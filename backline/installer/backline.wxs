@@ -1,0 +1,39 @@
+<!--
+  Backline's Windows installer (WiX 4). Per-user: it installs to %LOCALAPPDATA%\Programs\Backline without asking
+  for admin rights, so Backline can keep updating itself there. Adds a Start Menu shortcut and an entry under
+  Installed apps, and a newer installer replaces an older install.
+  Built by CI:  wix build backline.wxs -arch x64 -d Exe=<backline.exe> -d Icon=<icon.ico> -d Version=9.0.<build>
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Backline" Manufacturer="Backline" Version="$(var.Version)" Language="1033"
+           UpgradeCode="e94ca725-49ad-42a5-854d-7b7ad628f131" Scope="perUser" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Backline is already installed." AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="BacklineIcon" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="BacklineIcon" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Backline" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="Backline">
+      <Component Id="App" Directory="INSTALLFOLDER" Guid="95d43fab-f030-4399-87cd-76c0e91bf4f1">
+        <File Id="BacklineExe" Source="$(var.Exe)" Name="backline.exe" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\Backline" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <!-- what the self-updater leaves beside the program goes on uninstall too -->
+        <RemoveFile Id="RemoveNew" Directory="INSTALLFOLDER" Name="backline.new" On="uninstall" />
+        <RemoveFile Id="RemoveOld" Directory="INSTALLFOLDER" Name="backline.old" On="uninstall" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+      <Component Id="StartMenu" Directory="ProgramMenuFolder" Guid="1a40c06c-e015-4188-9741-bad0dc4afa35">
+        <Shortcut Id="StartShortcut" Name="Backline" Description="A retro player, made for practice"
+                  Target="[INSTALLFOLDER]backline.exe" WorkingDirectory="INSTALLFOLDER" Icon="BacklineIcon" />
+        <RegistryValue Root="HKCU" Key="Software\Backline" Name="shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </Feature>
+  </Package>
+</Wix>

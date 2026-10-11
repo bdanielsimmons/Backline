@@ -459,24 +459,66 @@ impl App {
                             para(ui, "Nothing queued. Play a song or right-click one: Add to queue.", pal().ink2);
                         }
                         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                            let mut rects: Vec<(usize, Rect)> = Vec::new();
                             for (i, t) in queue.iter().enumerate() {
                                 let state = match cur {
                                     Some(c) if c == i => RowState::Playing,
                                     Some(c) if i < c => RowState::Played,
                                     _ => RowState::Normal,
                                 };
+                                let queued = self.queued(i);
                                 let r = list_row(
                                     ui,
                                     i,
                                     Some(i + 1),
-                                    || format!("{} - {}", t.artists_text(), t.title),
+                                    || format!("{}{} - {}", if queued { "QUEUED  " } else { "" }, t.artists_text(), t.title),
                                     || fmt_time(t.duration),
                                     state,
-                                    false,
+                                    true,
                                     cache::has(t.id),
                                 );
-                                if r.is_some_and(|r| r.clicked()) {
+                                let Some(r) = r else { continue };
+                                rects.push((i, r.rect));
+                                if r.drag_started() {
+                                    self.q_drag = Some(i);
+                                }
+                                if r.clicked() {
                                     acts.push(Action::PlayIndex(i));
+                                }
+                                let link = crate::track_link(t, self.ext_of(t.id).as_ref());
+                                r.context_menu(|ui| {
+                                    crate::player_win::queue_moves(ui, acts, i, cur);
+                                    crate::link_item(ui, acts, link.clone());
+                                    if cur != Some(i) && crate::menu_item(ui, "Remove from queue") {
+                                        acts.push(Action::Remove(i));
+                                        ui.close_menu();
+                                    }
+                                });
+                            }
+                            // drag to reorder: a line where it will land, moved on release
+                            if let Some(from) = self.q_drag {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                let released = ui.input(|i| i.pointer.any_released());
+                                if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
+                                    let ins = rects
+                                        .iter()
+                                        .find(|(_, rc)| pp.y < rc.center().y)
+                                        .map(|(i, rc)| (*i, rc.min.y))
+                                        .or_else(|| rects.last().map(|(i, rc)| (*i + 1, rc.max.y)));
+                                    if let Some((ins_i, y)) = ins {
+                                        let x = ui.min_rect();
+                                        ui.painter().rect_filled(
+                                            Rect::from_min_size(Pos2::new(x.min.x, y - 1.0), Vec2::new(x.width(), 2.0)),
+                                            0.0,
+                                            pal().bar_txt,
+                                        );
+                                        if released {
+                                            acts.push(Action::MoveQueue(from, ins_i));
+                                        }
+                                    }
+                                }
+                                if released || !ui.input(|i| i.pointer.any_down()) {
+                                    self.q_drag = None;
                                 }
                             }
                         });

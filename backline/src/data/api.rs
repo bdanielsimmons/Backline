@@ -34,54 +34,6 @@ pub fn config_dir() -> PathBuf {
     dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("backline")
 }
 
-/// Bring everything over from the app's old names: the whole "tidalite" folder (library, login, skins, saved tracks,
-/// the pattern book) is moved to "backline", and the paths saved inside it follow; from the older "tidalfast"
-/// folder only the login is carried over.
-pub fn migrate_config() {
-    if std::env::var_os("BACKLINE_HOME").is_some() {
-        return;
-    }
-    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let new = config_dir();
-    let old = base.join("tidalite");
-    if old.is_dir() && !new.join("library.json").exists() {
-        // everything in the old folder moves across (the new one may already hold a log line or two)
-        let _ = std::fs::create_dir_all(&new);
-        if let Ok(rd) = std::fs::read_dir(&old) {
-            for e in rd.flatten() {
-                let to = new.join(e.file_name());
-                if !to.exists() {
-                    let _ = std::fs::rename(e.path(), &to);
-                }
-            }
-        }
-        let _ = std::fs::remove_dir(&old); // only goes if it is now empty
-                                           // settings that point at files inside the folder (skins, sounds) point at the new one; in JSON a Windows
-                                           // path's backslashes are written doubled
-        if let Ok(rd) = std::fs::read_dir(&new) {
-            for e in rd.flatten() {
-                let p = e.path();
-                if p.extension().is_some_and(|x| x == "json") {
-                    if let Ok(t) = std::fs::read_to_string(&p) {
-                        let moved = t.replace("\\\\tidalite\\\\", "\\\\backline\\\\").replace("/tidalite/", "/backline/");
-                        if moved != t {
-                            let _ = std::fs::write(&p, moved);
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    let older = base.join("tidalfast");
-    if !new.join("session.json").exists() {
-        let _ = std::fs::create_dir_all(&new);
-        for f in ["session.json", "credentials.json"] {
-            let _ = std::fs::copy(older.join(f), new.join(f));
-        }
-    }
-}
-
 /// Append a line to %APPDATA%\backline\log.txt (handy when something won't play).
 static LOG_RING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -414,7 +366,6 @@ pub struct Api {
 
 impl Api {
     pub fn new() -> Api {
-        migrate_config();
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(30))
             .user_agent("Mozilla/5.0 (backline)")
