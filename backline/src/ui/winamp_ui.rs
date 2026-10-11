@@ -1455,7 +1455,7 @@ impl App {
             h.context_menu(|ui| {
                 crate::player_win::queue_moves(ui, acts, i, cur);
                 // the same as every song's menu: album / artist, My Tracks, tunes, playlists (Backline and Tidal)
-                crate::song_items(ui, acts, &tr, liked, tidal, true);
+                crate::song_items(ui, acts, &tr, liked, tidal);
                 link_item(ui, acts, link.clone());
                 if menu_item(ui, "Remove from the queue") {
                     acts.push(Action::Remove(i));

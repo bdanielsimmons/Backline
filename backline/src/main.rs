@@ -2018,7 +2018,7 @@ fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, lik
                 acts.push(Action::Play(tracks.to_vec(), i));
             }
             r.context_menu(|ui| {
-                song_items(ui, acts, t, liked.contains(&t.id), true, false);
+                song_items(ui, acts, t, liked.contains(&t.id), true);
                 link_item(ui, acts, track_link(t, None));
             });
         }
@@ -2039,16 +2039,15 @@ fn track_link(t: &Track, ext: Option<&store::Ext>) -> Option<String> {
 
 /// What a song's right-click menu offers wherever the song is shown: play it next or later, go to its album or
 /// artist, keep it in My Tracks, put it in a tune or a playlist. `queued`: it is in the queue already.
-pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, liked: bool, tidal: bool, queued: bool) {
-    if !queued {
-        if menu_item(ui, "Play next") {
-            acts.push(Action::PlayNext(t.clone()));
-            ui.close_menu();
-        }
-        if menu_item(ui, "Add to queue") {
-            acts.push(Action::Enqueue(t.clone()));
-            ui.close_menu();
-        }
+pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, liked: bool, tidal: bool) {
+    // a new copy of the song each time, even from the queue itself
+    if menu_item(ui, "Play next") {
+        acts.push(Action::PlayNext(t.clone()));
+        ui.close_menu();
+    }
+    if menu_item(ui, "Add to queue") {
+        acts.push(Action::Enqueue(t.clone()));
+        ui.close_menu();
     }
     goto_items(ui, acts, t, tidal);
     if menu_item(ui, if liked { "Remove from My Tracks" } else { "Add to My Tracks" }) {
@@ -2377,8 +2376,10 @@ struct App {
     /// how many songs right after the one playing you queued yourself (Play next / Add to queue): they play before
     /// the rest of the album, playlist or radio, and new ones you add go after them
     q_manual: usize,
-    /// songs you added (PLAY NEXT / ADD TO QUEUE): they leave the queue once playing moves on past them
-    q_added: HashSet<i64>,
+    /// the copies you added (PLAY NEXT / ADD TO QUEUE), by their own number: they leave the queue once playing
+    /// moves on past them; the last number given out
+    q_added: HashSet<u64>,
+    q_next: u64,
     /// a song you queued leaves the queue once playing moves on past it (Preferences)
     q_drop: bool,
     sleep_at: Option<Instant>,
@@ -2964,6 +2965,7 @@ impl App {
             q_manual: 0,
             q_drop: true,
             q_added: HashSet::new(),
+            q_next: 0,
             sleep_at: None,
             sleep_mins: 0,
             mini: false,
@@ -3926,10 +3928,10 @@ impl App {
         // the next song in line (not a jump): one fewer of your queued songs ahead
         let next_in_line = self.cur.is_some_and(|c| i == c + 1);
         if let Some(c) = self.cur.filter(|c| i > *c && self.q_drop) {
-            if let Some(id) = self.queue.get(c).map(|t| t.id).filter(|id| self.q_added.remove(id)) {
+            if let Some(q) = self.queue.get(c).map(|t| t.qid).filter(|q| *q != 0 && self.q_added.remove(q)) {
                 Arc::make_mut(&mut self.queue).remove(c);
                 if let Some(o) = self.orig_queue.as_mut() {
-                    if let Some(k) = o.iter().position(|t| t.id == id) {
+                    if let Some(k) = o.iter().position(|t| t.qid == q) {
                         o.remove(k);
                     }
                 }
@@ -4471,7 +4473,10 @@ impl App {
                 self.play_index(0);
             }
             Action::PlayIndex(i) => self.play_index(i),
-            Action::PlayNext(t) => {
+            Action::PlayNext(mut t) => {
+                // its own copy, even when the song is in the queue already
+                self.q_next += 1;
+                t.qid = self.q_next;
                 let at = self.cur.map(|c| c + 1).unwrap_or(0).min(self.queue.len());
                 // keep the un-shuffled copy in step (right after the current track)
                 let cur_id = self.cur_track().map(|c| c.id);
@@ -4479,7 +4484,7 @@ impl App {
                     let p = cur_id.and_then(|id| o.iter().position(|x| x.id == id)).map(|p| p + 1).unwrap_or(o.len());
                     o.insert(p.min(o.len()), t.clone());
                 }
-                self.q_added.insert(t.id);
+                self.q_added.insert(t.qid);
                 Arc::make_mut(&mut self.queue).insert(at, t);
                 if self.cur.is_none() {
                     self.play_index(0);
@@ -4488,8 +4493,10 @@ impl App {
                     self.refresh_prefetch();
                 }
             }
-            Action::Enqueue(t) => {
-                self.q_added.insert(t.id);
+            Action::Enqueue(mut t) => {
+                self.q_next += 1;
+                t.qid = self.q_next;
+                self.q_added.insert(t.qid);
                 if let Some(o) = self.orig_queue.as_mut() {
                     o.push(t.clone());
                 }
@@ -4696,12 +4703,7 @@ impl App {
                 if from >= n {
                     return;
                 }
-                // the song playing stays put, and nothing goes above it (as in Tidal)
-                let ins = match self.cur {
-                    Some(c) if from <= c => return,
-                    Some(c) => ins.max(c + 1),
-                    None => ins,
-                };
+                // anywhere, above the song playing too (it keeps playing; its place in the list moves)
                 let ins = ins.min(n);
                 let to = if ins > from { ins - 1 } else { ins };
                 if to == from {

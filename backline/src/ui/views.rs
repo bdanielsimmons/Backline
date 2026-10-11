@@ -574,7 +574,7 @@ impl App {
                 }
                 let liked = self.liked.contains(&e.id);
                 r.context_menu(|ui| {
-                    crate::song_items(ui, acts, &e.to_track(), liked, false, false);
+                    crate::song_items(ui, acts, &e.to_track(), liked, false);
                     if menu_item(ui, "Edit info...") {
                         acts.push(Action::EditInfo(e.id, e.title.clone(), e.artist.clone()));
                         ui.close_menu();
@@ -1092,7 +1092,7 @@ impl App {
                         acts.push(Action::PlaySaved(v.clone(), None));
                         ui.close_menu();
                     }
-                    crate::song_items(ui, acts, &t, liked, tidal, false);
+                    crate::song_items(ui, acts, &t, liked, tidal);
                     if k > 0 && menu_item(ui, "Move up") {
                         acts.push(Action::PlaylistMove(pi, k, -1));
                         ui.close_menu();
@@ -1375,7 +1375,7 @@ impl App {
                         ui.close_menu();
                     }
                     let tidal = self.ext_of(vtracks[vi].id).is_none();
-                    crate::song_items(ui, acts, &vtracks[vi], liked, tidal, false);
+                    crate::song_items(ui, acts, &vtracks[vi], liked, tidal);
                     crate::link_item(ui, acts, crate::track_link(&vtracks[vi], self.ext_of(vtracks[vi].id).as_ref()));
                     if menu_item(ui, "Remove from this tune") {
                         acts.push(Action::RemoveVersion(i, vi));
@@ -1451,7 +1451,7 @@ impl App {
                             acts.push(Action::AddToTune(i, t.clone()));
                             ui.close_menu();
                         }
-                        crate::song_items(ui, acts, t, liked, true, false);
+                        crate::song_items(ui, acts, t, liked, true);
                     });
                 }
             }
@@ -1544,7 +1544,7 @@ impl App {
                 }
                 let (liked, tidal) = (self.liked.contains(&v.id), v.kind == "tidal");
                 r.context_menu(|ui| {
-                    crate::song_items(ui, acts, &v.to_track(), liked, tidal, false);
+                    crate::song_items(ui, acts, &v.to_track(), liked, tidal);
                 });
             }
             let loops = self.store.sections.get(id).cloned().unwrap_or_default();
@@ -1657,7 +1657,7 @@ impl App {
                         acts.push(Action::PlaySaved(v.clone(), None));
                         ui.close_menu();
                     }
-                    crate::song_items(ui, acts, &v.to_track(), liked, v.kind == "tidal", false);
+                    crate::song_items(ui, acts, &v.to_track(), liked, v.kind == "tidal");
                 }
                 if menu_item(ui, "Forget this loop") {
                     acts.push(Action::ForgetLoop(*id, *i));

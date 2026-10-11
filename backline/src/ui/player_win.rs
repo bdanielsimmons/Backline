@@ -163,7 +163,7 @@ impl App {
             let tr = ui.interact(tb, ui.id().with("title_menu"), Sense::click());
             let liked = self.liked.contains(&t.id);
             tr.tip("Right-click: album, artist, radio, credits, My Tracks, playlists").context_menu(|ui| {
-                crate::song_items(ui, acts, &t, liked, true, true);
+                crate::song_items(ui, acts, &t, liked, true);
             });
         }
 
@@ -645,7 +645,7 @@ impl App {
                                         ui.close_menu();
                                     }
                                     queue_moves(ui, acts, i, cur);
-                                    crate::song_items(ui, acts, &t, liked, tidal, true);
+                                    crate::song_items(ui, acts, &t, liked, tidal);
                                     link_item(ui, acts, link.clone());
                                     if cur != Some(i) && menu_item(ui, "Remove from queue") {
                                         acts.push(Action::Remove(i));
@@ -720,12 +720,18 @@ impl App {
 /// nor ones already played).
 pub(crate) fn queue_moves(ui: &mut egui::Ui, acts: &mut Vec<Action>, i: usize, cur: Option<usize>) {
     if cur.is_some_and(|c| i > c) {
-        if menu_item(ui, "Play next") {
+        if menu_item(ui, "Move: play it next") {
             acts.push(Action::QueueNext(i));
             ui.close_menu();
         }
-        if menu_item(ui, "Add to queue (after the songs you queued)") {
+        if menu_item(ui, "Move: after the songs you queued") {
             acts.push(Action::QueueLater(i));
+            ui.close_menu();
+        }
+    }
+    if let Some(c) = cur.filter(|c| i != *c) {
+        if menu_item(ui, "Move: above the song playing") {
+            acts.push(Action::MoveQueue(i, c));
             ui.close_menu();
         }
     }

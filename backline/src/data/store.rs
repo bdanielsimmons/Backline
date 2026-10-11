@@ -62,6 +62,7 @@ impl Version {
             album: self.album.clone(),
             cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
+            qid: 0,
         }
     }
 }
@@ -178,6 +179,7 @@ impl Ext {
             album: String::new(),
             cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
+            qid: 0,
         }
     }
 

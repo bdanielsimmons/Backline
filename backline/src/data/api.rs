@@ -73,6 +73,9 @@ pub struct Track {
     pub album: String,
     pub cover: String,
     pub duration: f32,
+    /// a copy you added to the queue (Play next / Add to queue) has its own number, so it can leave the queue
+    /// once played without taking the playlist's own copy with it; 0 for everything else
+    pub qid: u64,
 }
 
 impl Track {
@@ -242,6 +245,7 @@ fn parse_track(v: &Value) -> Option<Track> {
         album: t["album"]["title"].as_str().unwrap_or("").to_string(),
         cover: t["album"]["cover"].as_str().unwrap_or("").to_string(),
         duration: t["duration"].as_f64().unwrap_or(0.0) as f32,
+        qid: 0,
     })
 }
 
