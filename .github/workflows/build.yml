@@ -50,7 +50,6 @@ jobs:
               dotnet tool install --global wix --version 4.0.5
               export PATH="$PATH:$USERPROFILE/.dotnet/tools"
               wix extension add -g WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
-              export PATH="$PATH:$USERPROFILE/.dotnet/tools"
               wix build installer/backline.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext                 -d Exe="$(cygpath -w "$PWD/target/release/backline.exe")"                 -d Icon="$(cygpath -w "$PWD/icon.ico")"                 -d Version="9.0.${{ github.run_number }}"                 -o "$(cygpath -w "$out/backline-setup.msi")"
               # WiX also writes a debugging file (.wixpdb) next to the installer: nobody needs it, so it isn't published
               rm -f "$out"/*.wixpdb
