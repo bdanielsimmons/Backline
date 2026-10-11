@@ -539,6 +539,7 @@ impl App {
         for (i, e) in list.iter().enumerate() {
             let state = if playing == Some(e.id) { RowState::Playing } else { RowState::Normal };
             let stored = if yt { cache::has(e.id) } else { true };
+            crate::row_heart(self.liked.contains(&e.id));
             let r = list_row(
                 ui,
                 i,
@@ -557,6 +558,9 @@ impl App {
                 false,
                 stored,
             );
+            if crate::heart_clicked() {
+                acts.push(Action::ToggleLike(e.to_track()));
+            }
             if let Some(r) = r {
                 if r.clicked() {
                     let tracks: Vec<Track> = list.iter().map(|x: &Ext| x.to_track()).collect();
@@ -1011,6 +1015,7 @@ impl App {
         for (k, v) in items.iter().enumerate() {
             let state = if playing == Some(v.id) { RowState::Playing } else { RowState::Normal };
             let stored = v.kind == "file" || cache::has(v.id);
+            crate::row_heart(self.liked.contains(&v.id));
             let r = list_row(
                 ui,
                 k,
@@ -1021,6 +1026,9 @@ impl App {
                 false,
                 stored,
             );
+            if crate::heart_clicked() {
+                acts.push(Action::ToggleLike(v.to_track()));
+            }
             if let Some(r) = r {
                 if r.clicked() {
                     acts.push(Action::Play(tracks.clone(), k));

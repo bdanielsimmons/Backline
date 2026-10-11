@@ -1392,7 +1392,18 @@ impl App {
                 format!("{:>w$}. {} - {}", i + 1, tr.artists_text(), tr.title, w = digits)
             };
             let dur = fmt_time(tr.duration);
-            let dw = sans_text(&clip, Pos2::new(r.max.x - 4.0, r.center().y), Align::Max, &dur, size, 80.0, col);
+            let mut dw = sans_text(&clip, Pos2::new(r.max.x - 4.0, r.center().y), Align::Max, &dur, size, 80.0, col);
+            // a heart left of the length: like / unlike from the playlist
+            let hr = Rect::from_min_size(
+                Pos2::new(r.max.x - 4.0 - dw - 4.0 - crate::HEART_W, r.min.y),
+                Vec2::new(crate::HEART_W, r.height()),
+            );
+            if list.contains_rect(hr) {
+                if crate::draw_heart(ui, hr, self.liked.contains(&tr.id), h.hovered(), id.with(("heart", i))) {
+                    acts.push(Action::ToggleLike(tr.clone()));
+                }
+                dw += crate::HEART_W + 4.0;
+            }
             sans_text(&clip, Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &label, size, r.width() - dw - 16.0, col);
             if h.clicked() {
                 acts.push(Action::PlayIndex(i));

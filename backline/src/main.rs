@@ -1130,6 +1130,8 @@ fn list_row(
     drag: bool,
     stored: bool,
 ) -> Option<egui::Response> {
+    // taken even when the row is off screen, so it never lands on the next one
+    let heart = ROW_HEART.with(|h| h.take());
     let w = ui.available_width();
     let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, ROW_H));
     if !ui.is_rect_visible(probe) {
@@ -1175,6 +1177,19 @@ fn list_row(
         pixmap(p, Pos2::new(rect.max.x - 10.0 - rw - 16.0, cy - 4.0), 2.0, &CHECK[..], fg2);
         rw += 16.0;
     }
+    // a heart, when the caller asked for one
+    let lraw = left();
+    let left_has_cells = lraw.contains('\t');
+    if let Some(liked) = heart {
+        let slot = if left_has_cells { rect.max.x - 10.0 - right_w() } else { rect.max.x - 10.0 - rw - HEART_W };
+        let hr = Rect::from_min_size(Pos2::new(slot, rect.min.y), Vec2::new(HEART_W, rect.height()));
+        if draw_heart(ui, hr, liked, resp.hovered(), ui.id().with(("heart", idx, rect.min.y as i32))) {
+            HEART_HIT.with(|h| h.set(true));
+        }
+        if !left_has_cells {
+            rw += HEART_W;
+        }
+    }
     let x0 = rect.min.x + 8.0;
     let mut tx = x0;
     if let Some(n) = num {
@@ -1185,8 +1200,7 @@ fn list_row(
         }
         tx = x0 + 44.0;
     }
-    let lraw = left();
-    if lraw.contains('\t') {
+    if left_has_cells {
         // cell layout shared with the column header
         let avail = (rect.max.x - 10.0 - right_w() - tx).max(40.0);
         let cw = col_widths(avail);
@@ -1804,7 +1818,49 @@ static COLS_CHANGED: AtomicBool = AtomicBool::new(false);
 
 /// Room kept on the right of a row for LENGTH (and KEY / BPM when shown).
 fn right_w() -> f32 {
-    80.0 + if col_on(3) { KB_W } else { 0.0 }
+    80.0 + HEART_W + if col_on(3) { KB_W } else { 0.0 }
+}
+
+/// the heart's slot in a track row, left of KEY / BPM and LENGTH
+const HEART_W: f32 = 24.0;
+
+thread_local! {
+    /// set just before `list_row` to give that row a heart (Some(liked)); a click on it is left in HEART_HIT
+    static ROW_HEART: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    static HEART_HIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Give the next `list_row` a heart: filled when the song is liked, a faint outline when not.
+fn row_heart(liked: bool) {
+    ROW_HEART.with(|h| h.set(Some(liked)));
+    HEART_HIT.with(|h| h.set(false));
+}
+
+/// Was the heart of the row just drawn clicked?
+fn heart_clicked() -> bool {
+    HEART_HIT.with(|h| h.replace(false))
+}
+
+/// A heart in `r`, clickable (like / unlike).
+fn draw_heart(ui: &egui::Ui, r: Rect, liked: bool, row_hot: bool, id: egui::Id) -> bool {
+    let resp = ui.interact(r, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = resp.tip(if liked { "In My Tracks - click to remove it" } else { "Add to My Tracks" });
+    let col = if liked {
+        Color32::from_rgb(235, 70, 90)
+    } else if resp.hovered() {
+        pal().ink
+    } else if row_hot {
+        pal().ink2
+    } else {
+        pal().dim.gamma_multiply(0.6)
+    };
+    let o = Pos2::new(r.center().x - 7.0, r.center().y - 6.0);
+    if liked || resp.hovered() {
+        pixmap(ui.painter(), o, 2.0, &HEART[..], col);
+    } else {
+        pixmap(ui.painter(), o, 2.0, &HEART_O[..], col);
+    }
+    resp.clicked()
 }
 
 fn col_on(i: usize) -> bool {
@@ -1896,6 +1952,7 @@ fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, lik
     col_header(ui, true);
     for (i, t) in tracks.iter().enumerate() {
         let state = if playing_id == Some(t.id) { RowState::Playing } else { RowState::Normal };
+        row_heart(liked.contains(&t.id));
         let r = list_row(
             ui,
             i,
@@ -1906,6 +1963,9 @@ fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, lik
             false,
             cache::has(t.id),
         );
+        if heart_clicked() {
+            acts.push(Action::ToggleLike(t.clone()));
+        }
         if let Some(r) = r {
             if r.clicked() {
                 acts.push(Action::Play(tracks.to_vec(), i));
@@ -5240,7 +5300,7 @@ mod tests {
             assert_eq!(w[2] > 0.0, bits & 2 == 2);
         }
         COLS.store(0b1000, Ordering::Relaxed);
-        assert_eq!(right_w(), 80.0 + KB_W, "room for KEY / BPM when shown");
+        assert_eq!(right_w(), 80.0 + HEART_W + KB_W, "room for the heart and KEY / BPM when shown");
         COLS.store(saved, Ordering::Relaxed);
     }
 

@@ -613,6 +613,7 @@ impl App {
                                 _ => RowState::Normal,
                             };
                             let queued = self.queued(i);
+                            row_heart(self.liked.contains(&t.id));
                             let r = list_row(
                                 ui,
                                 i,
@@ -623,6 +624,9 @@ impl App {
                                 true,
                                 cache::has(t.id),
                             );
+                            if heart_clicked() {
+                                acts.push(Action::ToggleLike(t.clone()));
+                            }
                             if let Some(r) = r {
                                 rects.push((i, r.rect));
                                 if r.drag_started() {
