@@ -71,6 +71,54 @@ impl Mix {
         }
     }
 
+    /// A plucked guitar string (Karplus-Strong): a short burst of noise - the pick - circulating in a delay line one
+    /// period long, softened a little each time round, so the highs die first as on a real string. Made from
+    /// nothing but arithmetic, so there are no recordings to license. `d` is how long it may ring (beats).
+    fn pluck(&mut self, t: f32, d: f32, midi: i32, vel: f32) {
+        let s = self.start(t);
+        let f = freq(midi);
+        // the averaging filter delays half a sample; the rest of the period is a whole and a fractional part
+        let total = RATE / f - 0.5;
+        let n = (total.floor() as usize).max(2);
+        let frac = total - n as f32;
+        let c = (1.0 - frac) / (1.0 + frac);
+        // the pick: noise, softened (a pick, not a harpsichord quill), struck a fifth of the way along the string
+        let mut burst = vec![0.0f32; n];
+        let mut lp = 0.0;
+        for b in burst.iter_mut() {
+            lp += 0.55 * (self.noise() - lp);
+            *b = lp;
+        }
+        let at = ((n as f32 * 0.2) as usize).max(1);
+        let mut line: Vec<f32> = (0..n).map(|k| burst[k] - if k >= at { burst[k - at] } else { 0.0 }).collect();
+        let mean = line.iter().sum::<f32>() / n as f32;
+        let peak = line.iter().fold(0.0f32, |a, x| a.max((x - mean).abs())).max(1e-6);
+        for x in line.iter_mut() {
+            *x = (*x - mean) / peak;
+        }
+        // low strings ring longer than high ones
+        let t60 = (4.0 - (midi - 40) as f32 * 0.06).clamp(1.2, 4.0);
+        let rho = 0.001f32.powf(1.0 / (f * t60));
+        let len = ((d * self.spb) as usize).clamp(1, (RATE * 4.5) as usize);
+        let fade = ((RATE * 0.06) as usize).min(len);
+        let (mut idx, mut prev, mut ax, mut ay, mut warm) = (0usize, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for i in 0..len {
+            let cur = line[idx];
+            let avg = 0.5 * (cur + prev) * rho;
+            prev = cur;
+            // an allpass for the fractional part, so every note is in tune
+            let y = c * avg + ax - c * ay;
+            ax = avg;
+            ay = y;
+            line[idx] = y;
+            idx = (idx + 1) % n;
+            // a touch of warmth, and a short fade where it is cut off
+            warm += 0.7 * (cur - warm);
+            let env = if len - i < fade { (len - i) as f32 / fade as f32 } else { 1.0 };
+            self.add(s, i, warm * env * 0.2 * vel * self.lv[1]);
+        }
+    }
+
     fn kick(&mut self, t: f32, vel: f32) {
         let s = self.start(t);
         let mut ph = 0.0f32;
@@ -761,7 +809,7 @@ pub fn chord_sound(midis: &[i32]) -> Vec<i16> {
     let mut mix = Mix::new(3.5, 60.0);
     for (j, m) in notes.iter().enumerate() {
         let at = 0.02 + j as f32 * 0.04;
-        mix.stab(at, 2.6 - at, &[*m], 1.0, 1.3);
+        mix.pluck(at, 3.4 - at, *m, 1.0);
     }
     mix.finish()
 }
@@ -774,7 +822,7 @@ pub fn sequence_sound(chords: &[Vec<i32>], gap: f32) -> Vec<i16> {
         notes.sort();
         for (j, m) in notes.iter().enumerate() {
             let at = k as f32 * gap + 0.02 + j as f32 * 0.03;
-            mix.stab(at, gap + 0.6, &[*m], 0.9, 1.6);
+            mix.pluck(at, gap + 0.6, *m, 0.9);
         }
     }
     mix.finish()
@@ -784,7 +832,9 @@ pub fn sequence_sound(chords: &[Vec<i32>], gap: f32) -> Vec<i16> {
 pub fn line_sound(notes: &[Vec<i32>], gap: f32) -> Vec<i16> {
     let mut mix = Mix::new(notes.len() as f32 * gap + 1.5, 60.0);
     for (k, n) in notes.iter().enumerate() {
-        mix.stab(k as f32 * gap + 0.02, gap * 1.4 + 0.12, n, 0.95, 2.2);
+        for m in n {
+            mix.pluck(k as f32 * gap + 0.02, gap * 1.1 + 0.08, *m, 0.95);
+        }
     }
     mix.finish()
 }
@@ -983,5 +1033,29 @@ mod tests {
         assert!((swing(2.5, true) - 2.667).abs() < 0.001);
         assert_eq!(swing(2.5, false), 2.5);
         assert!((freq(69) - 440.0).abs() < 0.01 && (freq(57) - 220.0).abs() < 0.01);
+    }
+}
+
+#[cfg(test)]
+mod pluck_tests {
+    use super::*;
+
+    /// The plucked string sounds the note asked for: its strongest repeat is one period of that pitch.
+    #[test]
+    fn pluck_in_tune() {
+        for midi in [40, 52, 64, 76] {
+            let mut mix = Mix::new(1.0, 60.0);
+            mix.pluck(0.0, 1.0, midi, 1.0);
+            let x = &mix.buf[4000..12000];
+            let want = RATE / freq(midi);
+            let best = (20..1200)
+                .max_by(|a, b| {
+                    let c = |lag: usize| x.iter().zip(&x[lag..]).map(|(p, q)| p * q).sum::<f32>();
+                    c(*a).partial_cmp(&c(*b)).unwrap()
+                })
+                .unwrap() as f32;
+            // the best lag is the period (or close to it, within a sample)
+            assert!((best - want).abs() < 1.5, "midi {}: lag {} want {}", midi, best, want);
+        }
     }
 }
