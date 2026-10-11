@@ -807,9 +807,6 @@ impl App {
         }
         self.semis = 0;
         self.stem_on = [true; 4];
-        if self.stem_data.as_ref().map(|d| d.0) != Some(t.id) {
-            self.stem_data = None;
-        }
         self.passes = 0;
         self.pending_seek = None;
         self.sel_anchor = None;
@@ -2108,11 +2105,11 @@ impl App {
                     return;
                 };
                 // what you hear: only the stems that are on, when the song has been split and some are off
-                let stems = self
-                    .stem_data
-                    .as_ref()
-                    .filter(|d| d.0 == t.id && self.stem_on.iter().any(|on| !on))
-                    .map(|d| (d.1.data.clone(), self.stem_on));
+                let stems = if self.stem_on.iter().any(|on| !on) && stems::have_stems(t.id) {
+                    stems::load(t.id).ok().map(|s| (s.data, self.stem_on))
+                } else {
+                    None
+                };
                 // a folder next to Backline, a name that sorts by date and says what it is
                 let dir = std::env::current_exe()
                     .ok()
@@ -2232,7 +2229,6 @@ impl App {
             Action::StemAll => self.apply_mix([true; 4]),
             Action::StemClear => {
                 let _ = std::fs::remove_dir_all(api::config_dir().join("stems"));
-                self.stem_data = None;
                 self.stem_on = [true; 4];
                 self.set_note("ALL STEMS DELETED");
             }
@@ -2350,19 +2346,15 @@ impl App {
             self.set_note("SPLIT THIS TRACK FIRST");
             return;
         }
-        if self.stem_data.as_ref().map(|d| d.0) != Some(t.id) {
-            match stems::load(t.id) {
-                Ok(s) => self.stem_data = Some((t.id, s)),
-                Err(e) => {
-                    self.set_err(format!("STEMS: {}", e));
-                    return;
-                }
+        // the four stems are read, mixed and let go: only the mix being played stays in memory
+        match stems::load(t.id) {
+            Ok(s) => {
+                let bytes = stems::mix_wav(&s, on);
+                drop(s);
+                self.player.send(Cmd::Swap(bytes, self.pos(), self.paused));
+                self.stem_on = on;
             }
-        }
-        if let Some((_, s)) = &self.stem_data {
-            let bytes = stems::mix_wav(s, on);
-            self.player.send(Cmd::Swap(bytes, self.pos(), self.paused));
-            self.stem_on = on;
+            Err(e) => self.set_err(format!("STEMS: {}", e)),
         }
     }
 

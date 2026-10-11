@@ -1620,6 +1620,8 @@ fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<Str
                 None => api.fetch(&real).ok(),
             };
             let img = bytes.and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
+                // covers are only ever drawn up to a few hundred pixels: kept small, not at the file's full size
+                let im = if im.width().max(im.height()) > 800 { im.thumbnail(800, 800) } else { im };
                 let im = if gray { im.grayscale() } else { im };
                 let rgba = im.to_rgba8();
                 let size = [rgba.width() as usize, rgba.height() as usize];
@@ -2453,7 +2455,6 @@ struct App {
     more: bool,
     /// stems: 0 idle, 1 downloading the tool, 2 splitting a track
     stem_busy: u8,
-    stem_data: Option<(i64, stems::Stems)>,
     stem_on: [bool; 4],
     /// focus timer: 0 idle, 1 focus block, 2 break
     pomo: u8,
@@ -2576,6 +2577,8 @@ struct App {
     rd_bpm_text: String,
     /// a duet shown as both staves
     rd_both: bool,
+    /// how far the music is magnified
+    rd_zoom: f32,
     cb_frets: [Option<u8>; 6],
     cb_name: String,
     vc_family: u8,
@@ -2994,7 +2997,6 @@ impl App {
             focus_mode: false,
             more: false,
             stem_busy: 0,
-            stem_data: None,
             stem_on: [true; 4],
             pomo: 0,
             pomo_end: None,
@@ -3093,6 +3095,7 @@ impl App {
             rd_ctx: None,
             rd_bpm_text: String::new(),
             rd_both: true,
+            rd_zoom: 1.0,
             cb_frets: [None; 6],
             cb_name: String::new(),
             vc_family: 4,

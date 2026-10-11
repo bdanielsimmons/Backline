@@ -39,9 +39,7 @@ pub fn chord_notes(name: &str) -> Option<ChordNotes> {
     if let Some(s) = c.seventh {
         steps.push(s);
     }
-    if let Some(e) = c.ext {
-        steps.push(e);
-    }
+    steps.extend(c.exts.iter().copied());
     let sharp = name.contains('#');
     let mut pcs: Vec<i32> = Vec::new();
     let mut named = Vec::new();
@@ -547,6 +545,14 @@ pub const FINDER_FAMILIES: [(&str, &[(&str, &str)]); 6] = [
             ("7b5", "7b5"),
             ("7#5", "7#5"),
             ("7b13", "7b13"),
+            ("13b9", "13b9"),
+            ("13#11", "13#11"),
+            ("9#11", "9#11"),
+            ("7b9b13", "7b9b13"),
+            ("7#9b13", "7#9b13"),
+            ("7#9#5", "7#9#5"),
+            ("7b5b9", "7b5b9"),
+            ("7b9#11", "7b9#11"),
         ],
     ),
     ("SUSPENDED", &[("SUS2", "sus2"), ("SUS4", "sus4"), ("7SUS4", "7sus4"), ("9SUS4", "9sus4")]),
@@ -1072,6 +1078,16 @@ mod tests {
     #[test]
     fn built_names() {
         let top = |notes: &[i32], bass: i32| super::suggestions(notes, Some(bass)).first().map(|s| s.key()).unwrap_or_default();
+        // the altered dominants spell all their colour notes: Eb13b9 = Eb G Db E C (the 5th left to the bass player)
+        let e = chord_notes("Eb13b9").unwrap();
+        for pc in [3, 7, 1, 4, 0] {
+            assert!(e.pcs.contains(&pc), "Eb13b9 lacks {}", pc);
+        }
+        assert!(!guitar_shapes(&e, &STANDARD).is_empty(), "no grip for Eb13b9");
+        let c = chord_notes("C7#9b13").unwrap();
+        for pc in [0, 4, 10, 3, 8] {
+            assert!(c.pcs.contains(&pc), "C7#9b13 lacks {}", pc);
+        }
         // G B F E Ab over G (the 13b9 grip: 3 x 3 4 5 4)
         assert_eq!(top(&[7, 11, 5, 4, 8], 7), "G13b9");
         assert_eq!(top(&[0, 4, 10, 3, 8], 0), "C7#9#5");

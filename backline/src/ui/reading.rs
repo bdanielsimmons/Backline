@@ -68,6 +68,49 @@ pub(crate) struct RNote {
     pub heads: Vec<Head>,
     pub dur: u16,
     pub tie: bool,
+    pub marks: Marks,
+}
+
+/// What is printed with a note besides the note: pick stroke, fingers, string, accents, slurs, and words over it.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Marks {
+    /// 1 a down-stroke, -1 an up-stroke
+    pub pick: i8,
+    /// a finger for each head, lowest first ('0' open, 'x' none)
+    pub fingers: String,
+    /// a circled string number
+    pub string: u8,
+    pub accent: bool,
+    pub stac: bool,
+    pub tenuto: bool,
+    pub fermata: bool,
+    pub slur_start: bool,
+    pub slur_end: bool,
+    /// words written over it (Ritard, a tempo, mf, pos V ...)
+    pub text: Vec<String>,
+}
+
+/// The marks in braces after a note: {d,f21,s2,>,ferm,stac,(,)}.
+fn parse_marks(s: &str) -> Option<Marks> {
+    let mut m = Marks::default();
+    for it in s.split(',').map(str::trim).filter(|x| !x.is_empty()) {
+        match it {
+            "d" => m.pick = 1,
+            "u" => m.pick = -1,
+            ">" => m.accent = true,
+            "stac" => m.stac = true,
+            "ten" => m.tenuto = true,
+            "ferm" => m.fermata = true,
+            "(" => m.slur_start = true,
+            ")" => m.slur_end = true,
+            _ if it.starts_with('f') && it.len() > 1 && it[1..].chars().all(|c| matches!(c, '0'..='4' | 'x')) => {
+                m.fingers = it[1..].to_string()
+            }
+            _ if it.starts_with('s') => m.string = it[1..].parse().ok().filter(|n| (1..=6).contains(n))?,
+            _ => return None,
+        }
+    }
+    Some(m)
 }
 
 /// One bar, and the repeat signs at its start and end.
@@ -83,10 +126,19 @@ pub(crate) struct Bar {
 pub(crate) struct Reading {
     pub bars: Vec<Bar>,
     pub beats: u16,
+    /// the note that gets a beat (4 a quarter, 2 a half in cut time, 8 an eighth)
+    pub den: u16,
     /// sharps (+) or flats (-) in the key signature
     pub sig: i32,
     /// the position it is read in (for the tab): where the first finger sits, 0 the 1st position
     pub pos: u8,
+}
+
+impl Reading {
+    /// How long a beat is, in note units (a quarter is BEAT).
+    pub(crate) fn beat_len(&self) -> u16 {
+        BEAT * 4 / self.den.max(1)
+    }
 }
 
 /// An exercise, solo or duet: its name and its parts (one, or two for a duet).
@@ -120,6 +172,9 @@ fn parse_pitch(s: &str) -> Option<Head> {
     let letter = "CDEFGAB".find(ch.next()?.to_ascii_uppercase())? as i32;
     let rest: String = ch.collect();
     let (acc, oct) = match rest.chars().next()? {
+        _ if rest.starts_with("bb") => (-2, &rest[2..]),
+        _ if rest.starts_with("##") => (2, &rest[2..]),
+        'x' => (2, &rest[1..]),
         '#' => (1, &rest[1..]),
         'b' => (-1, &rest[1..]),
         'n' => (0, &rest[1..]),
@@ -134,6 +189,10 @@ fn parse_pitch(s: &str) -> Option<Head> {
 /// One token of written music: C4q, F#4e., [C4E4G4]h, rq, D4h~ (tied on), E4t (a triplet eighth), G4T (a quarter-note
 /// triplet), C4s (sixteenth). w h q e s = whole, half, quarter, eighth, sixteenth; a dot after it adds half.
 fn parse_note(tok: &str) -> Option<RNote> {
+    let (tok, marks) = match tok.strip_suffix('}').and_then(|t| t.split_once('{')) {
+        Some((t, m)) => (t, parse_marks(m)?),
+        None => (tok, Marks::default()),
+    };
     let tie = tok.ends_with('~');
     let tok = tok.trim_end_matches('~');
     let dotted = tok.ends_with('.');
@@ -173,13 +232,19 @@ fn parse_note(tok: &str) -> Option<RNote> {
     } else {
         vec![parse_pitch(body)?]
     };
-    Some(RNote { heads, dur, tie })
+    Some(RNote { heads, dur, tie, marks })
 }
 
 /// Bars of written music: tokens split by | (a bar line), |: and :| (repeat signs).
 fn parse_music(text: &str) -> Result<Vec<Bar>, String> {
     let mut bars: Vec<Bar> = vec![Bar::default()];
+    // words (!Ritard, !mf) wait for the next note
+    let mut words: Vec<String> = Vec::new();
     for tok in text.split_whitespace() {
+        if let Some(w) = tok.strip_prefix('!').filter(|w| !w.is_empty()) {
+            words.push(w.replace('_', " "));
+            continue;
+        }
         match tok {
             "|" | "||" => bars.push(Bar::default()),
             "|:" => {
@@ -196,7 +261,11 @@ fn parse_music(text: &str) -> Result<Vec<Bar>, String> {
                 }
                 bars.push(Bar::default());
             }
-            t => bars.last_mut().unwrap().notes.push(parse_note(t).ok_or_else(|| format!("can't read '{}'", t))?),
+            t => {
+                let mut n = parse_note(t).ok_or_else(|| format!("can't read '{}'", t))?;
+                n.marks.text.append(&mut words);
+                bars.last_mut().unwrap().notes.push(n);
+            }
         }
     }
     bars.retain(|b| !b.notes.is_empty());
@@ -237,7 +306,7 @@ fn sig_of(key: &str) -> i32 {
 pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
     let mut lessons: Vec<Lesson> = Vec::new();
     let mut errs = Vec::new();
-    let (mut sig, mut pos, mut beats) = (0i32, 0u8, 4u16);
+    let (mut sig, mut pos, mut beats, mut den) = (0i32, 0u8, 4u16, 4u16);
     // the piece being read: (name, parts as (part name, music text))
     let mut piece: Option<(String, Vec<(String, String)>)> = None;
     let finish = |piece: &mut Option<(String, Vec<(String, String)>)>,
@@ -245,12 +314,12 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
                   errs: &mut Vec<String>,
                   sig,
                   pos,
-                  beats| {
+                  (beats, den)| {
         if let Some((name, parts)) = piece.take() {
             let mut out = Vec::new();
             for (pn, music) in parts {
                 match parse_music(&music) {
-                    Ok(bars) => out.push((pn, Reading { bars, beats, sig, pos })),
+                    Ok(bars) => out.push((pn, Reading { bars, beats, den, sig, pos })),
                     Err(e) => errs.push(format!("{}: {}", name, e)),
                 }
             }
@@ -267,7 +336,7 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
             continue;
         }
         if let Some(rest) = line.strip_prefix("@lesson") {
-            finish(&mut piece, &mut lessons, &mut errs, sig, pos, beats);
+            finish(&mut piece, &mut lessons, &mut errs, sig, pos, (beats, den));
             let rest = rest.trim();
             let (page, title) = rest.split_once(' ').unwrap_or((rest, ""));
             lessons.push(Lesson {
@@ -277,7 +346,7 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
                 ..Default::default()
             });
         } else if let Some(rest) = line.strip_prefix("@ex").or_else(|| line.strip_prefix("@duet")) {
-            finish(&mut piece, &mut lessons, &mut errs, sig, pos, beats);
+            finish(&mut piece, &mut lessons, &mut errs, sig, pos, (beats, den));
             piece = Some((rest.trim().to_string(), vec![("".to_string(), String::new())]));
         } else if let Some(rest) = line.strip_prefix("part ") {
             let (pn, music) = rest.split_once(':').unwrap_or((rest, ""));
@@ -301,7 +370,13 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
                     let n: u8 = p.trim().parse().unwrap_or(1);
                     pos = if n <= 1 { 0 } else { n };
                 } else if let Some(t) = set.strip_prefix("time ") {
-                    beats = t.trim().split('/').next().and_then(|b| b.parse().ok()).unwrap_or(4);
+                    let (b, d) = t.trim().split_once('/').unwrap_or((t.trim(), "4"));
+                    beats = b.trim().parse().unwrap_or(4);
+                    den = match d.trim() {
+                        "2" => 2,
+                        "8" => 8,
+                        _ => 4,
+                    };
                 } else if let Some(t) = set.strip_prefix("tempo ") {
                     if let Some(l) = lessons.last_mut() {
                         l.tempo = t.trim().parse().unwrap_or(72);
@@ -316,7 +391,7 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
             }
         }
     }
-    finish(&mut piece, &mut lessons, &mut errs, sig, pos, beats);
+    finish(&mut piece, &mut lessons, &mut errs, sig, pos, (beats, den));
     (lessons, errs)
 }
 
@@ -483,7 +558,7 @@ pub(crate) fn make_line(seed: u64, key: usize, pos: u8, level: usize, bars: usiz
         let mut notes = Vec::new();
         for (dur, rest) in bar {
             if rest {
-                notes.push(RNote { heads: Vec::new(), dur, tie: false });
+                notes.push(RNote { heads: Vec::new(), dur, tie: false, marks: Marks::default() });
                 continue;
             }
             if k > 0 {
@@ -499,12 +574,17 @@ pub(crate) fn make_line(seed: u64, key: usize, pos: u8, level: usize, bars: usiz
                     i = (i as i32 + step).clamp(0, avail.len() as i32 - 1) as usize;
                 }
             }
-            notes.push(RNote { heads: avail.get(i).map(|m| vec![head_of(*m, sharps)]).unwrap_or_default(), dur, tie: false });
+            notes.push(RNote {
+                heads: avail.get(i).map(|m| vec![head_of(*m, sharps)]).unwrap_or_default(),
+                dur,
+                tie: false,
+                marks: Marks::default(),
+            });
             k += 1;
         }
         out_bars.push(Bar { notes, ..Default::default() });
     }
-    Reading { bars: out_bars, beats, sig: KEYS[key].2, pos }
+    Reading { bars: out_bars, beats, den: 4, sig: KEYS[key].2, pos }
 }
 
 // ------------------------------------------------------------------ playing
@@ -544,7 +624,7 @@ fn play_order(r: &Reading) -> Vec<(usize, f32, f32, Vec<i32>)> {
     let mut tied = false;
     for b in order {
         for (j, n) in r.bars[b].notes.iter().enumerate() {
-            let d = n.dur as f32 / BEAT as f32;
+            let d = n.dur as f32 / r.beat_len() as f32;
             if tied {
                 if let Some(last) = out.last_mut() {
                     last.2 += d;
@@ -620,13 +700,38 @@ fn draw_rest(p: &egui::Painter, x: f32, bottom: f32, g: f32, dur: u16, col: Colo
 
 /// Draw a line of music on staves, as many bars to a row as fit. `lit` is the note sounding now (counted through
 /// the bars as written). With `tab` the tab is under each staff; with `names` the note names are.
-fn draw_reading(ui: &mut egui::Ui, r: &Reading, lit: Option<usize>, tab: bool, names: bool) {
-    draw_score(ui, &[(r, lit, "")], tab, names);
+fn draw_reading(ui: &mut egui::Ui, r: &Reading, lit: Option<usize>, tab: bool, names: bool, zoom: f32) {
+    draw_score(ui, &[(r, lit, "")], tab, names, zoom);
+}
+
+/// The score magnified by `zoom`: laid out at the width it will have once scaled, drawn on its own layer that is
+/// scaled up (so every line, head and mark grows together) and placed where it belongs on the page.
+fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab: bool, names: bool, zoom: f32) {
+    if (zoom - 1.0).abs() < 0.01 {
+        draw_score_at(ui, parts, tab, names);
+        return;
+    }
+    let origin = ui.cursor().min;
+    let w = ui.available_width().max(300.0);
+    let layer = egui::LayerId::new(ui.layer_id().order, ui.id().with("score_zoom"));
+    let tf = egui::emath::TSTransform::new(origin.to_vec2() * (1.0 - zoom), zoom);
+    ui.ctx().set_transform_layer(layer, tf);
+    ui.ctx().set_sublayer(ui.layer_id(), layer);
+    let clip = tf.inverse().mul_rect(ui.clip_rect());
+    let h = ui
+        .with_layer_id(layer, |ui| {
+            let mut c = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(origin, Vec2::new(w / zoom, 1.0e6))));
+            c.set_clip_rect(clip);
+            draw_score_at(&mut c, parts, tab, names);
+            c.min_rect().height()
+        })
+        .inner;
+    ui.allocate_exact_size(Vec2::new(w, h * zoom), Sense::hover());
 }
 
 /// Several parts (a duet) as systems: their staves braced together, the bars lined up and wrapping as one, each
 /// part named on the first row. Each part has its own note sounding now (counted through its bars as written).
-fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab: bool, names: bool) {
+fn draw_score_at(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab: bool, names: bool) {
     let Some(first) = parts.first() else { return };
     let g = 7.0_f32;
     let sig = first.0.sig;
@@ -653,7 +758,7 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
         }
         used += need;
     }
-    let (above, staff_h, below) = (50.0, 4.0 * g, 48.0);
+    let (above, staff_h, below) = (62.0, 4.0 * g, 52.0);
     let tab_h = if tab { 58.0 } else { 0.0 };
     let names_h = if names { 18.0 } else { 0.0 };
     let block_h = above + staff_h + below + tab_h + names_h;
@@ -720,7 +825,7 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
             if ri == 0 {
                 let tx = rect.min.x + 40.0 + sig.unsigned_abs() as f32 * 9.0 + 12.0;
                 ptext(p, Pos2::new(tx, top + g), Align::Center, &beats.to_string(), 3.0, ink);
-                ptext(p, Pos2::new(tx, top + 3.0 * g), Align::Center, "4", 3.0, ink);
+                ptext(p, Pos2::new(tx, top + 3.0 * g), Align::Center, &first.0.den.to_string(), 3.0, ink);
             }
             if let (0, Some(b0)) = (pi, row.first()) {
                 ptext(p, Pos2::new(rect.min.x + 8.0, top - 3.0 * g), Align::Min, &(b0 + 1).to_string(), 1.0, pal().dim);
@@ -734,6 +839,8 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
             }
             // a tie waiting for its next note: (x, step, stem up)
             let mut tie_from: Option<(f32, Vec<i32>, bool)> = None;
+            // a slur under way: where it started (x, the y over the notes)
+            let mut slur_from: Option<(f32, f32)> = None;
             for (j, bi) in row.iter().enumerate() {
                 let Some(b) = r.bars.get(*bi) else { continue };
                 // this part's notes spread over the bar's shared width
@@ -816,6 +923,7 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
                     }
                     if n.heads.is_empty() {
                         draw_rest(p, cx, bottom, g, n.dur, col);
+                        draw_marks(p, n, cx, top, bottom, top - g, bottom + g, false, g, &mut slur_from, col);
                         tie_from = None;
                         continue;
                     }
@@ -876,7 +984,15 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
                             if h.acc == 0 {
                                 natural(p, Pos2::new(ax, c.y), g, col);
                             } else {
-                                crate::lines_ui::accidental(p, Pos2::new(ax, c.y), h.acc, g, col);
+                                if h.acc == 2 {
+                                    // a double sharp
+                                    ptext(p, Pos2::new(ax, c.y - 5.0), Align::Center, "x", 1.0, col);
+                                } else if h.acc == -2 {
+                                    crate::lines_ui::accidental(p, Pos2::new(ax - g * 0.9, c.y), -1, g, col);
+                                    crate::lines_ui::accidental(p, Pos2::new(ax, c.y), -1, g, col);
+                                } else {
+                                    crate::lines_ui::accidental(p, Pos2::new(ax, c.y), h.acc, g, col);
+                                }
                             }
                             acc_col = (acc_col + 1) % 2;
                             shown.insert(h.step, h.acc);
@@ -934,6 +1050,24 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
                         if n.dur == 8 {
                             let ty = if up { tip - 8.0 } else { tip + 8.0 };
                             ptext(p, Pos2::new(cx, ty), Align::Center, "3", 1.0, pal().ink2);
+                        }
+                    }
+                    {
+                        // marks: over the note and its stem, or beside a chord's heads
+                        let ys: Vec<f32> = n.heads.iter().map(|h| y_of(h.step)).collect();
+                        let ytop = ys.iter().cloned().fold(f32::INFINITY, f32::min);
+                        let ybot = ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                        let stem_tip = tips[k].map(|t| t.0).unwrap_or(if up { ytop - 3.4 * g } else { ybot + 3.4 * g });
+                        let ceil = if up && n.dur < 4 * BEAT { stem_tip.min(ytop) } else { ytop } - 4.0;
+                        let floor = if !up && n.dur < 4 * BEAT { stem_tip.max(ybot) } else { ybot } + 4.0;
+                        draw_marks(p, n, cx, top, bottom, ceil, floor, up, g, &mut slur_from, col);
+                        if n.heads.len() > 1 && !n.marks.fingers.is_empty() {
+                            let fx = cx + rad * 2.0 + 7.0 + if matches!(n.dur, 9 | 18 | 36) { 6.0 } else { 0.0 };
+                            for (h, f) in n.heads.iter().zip(n.marks.fingers.chars()) {
+                                if f != 'x' {
+                                    ptext(p, Pos2::new(fx, y_of(h.step) - 4.0), Align::Center, &f.to_string(), 0.8, pal().ink2);
+                                }
+                            }
                         }
                     }
                     if tab {
@@ -1033,6 +1167,110 @@ fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab:
     }
 }
 
+/// The marks printed with a note: words and the pick stroke, finger and string over it (`ceil` is the top of the
+/// note and its stem), accents and staccato by the head away from the stem, a fermata on top, and slurs.
+#[allow(clippy::too_many_arguments)]
+fn draw_marks(
+    p: &egui::Painter,
+    n: &RNote,
+    cx: f32,
+    top: f32,
+    bottom: f32,
+    ceil: f32,
+    floor: f32,
+    up: bool,
+    g: f32,
+    slur_from: &mut Option<(f32, f32)>,
+    col: Color32,
+) {
+    let m = &n.marks;
+    let ink = pal().ink;
+    // stacked upwards from over the staff (or the note, if higher)
+    let mut y = ceil.min(top - g * 0.6);
+    if (m.accent || m.stac || m.tenuto) && !n.heads.is_empty() {
+        // by the head, on the side away from the stem
+        let ay = if up { floor.max(bottom) + g * 0.2 } else { y - g * 0.4 };
+        if m.accent {
+            p.add(egui::Shape::line(
+                vec![Pos2::new(cx - 5.0, ay - 3.0), Pos2::new(cx + 5.0, ay), Pos2::new(cx - 5.0, ay + 3.0)],
+                Stroke::new(1.3_f32, col),
+            ));
+        } else if m.tenuto {
+            p.line_segment([Pos2::new(cx - 5.0, ay), Pos2::new(cx + 5.0, ay)], Stroke::new(1.6_f32, col));
+        } else {
+            p.circle_filled(Pos2::new(cx, ay), 1.6, col);
+        }
+        if !up {
+            y -= g;
+        }
+    }
+    if n.heads.len() <= 1 && !m.fingers.is_empty() && m.fingers != "x" {
+        ptext(p, Pos2::new(cx, y - 7.0), Align::Center, &m.fingers, 0.8, pal().ink2);
+        y -= 10.0;
+    }
+    if m.string > 0 {
+        let c = Pos2::new(cx, y - 6.0);
+        p.circle_stroke(c, 5.0, Stroke::new(1.0_f32, pal().ink2));
+        ptext(p, Pos2::new(c.x, c.y - 4.0), Align::Center, &m.string.to_string(), 0.7, pal().ink2);
+        y -= 13.0;
+    }
+    if m.pick != 0 {
+        let (l, r, t0, b0) = (cx - 4.0, cx + 4.0, y - 9.0, y - 2.0);
+        let s = Stroke::new(1.2_f32, ink);
+        if m.pick > 0 {
+            // down-stroke: an open box, thick on top
+            p.rect_filled(Rect::from_min_max(Pos2::new(l, t0), Pos2::new(r, t0 + 2.2)), 0.0, ink);
+            p.line_segment([Pos2::new(l, t0), Pos2::new(l, b0)], s);
+            p.line_segment([Pos2::new(r, t0), Pos2::new(r, b0)], s);
+        } else {
+            p.add(egui::Shape::line(vec![Pos2::new(l, t0), Pos2::new(cx, b0), Pos2::new(r, t0)], s));
+        }
+        y -= 12.0;
+    }
+    if m.fermata {
+        let c = Pos2::new(cx, y - 3.0);
+        let pts: Vec<Pos2> = (0..=10)
+            .map(|i| {
+                let a = std::f32::consts::PI * i as f32 / 10.0;
+                Pos2::new(c.x - 7.0 * a.cos(), c.y - 6.0 * a.sin())
+            })
+            .collect();
+        p.add(egui::Shape::line(pts, Stroke::new(1.4_f32, ink)));
+        p.circle_filled(c, 1.5, ink);
+        y -= 10.0;
+    }
+    // words: dynamics under the staff, the rest over everything
+    const DYN: [&str; 10] = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "sfz", "fp"];
+    let mut wy = y;
+    for w in &m.text {
+        if DYN.contains(&w.as_str()) || w.starts_with("cresc") || w.starts_with("dim") {
+            ptext(p, Pos2::new(cx - 6.0, floor.max(bottom) + g * 0.6), Align::Min, w, 1.0, ink);
+        } else {
+            ptext(p, Pos2::new(cx - 6.0, wy - 11.0), Align::Min, w, 1.0, ink);
+            wy -= 11.0;
+        }
+    }
+    // slurs: an arc over the notes from where it started
+    let arc_y = ceil.min(top) - 2.0;
+    if m.slur_end {
+        if let Some((sx, sy)) = slur_from.take() {
+            let yy = sy.min(arc_y);
+            let mid = Pos2::new((sx + cx) / 2.0, yy - 8.0);
+            let pts: Vec<Pos2> = (0..=12)
+                .map(|t| {
+                    let t = t as f32 / 12.0;
+                    let u = 1.0 - t;
+                    Pos2::new(u * u * sx + 2.0 * u * t * mid.x + t * t * cx, u * u * sy + 2.0 * u * t * mid.y + t * t * arc_y)
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, Stroke::new(1.2_f32, col)));
+        }
+    }
+    if m.slur_start {
+        *slur_from = Some((cx, arc_y));
+    }
+}
+
 /// The notes of the key in a position, on a little neck (fret numbers along the bottom).
 fn position_map(ui: &mut egui::Ui, tonic: i32, pos: u8, sharps: bool) {
     let (lo, hi) = window(pos);
@@ -1087,6 +1325,11 @@ impl App {
     pub(crate) fn reading_view(&mut self, ui: &mut egui::Ui, _acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "SIGHT READING", 3.0, pal().ink);
+        // ctrl + the mouse wheel (or a pinch) over the page magnifies the music
+        let zd = ui.input(|i| i.zoom_delta());
+        if zd != 1.0 && ui.rect_contains_pointer(ui.max_rect()) {
+            self.rd_zoom = (self.rd_zoom * zd).clamp(0.75, 3.0);
+        }
         if !self.rd_book_loaded {
             self.rd_reload();
         }
@@ -1181,6 +1424,19 @@ impl App {
             if retro_btn(ui, "NOTE NAMES", self.rd_names).clicked() {
                 self.rd_names = !self.rd_names;
             }
+            // magnify the music (ctrl + the mouse wheel over the page does it too)
+            ui.add_space(10.0);
+            crate::views::label(ui, "ZOOM", 44.0);
+            if retro_btn_w(ui, "-", 28.0, false).clicked() {
+                self.rd_zoom = (self.rd_zoom - 0.25).max(0.75);
+            }
+            if retro_btn_w(ui, &format!("{}%", (self.rd_zoom * 100.0).round()), 56.0, false).tip("Back to 100%").clicked() {
+                self.rd_zoom = 1.0;
+            }
+            if retro_btn_w(ui, "+", 28.0, false).clicked() {
+                self.rd_zoom = (self.rd_zoom + 0.25).min(3.0);
+            }
+            ui.add_space(10.0);
             if retro_btn(ui, "THE POSITION", self.rd_map).tip("The key's notes in this position, on the neck").clicked() {
                 self.rd_map = !self.rd_map;
             }
@@ -1323,9 +1579,9 @@ impl App {
                 .enumerate()
                 .map(|(i, (_, r))| (r, if i == self.rd_part { lit } else { None }, names[i].as_str()))
                 .collect();
-            draw_score(ui, &parts, self.rd_tab, self.rd_names);
+            draw_score(ui, &parts, self.rd_tab, self.rd_names, self.rd_zoom);
         } else {
-            draw_reading(ui, &mine, lit, self.rd_tab, self.rd_names);
+            draw_reading(ui, &mine, lit, self.rd_tab, self.rd_names, self.rd_zoom);
         }
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
@@ -1404,7 +1660,7 @@ impl App {
         let Some(line) = self.rd_line.clone() else { return };
         self.rd_controls(ui, &line, None);
         let lit = self.rd_lit(ui);
-        draw_reading(ui, &line, lit, self.rd_tab, self.rd_names);
+        draw_reading(ui, &line, lit, self.rd_tab, self.rd_names, self.rd_zoom);
         crate::views::dim_line(ui, "PLAY ALONG TO THE END TO COUNT A LINE", 1.0, pal().dim);
     }
 
@@ -1515,6 +1771,22 @@ mod tests {
         }
     }
 
+    /// Marks after a note and words before it: pick strokes, fingers, string, accents, slurs, Ritard.
+    #[test]
+    fn marks_read() {
+        let bars = parse_music("!mf !Ritard G4q{d,f3,s3} [C5E5]q.{u,f12,>,(} D5e{)} rh{ferm}").unwrap();
+        let n = &bars[0].notes;
+        assert_eq!(n.len(), 4);
+        assert_eq!((n[0].marks.pick, n[0].marks.fingers.as_str(), n[0].marks.string), (1, "3", 3));
+        assert_eq!(n[0].marks.text, vec!["mf".to_string(), "Ritard".to_string()]);
+        assert!(n[1].marks.accent && n[1].marks.slur_start && n[1].marks.pick == -1 && n[1].dur == 18);
+        assert!(n[2].marks.slur_end && n[3].marks.fermata && n[3].heads.is_empty());
+        assert!(parse_music("G4q{zz}").is_err());
+        let dbl = parse_music("Bbb4q Fx4q F##4q Ab4q").unwrap();
+        let m: Vec<i32> = dbl[0].notes.iter().map(|n| n.heads[0].midi).collect();
+        assert_eq!(m, vec![57, 55, 55, 56]);
+    }
+
     /// The book file: lessons, settings that carry on, exercises and duets, chords, rests, ties, repeats.
     #[test]
     fn book_file_reads() {
@@ -1562,7 +1834,7 @@ fn my_book_reads() {
     for l in &lessons {
         for p in &l.pieces {
             for (pn, r) in &p.parts {
-                let bar = r.beats as u32 * BEAT as u32;
+                let bar = r.beats as u32 * r.beat_len() as u32;
                 for (i, b) in r.bars.iter().enumerate() {
                     let n: u32 = b.notes.iter().map(|x| x.dur as u32).sum();
                     // a pickup bar at the start, or a short last bar, may be under length

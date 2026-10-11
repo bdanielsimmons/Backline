@@ -364,7 +364,8 @@ pub(crate) struct Chord {
     pub(crate) third: i32,
     pub(crate) fifth: i32,
     pub(crate) seventh: Option<i32>,
-    pub(crate) ext: Option<i32>,
+    /// the colour notes over the chord (b9, 13 ... - G13b9 has both), lowest first
+    pub(crate) exts: Vec<i32>,
     pub(crate) bass: i32,
 }
 
@@ -411,25 +412,29 @@ pub(crate) fn parse_chord(c: &str) -> Option<Chord> {
     } else {
         None
     };
-    // the colour note that replaces the fifth in the voicing (b9, #9, #11, b13, 13, 11, 9)
-    let ext = if r.contains("b9") {
-        Some(13)
-    } else if r.contains("#9") {
-        Some(15)
-    } else if r.contains("#11") {
-        Some(18)
-    } else if r.contains("b13") {
-        Some(20)
-    } else if r.contains("13") {
-        Some(21)
+    // the colour notes, every one written (G13b9: the b9 and the 13; C9#11: the 9 and the #11)
+    let mut exts = Vec::new();
+    if r.contains("b9") {
+        exts.push(13);
+    }
+    if r.contains("#9") {
+        exts.push(15);
+    }
+    // a plain 9 (not b9/#9), or the 9 a plain 13 or 11 carries ("13" alone keeps just the 13, as voiced before)
+    if r.replace("b9", "").replace("#9", "").contains('9') {
+        exts.push(14);
+    }
+    if r.contains("#11") {
+        exts.push(18);
     } else if r.contains("11") {
-        Some(17)
-    } else if r.contains('9') {
-        Some(14)
-    } else {
-        None
-    };
-    Some(Chord { root, third, fifth, seventh, ext, bass })
+        exts.push(17);
+    }
+    if r.contains("b13") {
+        exts.push(20);
+    } else if r.contains("13") {
+        exts.push(21);
+    }
+    Some(Chord { root, third, fifth, seventh, exts, bass })
 }
 
 fn bass_midi(pc: i32) -> i32 {
@@ -443,7 +448,10 @@ fn mid_midi(pc: i32) -> i32 {
 impl Chord {
     fn voicing(&self) -> Vec<i32> {
         let mut v = vec![self.root + self.third, self.root + self.seventh.unwrap_or(self.fifth)];
-        v.push(self.root + self.ext.unwrap_or(self.fifth));
+        if self.exts.is_empty() {
+            v.push(self.root + self.fifth);
+        }
+        v.extend(self.exts.iter().map(|e| self.root + e));
         if self.seventh.is_none() {
             v.push(self.root + 12);
         }
@@ -989,7 +997,7 @@ mod tests {
 
     fn notes(c: &str) -> (i32, i32, i32, Option<i32>, Option<i32>, i32) {
         let ch = parse_chord(c).unwrap_or_else(|| panic!("{} did not parse", c));
-        (ch.root, ch.third, ch.fifth, ch.seventh, ch.ext, ch.bass)
+        (ch.root, ch.third, ch.fifth, ch.seventh, ch.exts.first().copied(), ch.bass)
     }
 
     #[test]
