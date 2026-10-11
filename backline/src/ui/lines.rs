@@ -10,7 +10,7 @@ use crate::theory;
 use crate::views::field;
 
 /// A small treble clef in dots.
-const CLEF: [&str; 18] = [
+pub(crate) const CLEF: [&str; 18] = [
     "...##...", "..#..#..", "..#..#..", "..#.#...", "...##...", "...#....", "..##....", ".#.#....", "#..###..", "#.#.#.#.",
     "#.#.#.#.", ".#..#.#.", "..###...", "....#...", "....#...", "..#.#...", "..##....", "........",
 ];
@@ -693,12 +693,12 @@ impl App {
         self.prog_shown.resize(groups, false);
         // the key and chord size, while any group is open
         if self.prog_shown.iter().any(|o| *o) {
-            let sharps = lines::key_sharps(self.prog_key);
-            if let Some(pc) = Self::note_row(ui, "KEY", self.prog_key, sharps) {
-                self.prog_key = pc;
-            }
+            const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
             ui.horizontal_wrapped(|ui| {
-                crate::views::label(ui, "CHORDS", 100.0);
+                if let Some(k) = dropdown(ui, "prog_key", "KEY", &KEYS, self.prog_key as usize, 110.0) {
+                    self.prog_key = k as i32;
+                }
+                ui.add_space(12.0);
                 if retro_btn(ui, "TRIADS", !self.prog_7).clicked() {
                     self.prog_7 = false;
                 }
@@ -712,20 +712,11 @@ impl App {
                 if retro_btn(ui, "MINOR", self.prog_minor).tip("The I chords minor").clicked() {
                     self.prog_minor = true;
                 }
-                ui.add_space(8.0);
-                if retro_btn(ui, "ALL 12 KEYS", self.prog_all)
-                    .tip("On the lead sheet: round the cycle of 4ths, every key")
-                    .clicked()
-                {
-                    self.prog_all = !self.prog_all;
-                }
-                if retro_btn(ui, "CHART", self.rtab == 1).tip("Show the lead sheet on the right").clicked() {
-                    acts.push(Action::RightTab(if self.rtab == 1 { 0 } else { 1 }));
-                }
             });
+            ui.add_space(4.0);
             crate::views::dim_line(
                 ui,
-                "PRACTISE THEM AS TRIADS FIRST, THEN AS 7TH CHORDS. CLICK A PROGRESSION TO PUT IT ON THE LEAD SHEET.",
+                "TRIADS FIRST, THEN 7THS. CLICK ONE TO PUT IT ON THE LEAD SHEET; RIGHT-CLICK FOR ALL 12 KEYS AND MORE.",
                 1.0,
                 pal().dim,
             );
@@ -789,6 +780,21 @@ impl App {
         }
     }
 
+    /// A progression onto the lead sheet (in the key picked, or round all 12), for the band.
+    fn prog_to_sheet(&mut self, acts: &mut Vec<Action>, prog: &str, all: bool) {
+        let (key, minor, sev) = (self.prog_key, self.prog_minor, self.prog_7);
+        let title = if all {
+            format!("{} - ALL 12 KEYS", prog)
+        } else {
+            format!("{} IN {}", prog, theory::note_name(key, lines::key_sharps(key)))
+        };
+        self.prac_chart = Some((title, lines::progression_chart(prog, key, minor, sev, all)));
+        self.chart_sel = None;
+        self.chart_tr = 0;
+        self.prog_ask = None;
+        acts.push(Action::RightTab(1));
+    }
+
     /// One group's progressions: the numerals (click to put it on the lead sheet), HEAR, and its chords in the key.
     fn progression_rows(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, g: usize, progs: &[String], mine: bool) {
         let (key, minor, sev) = (self.prog_key, self.prog_minor, self.prog_7);
@@ -800,16 +806,21 @@ impl App {
             let sounding = self.seq_now(&tag);
             let title = format!("{} IN {}", prog, theory::note_name(key, sharps));
             ui.horizontal_wrapped(|ui| {
-                let picked = self.prac_chart.as_ref().is_some_and(|c| c.0 == title);
+                let picked = self.prac_chart.as_ref().is_some_and(|c| c.0 == title || c.0 == format!("{} - ALL 12 KEYS", prog));
                 let b = retro_btn_w(ui, prog, 230.0, picked).tip("Put it on the lead sheet, for the band. Right-click for more");
                 if b.clicked() {
-                    self.prac_chart = Some((title.clone(), lines::progression_chart(prog, key, minor, sev, self.prog_all)));
-                    self.chart_sel = None;
-                    self.chart_tr = 0;
-                    acts.push(Action::RightTab(1));
+                    self.prog_ask = if self.prog_ask == Some((g, i)) { None } else { Some((g, i)) };
                 }
-                // right-click: keep it with your own, or write it up as a tune with its lead sheet
+                // right-click: straight to the lead sheet (in this key or all 12), keep it, or make it a tune
                 b.context_menu(|ui| {
+                    if crate::menu_item(ui, "Put it on the lead sheet") {
+                        self.prog_to_sheet(acts, prog, false);
+                        ui.close_menu();
+                    }
+                    if crate::menu_item(ui, "Put it on the lead sheet, all 12 keys") {
+                        self.prog_to_sheet(acts, prog, true);
+                        ui.close_menu();
+                    }
                     if !mine && crate::menu_item(ui, "Add to my progressions") {
                         if !self.store.my_progs.iter().any(|p| p == prog) {
                             self.store.my_progs.push(prog.clone());
@@ -828,7 +839,7 @@ impl App {
                         self.store.tunes.push(crate::store::Tune {
                             name: name.clone(),
                             key: format!("{}{}", theory::note_name(key, sharps), if minor { "m" } else { "" }),
-                            chart: lines::progression_chart(prog, key, minor, sev, self.prog_all),
+                            chart: lines::progression_chart(prog, key, minor, sev, false),
                             notes: format!("Practice progression: {}", prog),
                             ..Default::default()
                         });
@@ -852,6 +863,23 @@ impl App {
                     remove = Some(i);
                 }
             });
+            // clicked: ask before it takes over the lead sheet
+            if self.prog_ask == Some((g, i)) {
+                ui.horizontal(|ui| {
+                    ui.add_space(12.0);
+                    crate::views::label(ui, &format!("PUT {} ON THE LEAD SHEET?", title), 120.0);
+                    if retro_btn(ui, "YES", false).clicked() {
+                        self.prog_to_sheet(acts, prog, false);
+                    }
+                    if retro_btn(ui, "ALL 12 KEYS", false).tip("Round the cycle of 4ths, every key").clicked() {
+                        self.prog_to_sheet(acts, prog, true);
+                    }
+                    if retro_btn(ui, "NO", false).clicked() {
+                        self.prog_ask = None;
+                    }
+                });
+                ui.add_space(4.0);
+            }
         }
         if let Some(i) = remove {
             self.store.my_progs.remove(i);
@@ -1031,7 +1059,7 @@ fn fold_row(ui: &mut egui::Ui, text: &str, open: &mut bool) -> bool {
 
 /// A sharp (two upright strokes crossed by two rising ones) or a flat (an upright stroke with a bowl at its foot),
 /// drawn beside a note head at `c`, sized to the staff gap `g`.
-fn accidental(p: &egui::Painter, c: Pos2, acc: i32, g: f32, col: Color32) {
+pub(crate) fn accidental(p: &egui::Painter, c: Pos2, acc: i32, g: f32, col: Color32) {
     let s = Stroke::new(1.1_f32, col);
     if acc > 0 {
         for dx in [-0.35, 0.35] {

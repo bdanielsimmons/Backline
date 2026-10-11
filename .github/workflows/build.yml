@@ -64,11 +64,12 @@ jobs:
           name: backline-${{ matrix.os_name }}-${{ matrix.flavor }}
           path: out/*
 
-  # After every successful build of all four, publish them as a public Release (no tagging needed).
+  # Publish the four builds as a public Release - only when asked: a commit on main with [release] in its message,
+  # or running the workflow by hand. Every other push just builds (so a break shows up) without releasing; the
+  # release notes still gather every commit since the last release.
   release:
     needs: build
-    # releases come only from main; put [no release] in a commit message to build without publishing
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[no release]')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -224,6 +224,16 @@ pub struct Store {
     pub my_progs: Vec<String>,
     /// lines you typed in from a book: (label, notes)
     pub my_lines: Vec<(String, String)>,
+    /// voicings you kept (CLUSTERS > MY CHORDS)
+    pub my_chords: Vec<MyChord>,
+}
+
+/// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq)]
+#[serde(default)]
+pub struct MyChord {
+    pub name: String,
+    pub grip: [Option<u8>; 6],
 }
 
 fn path() -> PathBuf {

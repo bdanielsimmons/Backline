@@ -721,7 +721,7 @@ impl App {
                     if i > 0 && retro_btn(ui, "BACK", false).clicked() {
                         go = -1;
                     }
-                    if retro_btn(ui, if i + 1 == list.len() { "DONE" } else { "NEXT" }, true).clicked() {
+                    if retro_btn(ui, if i + 1 == list.len() { "DONE" } else { "NEXT" }, false).clicked() {
                         go = 1;
                     }
                     if i + 1 < list.len() && retro_btn(ui, "SKIP", false).clicked() {

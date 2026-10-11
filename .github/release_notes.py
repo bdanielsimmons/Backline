@@ -21,7 +21,7 @@ log = subprocess.run(
 changes, new = [], []
 for entry in log.split("\x1e")[1:]:
     subject, _, body = entry.partition("\x1f")
-    subject = re.sub(r"\s*\[no release\]$", "", subject.strip())
+    subject = re.sub(r"\s*\[(no )?release\]", "", subject.strip())
     if subject.startswith("README: what's new"):
         continue
     lines = [f"- **{subject}**"]

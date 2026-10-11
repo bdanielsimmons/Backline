@@ -59,6 +59,7 @@ pub const F_T_STYLE: u32 = 61;
 pub const F_PROG_NEW: u32 = 62;
 pub const F_LN_BPM: u32 = 66;
 pub const F_LN_SUB: u32 = 67;
+pub const F_CB_NAME: u32 = 68;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 
@@ -542,6 +543,32 @@ impl App {
     // ---------------------------------------------------------- LEAD SHEET
     pub(crate) fn chart_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         crate::tour::mark("SHEET", ui.clip_rect());
+        // follow the player (the default), or keep what is on show
+        let playing = self.cur_track().filter(|_| !self.stopped);
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "FOLLOW PLAYER", !self.chart_lock).tip("The lead sheet changes with the song playing").clicked()
+                && self.chart_lock
+            {
+                self.chart_lock = false;
+                if let Some(t) = &playing {
+                    self.chart_follow(t.id);
+                }
+                self.dirty = true;
+            }
+            if retro_btn(ui, "LOCK", self.chart_lock).tip("Keep this lead sheet, whatever plays").clicked() {
+                self.chart_lock = true;
+                self.dirty = true;
+            }
+            ui.add_space(10.0);
+            if let (false, Some(t)) = (self.chart_lock, &playing) {
+                let name = match self.cur_tune() {
+                    Some(i) => self.store.tunes[i].name.clone(),
+                    None => t.title.clone(),
+                };
+                crate::views::label(ui, &format!("NOW PLAYING - {}", name.to_uppercase()), 120.0);
+            }
+        });
         let ti = self.chart_tune();
         let playing_title = self.cur_track().filter(|_| !self.stopped).map(|t| t.title.clone());
         // what is on show: a saved tune, or whatever is playing (looked up on its own)

@@ -233,6 +233,19 @@ impl App {
         self.chart_pick.filter(|i| *i < self.store.tunes.len()).or_else(|| self.cur_tune())
     }
 
+    /// Put the lead sheet on the song playing: its tune when it is in one, else its changes looked up.
+    pub(crate) fn chart_follow(&mut self, id: i64) {
+        self.prac_chart = None;
+        self.chart_sel = None;
+        match self.store.tune_of(id) {
+            Some(i) => {
+                self.chart_pick = Some(i);
+                self.chart_live = false;
+            }
+            None => self.chart_live = true,
+        }
+    }
+
     /// Chart text on show right now.
     pub(crate) fn chart_text(&self) -> Option<String> {
         if let Some((_, c)) = &self.prac_chart {
@@ -695,19 +708,9 @@ impl App {
                 self.loop_on = false;
             }
         }
-        // the lead sheet stays with the tune you have open; it only follows the playing song when none is open
-        match self.tune_open.filter(|i| *i < self.store.tunes.len()) {
-            Some(i) => {
-                self.chart_pick = Some(i);
-                self.chart_live = false;
-            }
-            None => match self.store.tune_of(t.id) {
-                Some(i) => {
-                    self.chart_pick = Some(i);
-                    self.chart_live = false;
-                }
-                None => self.chart_live = true,
-            },
+        // the lead sheet follows the player (unless LOCKED): the new song's tune, or its changes looked up
+        if !self.chart_lock {
+            self.chart_follow(t.id);
         }
         self.semis = 0;
         self.stem_on = [true; 4];

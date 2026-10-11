@@ -50,6 +50,8 @@ mod winamp;
 mod album_view;
 #[path = "ui/chords.rs"]
 mod chords;
+#[path = "ui/clusters.rs"]
+mod clusters;
 #[path = "ui/credits.rs"]
 mod credits;
 #[path = "ui/font.rs"]
@@ -2438,6 +2440,10 @@ struct App {
     cl_bass: i32,
     cl_changes: String,
     cl_chord: usize,
+    /// CLUSTERS: the mode on show in SCALES; the voicing on the neck in BUILD and its name
+    cl_mode: usize,
+    cb_frets: [Option<u8>; 6],
+    cb_name: String,
     vc_family: u8,
     vc_root: i32,
     vc_type: usize,
@@ -2481,7 +2487,8 @@ struct App {
     prog_key: i32,
     prog_minor: bool,
     prog_7: bool,
-    prog_all: bool,
+    /// the progression clicked, asking whether it goes on the lead sheet (group, row)
+    prog_ask: Option<(usize, usize)>,
     prog_new: String,
     /// a practice progression on the lead sheet instead of a tune: (title, chart)
     prac_chart: Option<(String, String)>,
@@ -2571,6 +2578,8 @@ struct App {
     /// tunes whose writer and year were looked up this session
     details_tried: std::collections::HashSet<String>,
     chart_rn: bool,
+    /// the lead sheet stays put (LOCKED) instead of following the song playing (the default)
+    chart_lock: bool,
     ireal_in: String,
     tunes_ireal: String,
     look_q: String,
@@ -2901,6 +2910,9 @@ impl App {
             cl_bass: 0,
             cl_changes: "Dm7b5 G7 Cmaj7 Gbm7b5 Fm7 Em7 Ebdim7 Dm7 G7 Cmaj7".to_string(),
             cl_chord: 0,
+            cl_mode: 0,
+            cb_frets: [None; 6],
+            cb_name: String::new(),
             vc_family: 4,
             vc_root: 0,
             vc_type: 0,
@@ -2933,7 +2945,7 @@ impl App {
             prog_key: 0,
             prog_minor: false,
             prog_7: true,
-            prog_all: false,
+            prog_ask: None,
             prog_new: String::new(),
             prac_chart: None,
             seq_play: None,
@@ -3002,6 +3014,7 @@ impl App {
             chart_tried: Default::default(),
             details_tried: Default::default(),
             chart_rn: true,
+            chart_lock: false,
             ireal_in: String::new(),
             tunes_ireal: String::new(),
             look_q: String::new(),
@@ -3038,6 +3051,9 @@ impl App {
         }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
+        if let Some(b) = st["chart_lock"].as_bool() {
+            app.chart_lock = b;
+        }
         if let Some(z) = st["neck_zoom"].as_f64() {
             app.neck_zoom = (z as f32).clamp(0.8, 2.2);
         }
@@ -3253,6 +3269,7 @@ impl App {
             "auto_restart": self.auto_restart,
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
+            "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],
             "loop_safe": skin::LOOP_SAFE.load(Ordering::Relaxed),
