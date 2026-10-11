@@ -2062,8 +2062,37 @@ impl App {
             .tip("Click to jump. Shift + drag to select a loop (inside a loop: slide it). Ctrl + drag A or B to move it. Right-click for more.");
         inset(ui.painter(), bar, pal().lcd);
         let inn = bar.shrink2(Vec2::new(5.0, 5.0));
-        let at = |t: f32| inn.min.x + inn.width() * (t / dur.max(0.001)).clamp(0.0, 1.0);
-        let time_at = |x: f32| ((x - inn.min.x) / inn.width()).clamp(0.0, 1.0) * dur;
+        // zoom (like Audacity's): the mouse wheel over the waveform zooms in and out where the mouse is; + and -
+        // zoom where the song is playing, FIT shows it all. Only the time gets finer - the height stays
+        let dur1 = dur.max(0.001);
+        let mut zoom = self.wv_zoom.clamp(1.0, 400.0);
+        let mut start = self.wv_start;
+        let wheel = if resp.hovered() && active { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
+        if wheel != 0.0 {
+            // the wheel is the waveform's here, not the panel's scroll
+            ui.input_mut(|i| {
+                i.smooth_scroll_delta = Vec2::ZERO;
+                i.raw_scroll_delta = Vec2::ZERO;
+            });
+            if let Some(m) = ui.input(|i| i.pointer.hover_pos()) {
+                let frac = ((m.x - inn.min.x) / inn.width()).clamp(0.0, 1.0);
+                let under = start + frac * dur1 / zoom;
+                zoom = (zoom * (wheel / 120.0).exp2()).clamp(1.0, 400.0);
+                start = under - frac * dur1 / zoom;
+            }
+        }
+        let chip_at = |k: f32, w: f32| Rect::from_min_size(Pos2::new(bar.min.x + 6.0 + k, bar.max.y - 18.0), Vec2::new(w, 14.0));
+        let span = dur1 / zoom;
+        // zoomed: the view keeps up with the song (turning the page as it reaches the edge), unless you are dragging
+        let dragging = self.sel_anchor.is_some() || self.marker_drag != 0 || self.seek_drag.is_some() || wheel != 0.0;
+        if zoom > 1.0 && !dragging && (shown < start || shown > start + span) {
+            start = shown - span * 0.05;
+        }
+        let start = start.clamp(0.0, (dur1 - span).max(0.0));
+        self.wv_zoom = zoom;
+        self.wv_start = start;
+        let at = |t: f32| inn.min.x + inn.width() * ((t - start) / span).clamp(0.0, 1.0);
+        let time_at = |x: f32| start + ((x - inn.min.x) / inn.width()).clamp(0.0, 1.0) * span;
         if active {
             let p = ui.painter().clone();
             // waveform
@@ -2071,9 +2100,12 @@ impl App {
                 if *wid == id && w.len() > 2 {
                     let cols = (inn.width() / 2.0).max(1.0) as usize;
                     let mid = inn.center().y;
+                    // the part of the song in view
+                    let n = w.len() as f32;
+                    let (v0, v1) = (start / dur1 * n, (start + span) / dur1 * n);
                     for c in 0..cols {
-                        let a = c * w.len() / cols;
-                        let b = ((c + 1) * w.len() / cols).max(a + 1).min(w.len());
+                        let a = (v0 + (v1 - v0) * c as f32 / cols as f32) as usize;
+                        let b = ((v0 + (v1 - v0) * (c + 1) as f32 / cols as f32) as usize).max(a + 1).min(w.len());
                         let m = w[a.min(w.len() - 1)..b].iter().copied().max().unwrap_or(0);
                         let h = (m as f32 / 255.0) * (inn.height() * 0.5);
                         let x = inn.min.x + c as f32 * 2.0;
@@ -2122,6 +2154,27 @@ impl App {
                 1.0,
                 pal().ink,
             );
+            // zoom buttons, over the waveform's corner (they take effect from the next frame)
+            let zoom_by = |me: &mut Self, by: f32| {
+                let frac = ((shown - start) / span).clamp(0.0, 1.0);
+                me.wv_zoom = (me.wv_zoom * by).clamp(1.0, 400.0);
+                me.wv_start = shown - frac * dur1 / me.wv_zoom;
+            };
+            if crate::chip(ui, chip_at(0.0, 18.0), "-", false, "wv_out").tip("Zoom out").clicked() {
+                zoom_by(self, 0.5);
+            }
+            if crate::chip(ui, chip_at(20.0, 18.0), "+", false, "wv_in")
+                .tip("Zoom in where it is playing (or the mouse wheel over the waveform)")
+                .clicked()
+            {
+                zoom_by(self, 2.0);
+            }
+            if self.wv_zoom > 1.0
+                && crate::chip(ui, chip_at(40.0, 30.0), "FIT", false, "wv_fit").tip("The whole song again").clicked()
+            {
+                self.wv_zoom = 1.0;
+                self.wv_start = 0.0;
+            }
 
             // shift + drag selects a loop; plain click / drag seeks
             if resp.drag_started() && shift {

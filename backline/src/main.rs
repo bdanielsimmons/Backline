@@ -2323,6 +2323,9 @@ struct App {
     shuffle: bool,
     repeat: Repeat,
     seek_drag: Option<f32>,
+    /// the practice waveform's zoom (1 = the whole song) and the second its view starts at
+    wv_zoom: f32,
+    wv_start: f32,
     bands: Vec<f32>,
     peaks: Vec<f32>,
     show_log: bool,
@@ -2933,6 +2936,8 @@ impl App {
             shuffle: false,
             repeat: Repeat::Off,
             seek_drag: None,
+            wv_zoom: 1.0,
+            wv_start: 0.0,
             bands: vec![0.0; 32],
             peaks: vec![0.0; 32],
             show_log: false,

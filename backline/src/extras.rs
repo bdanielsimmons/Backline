@@ -810,6 +810,9 @@ impl App {
         }
         self.semis = 0;
         self.stem_on = [true; 4];
+        // a new song shows whole
+        self.wv_zoom = 1.0;
+        self.wv_start = 0.0;
         self.passes = 0;
         self.pending_seek = None;
         self.sel_anchor = None;
