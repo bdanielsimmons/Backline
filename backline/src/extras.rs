@@ -948,6 +948,19 @@ impl App {
 
     pub(crate) fn drain_extra(&mut self, m: Msg) {
         match m {
+            Msg::DefaultOutput(name) => {
+                let first = self.sys_output.is_empty();
+                self.sys_output = name.clone();
+                // the first look is where things already play; after that, follow Windows unless you picked an
+                // output that is still there
+                let picked_here = self.out_device.as_ref().is_some_and(|d| crate::player::output_devices().contains(d));
+                if !first && !name.is_empty() && !picked_here {
+                    let keep = self.out_device.clone();
+                    self.apply(Action::SetDevice(None));
+                    self.out_device = keep;
+                    self.set_note(&format!("NOW PLAYING THROUGH {}", name.to_uppercase()));
+                }
+            }
             Msg::ShareSaved(r) => match r {
                 Ok(p) => self.set_note(&format!("SAVED: {} - OPEN IT IN BACKLINE ON THE OTHER COMPUTER (IMPORT)", p)),
                 Err(e) => self.set_err(format!("EXPORT: {}", e)),

@@ -149,6 +149,8 @@ enum Msg {
     Lyrics(i64, Result<(Vec<(f32, String)>, bool), String>),
     Media(u8),
     LikeFailed(i64, bool, String),
+    /// Windows' default sound output changed (headphones plugged in or out, a Bluetooth device connected or gone)
+    DefaultOutput(String),
     /// a share file written (where), or read (its contents)
     ShareSaved(Result<String, String>),
     ShareIn(Result<store::Share, String>),
@@ -2362,6 +2364,8 @@ struct App {
     bg_now: Option<[Color32; 2]>,
     /// the sound output chosen in Preferences (None = the system default), and the outputs last found
     out_device: Option<String>,
+    /// the system's default output when last looked at (Backline follows it unless you picked one)
+    sys_output: String,
     out_list: Vec<String>,
     /// the queue panel open over the album view
     art_queue: bool,
@@ -2957,6 +2961,7 @@ impl App {
             cap_dark: false,
             bg_now: None,
             out_device: None,
+            sys_output: String::new(),
             out_list: Vec::new(),
             art_queue: false,
             viz: [viz::VizCfg::player(), viz::VizCfg::art()],
@@ -3370,6 +3375,25 @@ impl App {
         }
         if let Some(b) = st["tour_seen"].as_bool() {
             app.tour_seen = b;
+        }
+        // watch Windows' default output: a change (plugged in, unplugged, Bluetooth on or off) moves Backline to it
+        {
+            let (tx, ctx) = (app.tx.clone(), app.ctx.clone());
+            std::thread::spawn(move || {
+                use rodio::cpal::traits::{DeviceTrait, HostTrait};
+                let mut last = String::new();
+                loop {
+                    let now = rodio::cpal::default_host().default_output_device().and_then(|d| d.name().ok()).unwrap_or_default();
+                    if now != last {
+                        if tx.send(Msg::DefaultOutput(now.clone())).is_err() {
+                            break;
+                        }
+                        ctx.request_repaint();
+                        last = now;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1200));
+                }
+            });
         }
         if let Some(d) = st["out_device"].as_str() {
             app.out_device = Some(d.to_string());
@@ -4345,10 +4369,17 @@ impl App {
                         };
                         match bytes {
                             Some(b) => self.player.send(Cmd::Swap(b, self.pos(), self.paused)),
-                            None => self.play_index(i),
+                            None => {
+                                let at = self.pos();
+                                self.play_index(i);
+                                self.pending_seek = Some(at);
+                            }
                         }
                     }
                 }
+                // the metronome and the band start again on the new output
+                self.mt_sig = 0;
+                self.band_sig = 0;
                 self.set_note("SOUND OUTPUT CHANGED");
             }
             Action::WaOpen => {
