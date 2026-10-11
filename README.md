@@ -11,6 +11,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Add to a playlist now also lists your own Tidal playlists, and NEW ON TIDAL makes one with the song in it
 - Playlists can hold loops - right-click a loop, Add this loop to a playlist; clicking it plays the loop
 - Sight reading: the book in chapters, and guides (a daily routine, what every mark means, duets, when it's hard)
 - Sight reading shows the book's markings - pick strokes, fingerings, string numbers, accents, fermatas, slurs, dynamics
@@ -20,7 +21,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - MOVES (experimental): gospel triad moves with hammer-ons, slides and whammy dips marked, and McCoy Tyner style 4ths and clusters planed through a mode
 - LOOPS (under PRACTICE) lists the songs you saved loops on or practised this week (or all of them); click a loop to jump straight to it
 - A heart on every song in My Tracks, the other track lists and the playlist - click it to like or unlike
-- Clusters show every voicing as a chord box plus notation and tab, and you can build your own on the neck and keep them in MY CHORDS
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
