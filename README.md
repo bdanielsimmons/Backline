@@ -11,6 +11,9 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- A heart on every song in My Tracks, the other track lists and the playlist - click it to like or unlike
+- Clusters show every voicing as a chord box plus notation and tab, and you can build your own on the neck and keep them in MY CHORDS
+- The lead sheet follows the song playing (or LOCK it), and says what's playing
 - Mini mode is just the player, with the chips along the top to get back out
 - Song names in Japanese, Chinese, Korean, Greek, Cyrillic and other scripts show properly instead of empty boxes
 - In LINES, type any tempo, and pick a feel - quarters to sixteenths, quintuplets, sextuplets, septuplets, or any number of notes a beat from 1 to 16
@@ -18,9 +21,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - The practice tour now shows the CHORDS tab (strumming a chord), LINES (playing a line) and the lead sheet with the band playing a ii-V-I
 - Tracks stream without being saved to disk; switch SAVING on under DISK to keep them
 - LINES under PRACTICE - Slonimsky's Diary (lines from Slonimsky's system, or a pattern book you add) and scales in intervals, in notation and tab, looped, counted
-- Practice progressions under TUNES - fold open a group, pick a key, hear it, or send it to the lead sheet for the band
-- Drag across bars on the lead sheet to loop just those
-- Charts can change time signature bar by bar (iReal Pro imports keep them)
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
