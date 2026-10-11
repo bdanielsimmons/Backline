@@ -122,6 +122,40 @@ fn tune_name_from(title: &str) -> String {
     }
 }
 
+/// A saved loop's file name: when it was saved, the song, which loop and where - e.g.
+/// "2026-10-11 00-41-05 - Average White Band - Cut the Cake - FUNKY RIFF (0m05s-0m12s).wav". Nothing in it that a
+/// file name can't hold.
+pub(crate) fn loop_file_name(
+    now: (i32, u32, u32, u32, u32, u32),
+    artist: &str,
+    title: &str,
+    what: &str,
+    a: f32,
+    b: f32,
+    stems: bool,
+) -> String {
+    let (y, mo, d, h, mi, s) = now;
+    let t = |x: f32| format!("{}m{:02}s", x as u32 / 60, x as u32 % 60);
+    let song = if artist.trim().is_empty() { title.to_string() } else { format!("{} - {}", artist, title) };
+    let raw = format!(
+        "{:04}-{:02}-{:02} {:02}-{:02}-{:02} - {} - {} ({}-{}){}.wav",
+        y,
+        mo,
+        d,
+        h,
+        mi,
+        s,
+        song,
+        what,
+        t(a),
+        t(b),
+        if stems { " stems" } else { "" }
+    );
+    // tidy: no doubled spaces, no trailing dots (Windows drops them)
+    let clean = safe_name(&raw).split_whitespace().collect::<Vec<_>>().join(" ");
+    clean.replace(". .wav", ".wav")
+}
+
 pub(crate) fn safe_name(s: &str) -> String {
     s.chars().map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c }).collect::<String>().trim().to_string()
 }
@@ -1055,6 +1089,7 @@ impl App {
                 self.exporting = false;
                 match r {
                     Ok(p) => self.set_note(&format!("SAVED: {}", p)),
+                    Err(e) if e == "cancelled" => {}
                     Err(e) => self.set_err(format!("EXPORT FAILED: {}", e)),
                 }
             }
@@ -2072,13 +2107,50 @@ impl App {
                     self.set_note("PLAY IT ONCE FIRST SO IT IS STORED, THEN EXPORT");
                     return;
                 };
-                let dir = dirs::audio_dir().unwrap_or_else(api::config_dir).join("Backline loops");
-                let name = safe_name(&format!("{} - {} ({}s-{}s).wav", t.artist, t.title, a as u32, b as u32));
-                let path = dir.join(name);
+                // what you hear: only the stems that are on, when the song has been split and some are off
+                let stems = self
+                    .stem_data
+                    .as_ref()
+                    .filter(|d| d.0 == t.id && self.stem_on.iter().any(|on| !on))
+                    .map(|d| (d.1.data.clone(), self.stem_on));
+                // a folder next to Backline, a name that sorts by date and says what it is
+                let dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|e| e.parent().map(|p| p.join("Saved loops")))
+                    .filter(|d| std::fs::create_dir_all(d).is_ok())
+                    .unwrap_or_else(|| dirs::audio_dir().unwrap_or_else(api::config_dir).join("Saved loops"));
+                let _ = std::fs::create_dir_all(&dir);
+                let what = self
+                    .store
+                    .sections
+                    .get(&t.id)
+                    .and_then(|l| l.iter().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05))
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "loop".to_string());
+                let name = loop_file_name(store::now_local(), &t.artist, &t.title, &what, a, b, stems.is_some());
                 self.exporting = true;
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
-                    let r = sources::export_wav(bytes, a, b, &path).map(|_| path.display().to_string());
+                    let Some(path) = rfd::FileDialog::new()
+                        .set_title("Save the loop as a WAV")
+                        .set_directory(&dir)
+                        .set_file_name(&name)
+                        .add_filter("WAV audio", &["wav"])
+                        .save_file()
+                    else {
+                        let _ = tx.send(Msg::Exported(Err("cancelled".to_string())));
+                        ctx.request_repaint();
+                        return;
+                    };
+                    let r = match stems {
+                        Some((data, on)) => sources::export_stems_wav(&data, on, a, b, &path),
+                        None => sources::export_wav(bytes, a, b, &path),
+                    }
+                    .map(|_| {
+                        // show it in Explorer, so it is easy to find later
+                        sources::reveal(&path.to_string_lossy());
+                        path.display().to_string()
+                    });
                     let _ = tx.send(Msg::Exported(r));
                     ctx.request_repaint();
                 });
@@ -2528,6 +2600,22 @@ mod tests {
         assert_eq!(safe_name("AC/DC: Back in Black?"), "AC_DC_ Back in Black_");
         assert_eq!(safe_name(" a<b>c|d*e \"f\" "), "a_b_c_d_e _f_");
         assert_eq!(safe_name("ok - name (1s-2s).wav"), "ok - name (1s-2s).wav");
+        assert_eq!(
+            loop_file_name(
+                (2026, 10, 11, 0, 41, 5),
+                "Average White Band",
+                "Cut the Cake (Single Edit)",
+                "FUNKY RIFF",
+                5.2,
+                12.9,
+                false
+            ),
+            "2026-10-11 00-41-05 - Average White Band - Cut the Cake (Single Edit) - FUNKY RIFF (0m05s-0m12s).wav"
+        );
+        assert_eq!(
+            loop_file_name((2026, 1, 2, 3, 4, 5), "AC/DC", "What?: \"Yes\"", "loop", 61.0, 70.0, true),
+            "2026-01-02 03-04-05 - AC_DC - What__ _Yes_ - loop (1m01s-1m10s) stems.wav"
+        );
     }
 
     #[test]

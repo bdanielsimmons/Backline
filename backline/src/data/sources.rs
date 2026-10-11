@@ -606,6 +606,42 @@ pub fn wave_peaks(bytes: Vec<u8>) -> Option<Vec<u8>> {
 }
 
 /// Write the part between `a` and `b` seconds as a 16-bit WAV file.
+/// Write a loop from split stems: only the stems that are `on`, mixed (stereo, 44.1 kHz), from `a` to `b` seconds.
+pub fn export_stems_wav(data: &[Vec<i16>; 4], on: [bool; 4], a: f32, b: f32, path: &Path) -> Result<(), String> {
+    let (s0, s1) = ((a.max(0.0) * 44100.0) as usize * 2, (b.max(0.0) * 44100.0) as usize * 2);
+    let len = data.iter().map(|d| d.len()).max().unwrap_or(0);
+    let s1 = s1.min(len);
+    if s1 <= s0 {
+        return Err("nothing to export".to_string());
+    }
+    let mut mixed: Vec<i16> = Vec::with_capacity(s1 - s0);
+    for i in s0..s1 {
+        let v: i32 = (0..4).filter(|k| on[*k]).map(|k| data[k].get(i).copied().unwrap_or(0) as i32).sum();
+        mixed.push(v.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+    }
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let n = (mixed.len() * 2) as u32;
+    let mut out: Vec<u8> = Vec::with_capacity(44 + n as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + n).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&44100u32.to_le_bytes());
+    out.extend_from_slice(&(44100u32 * 4).to_le_bytes());
+    out.extend_from_slice(&4u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&n.to_le_bytes());
+    for s in mixed {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    std::fs::write(path, out).map_err(|e| e.to_string())
+}
+
 pub fn export_wav(bytes: Vec<u8>, a: f32, b: f32, path: &Path) -> Result<(), String> {
     let mut src = SymSource::new(bytes)?;
     let (ch, rate) = (src.channels() as usize, src.sample_rate());

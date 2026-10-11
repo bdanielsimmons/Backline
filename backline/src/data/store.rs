@@ -308,8 +308,14 @@ impl Store {
 
 // ------------------------------------------------------------------ dates
 /// Local calendar date (year, month, day).
-#[cfg(windows)]
 pub fn today() -> (i32, u32, u32) {
+    let (y, m, d, ..) = now_local();
+    (y, m, d)
+}
+
+/// Local date and time: (year, month, day, hour, minute, second).
+#[cfg(windows)]
+pub fn now_local() -> (i32, u32, u32, u32, u32, u32) {
     #[repr(C)]
     struct St {
         y: u16,
@@ -328,13 +334,13 @@ pub fn today() -> (i32, u32, u32) {
     unsafe {
         let mut st: St = std::mem::zeroed();
         GetLocalTime(&mut st);
-        (st.y as i32, st.mo as u32, st.d as u32)
+        (st.y as i32, st.mo as u32, st.d as u32, st.h as u32, st.mi as u32, st.s as u32)
     }
 }
 
-/// Mac / Linux: ask the system for the local date (so the diary rolls over at local midnight, not UTC midnight).
+/// Mac / Linux: ask the system for the local time (so the diary rolls over at local midnight, not UTC midnight).
 #[cfg(not(windows))]
-pub fn today() -> (i32, u32, u32) {
+pub fn now_local() -> (i32, u32, u32, u32, u32, u32) {
     #[repr(C)]
     struct Tm {
         sec: i32,
@@ -357,9 +363,11 @@ pub fn today() -> (i32, u32, u32) {
         Tm { sec: 0, min: 0, hour: 0, mday: 0, mon: 0, year: 0, wday: 0, yday: 0, isdst: 0, gmtoff: 0, zone: std::ptr::null() };
     let ok = unsafe { !localtime_r(&secs, &mut tm).is_null() };
     if ok && tm.mday > 0 {
-        (tm.year + 1900, (tm.mon + 1) as u32, tm.mday as u32)
+        (tm.year + 1900, (tm.mon + 1) as u32, tm.mday as u32, tm.hour as u32, tm.min as u32, tm.sec as u32)
     } else {
-        civil_from_days(secs.div_euclid(86400))
+        let (y, m, d) = civil_from_days(secs.div_euclid(86400));
+        let t = secs.rem_euclid(86400) as u32;
+        (y, m, d, t / 3600, t / 60 % 60, t % 60)
     }
 }
 
