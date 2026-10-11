@@ -241,17 +241,49 @@ impl App {
             ui.add_space(8.0);
             crate::views::label(ui, "TEMPO", 60.0);
             if retro_btn_w(ui, "-", 28.0, false).clicked() {
-                self.ln_bpm = self.ln_bpm.saturating_sub(5).max(30);
+                self.ln_bpm = self.ln_bpm.saturating_sub(5).max(20);
             }
-            lcd_box(ui, &self.ln_bpm.to_string(), 54.0, pal().ink);
-            if retro_btn_w(ui, "+", 28.0, false).clicked() {
-                self.ln_bpm = (self.ln_bpm + 5).min(300);
+            // type any tempo (20 to 400)
+            if self.ed.id != crate::tools::F_LN_BPM {
+                self.ln_bpm_text = self.ln_bpm.to_string();
             }
-            for (i, n) in ["1/4", "1/8", "TRIPLETS", "1/16"].iter().enumerate() {
-                if retro_btn(ui, n, self.ln_sub as usize == i + 1).tip("How many notes to a beat").clicked() {
-                    self.ln_sub = i as u8 + 1;
+            let (r, _) = ui.allocate_exact_size(Vec2::new(60.0, bh()), Sense::hover());
+            let o = field(ui, &mut self.ed, crate::tools::F_LN_BPM, &mut self.ln_bpm_text, r, "BPM", false);
+            if o.changed || o.enter {
+                if let Ok(b) = self.ln_bpm_text.trim().parse::<u32>() {
+                    if (20..=400).contains(&b) {
+                        self.ln_bpm = b;
+                    }
                 }
             }
+            if retro_btn_w(ui, "+", 28.0, false).clicked() {
+                self.ln_bpm = (self.ln_bpm + 5).min(400);
+            }
+        });
+        // the feel: how many notes to a beat - the usual ones, tuplets, or any number you type
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "FEEL", 60.0);
+            for (n, name) in
+                [(1u8, "1/4"), (2, "1/8"), (3, "TRIPLETS"), (4, "1/16"), (5, "QUINTUPLETS"), (6, "SEXTUPLETS"), (7, "SEPTUPLETS")]
+            {
+                if retro_btn(ui, name, self.ln_sub == n).tip(format!("{} notes to a beat", n)).clicked() {
+                    self.ln_sub = n;
+                }
+            }
+            crate::views::label(ui, "OR", 30.0);
+            if self.ed.id != crate::tools::F_LN_SUB {
+                self.ln_sub_text = self.ln_sub.to_string();
+            }
+            let (r, _) = ui.allocate_exact_size(Vec2::new(44.0, bh()), Sense::hover());
+            let o = field(ui, &mut self.ed, crate::tools::F_LN_SUB, &mut self.ln_sub_text, r, "N", false);
+            if o.changed || o.enter {
+                if let Ok(n) = self.ln_sub_text.trim().parse::<u8>() {
+                    if (1..=16).contains(&n) {
+                        self.ln_sub = n;
+                    }
+                }
+            }
+            crate::views::dim_line(ui, "NOTES A BEAT (1-16)", 1.0, pal().dim);
         });
         // the tempo is kept with the line
         if self.ln_bpm != before {

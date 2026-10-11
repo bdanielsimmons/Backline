@@ -57,6 +57,8 @@ pub const F_T_YEAR: u32 = 59;
 pub const F_T_FROM: u32 = 60;
 pub const F_T_STYLE: u32 = 61;
 pub const F_PROG_NEW: u32 = 62;
+pub const F_LN_BPM: u32 = 66;
+pub const F_LN_SUB: u32 = 67;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 
