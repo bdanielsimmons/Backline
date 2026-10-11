@@ -824,30 +824,28 @@ pub fn chord_sound(midis: &[i32]) -> Vec<i16> {
     mix.finish()
 }
 
-/// Notes played string by string: (string, note, start in seconds, how hard); a note of -1 damps the string. Each
-/// note rings until the next one on its string (or `end`), as on a guitar.
-/// A sight-reading line: a bar of clicks to count you in, then the notes (start and length in seconds; None a rest)
-/// with a click on every beat - or only the clicks when `notes_on` is off (you play the notes).
-pub fn reading_sound(notes: &[(Option<i32>, f32, f32)], beats: u32, count_in: u32, spb: f32, notes_on: bool) -> Vec<i16> {
+/// A sight-reading line: a bar of clicks to count you in, then a click on every beat for `length` seconds, with these
+/// notes (each a chord or a single note: the notes, start and length in seconds from the end of the count-in).
+pub fn reading_sound(notes: &[(Vec<i32>, f32, f32)], beats: u32, count_in: u32, spb: f32, length: f32) -> Vec<i16> {
     let lead = count_in as f32 * spb;
-    let total = lead + notes.iter().map(|n| n.1 + n.2).fold(0.0, f32::max) + 1.5;
+    let total = lead + length + 1.5;
     let mut mix = Mix::new(total, 60.0);
-    let n_beats = ((total - 1.5) / spb).ceil() as u32;
+    let n_beats = count_in + (length / spb).ceil() as u32;
     for k in 0..n_beats {
-        // the first beat of each bar a little higher
         let accent = k % beats.max(1) == 0;
         mix.tick(k as f32 * spb, accent, if k < count_in { 1.0 } else { 0.6 });
     }
-    if notes_on {
-        for (m, at, d) in notes {
-            if let Some(m) = m {
-                mix.pluck(lead + at, d * 0.95 + 0.05, *m, 0.95);
-            }
+    for (ms, at, d) in notes {
+        for (j, m) in ms.iter().enumerate() {
+            // a chord strummed quickly, low to high
+            mix.pluck(lead + at + j as f32 * 0.015, d * 0.95 + 0.05, *m, 0.9);
         }
     }
     mix.finish()
 }
 
+/// Notes played string by string: (string, note, start in seconds, how hard); a note of -1 damps the string. Each
+/// note rings until the next one on its string (or `end`), as on a guitar.
 pub fn string_events(ev: &[(usize, i32, f32, f32)], end: f32) -> Vec<i16> {
     let mut mix = Mix::new(end + 0.3, 60.0);
     for e in ev {

@@ -234,6 +234,8 @@ pub struct Store {
     pub my_lines: Vec<(String, String)>,
     /// the songs you saved loops on or practised, so LOOPS and the diary can name and play them
     pub songs: HashMap<i64, Version>,
+    /// READING > THE BOOK: the exercises you have done ("page:name") and the day you marked each
+    pub reading_done: HashMap<String, String>,
     /// voicings you kept (CLUSTERS > MY CHORDS)
     pub my_chords: Vec<MyChord>,
 }

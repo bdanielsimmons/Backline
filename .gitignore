@@ -4,3 +4,6 @@
 
 # demo videos and the script that records them (run it when you want new ones: bash demo/record.sh)
 /demo/
+
+# your own copy of a reading method (READING > THE BOOK), kept on this computer only
+reading_book.txt

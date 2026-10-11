@@ -1,9 +1,17 @@
-//! READING (under PRACTICE): sight reading, the way the classic guitar reading courses teach it - read in one
-//! position at a time, one key at a time, with the rhythms getting harder step by step, and keep going without
-//! looking at the neck. Every line is made up fresh (nothing is copied from a book): notes from the key that fall
-//! in the position, moving mostly by step, rhythms from the level picked, ending home. It is written out properly
-//! (key and time signatures, rests, beams, dots, triplets), the tab hidden until you want to check, and it plays
-//! with a count-in and a cursor - or just clicks while you play it.
+//! READING (under PRACTICE): sight reading, two ways.
+//!
+//! THE BOOK: your own copy of a guitar method, worked through lesson by lesson in the book's order - its exercises,
+//! solos and duets bar for bar, one at a time, each marked done when you have it, so you pick up where you left off.
+//! The book is read from a file kept on this computer only (reading_book.txt in Backline's folder; it is never part
+//! of Backline itself). In a duet you read your part while the other guitar plays.
+//!
+//! MADE-UP LINES: for everyone, with or without a book - lines made up fresh in a key and a position, the rhythms
+//! getting harder step by step, the way the classic reading courses work: read in one position, don't look at the
+//! neck, keep going.
+//!
+//! Either way the music is written out properly (key and time signatures, rests, beams, dots, ties, triplets,
+//! chords, sharps, flats and naturals), the tab hidden until you want to check, and it plays with a count-in and a
+//! cursor - or just clicks while you play it.
 
 use super::*;
 use crate::theory;
@@ -21,9 +29,9 @@ const KEYS: [(&str, i32, i32); 10] = [
     ("Ab MAJOR", 8, -4),
     ("Db MAJOR", 1, -5),
 ];
-/// Positions: where the first finger sits (0 = open position).
+/// Positions: where the first finger sits (0 = the 1st / open position, open strings included).
 const POSITIONS: [(&str, u8); 9] = [
-    ("OPEN POSITION", 0),
+    ("1ST POSITION", 0),
     ("2ND POSITION", 2),
     ("3RD POSITION", 3),
     ("4TH POSITION", 4),
@@ -42,26 +50,284 @@ const LEVELS: [&str; 6] = [
     "6 - + SIXTEENTHS",
 ];
 const BARS: [usize; 3] = [4, 8, 16];
-/// a beat is 12 units, so eighths (6), triplets (4) and sixteenths (3) are all whole numbers
+/// a beat is 12 units, so eighths (6), triplets (4), quarter triplets (8) and sixteenths (3) are whole numbers
 const BEAT: u16 = 12;
 
-/// One note (or rest) of a line: its pitch (None for a rest) and its length in twelfths of a beat.
-#[derive(Clone)]
-pub(crate) struct RNote {
-    pub midi: Option<i32>,
-    pub dur: u16,
+/// One note head: the pitch it sounds, where it sits on the staff (guitar is written an octave up; the bottom line
+/// E is 30) and the sharp (1), flat (-1) or natural (0) it is written with.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Head {
+    pub midi: i32,
+    pub step: i32,
+    pub acc: i32,
 }
 
-/// A line to read, and how it is written.
-#[derive(Clone)]
-pub(crate) struct Reading {
+/// A note, a chord (several heads) or a rest (none), its length in twelfths of a beat, and whether it is tied on.
+#[derive(Clone, Debug)]
+pub(crate) struct RNote {
+    pub heads: Vec<Head>,
+    pub dur: u16,
+    pub tie: bool,
+}
+
+/// One bar, and the repeat signs at its start and end.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Bar {
     pub notes: Vec<RNote>,
+    pub rep_start: bool,
+    pub rep_end: bool,
+}
+
+/// A line of music to read, and how it is written and fingered.
+#[derive(Clone, Debug)]
+pub(crate) struct Reading {
+    pub bars: Vec<Bar>,
     pub beats: u16,
-    pub key: usize,
+    /// sharps (+) or flats (-) in the key signature
+    pub sig: i32,
+    /// the position it is read in (for the tab): where the first finger sits, 0 the 1st position
     pub pos: u8,
 }
 
-/// A small random number maker (the same line comes back from the same seed).
+/// An exercise, solo or duet: its name and its parts (one, or two for a duet).
+#[derive(Clone, Debug)]
+pub(crate) struct Piece {
+    pub name: String,
+    pub parts: Vec<(String, Reading)>,
+}
+
+/// A lesson of the book: its page, its title, a few words on what it teaches and how, and its pieces (none for a
+/// page that is worked from the book itself, like chord forms).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Lesson {
+    pub page: u32,
+    pub title: String,
+    pub notes: Vec<String>,
+    pub pieces: Vec<Piece>,
+    pub tempo: u32,
+}
+
+// ------------------------------------------------------------------ writing notes down
+
+fn head_of(m: i32, sharps: bool) -> Head {
+    let (letter, acc, oct) = crate::lines::spell(m + 12, sharps);
+    Head { midi: m, step: oct * 7 + letter, acc }
+}
+
+/// A written pitch like C4, F#4, Bb3, En5 (as it sits on the treble staff): its head.
+fn parse_pitch(s: &str) -> Option<Head> {
+    let mut ch = s.chars();
+    let letter = "CDEFGAB".find(ch.next()?.to_ascii_uppercase())? as i32;
+    let rest: String = ch.collect();
+    let (acc, oct) = match rest.chars().next()? {
+        '#' => (1, &rest[1..]),
+        'b' => (-1, &rest[1..]),
+        'n' => (0, &rest[1..]),
+        _ => (0, &rest[..]),
+    };
+    let oct: i32 = oct.parse().ok()?;
+    const PC: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+    let written = 12 * (oct + 1) + PC[letter as usize] + acc;
+    Some(Head { midi: written - 12, step: oct * 7 + letter, acc })
+}
+
+/// One token of written music: C4q, F#4e., [C4E4G4]h, rq, D4h~ (tied on), E4t (a triplet eighth), G4T (a quarter-note
+/// triplet), C4s (sixteenth). w h q e s = whole, half, quarter, eighth, sixteenth; a dot after it adds half.
+fn parse_note(tok: &str) -> Option<RNote> {
+    let tie = tok.ends_with('~');
+    let tok = tok.trim_end_matches('~');
+    let dotted = tok.ends_with('.');
+    let tok = tok.trim_end_matches('.');
+    let (body, d) = tok.split_at(tok.len().checked_sub(1)?);
+    let mut dur: u16 = match d {
+        "w" => 48,
+        "h" => 24,
+        "q" => 12,
+        "e" => 6,
+        "s" => 3,
+        "t" => 4,
+        "T" => 8,
+        _ => return None,
+    };
+    if dotted {
+        dur = dur * 3 / 2;
+    }
+    let heads = if body == "r" {
+        Vec::new()
+    } else if let Some(inner) = body.strip_prefix('[').and_then(|b| b.strip_suffix(']')) {
+        // a chord: pitches one after another, each starting with its letter
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        for c in inner.chars() {
+            if "ABCDEFG".contains(c) && !cur.is_empty() {
+                out.push(parse_pitch(&cur)?);
+                cur.clear();
+            }
+            cur.push(c);
+        }
+        if !cur.is_empty() {
+            out.push(parse_pitch(&cur)?);
+        }
+        out.sort_by_key(|h| h.step);
+        out
+    } else {
+        vec![parse_pitch(body)?]
+    };
+    Some(RNote { heads, dur, tie })
+}
+
+/// Bars of written music: tokens split by | (a bar line), |: and :| (repeat signs).
+fn parse_music(text: &str) -> Result<Vec<Bar>, String> {
+    let mut bars: Vec<Bar> = vec![Bar::default()];
+    for tok in text.split_whitespace() {
+        match tok {
+            "|" | "||" => bars.push(Bar::default()),
+            "|:" => {
+                if !bars.last().is_some_and(|b| b.notes.is_empty()) {
+                    bars.push(Bar::default());
+                }
+                if let Some(b) = bars.last_mut() {
+                    b.rep_start = true;
+                }
+            }
+            ":|" => {
+                if let Some(b) = bars.last_mut() {
+                    b.rep_end = true;
+                }
+                bars.push(Bar::default());
+            }
+            t => bars.last_mut().unwrap().notes.push(parse_note(t).ok_or_else(|| format!("can't read '{}'", t))?),
+        }
+    }
+    bars.retain(|b| !b.notes.is_empty());
+    Ok(bars)
+}
+
+/// Sharps (+) or flats (-) for a key name: C, G, F, Bb, Am, Em, Dm ...
+fn sig_of(key: &str) -> i32 {
+    match key.trim() {
+        "G" | "Em" => 1,
+        "D" | "Bm" => 2,
+        "A" | "F#m" => 3,
+        "E" | "C#m" => 4,
+        "B" | "G#m" => 5,
+        "F" | "Dm" => -1,
+        "Bb" | "Gm" => -2,
+        "Eb" | "Cm" => -3,
+        "Ab" | "Fm" => -4,
+        "Db" | "Bbm" => -5,
+        "Gb" | "Ebm" => -6,
+        _ => 0,
+    }
+}
+
+/// The book file: lessons in order.
+///
+/// ```text
+/// @lesson 4 Notes in the 1st Position
+/// key C | pos 1 | time 4/4 | tempo 72
+/// note One beat to each quarter note; say the count out loud.
+/// @ex Exercise 1
+/// C4q D4q E4q F4q | G4h [C4E4G4]h | ...
+/// @duet Sea to Sea
+/// part 1st Guitar: ...
+/// part 2nd Guitar: ...
+/// ```
+/// A setting line (key, pos, time) holds until the next one. Lines starting with # are comments.
+pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
+    let mut lessons: Vec<Lesson> = Vec::new();
+    let mut errs = Vec::new();
+    let (mut sig, mut pos, mut beats) = (0i32, 0u8, 4u16);
+    // the piece being read: (name, parts as (part name, music text))
+    let mut piece: Option<(String, Vec<(String, String)>)> = None;
+    let finish = |piece: &mut Option<(String, Vec<(String, String)>)>,
+                  lessons: &mut Vec<Lesson>,
+                  errs: &mut Vec<String>,
+                  sig,
+                  pos,
+                  beats| {
+        if let Some((name, parts)) = piece.take() {
+            let mut out = Vec::new();
+            for (pn, music) in parts {
+                match parse_music(&music) {
+                    Ok(bars) => out.push((pn, Reading { bars, beats, sig, pos })),
+                    Err(e) => errs.push(format!("{}: {}", name, e)),
+                }
+            }
+            if let Some(l) = lessons.last_mut() {
+                if !out.is_empty() {
+                    l.pieces.push(Piece { name, parts: out });
+                }
+            }
+        }
+    };
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("@lesson") {
+            finish(&mut piece, &mut lessons, &mut errs, sig, pos, beats);
+            let rest = rest.trim();
+            let (page, title) = rest.split_once(' ').unwrap_or((rest, ""));
+            lessons.push(Lesson {
+                page: page.parse().unwrap_or(0),
+                title: title.trim().to_string(),
+                tempo: 72,
+                ..Default::default()
+            });
+        } else if let Some(rest) = line.strip_prefix("@ex").or_else(|| line.strip_prefix("@duet")) {
+            finish(&mut piece, &mut lessons, &mut errs, sig, pos, beats);
+            piece = Some((rest.trim().to_string(), vec![("".to_string(), String::new())]));
+        } else if let Some(rest) = line.strip_prefix("part ") {
+            let (pn, music) = rest.split_once(':').unwrap_or((rest, ""));
+            if let Some((_, parts)) = piece.as_mut() {
+                if parts.len() == 1 && parts[0].0.is_empty() && parts[0].1.trim().is_empty() {
+                    parts.clear();
+                }
+                parts.push((pn.trim().to_string(), music.to_string()));
+            }
+        } else if let Some(rest) = line.strip_prefix("note ") {
+            if let Some(l) = lessons.last_mut() {
+                l.notes.push(rest.trim().to_string());
+            }
+        } else if line.starts_with("key ") || line.starts_with("pos ") || line.starts_with("time ") || line.starts_with("tempo ")
+        {
+            for set in line.split('|') {
+                let set = set.trim();
+                if let Some(k) = set.strip_prefix("key ") {
+                    sig = sig_of(k);
+                } else if let Some(p) = set.strip_prefix("pos ") {
+                    let n: u8 = p.trim().parse().unwrap_or(1);
+                    pos = if n <= 1 { 0 } else { n };
+                } else if let Some(t) = set.strip_prefix("time ") {
+                    beats = t.trim().split('/').next().and_then(|b| b.parse().ok()).unwrap_or(4);
+                } else if let Some(t) = set.strip_prefix("tempo ") {
+                    if let Some(l) = lessons.last_mut() {
+                        l.tempo = t.trim().parse().unwrap_or(72);
+                    }
+                }
+            }
+        } else if let Some((_, parts)) = piece.as_mut() {
+            // more music for the part being written
+            if let Some(p) = parts.last_mut() {
+                p.1.push(' ');
+                p.1.push_str(line);
+            }
+        }
+    }
+    finish(&mut piece, &mut lessons, &mut errs, sig, pos, beats);
+    (lessons, errs)
+}
+
+/// Where the book file lives (this computer only).
+pub(crate) fn book_path() -> std::path::PathBuf {
+    crate::api::config_dir().join("reading_book.txt")
+}
+
+// ------------------------------------------------------------------ made-up lines
+
+/// A small random number maker.
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -69,9 +335,6 @@ impl Rng {
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         self.0
-    }
-    fn below(&mut self, n: usize) -> usize {
-        (self.next() % n.max(1) as u64) as usize
     }
     fn pick_weighted(&mut self, w: &[u32]) -> usize {
         let total: u32 = w.iter().sum();
@@ -113,26 +376,38 @@ fn position_notes(key: usize, pos: u8) -> Vec<i32> {
     out
 }
 
-/// Where a note is played in a position: (string, fret), the first finger's frets first.
-fn finger(m: i32, pos: u8) -> Option<(usize, u8)> {
+/// Where the notes of a chord (or a single note) are played in a position: a (string, fret) each, every note on its
+/// own string, the first finger's frets first.
+fn finger_all(midis: &[i32], pos: u8) -> Vec<Option<(usize, u8)>> {
     let (lo, hi) = window(pos);
     let core = |f: u8| if pos == 0 { f <= 3 } else { f >= pos && f <= pos + 3 };
-    let mut best: Option<(usize, u8, i32)> = None;
-    for s in 0..6 {
-        let f = m - theory::STANDARD[s];
-        if f < lo as i32 || f > hi as i32 {
-            continue;
+    let mut used: Vec<usize> = Vec::new();
+    let mut out = vec![None; midis.len()];
+    // the highest note first, on the highest string it fits
+    let mut order: Vec<usize> = (0..midis.len()).collect();
+    order.sort_by_key(|i| std::cmp::Reverse(midis[*i]));
+    for i in order {
+        let mut best: Option<(usize, u8, i32)> = None;
+        for s in (0..6).filter(|s| !used.contains(s)) {
+            let f = midis[i] - theory::STANDARD[s];
+            if f < lo as i32 || f > hi as i32 {
+                continue;
+            }
+            let f = f as u8;
+            let cost = if core(f) { 0 } else { 10 } + (f as i32 - pos as i32 - 1).abs();
+            if best.is_none_or(|b| cost < b.2) {
+                best = Some((s, f, cost));
+            }
         }
-        let f = f as u8;
-        let cost = if core(f) { 0 } else { 10 } + (f as i32 - pos as i32 - 1).abs();
-        if best.is_none_or(|b| cost < b.2) {
-            best = Some((s, f, cost));
+        if let Some((s, f, _)) = best {
+            used.push(s);
+            out[i] = Some((s, f));
         }
     }
-    best.map(|b| (b.0, b.1))
+    out
 }
 
-/// The rhythm cells a level allows: groups of (length, rest?) that fill one, two, three or four beats.
+/// The rhythm cells a level allows: groups of (length, rest?) that fill one to four beats, with how often each comes.
 fn cells(level: usize) -> Vec<(Vec<(u16, bool)>, u32)> {
     let n = |d: u16| (d, false);
     let r = |d: u16| (d, true);
@@ -168,377 +443,150 @@ pub(crate) fn make_line(seed: u64, key: usize, pos: u8, level: usize, bars: usiz
     let mut rng = Rng(seed | 1);
     let bar_len = beats * BEAT;
     let all = cells(level);
-    let mut rhythm: Vec<(u16, bool)> = Vec::new();
+    let mut rhythm: Vec<Vec<(u16, bool)>> = Vec::new();
     for b in 0..bars {
+        let mut bar: Vec<(u16, bool)> = Vec::new();
         let mut at = 0u16;
         let last = b + 1 == bars;
         while at < bar_len {
             let left = bar_len - at;
-            // the last bar ends on a long note
             if last && left <= 2 * BEAT && at > 0 {
-                rhythm.push((left, false));
+                bar.push((left, false));
                 break;
             }
             let fit: Vec<usize> = (0..all.len())
                 .filter(|i| {
                     let len: u16 = all[*i].0.iter().map(|x| x.0).sum();
-                    // long notes start on a strong beat; a whole note fills a 4/4 bar
                     len <= left && (len < 2 * BEAT || at % (2 * BEAT) == 0) && (len != 4 * BEAT || at == 0)
                 })
                 .collect();
             let w: Vec<u32> = fit.iter().map(|i| all[*i].1).collect();
             let cell = &all[fit[rng.pick_weighted(&w)]].0;
-            // a rest never opens the line
-            if rhythm.is_empty() && cell[0].1 {
+            if b == 0 && bar.is_empty() && cell[0].1 {
                 continue;
             }
-            for x in cell {
-                rhythm.push(*x);
-            }
+            bar.extend(cell.iter().copied());
             at += cell.iter().map(|x| x.0).sum::<u16>();
         }
+        rhythm.push(bar);
     }
     let avail = position_notes(key, pos);
     let tonic = KEYS[key].1;
+    let sharps = KEYS[key].2 > 0;
     let tonics: Vec<usize> = (0..avail.len()).filter(|i| (avail[*i] - tonic).rem_euclid(12) == 0).collect();
     let mid = avail.len() / 2;
     let mut i = tonics.iter().copied().min_by_key(|t| (*t as i32 - mid as i32).abs()).unwrap_or(mid);
-    let n_notes = rhythm.iter().filter(|x| !x.1).count();
+    let n_notes = rhythm.iter().flatten().filter(|x| !x.1).count();
     let mut k = 0;
-    let mut notes = Vec::new();
-    for (dur, rest) in rhythm {
-        if rest {
-            notes.push(RNote { midi: None, dur });
+    let mut out_bars = Vec::new();
+    for bar in rhythm {
+        let mut notes = Vec::new();
+        for (dur, rest) in bar {
+            if rest {
+                notes.push(RNote { heads: Vec::new(), dur, tie: false });
+                continue;
+            }
+            if k > 0 {
+                if k + 1 == n_notes {
+                    i = tonics.iter().copied().min_by_key(|t| (*t as i32 - i as i32).abs()).unwrap_or(i);
+                } else {
+                    const MOVES: [i32; 9] = [0, 1, -1, 2, -2, 3, -3, 4, -4];
+                    let w: [u32; 9] = [4, 30, 30, 11, 11, 4, 4, 2 + level as u32, 2 + level as u32];
+                    let mut step = MOVES[rng.pick_weighted(&w)];
+                    if (i as i32 + step) < 0 || (i as i32 + step) >= avail.len() as i32 {
+                        step = -step;
+                    }
+                    i = (i as i32 + step).clamp(0, avail.len() as i32 - 1) as usize;
+                }
+            }
+            notes.push(RNote { heads: avail.get(i).map(|m| vec![head_of(*m, sharps)]).unwrap_or_default(), dur, tie: false });
+            k += 1;
+        }
+        out_bars.push(Bar { notes, ..Default::default() });
+    }
+    Reading { bars: out_bars, beats, sig: KEYS[key].2, pos }
+}
+
+// ------------------------------------------------------------------ playing
+
+/// Every note in the order it is played (repeats taken), tied notes joined: (note number as written, start and
+/// length in beats, the notes sounding). The note number counts through the bars as written.
+fn play_order(r: &Reading) -> Vec<(usize, f32, f32, Vec<i32>)> {
+    let first: Vec<usize> = {
+        let mut n = 0;
+        r.bars
+            .iter()
+            .map(|b| {
+                let s = n;
+                n += b.notes.len();
+                s
+            })
+            .collect()
+    };
+    let mut order: Vec<usize> = Vec::new();
+    let mut from = 0;
+    let mut repeated: Vec<usize> = Vec::new();
+    let mut b = 0;
+    while b < r.bars.len() {
+        if r.bars[b].rep_start {
+            from = b;
+        }
+        order.push(b);
+        if r.bars[b].rep_end && !repeated.contains(&b) {
+            repeated.push(b);
+            b = from;
             continue;
         }
-        if k > 0 {
-            if k + 1 == n_notes {
-                // home: the key note closest to here
-                i = tonics.iter().copied().min_by_key(|t| (*t as i32 - i as i32).abs()).unwrap_or(i);
+        b += 1;
+    }
+    let mut out: Vec<(usize, f32, f32, Vec<i32>)> = Vec::new();
+    let mut at = 0.0f32;
+    let mut tied = false;
+    for b in order {
+        for (j, n) in r.bars[b].notes.iter().enumerate() {
+            let d = n.dur as f32 / BEAT as f32;
+            if tied {
+                if let Some(last) = out.last_mut() {
+                    last.2 += d;
+                }
             } else {
-                const MOVES: [i32; 9] = [0, 1, -1, 2, -2, 3, -3, 4, -4];
-                let w: [u32; 9] = [4, 30, 30, 11, 11, 4, 4, 2 + level as u32, 2 + level as u32];
-                let mut step = MOVES[rng.pick_weighted(&w)];
-                // turn back at the edges of the position
-                if (i as i32 + step) < 0 || (i as i32 + step) >= avail.len() as i32 {
-                    step = -step;
-                }
-                i = (i as i32 + step).clamp(0, avail.len() as i32 - 1) as usize;
+                out.push((first[b] + j, at, d, n.heads.iter().map(|h| h.midi).collect()));
             }
+            tied = n.tie && !n.heads.is_empty();
+            at += d;
         }
-        notes.push(RNote { midi: avail.get(i).copied(), dur });
-        k += 1;
     }
-    let _ = rng.below(1);
-    Reading { notes, beats, key, pos }
+    out
 }
 
-/// Where each note starts (in beats from the top).
-fn onsets(r: &Reading) -> Vec<f32> {
-    let mut at = 0u32;
-    r.notes
-        .iter()
-        .map(|n| {
-            let o = at as f32 / BEAT as f32;
-            at += n.dur as u32;
-            o
-        })
-        .collect()
+// ------------------------------------------------------------------ drawing
+
+/// The sharp or flat the key signature gives a letter (0 C .. 6 B).
+fn key_acc(sig: i32, letter: i32) -> i32 {
+    const SHARPS: [i32; 7] = [3, 0, 4, 1, 5, 2, 6];
+    const FLATS: [i32; 7] = [6, 2, 5, 1, 4, 0, 3];
+    if sig > 0 && SHARPS[..sig as usize].contains(&letter) {
+        1
+    } else if sig < 0 && FLATS[..(-sig) as usize].contains(&letter) {
+        -1
+    } else {
+        0
+    }
 }
 
-/// The staff step of a written note (guitar is written an octave above it sounds); the bottom line E is 30.
-fn step_of(m: i32, sharps: bool) -> i32 {
-    let (letter, _, oct) = crate::lines::spell(m + 12, sharps);
-    oct * 7 + letter
-}
-
-/// Draw a line on staves, as many bars to a row as fit. `lit` is the note sounding now. With `tab` the tab is
-/// under each staff; with `names` the note names are.
-fn draw_reading(ui: &mut egui::Ui, r: &Reading, lit: Option<usize>, tab: bool, names: bool) {
-    let g = 7.0_f32;
-    let sig = KEYS[r.key].2;
-    let sharps = sig > 0;
-    let bar_len = r.beats * BEAT;
-    // the notes of each bar
-    let mut bars: Vec<Vec<usize>> = Vec::new();
-    let mut at = 0u16;
-    for (i, n) in r.notes.iter().enumerate() {
-        if at % bar_len == 0 {
-            bars.push(Vec::new());
-        }
-        if let Some(b) = bars.last_mut() {
-            b.push(i);
-        }
-        at += n.dur;
-    }
-    let slot = |d: u16| 20.0 + d as f32 * 1.7;
-    let bar_w = |b: &Vec<usize>| 18.0 + b.iter().map(|i| slot(r.notes[*i].dur)).sum::<f32>();
-    let w = ui.available_width().max(300.0);
-    let head_w = |first: bool| 40.0 + sig.unsigned_abs() as f32 * 9.0 + if first { 26.0 } else { 0.0 };
-    // rows of bars
-    let mut rows: Vec<Vec<usize>> = Vec::new();
-    let mut used = 0.0;
-    for (bi, b) in bars.iter().enumerate() {
-        let need = bar_w(b);
-        if rows.is_empty() || used + need > w - 12.0 {
-            rows.push(Vec::new());
-            used = head_w(rows.len() == 1);
-        }
-        if let Some(row) = rows.last_mut() {
-            row.push(bi);
-        }
-        used += need;
-    }
-    let above = 46.0;
-    let staff_h = 4.0 * g;
-    let below = 44.0;
-    let tab_h = if tab { 58.0 } else { 0.0 };
-    let names_h = if names { 18.0 } else { 0.0 };
-    let row_h = above + staff_h + below + tab_h + names_h;
-    let starts = onsets(r);
-    for (ri, row) in rows.iter().enumerate() {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::hover());
-        let p = ui.painter();
-        p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().beige_lt);
-        let top = rect.min.y + above;
-        let bottom = top + staff_h;
-        let y_of = |step: i32| bottom - (step - 30) as f32 * g / 2.0;
-        let line = Stroke::new(1.0_f32, pal().ink2);
-        let ink = pal().ink;
-        // how wide this row really is: its bars stretched to fill the paper
-        let natural: f32 = row.iter().map(|b| bar_w(&bars[*b])).sum();
-        let x_head = rect.min.x + head_w(ri == 0);
-        let last_row = ri + 1 == rows.len();
-        let stretch =
-            if last_row && natural < (rect.max.x - 10.0 - x_head) * 0.6 { 1.0 } else { (rect.max.x - 10.0 - x_head) / natural };
-        let x_end = x_head + natural * stretch;
-        for k in 0..5 {
-            let y = top + k as f32 * g;
-            p.line_segment([Pos2::new(rect.min.x + 6.0, y), Pos2::new(x_end, y)], line);
-        }
-        pixmap(
-            p,
-            Pos2::new(rect.min.x + 10.0, top - 1.7 * g),
-            7.4 * g / crate::lines_ui::CLEF.len() as f32,
-            &crate::lines_ui::CLEF,
-            ink,
-        );
-        // the key signature
-        const SHARP_STEPS: [i32; 7] = [38, 35, 39, 36, 33, 37, 34];
-        const FLAT_STEPS: [i32; 7] = [34, 37, 33, 36, 32, 35, 31];
-        for k in 0..sig.unsigned_abs() as usize {
-            let st = if sharps { SHARP_STEPS[k] } else { FLAT_STEPS[k] };
-            crate::lines_ui::accidental(
-                p,
-                Pos2::new(rect.min.x + 40.0 + k as f32 * 9.0, y_of(st)),
-                if sharps { 1 } else { -1 },
-                g,
-                ink,
-            );
-        }
-        // the time signature, on the first row
-        if ri == 0 {
-            let tx = rect.min.x + 40.0 + sig.unsigned_abs() as f32 * 9.0 + 12.0;
-            ptext(p, Pos2::new(tx, top + g), Align::Center, &r.beats.to_string(), 3.0, ink);
-            ptext(p, Pos2::new(tx, top + 3.0 * g), Align::Center, "4", 3.0, ink);
-        }
-        // the bar number
-        if let Some(b0) = row.first() {
-            ptext(p, Pos2::new(rect.min.x + 8.0, top - 2.6 * g), Align::Min, &(b0 + 1).to_string(), 1.0, pal().dim);
-        }
-        let tab_top = bottom + below;
-        let tab_y = |s: usize| tab_top + (5 - s) as f32 * 9.0;
-        if tab {
-            for s in 0..6 {
-                p.line_segment([Pos2::new(rect.min.x + 6.0, tab_y(s)), Pos2::new(x_end, tab_y(s))], line);
-            }
-        }
-        let mut x = x_head;
-        for bi in row {
-            let b = &bars[*bi];
-            x += 9.0 * stretch;
-            // where each note sits, and its stem direction (beamed groups agree)
-            let mut heads: Vec<(usize, f32, Option<i32>)> = Vec::new();
-            let mut xx = x;
-            for i in b {
-                let n = &r.notes[*i];
-                let cx = xx + slot(n.dur) * stretch * 0.35;
-                heads.push((*i, cx, n.midi.map(|m| step_of(m, sharps))));
-                xx += slot(n.dur) * stretch;
-            }
-            // beam groups: short notes within one beat
-            let mut groups: Vec<Vec<usize>> = Vec::new();
-            {
-                let mut cur: Vec<usize> = Vec::new();
-                let mut cur_beat = u32::MAX;
-                for (k, h) in heads.iter().enumerate() {
-                    let n = &r.notes[h.0];
-                    let beat = (starts[h.0] * 1000.0) as u32 / 1000;
-                    let short = n.dur < BEAT && n.midi.is_some();
-                    if short && beat == cur_beat && !cur.is_empty() {
-                        cur.push(k);
-                    } else {
-                        if !cur.is_empty() {
-                            groups.push(std::mem::take(&mut cur));
-                        }
-                        if short {
-                            cur.push(k);
-                            cur_beat = beat;
-                        }
-                    }
-                }
-                if !cur.is_empty() {
-                    groups.push(cur);
-                }
-            }
-            let in_group = |k: usize| groups.iter().position(|gr| gr.contains(&k));
-            let up_of = |steps: &[i32]| (steps.iter().sum::<i32>() as f32 / steps.len().max(1) as f32) < 34.0;
-            let mut stem_tip: Vec<Option<(f32, f32, bool)>> = vec![None; heads.len()];
-            for gr in &groups {
-                if gr.len() < 2 {
-                    continue;
-                }
-                let steps: Vec<i32> = gr.iter().filter_map(|k| heads[*k].2).collect();
-                let up = up_of(&steps);
-                let ys: Vec<f32> = steps.iter().map(|s| y_of(*s)).collect();
-                let tip = if up {
-                    ys.iter().cloned().fold(f32::INFINITY, f32::min) - 3.4 * g
-                } else {
-                    ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 3.4 * g
-                };
-                for k in gr {
-                    stem_tip[*k] = Some((tip, 0.0, up));
-                }
-            }
-            for (k, (i, cx, st)) in heads.iter().enumerate() {
-                let n = &r.notes[*i];
-                let on = lit == Some(*i);
-                let col = if on { pal().red } else { ink };
-                if on {
-                    p.rect_filled(
-                        Rect::from_min_max(Pos2::new(cx - 10.0, rect.min.y + 6.0), Pos2::new(cx + 12.0, bottom + below - 4.0)),
-                        2.0,
-                        pal().red.gamma_multiply(0.15),
-                    );
-                }
-                let Some(st) = *st else {
-                    draw_rest(p, *cx, bottom, g, n.dur, col);
-                    continue;
-                };
-                let y = y_of(st);
-                // ledger lines
-                let mut s = 28;
-                while s >= st {
-                    p.line_segment([Pos2::new(cx - 9.0, y_of(s)), Pos2::new(cx + 9.0, y_of(s))], line);
-                    s -= 2;
-                }
-                let mut s = 40;
-                while s <= st {
-                    p.line_segment([Pos2::new(cx - 9.0, y_of(s)), Pos2::new(cx + 9.0, y_of(s))], line);
-                    s += 2;
-                }
-                let open = n.dur >= 2 * BEAT;
-                let rad = g * 0.58;
-                if open {
-                    p.circle_stroke(Pos2::new(*cx, y), rad - 0.6, Stroke::new(1.8_f32, col));
-                } else {
-                    p.circle_filled(Pos2::new(*cx, y), rad, col);
-                }
-                // a dot for dotted notes, in a space
-                if matches!(n.dur, 9 | 18 | 36) {
-                    let dy = if st % 2 == 0 { -g / 2.0 } else { 0.0 };
-                    p.circle_filled(Pos2::new(cx + rad + 4.0, y + dy), 1.8, col);
-                }
-                if n.dur < 4 * BEAT {
-                    let (tip, up) = match stem_tip[k] {
-                        Some((tip, _, up)) => (tip, up),
-                        None => {
-                            let up = st < 34;
-                            (if up { y - 3.4 * g } else { y + 3.4 * g }, up)
-                        }
-                    };
-                    let sx = if up { cx + rad - 0.5 } else { cx - rad + 0.5 };
-                    p.line_segment([Pos2::new(sx, y), Pos2::new(sx, tip)], Stroke::new(1.3_f32, col));
-                    // a lone eighth or sixteenth gets its flags
-                    if n.dur < BEAT && in_group(k).is_none_or(|gi| groups[gi].len() < 2) {
-                        let flags = if n.dur <= 3 { 2 } else { 1 };
-                        for f in 0..flags {
-                            let fy = tip + if up { f as f32 * 6.0 } else { -(f as f32) * 6.0 };
-                            let d = if up { 1.0 } else { -1.0 };
-                            let pts =
-                                vec![Pos2::new(sx, fy), Pos2::new(sx + 6.0, fy + 7.0 * d), Pos2::new(sx + 5.0, fy + 13.0 * d)];
-                            p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, col)));
-                        }
-                    }
-                }
-                if tab {
-                    if let Some((s, f)) = finger(n.midi.unwrap_or(0), r.pos) {
-                        let txt = f.to_string();
-                        p.rect_filled(
-                            Rect::from_center_size(Pos2::new(*cx, tab_y(s)), Vec2::new(text_w(&txt, 1.0) + 6.0, 9.0)),
-                            0.0,
-                            pal().beige_lt,
-                        );
-                        ptext(p, Pos2::new(*cx, tab_y(s)), Align::Center, &txt, 1.0, col);
-                    }
-                }
-                if names {
-                    let (letter, acc, _) = crate::lines::spell(n.midi.unwrap_or(0), sharps);
-                    let nm = format!(
-                        "{}{}",
-                        ["C", "D", "E", "F", "G", "A", "B"][letter as usize],
-                        match acc {
-                            1 => "#",
-                            -1 => "b",
-                            _ => "",
-                        }
-                    );
-                    ptext(p, Pos2::new(*cx, rect.max.y - 10.0), Align::Center, &nm, 1.0, if on { pal().red } else { pal().dim });
-                }
-            }
-            // beams: one for eighths, a second for sixteenths, a 3 over triplets
-            for gr in &groups {
-                if gr.len() < 2 {
-                    continue;
-                }
-                let Some((tip, _, up)) = stem_tip[gr[0]] else { continue };
-                let sx = |k: usize| heads[k].1 + if up { g * 0.58 - 0.5 } else { -g * 0.58 + 0.5 };
-                let (a, z) = (sx(gr[0]), sx(gr[gr.len() - 1]));
-                let thick = 3.0;
-                let band = |y: f32| Rect::from_min_max(Pos2::new(a, y.min(y + thick)), Pos2::new(z, y.max(y + thick)));
-                p.rect_filled(band(if up { tip } else { tip - thick }), 0.0, ink);
-                let y2 = if up { tip + 5.0 } else { tip - 5.0 - thick };
-                for (j, k) in gr.iter().enumerate() {
-                    if r.notes[heads[*k].0].dur > 3 {
-                        continue;
-                    }
-                    // a sixteenth: the second beam to its neighbour if that is one too, else a stub
-                    let next16 = gr.get(j + 1).is_some_and(|kk| r.notes[heads[*kk].0].dur <= 3);
-                    let x0 = sx(*k);
-                    let x1 = if next16 {
-                        sx(gr[j + 1])
-                    } else if j + 1 < gr.len() {
-                        x0 + 8.0
-                    } else {
-                        x0 - 8.0
-                    };
-                    p.rect_filled(Rect::from_min_max(Pos2::new(x0.min(x1), y2), Pos2::new(x0.max(x1), y2 + thick)), 0.0, ink);
-                }
-                if r.notes[heads[gr[0]].0].dur == 4 {
-                    let ty = if up { tip - 9.0 } else { tip + 9.0 };
-                    ptext(p, Pos2::new((a + z) / 2.0, ty), Align::Center, "3", 1.0, pal().ink2);
-                }
-            }
-            x += (bar_w(b) - 9.0) * stretch;
-            // the bar line (a double one at the end)
-            let end = *bi + 1 == bars.len();
-            p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], Stroke::new(if end { 3.0_f32 } else { 1.0 }, ink));
-            if end {
-                p.line_segment([Pos2::new(x - 4.0, top), Pos2::new(x - 4.0, bottom)], line);
-            }
-        }
-        ui.add_space(6.0);
-    }
+/// A natural sign at `c`.
+fn natural(p: &egui::Painter, c: Pos2, g: f32, col: Color32) {
+    let s = Stroke::new(1.1_f32, col);
+    p.line_segment([Pos2::new(c.x - 0.35 * g, c.y - 1.3 * g), Pos2::new(c.x - 0.35 * g, c.y + 0.5 * g)], s);
+    p.line_segment([Pos2::new(c.x + 0.35 * g, c.y - 0.5 * g), Pos2::new(c.x + 0.35 * g, c.y + 1.3 * g)], s);
+    p.line_segment(
+        [Pos2::new(c.x - 0.35 * g, c.y - 0.1 * g), Pos2::new(c.x + 0.35 * g, c.y - 0.4 * g)],
+        Stroke::new(1.8_f32, col),
+    );
+    p.line_segment(
+        [Pos2::new(c.x - 0.35 * g, c.y + 0.5 * g), Pos2::new(c.x + 0.35 * g, c.y + 0.2 * g)],
+        Stroke::new(1.8_f32, col),
+    );
 }
 
 /// A rest of `dur` twelfths of a beat, centred at `x` on the staff whose bottom line is at `bottom`.
@@ -552,16 +600,15 @@ fn draw_rest(p: &egui::Painter, x: f32, bottom: f32, g: f32, dur: u16, col: Colo
         24 | 36 => {
             p.rect_filled(Rect::from_min_max(Pos2::new(x - g * 0.7, mid - g * 0.5), Pos2::new(x + g * 0.7, mid)), 0.0, col);
         }
-        12 | 18 => {
-            let k = g / 7.0;
+        12 | 18 | 8 => {
+            let k = g / 7.0 * 1.2;
             let pts: Vec<Pos2> = [(-2.0, -10.0), (3.0, -5.0), (-2.0, 0.0), (3.0, 5.0), (-1.0, 5.0), (1.0, 10.0)]
                 .iter()
-                .map(|(dx, dy)| Pos2::new(x + dx * k * 1.2, mid + dy * k * 1.2))
+                .map(|(dx, dy)| Pos2::new(x + dx * k, mid + dy * k))
                 .collect();
             p.add(egui::Shape::line(pts, Stroke::new(2.0_f32, col)));
         }
         _ => {
-            // an eighth (one hook) or sixteenth (two)
             let hooks = if dur <= 3 { 2 } else { 1 };
             p.line_segment([Pos2::new(x + 3.0, mid - g * 0.8), Pos2::new(x - 1.0, mid + g * 1.4)], Stroke::new(1.6_f32, col));
             for h in 0..hooks {
@@ -571,8 +618,371 @@ fn draw_rest(p: &egui::Painter, x: f32, bottom: f32, g: f32, dur: u16, col: Colo
     }
 }
 
+/// Draw a line of music on staves, as many bars to a row as fit. `lit` is the note sounding now (counted through
+/// the bars as written). With `tab` the tab is under each staff; with `names` the note names are.
+fn draw_reading(ui: &mut egui::Ui, r: &Reading, lit: Option<usize>, tab: bool, names: bool) {
+    let g = 7.0_f32;
+    let sig = r.sig;
+    let slot = |d: u16| 20.0 + d as f32 * 1.7;
+    let bar_w = |b: &Bar| {
+        18.0 + b.notes.iter().map(|n| slot(n.dur) + if n.heads.iter().any(|h| h.acc != 0) { 8.0 } else { 0.0 }).sum::<f32>()
+    };
+    let w = ui.available_width().max(300.0);
+    let head_w = |first: bool| 40.0 + sig.unsigned_abs() as f32 * 9.0 + if first { 26.0 } else { 0.0 };
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    let mut used = 0.0;
+    for (bi, b) in r.bars.iter().enumerate() {
+        let need = bar_w(b);
+        if rows.is_empty() || used + need > w - 12.0 {
+            rows.push(Vec::new());
+            used = head_w(rows.len() == 1);
+        }
+        if let Some(row) = rows.last_mut() {
+            row.push(bi);
+        }
+        used += need;
+    }
+    // where each bar's notes start in the written count, and in beats from the top of the bar
+    let mut first_note = Vec::new();
+    let mut n = 0;
+    for b in &r.bars {
+        first_note.push(n);
+        n += b.notes.len();
+    }
+    let (above, staff_h, below) = (50.0, 4.0 * g, 48.0);
+    let tab_h = if tab { 58.0 } else { 0.0 };
+    let names_h = if names { 18.0 } else { 0.0 };
+    let row_h = above + staff_h + below + tab_h + names_h;
+    for (ri, row) in rows.iter().enumerate() {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::hover());
+        let p = ui.painter();
+        p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().beige_lt);
+        let top = rect.min.y + above;
+        let bottom = top + staff_h;
+        let y_of = |step: i32| bottom - (step - 30) as f32 * g / 2.0;
+        let line = Stroke::new(1.0_f32, pal().ink2);
+        let ink = pal().ink;
+        let natural_w: f32 = row.iter().map(|b| bar_w(&r.bars[*b])).sum();
+        let x_head = rect.min.x + head_w(ri == 0);
+        let room = rect.max.x - 10.0 - x_head;
+        let stretch = if ri + 1 == rows.len() && natural_w < room * 0.6 { 1.0 } else { room / natural_w };
+        let x_end = x_head + natural_w * stretch;
+        for k in 0..5 {
+            let y = top + k as f32 * g;
+            p.line_segment([Pos2::new(rect.min.x + 6.0, y), Pos2::new(x_end, y)], line);
+        }
+        pixmap(
+            p,
+            Pos2::new(rect.min.x + 10.0, top - 1.7 * g),
+            7.4 * g / crate::lines_ui::CLEF.len() as f32,
+            &crate::lines_ui::CLEF,
+            ink,
+        );
+        const SHARP_STEPS: [i32; 7] = [38, 35, 39, 36, 33, 37, 34];
+        const FLAT_STEPS: [i32; 7] = [34, 37, 33, 36, 32, 35, 31];
+        for k in 0..(sig.unsigned_abs() as usize).min(7) {
+            let st = if sig > 0 { SHARP_STEPS[k] } else { FLAT_STEPS[k] };
+            crate::lines_ui::accidental(p, Pos2::new(rect.min.x + 40.0 + k as f32 * 9.0, y_of(st)), sig.signum(), g, ink);
+        }
+        if ri == 0 {
+            let tx = rect.min.x + 40.0 + sig.unsigned_abs() as f32 * 9.0 + 12.0;
+            ptext(p, Pos2::new(tx, top + g), Align::Center, &r.beats.to_string(), 3.0, ink);
+            ptext(p, Pos2::new(tx, top + 3.0 * g), Align::Center, "4", 3.0, ink);
+        }
+        if let Some(b0) = row.first() {
+            ptext(p, Pos2::new(rect.min.x + 8.0, top - 3.0 * g), Align::Min, &(b0 + 1).to_string(), 1.0, pal().dim);
+        }
+        let tab_top = bottom + below;
+        let tab_y = |s: usize| tab_top + (5 - s) as f32 * 9.0;
+        if tab {
+            for s in 0..6 {
+                p.line_segment([Pos2::new(rect.min.x + 6.0, tab_y(s)), Pos2::new(x_end, tab_y(s))], line);
+            }
+        }
+        // a tie waiting for its next note: (x, step, stem up)
+        let mut tie_from: Option<(f32, Vec<i32>, bool)> = None;
+        let mut x = x_head;
+        for bi in row {
+            let b = &r.bars[*bi];
+            if b.rep_start {
+                p.line_segment([Pos2::new(x + 2.0, top), Pos2::new(x + 2.0, bottom)], Stroke::new(3.0_f32, ink));
+                p.line_segment([Pos2::new(x + 6.0, top), Pos2::new(x + 6.0, bottom)], line);
+                for dy in [1.5, 2.5] {
+                    p.circle_filled(Pos2::new(x + 10.0, top + dy * g), 1.8, ink);
+                }
+            }
+            x += 9.0 * stretch + if b.rep_start { 8.0 } else { 0.0 };
+            // where each note sits
+            let mut xs: Vec<f32> = Vec::new();
+            let mut starts: Vec<u16> = Vec::new();
+            let mut xx = x;
+            let mut at = 0u16;
+            for n in &b.notes {
+                let accw = if n.heads.iter().any(|h| h.acc != 0) { 8.0 } else { 0.0 };
+                xs.push(xx + accw + slot(n.dur) * stretch * 0.35);
+                starts.push(at);
+                xx += (slot(n.dur) + accw) * stretch;
+                at += n.dur;
+            }
+            // beam groups: short notes inside one beat
+            let mut groups: Vec<Vec<usize>> = Vec::new();
+            let mut cur: Vec<usize> = Vec::new();
+            for (k, n) in b.notes.iter().enumerate() {
+                let short = n.dur < BEAT && n.dur != 8 && !n.heads.is_empty();
+                let same_beat = cur.last().is_some_and(|l| starts[*l] / BEAT == starts[k] / BEAT);
+                if short && same_beat {
+                    cur.push(k);
+                } else {
+                    if !cur.is_empty() {
+                        groups.push(std::mem::take(&mut cur));
+                    }
+                    if short {
+                        cur.push(k);
+                    }
+                }
+            }
+            if !cur.is_empty() {
+                groups.push(cur);
+            }
+            let mean_step = |k: usize| {
+                let h = &b.notes[k].heads;
+                h.iter().map(|x| x.step).sum::<i32>() as f32 / h.len().max(1) as f32
+            };
+            let mut tips: Vec<Option<(f32, bool)>> = vec![None; b.notes.len()];
+            for gr in groups.iter().filter(|g| g.len() > 1) {
+                let up = gr.iter().map(|k| mean_step(*k)).sum::<f32>() / gr.len() as f32 <= 34.0;
+                let ys: Vec<f32> = gr.iter().flat_map(|k| b.notes[*k].heads.iter().map(|h| y_of(h.step))).collect();
+                let tip = if up {
+                    ys.iter().cloned().fold(f32::INFINITY, f32::min) - 3.4 * g
+                } else {
+                    ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 3.4 * g
+                };
+                for k in gr {
+                    tips[*k] = Some((tip, up));
+                }
+            }
+            // sharps, flats and naturals written in this bar so far (by staff step)
+            let mut shown: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+            for (k, n) in b.notes.iter().enumerate() {
+                let gi = first_note[*bi] + k;
+                let cx = xs[k];
+                let on = lit == Some(gi);
+                let col = if on { pal().red } else { ink };
+                if on {
+                    p.rect_filled(
+                        Rect::from_min_max(Pos2::new(cx - 11.0, rect.min.y + 6.0), Pos2::new(cx + 13.0, bottom + below - 4.0)),
+                        2.0,
+                        pal().red.gamma_multiply(0.15),
+                    );
+                }
+                if n.heads.is_empty() {
+                    draw_rest(p, cx, bottom, g, n.dur, col);
+                    tie_from = None;
+                    continue;
+                }
+                let rad = g * 0.58;
+                let up = tips[k].map(|t| t.1).unwrap_or(mean_step(k) <= 34.0);
+                // ledger lines
+                let lo = n.heads.iter().map(|h| h.step).min().unwrap_or(30);
+                let hi = n.heads.iter().map(|h| h.step).max().unwrap_or(30);
+                let mut s = 28;
+                while s >= lo {
+                    p.line_segment(
+                        [
+                            Pos2::new(cx - 9.0, y_of(s)),
+                            Pos2::new(cx + 9.0 + rad * 2.0 * (n.heads.len() > 1) as i32 as f32, y_of(s)),
+                        ],
+                        line,
+                    );
+                    s -= 2;
+                }
+                let mut s = 40;
+                while s <= hi {
+                    p.line_segment(
+                        [
+                            Pos2::new(cx - 9.0, y_of(s)),
+                            Pos2::new(cx + 9.0 + rad * 2.0 * (n.heads.len() > 1) as i32 as f32, y_of(s)),
+                        ],
+                        line,
+                    );
+                    s += 2;
+                }
+                // heads (the upper of two a step apart beside the other), dots, accidentals
+                let open = n.dur >= 2 * BEAT;
+                let mut side = vec![0.0f32; n.heads.len()];
+                for i in 1..n.heads.len() {
+                    if n.heads[i].step - n.heads[i - 1].step <= 1 && side[i - 1] == 0.0 {
+                        side[i] = rad * 2.0;
+                    }
+                }
+                let mut acc_col = 0;
+                for (i, h) in n.heads.iter().enumerate().rev() {
+                    let c = Pos2::new(cx + side[i], y_of(h.step));
+                    if open {
+                        p.circle_stroke(c, rad - 0.6, Stroke::new(1.8_f32, col));
+                    } else {
+                        p.circle_filled(c, rad, col);
+                    }
+                    if matches!(n.dur, 9 | 18 | 36) {
+                        let dy = if h.step % 2 == 0 { -g / 2.0 } else { 0.0 };
+                        p.circle_filled(Pos2::new(cx + side.iter().cloned().fold(0.0, f32::max) + rad + 4.0, c.y + dy), 1.8, col);
+                    }
+                    let expected = shown.get(&h.step).copied().unwrap_or(key_acc(sig, h.step.rem_euclid(7)));
+                    if h.acc != expected {
+                        let ax = cx - g * 2.0 - acc_col as f32 * g * 1.5;
+                        if h.acc == 0 {
+                            natural(p, Pos2::new(ax, c.y), g, col);
+                        } else {
+                            crate::lines_ui::accidental(p, Pos2::new(ax, c.y), h.acc, g, col);
+                        }
+                        acc_col = (acc_col + 1) % 2;
+                        shown.insert(h.step, h.acc);
+                    }
+                }
+                // a tie arriving here from the note before
+                if let Some((fx, steps, tup)) = tie_from.take() {
+                    for st in steps {
+                        let y = y_of(st) + if tup { g * 0.9 } else { -g * 0.9 };
+                        let mid = Pos2::new((fx + cx) / 2.0, y + if tup { 5.0 } else { -5.0 });
+                        let pts: Vec<Pos2> = (0..=8)
+                            .map(|t| {
+                                let t = t as f32 / 8.0;
+                                let a = Pos2::new(fx + 4.0, y);
+                                let z = Pos2::new(cx - 4.0, y);
+                                let u = 1.0 - t;
+                                Pos2::new(
+                                    u * u * a.x + 2.0 * u * t * mid.x + t * t * z.x,
+                                    u * u * a.y + 2.0 * u * t * mid.y + t * t * z.y,
+                                )
+                            })
+                            .collect();
+                        p.add(egui::Shape::line(pts, Stroke::new(1.3_f32, col)));
+                    }
+                }
+                if n.tie {
+                    tie_from = Some((cx, n.heads.iter().map(|h| h.step).collect(), up));
+                }
+                if n.dur < 4 * BEAT {
+                    let ys: Vec<f32> = n.heads.iter().map(|h| y_of(h.step)).collect();
+                    let (ytop, ybot) =
+                        (ys.iter().cloned().fold(f32::INFINITY, f32::min), ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max));
+                    let tip = tips[k].map(|t| t.0).unwrap_or(if up { ytop - 3.4 * g } else { ybot + 3.4 * g });
+                    let sx = if up { cx + rad - 0.5 } else { cx - rad + 0.5 };
+                    p.line_segment([Pos2::new(sx, if up { ybot } else { ytop }), Pos2::new(sx, tip)], Stroke::new(1.3_f32, col));
+                    let lone = groups.iter().find(|gr| gr.contains(&k)).is_none_or(|gr| gr.len() < 2);
+                    if n.dur < BEAT && n.dur != 8 && lone {
+                        let flags = if n.dur <= 3 { 2 } else { 1 };
+                        for f in 0..flags {
+                            let d = if up { 1.0 } else { -1.0 };
+                            let fy = tip + f as f32 * 6.0 * d;
+                            let pts =
+                                vec![Pos2::new(sx, fy), Pos2::new(sx + 6.0, fy + 7.0 * d), Pos2::new(sx + 5.0, fy + 13.0 * d)];
+                            p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, col)));
+                        }
+                    }
+                    if n.dur == 8 {
+                        let ty = if up { tip - 8.0 } else { tip + 8.0 };
+                        ptext(p, Pos2::new(cx, ty), Align::Center, "3", 1.0, pal().ink2);
+                    }
+                }
+                if tab {
+                    let midis: Vec<i32> = n.heads.iter().map(|h| h.midi).collect();
+                    for sf in finger_all(&midis, r.pos).into_iter().flatten() {
+                        let txt = sf.1.to_string();
+                        p.rect_filled(
+                            Rect::from_center_size(Pos2::new(cx, tab_y(sf.0)), Vec2::new(text_w(&txt, 1.0) + 6.0, 9.0)),
+                            0.0,
+                            pal().beige_lt,
+                        );
+                        ptext(p, Pos2::new(cx, tab_y(sf.0)), Align::Center, &txt, 1.0, col);
+                    }
+                }
+                if names {
+                    let nm: Vec<String> = n
+                        .heads
+                        .iter()
+                        .rev()
+                        .map(|h| {
+                            format!(
+                                "{}{}",
+                                ["C", "D", "E", "F", "G", "A", "B"][h.step.rem_euclid(7) as usize],
+                                match h.acc {
+                                    1 => "#",
+                                    -1 => "b",
+                                    _ => "",
+                                }
+                            )
+                        })
+                        .collect();
+                    ptext(
+                        p,
+                        Pos2::new(cx, rect.max.y - 10.0),
+                        Align::Center,
+                        &nm.join(""),
+                        1.0,
+                        if on { pal().red } else { pal().dim },
+                    );
+                }
+            }
+            // beams: one for eighths, a second for sixteenths, a 3 over triplets
+            for gr in groups.iter().filter(|g| g.len() > 1) {
+                let Some((tip, up)) = tips[gr[0]] else { continue };
+                let sx = |k: usize| xs[k] + if up { g * 0.58 - 0.5 } else { -g * 0.58 + 0.5 };
+                let (a, z) = (sx(gr[0]), sx(gr[gr.len() - 1]));
+                let thick = 3.0;
+                let y1 = if up { tip } else { tip - thick };
+                p.rect_filled(Rect::from_min_max(Pos2::new(a, y1), Pos2::new(z, y1 + thick)), 0.0, ink);
+                let y2 = if up { tip + 5.0 } else { tip - 5.0 - thick };
+                for (j, k) in gr.iter().enumerate() {
+                    if b.notes[*k].dur > 3 {
+                        continue;
+                    }
+                    let next16 = gr.get(j + 1).is_some_and(|kk| b.notes[*kk].dur <= 3);
+                    let x0 = sx(*k);
+                    let x1 = if next16 {
+                        sx(gr[j + 1])
+                    } else if j + 1 < gr.len() {
+                        x0 + 8.0
+                    } else {
+                        x0 - 8.0
+                    };
+                    p.rect_filled(Rect::from_min_max(Pos2::new(x0.min(x1), y2), Pos2::new(x0.max(x1), y2 + thick)), 0.0, ink);
+                }
+                if b.notes[gr[0]].dur == 4 {
+                    let ty = if up { tip - 9.0 } else { tip + 9.0 };
+                    ptext(p, Pos2::new((a + z) / 2.0, ty), Align::Center, "3", 1.0, pal().ink2);
+                }
+            }
+            x += (bar_w(b) - 9.0) * stretch;
+            let end = *bi + 1 == r.bars.len();
+            if b.rep_end {
+                for dy in [1.5, 2.5] {
+                    p.circle_filled(Pos2::new(x - 10.0, top + dy * g), 1.8, ink);
+                }
+            }
+            if end || b.rep_end {
+                p.line_segment([Pos2::new(x - 4.0, top), Pos2::new(x - 4.0, bottom)], line);
+                p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], Stroke::new(3.0_f32, ink));
+            } else {
+                p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], line);
+            }
+        }
+        // a tie running over the end of the row
+        if let Some((fx, steps, tup)) = tie_from {
+            for st in steps {
+                let y = y_of(st) + if tup { g * 0.9 } else { -g * 0.9 };
+                p.line_segment(
+                    [Pos2::new(fx + 4.0, y), Pos2::new(x_end, y + if tup { 3.0 } else { -3.0 })],
+                    Stroke::new(1.3_f32, pal().ink),
+                );
+            }
+        }
+        ui.add_space(6.0);
+    }
+}
+
 /// The notes of the key in a position, on a little neck (fret numbers along the bottom).
-fn position_map(ui: &mut egui::Ui, key: usize, pos: u8, sharps: bool) {
+fn position_map(ui: &mut egui::Ui, tonic: i32, pos: u8, sharps: bool) {
     let (lo, hi) = window(pos);
     let n = (hi - lo + 1) as f32;
     let w = (n * 56.0 + 40.0).min(ui.available_width());
@@ -599,7 +1009,6 @@ fn position_map(ui: &mut egui::Ui, key: usize, pos: u8, sharps: bool) {
             pal().dim,
         );
     }
-    let tonic = KEYS[key].1;
     for s in 0..6 {
         let y = neck.min.y + (5 - s) as f32 * sh + sh / 2.0;
         p.line_segment([Pos2::new(neck.min.x, y), Pos2::new(neck.max.x, y)], Stroke::new(1.0_f32, pal().ink.gamma_multiply(0.5)));
@@ -616,13 +1025,253 @@ fn position_map(ui: &mut egui::Ui, key: usize, pos: u8, sharps: bool) {
     }
 }
 
+/// The key note for a signature (major), for the position map.
+fn tonic_of(sig: i32) -> i32 {
+    (sig * 7).rem_euclid(12)
+}
+
 impl App {
     /// The READING page.
-    pub(crate) fn reading_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let _ = acts;
+    pub(crate) fn reading_view(&mut self, ui: &mut egui::Ui, _acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "SIGHT READING", 3.0, pal().ink);
-        para(ui, "Read in one position, in one key, without looking at the neck. Pick the position, the key and how hard the rhythms get, then press NEW LINE. Count yourself in and keep going: a wrong note is fine, stopping isn't. HEAR IT plays the line; PLAY ALONG only clicks, with a cursor, while you play. Every line is new.", pal().ink2);
+        if !self.rd_book_loaded {
+            self.rd_reload();
+        }
+        if let Some(v) = tab_row(ui, &["THE BOOK", "MADE-UP LINES"], self.rd_mode as usize) {
+            self.rd_mode = v as u8;
+            self.player.send(Cmd::StopOnce);
+            self.rd_play = None;
+        }
+        ui.add_space(6.0);
+        if self.rd_mode == 0 {
+            self.rd_book_page(ui);
+        } else {
+            self.rd_made_up(ui);
+        }
+        ui.add_space(10.0);
+        section_header(ui, "HOW TO WORK");
+        for tip in [
+            "Before you play, look it over: the key, the time, the highest and lowest notes, the hardest rhythm.",
+            "Count a bar in out loud. Play slower than you think you need to, then raise the tempo 5 at a time.",
+            "Eyes on the page, not the neck. Stay in the position: one finger per fret.",
+            "Keep going. A wrong note is fine; stopping isn't. The beat matters more than the notes.",
+            "A little every day beats a lot once a week. Work at your own pace and mark things done when they are.",
+        ] {
+            para(ui, tip, pal().ink2);
+        }
+        ui.add_space(20.0);
+    }
+
+    /// Read the book file again (after it changed).
+    pub(crate) fn rd_reload(&mut self) {
+        self.rd_book_loaded = true;
+        let (lessons, errs) = std::fs::read_to_string(book_path()).map(|t| parse_book(&t)).unwrap_or_default();
+        self.rd_book = lessons;
+        self.rd_errs = errs;
+    }
+
+    /// The tempo row and the play / helps buttons, shared by both kinds of reading.
+    fn rd_controls(&mut self, ui: &mut egui::Ui, mine: &Reading, other: Option<&Reading>) {
+        let lit_on = self.rd_play.is_some();
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "TEMPO", 60.0);
+            if retro_btn_w(ui, "-", 28.0, false).clicked() {
+                self.rd_bpm = (self.rd_bpm - 5).max(30);
+            }
+            crate::lcd_box(ui, &format!("{} BPM", self.rd_bpm), 80.0, pal().ink);
+            if retro_btn_w(ui, "+", 28.0, false).clicked() {
+                self.rd_bpm = (self.rd_bpm + 5).min(220);
+            }
+            ui.add_space(10.0);
+            if retro_btn(ui, "HEAR IT", false).tip("A bar to count you in, then this part").clicked() {
+                self.rd_start(mine, None, false);
+            }
+            if let Some(o) = other {
+                if retro_btn(ui, "HEAR BOTH", false).tip("Both guitars together").clicked() {
+                    self.rd_start(mine, Some(o), false);
+                }
+            }
+            let along_tip = if other.is_some() {
+                "The other guitar plays (and the clicks), you play your part"
+            } else {
+                "Just the clicks and the cursor - you play it"
+            };
+            if retro_btn(ui, "PLAY ALONG", false).tip(along_tip).clicked() {
+                self.rd_start(mine, other, true);
+            }
+            if lit_on && retro_btn(ui, "STOP", false).clicked() {
+                self.player.send(Cmd::StopOnce);
+                self.rd_play = None;
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "SHOW TAB", self.rd_tab).tip("Check yourself: where each note is played in this position").clicked()
+            {
+                self.rd_tab = !self.rd_tab;
+            }
+            if retro_btn(ui, "NOTE NAMES", self.rd_names).clicked() {
+                self.rd_names = !self.rd_names;
+            }
+            if retro_btn(ui, "THE POSITION", self.rd_map).tip("The key's notes in this position, on the neck").clicked() {
+                self.rd_map = !self.rd_map;
+            }
+        });
+        if self.rd_map {
+            ui.add_space(4.0);
+            position_map(ui, tonic_of(mine.sig), mine.pos, mine.sig > 0);
+        }
+        ui.add_space(6.0);
+    }
+
+    /// THE BOOK: lesson by lesson.
+    fn rd_book_page(&mut self, ui: &mut egui::Ui) {
+        if self.rd_book.is_empty() {
+            para(ui, "Have William Leavitt's A Modern Method for Guitar, Volume 1? Your own copy can be worked through here lesson by lesson: every exercise, solo and duet written out bar for bar, played, and ticked off as you go. The book is kept on this computer only, in a file called reading_book.txt in Backline's folder; it is never part of Backline. No book? MADE-UP LINES works the same way with fresh lines.", pal().ink2);
+            ui.horizontal_wrapped(|ui| {
+                if retro_btn(ui, "SHOW THE FOLDER", false).clicked() {
+                    crate::sources::reveal(&book_path().to_string_lossy());
+                }
+                if retro_btn(ui, "LOOK AGAIN", false).tip("Read the book file again").clicked() {
+                    self.rd_reload();
+                }
+            });
+            return;
+        }
+        let total: usize = self.rd_book.iter().map(|l| l.pieces.len()).sum();
+        let id = |l: &Lesson, p: &Piece| format!("{}:{}", l.page, p.name);
+        let done_n = self
+            .rd_book
+            .iter()
+            .map(|l| l.pieces.iter().filter(|p| self.store.reading_done.contains_key(&id(l, p))).count())
+            .sum::<usize>();
+        // the lesson list, a mark on the ones finished
+        self.rd_lesson = self.rd_lesson.min(self.rd_book.len() - 1);
+        let names: Vec<String> = self
+            .rd_book
+            .iter()
+            .map(|l| {
+                let all = !l.pieces.is_empty() && l.pieces.iter().all(|p| self.store.reading_done.contains_key(&id(l, p)));
+                format!("P.{}  {}{}", l.page, l.title.to_uppercase(), if all { "  - DONE" } else { "" })
+            })
+            .collect();
+        let names: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn_w(ui, "<", 30.0, false).tip("The lesson before").clicked() && self.rd_lesson > 0 {
+                self.rd_lesson -= 1;
+                self.rd_piece = 0;
+            }
+            if let Some(i) = dropdown(ui, "rd_lesson", "", &names, self.rd_lesson, 380.0) {
+                self.rd_lesson = i;
+                self.rd_piece = 0;
+                self.rd_part = 0;
+            }
+            if retro_btn_w(ui, ">", 30.0, false).tip("The next lesson").clicked() && self.rd_lesson + 1 < self.rd_book.len() {
+                self.rd_lesson += 1;
+                self.rd_piece = 0;
+            }
+            ui.add_space(10.0);
+            crate::views::label(ui, &format!("{} OF {} DONE", done_n, total), 120.0);
+            if retro_btn(ui, "PICK UP WHERE I LEFT OFF", false).tip("The first exercise not done yet").clicked() {
+                'find: for (li, l) in self.rd_book.iter().enumerate() {
+                    for (pi, p) in l.pieces.iter().enumerate() {
+                        if !self.store.reading_done.contains_key(&id(l, p)) {
+                            self.rd_lesson = li;
+                            self.rd_piece = pi;
+                            self.rd_part = 0;
+                            break 'find;
+                        }
+                    }
+                }
+            }
+            if retro_btn(ui, "RELOAD", false).tip("Read the book file again (after pages are added)").clicked() {
+                self.rd_reload();
+            }
+        });
+        for e in &self.rd_errs {
+            crate::views::dim_line(ui, &format!("BOOK FILE: {}", e), 1.0, pal().red);
+        }
+        let lesson = self.rd_book[self.rd_lesson].clone();
+        ui.add_space(4.0);
+        section_header(ui, &format!("PAGE {}  -  {}", lesson.page, lesson.title.to_uppercase()));
+        for n in &lesson.notes {
+            para(ui, n, pal().ink2);
+        }
+        if lesson.pieces.is_empty() {
+            para(ui, "Work this page from your book.", pal().dim);
+            return;
+        }
+        self.rd_piece = self.rd_piece.min(lesson.pieces.len() - 1);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            for (i, p) in lesson.pieces.iter().enumerate() {
+                let done = self.store.reading_done.contains_key(&id(&lesson, p));
+                let label = format!("{}{}", p.name.to_uppercase(), if done { " *" } else { "" });
+                if retro_btn(ui, &label, self.rd_piece == i).tip(if done { "Done (*)" } else { "Not done yet" }).clicked() {
+                    self.rd_piece = i;
+                    self.rd_part = 0;
+                    self.player.send(Cmd::StopOnce);
+                    self.rd_play = None;
+                }
+            }
+        });
+        let piece = lesson.pieces[self.rd_piece].clone();
+        self.rd_part = self.rd_part.min(piece.parts.len() - 1);
+        if piece.parts.len() > 1 {
+            ui.horizontal_wrapped(|ui| {
+                crate::views::label(ui, "YOUR PART", 100.0);
+                for (i, (pn, _)) in piece.parts.iter().enumerate() {
+                    if retro_btn(ui, &pn.to_uppercase(), self.rd_part == i).clicked() {
+                        self.rd_part = i;
+                    }
+                }
+            });
+        }
+        if self.rd_tempo_for != (self.rd_lesson, self.rd_piece) {
+            self.rd_tempo_for = (self.rd_lesson, self.rd_piece);
+            self.rd_bpm = lesson.tempo.max(40);
+        }
+        let mine = piece.parts[self.rd_part].1.clone();
+        let other = (piece.parts.len() > 1).then(|| piece.parts[(self.rd_part + 1) % piece.parts.len()].1.clone());
+        let key = id(&lesson, &piece);
+        ui.add_space(4.0);
+        self.rd_controls(ui, &mine, other.as_ref());
+        let lit = self.rd_lit(ui);
+        draw_reading(ui, &mine, lit, self.rd_tab, self.rd_names);
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            let done = self.store.reading_done.get(&key).cloned();
+            match &done {
+                Some(d) => {
+                    if retro_btn(ui, &format!("DONE {}", d), true).tip("Click to take the mark off").clicked() {
+                        self.store.reading_done.remove(&key);
+                        self.store_dirty = true;
+                    }
+                }
+                None => {
+                    if retro_btn(ui, "MARK IT DONE", false).tip("You can read it through at tempo without stopping").clicked() {
+                        self.store.reading_done.insert(key.clone(), crate::store::today_str());
+                        self.store_dirty = true;
+                    }
+                }
+            }
+            if retro_btn(ui, "NEXT", false).tip("The next exercise").clicked() {
+                self.player.send(Cmd::StopOnce);
+                self.rd_play = None;
+                if self.rd_piece + 1 < lesson.pieces.len() {
+                    self.rd_piece += 1;
+                } else if self.rd_lesson + 1 < self.rd_book.len() {
+                    self.rd_lesson += 1;
+                    self.rd_piece = 0;
+                }
+                self.rd_part = 0;
+            }
+        });
+    }
+
+    /// MADE-UP LINES: fresh lines in a key, position and rhythm level.
+    fn rd_made_up(&mut self, ui: &mut egui::Ui) {
+        para(ui, "Read in one position, in one key, without looking at the neck. Pick the position, the key and how hard the rhythms get, then press NEW LINE. Every line is new.", pal().ink2);
         let mut changed = false;
         ui.horizontal_wrapped(|ui| {
             let keys: Vec<&str> = KEYS.iter().map(|k| k.0).collect();
@@ -639,8 +1288,6 @@ impl App {
                 self.rd_level = i;
                 changed = true;
             }
-        });
-        ui.horizontal_wrapped(|ui| {
             let bars: Vec<String> = BARS.iter().map(|b| format!("{} BARS", b)).collect();
             let bars: Vec<&str> = bars.iter().map(|s| s.as_str()).collect();
             if let Some(i) = dropdown(ui, "rd_bars", "", &bars, self.rd_bars, 110.0) {
@@ -651,101 +1298,52 @@ impl App {
                 self.rd_time = i;
                 changed = true;
             }
-            ui.add_space(10.0);
-            crate::views::label(ui, "TEMPO", 60.0);
-            if retro_btn_w(ui, "-", 28.0, false).clicked() {
-                self.rd_bpm = (self.rd_bpm - 5).max(30);
-            }
-            crate::lcd_box(ui, &format!("{} BPM", self.rd_bpm), 80.0, pal().ink);
-            if retro_btn_w(ui, "+", 28.0, false).clicked() {
-                self.rd_bpm = (self.rd_bpm + 5).min(220);
-            }
         });
-        let new_line = |app: &mut App| {
-            let seed =
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(7);
-            let beats = if app.rd_time == 1 { 3 } else { 4 };
-            app.rd_line = Some(make_line(seed, app.rd_key, POSITIONS[app.rd_pos].1, app.rd_level, BARS[app.rd_bars], beats));
-            app.rd_play = None;
-        };
         if changed || self.rd_line.is_none() {
-            new_line(self);
+            self.rd_new_line();
         }
-        // a play-through running: the cursor, and counting it once it is done
-        let lit = self.rd_lit(ui);
-        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "NEW LINE", false).tip("A fresh line with these settings").clicked() {
                 self.player.send(Cmd::StopOnce);
-                new_line(self);
+                self.rd_new_line();
             }
-            let playing = self.rd_play.is_some();
-            if retro_btn(ui, "HEAR IT", playing && self.rd_play.as_ref().is_some_and(|p| !p.2))
-                .tip("A bar to count you in, then the line")
-                .clicked()
-            {
-                self.rd_start(false);
-            }
-            if retro_btn(ui, "PLAY ALONG", playing && self.rd_play.as_ref().is_some_and(|p| p.2))
-                .tip("Just the clicks and the cursor - you play it")
-                .clicked()
-            {
-                self.rd_start(true);
-            }
-            if playing && retro_btn(ui, "STOP", false).clicked() {
-                self.player.send(Cmd::StopOnce);
-                self.rd_play = None;
-            }
+            let today = crate::store::today_str();
+            let read = self.store.days.iter().find(|d| d.date == today).map_or(0, |d| d.reads);
             ui.add_space(10.0);
-            if retro_btn(ui, "SHOW TAB", self.rd_tab).tip("Check yourself: where each note is played in this position").clicked()
-            {
-                self.rd_tab = !self.rd_tab;
-            }
-            if retro_btn(ui, "NOTE NAMES", self.rd_names).clicked() {
-                self.rd_names = !self.rd_names;
-            }
-            if retro_btn(ui, "THE POSITION", self.rd_map).tip("The key's notes in this position, on the neck").clicked() {
-                self.rd_map = !self.rd_map;
-            }
+            crate::views::label(ui, &format!("LINES READ TODAY: {}", read), 150.0);
         });
-        let today = crate::store::today_str();
-        let read = self.store.days.iter().find(|d| d.date == today).map_or(0, |d| d.reads);
-        crate::views::dim_line(ui, &format!("LINES READ TODAY: {}   (PLAY ALONG TO THE END TO COUNT ONE)", read), 1.0, pal().dim);
-        ui.add_space(6.0);
-        if self.rd_map {
-            position_map(ui, self.rd_key, POSITIONS[self.rd_pos].1, KEYS[self.rd_key].2 > 0);
-            ui.add_space(6.0);
-        }
-        if let Some(r) = self.rd_line.clone() {
-            draw_reading(ui, &r, lit, self.rd_tab, self.rd_names);
-        }
-        ui.add_space(10.0);
-        section_header(ui, "HOW TO WORK");
-        for tip in [
-            "Before you play, look the line over: the key, the highest and lowest notes, the hardest rhythm.",
-            "Count a bar in out loud. Play slower than you think you need to; then raise the tempo 5 at a time.",
-            "Eyes on the page, not the neck. The position keeps your hand in place: one finger per fret.",
-            "New position? Turn on THE POSITION, learn where the key's notes are, then turn it off and read.",
-            "Read a few new lines every day rather than one line many times - the point is reading, not memorising.",
-        ] {
-            para(ui, tip, pal().ink2);
-        }
-        ui.add_space(20.0);
+        let Some(line) = self.rd_line.clone() else { return };
+        self.rd_controls(ui, &line, None);
+        let lit = self.rd_lit(ui);
+        draw_reading(ui, &line, lit, self.rd_tab, self.rd_names);
+        crate::views::dim_line(ui, "PLAY ALONG TO THE END TO COUNT A LINE", 1.0, pal().dim);
     }
 
-    /// Start a play-through: the notes (or only the clicks), with a bar to count in.
-    fn rd_start(&mut self, along: bool) {
-        let Some(r) = self.rd_line.clone() else { return };
+    fn rd_new_line(&mut self) {
+        let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(7);
+        let beats = if self.rd_time == 1 { 3 } else { 4 };
+        self.rd_line = Some(make_line(seed, self.rd_key, POSITIONS[self.rd_pos].1, self.rd_level, BARS[self.rd_bars], beats));
+        self.rd_play = None;
+    }
+
+    /// Start a play-through: this part (and the other guitar's, when given), or only the clicks and the other part
+    /// when `along`; a bar to count in.
+    fn rd_start(&mut self, mine: &Reading, other: Option<&Reading>, along: bool) {
         let spb = 60.0 / self.rd_bpm.max(30) as f32;
-        let starts = onsets(&r);
-        let notes: Vec<(Option<i32>, f32, f32)> =
-            r.notes.iter().zip(&starts).map(|(n, s)| (n.midi, s * spb, n.dur as f32 / BEAT as f32 * spb)).collect();
-        let count = r.beats as u32;
-        self.player.send(Cmd::StopOnce);
-        self.player.send(Cmd::Once(crate::band::reading_sound(&notes, r.beats as u32, count, spb, !along), 0.9));
+        let order = play_order(mine);
+        let mut notes: Vec<(Vec<i32>, f32, f32)> = Vec::new();
+        if !along {
+            notes.extend(order.iter().map(|(_, at, d, m)| (m.clone(), at * spb, d * spb)));
+        }
+        if let Some(o) = other {
+            notes.extend(play_order(o).iter().map(|(_, at, d, m)| (m.clone(), at * spb, d * spb)));
+        }
+        let count = mine.beats as u32;
         let lead = count as f32 * spb;
-        let total = lead + notes.iter().map(|n| n.1 + n.2).fold(0.0, f32::max);
-        self.rd_play = Some((Instant::now(), starts.iter().map(|s| lead + s * spb).collect(), along, total));
+        let total = lead + order.iter().map(|(_, at, d, _)| (at + d) * spb).fold(0.0, f32::max);
+        self.player.send(Cmd::StopOnce);
+        self.player.send(Cmd::Once(crate::band::reading_sound(&notes, mine.beats as u32, count, spb, total - lead), 0.9));
+        self.rd_play = Some((Instant::now(), order.iter().map(|(gi, at, _, _)| (lead + at * spb, *gi)).collect(), along, total));
     }
 
     /// The note sounding now in a play-through; a play-along that reaches the end is counted in the diary.
@@ -764,7 +1362,7 @@ impl App {
             return None;
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
-        starts.iter().rposition(|s| el >= *s)
+        starts.iter().rev().find(|s| el >= s.0).map(|s| s.1)
     }
 }
 
@@ -779,26 +1377,63 @@ mod tests {
             for (key, pos) in [(0usize, 0u8), (1, 2), (3, 5), (4, 7), (9, 9)] {
                 for beats in [3u16, 4] {
                     let r = make_line(level as u64 * 7919 + key as u64 * 31 + pos as u64 + 1, key, pos, level, 8, beats);
-                    let total: u32 = r.notes.iter().map(|n| n.dur as u32).sum();
-                    assert_eq!(total, 8 * beats as u32 * BEAT as u32, "level {} key {} pos {}", level, key, pos);
-                    // no note runs over a bar line
-                    let mut at = 0u32;
-                    for n in &r.notes {
-                        let bar = (beats * BEAT) as u32;
-                        assert!(at / bar == (at + n.dur as u32 - 1) / bar, "a note crosses a bar line");
-                        at += n.dur as u32;
-                        assert!([3, 4, 6, 9, 12, 18, 24, 36, 48].contains(&n.dur), "odd length {}", n.dur);
+                    assert_eq!(r.bars.len(), 8);
+                    for b in &r.bars {
+                        assert_eq!(
+                            b.notes.iter().map(|n| n.dur as u32).sum::<u32>(),
+                            beats as u32 * BEAT as u32,
+                            "a bar adds up"
+                        );
+                        for n in &b.notes {
+                            assert!([3, 4, 6, 9, 12, 18, 24, 36, 48].contains(&n.dur), "odd length {}", n.dur);
+                        }
                     }
                     let tonic = KEYS[key].1;
-                    for m in r.notes.iter().filter_map(|n| n.midi) {
+                    let notes: Vec<i32> =
+                        r.bars.iter().flat_map(|b| b.notes.iter().flat_map(|n| n.heads.iter().map(|h| h.midi))).collect();
+                    for m in &notes {
                         assert!([0, 2, 4, 5, 7, 9, 11].contains(&(m - tonic).rem_euclid(12)), "out of key");
-                        assert!(finger(m, pos).is_some(), "not in the position");
+                        assert!(finger_all(&[*m], pos)[0].is_some(), "not in the position");
                     }
-                    let last = r.notes.iter().rev().find_map(|n| n.midi).unwrap();
-                    assert_eq!((last - tonic).rem_euclid(12), 0, "ends home");
-                    assert!(r.notes[0].midi.is_some(), "starts on a note");
+                    assert_eq!((notes.last().unwrap() - tonic).rem_euclid(12), 0, "ends home");
+                    assert!(!r.bars[0].notes[0].heads.is_empty(), "starts on a note");
                 }
             }
         }
+    }
+
+    /// The book file: lessons, settings that carry on, exercises and duets, chords, rests, ties, repeats.
+    #[test]
+    fn book_file_reads() {
+        let text = "# test\n@lesson 4 Notes in the 1st Position\nkey C | pos 1 | time 4/4 | tempo 80\nnote Say the count.\n@ex Exercise 1\nC4q D4q E4q F4q | G4h [C4E4G4]h\n| rq E4e. F4s G4h~ | G4w\n@duet Sea to Sea\npart 1st Guitar: |: E4h G4h :| C5w\npart 2nd Guitar: C4w | C4w\n@lesson 15 Sharps and Flats\nkey G\n@ex Exercise 1\nF#4q Fn4q Bb4h\n";
+        let (lessons, errs) = parse_book(text);
+        assert!(errs.is_empty(), "{:?}", errs);
+        assert_eq!(lessons.len(), 2);
+        let l = &lessons[0];
+        assert_eq!((l.page, l.title.as_str(), l.tempo), (4, "Notes in the 1st Position", 80));
+        assert_eq!(l.notes, vec!["Say the count."]);
+        assert_eq!(l.pieces.len(), 2);
+        let ex = &l.pieces[0].parts[0].1;
+        assert_eq!(ex.bars.len(), 4);
+        // middle C as written sounds an octave down (MIDI 48)
+        assert_eq!(ex.bars[0].notes[0].heads[0].midi, 48);
+        assert_eq!(ex.bars[1].notes[1].heads.len(), 3);
+        assert!(ex.bars[2].notes[0].heads.is_empty());
+        assert_eq!(ex.bars[2].notes[1].dur, 9);
+        assert!(ex.bars[2].notes[3].tie);
+        // the tie joins G4h to G4w: one note, six beats
+        let order = play_order(ex);
+        assert_eq!(order.last().unwrap().2, 6.0);
+        let duet = &l.pieces[1];
+        assert_eq!(duet.parts.len(), 2);
+        assert_eq!(duet.parts[0].0, "1st Guitar");
+        assert!(duet.parts[0].1.bars[0].rep_start && duet.parts[0].1.bars[0].rep_end);
+        // the repeat plays the first bar twice
+        assert_eq!(play_order(&duet.parts[0].1).len(), 5);
+        let sharp = &lessons[1].pieces[0].parts[0].1;
+        assert_eq!(sharp.sig, 1);
+        let h = &sharp.bars[0].notes;
+        assert_eq!((h[0].heads[0].acc, h[1].heads[0].acc, h[2].heads[0].acc), (1, 0, -1));
+        assert_eq!(h[0].heads[0].midi, h[1].heads[0].midi + 1);
     }
 }
