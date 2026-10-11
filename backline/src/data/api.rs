@@ -185,7 +185,7 @@ fn image_url(uuid: &str, w: u32, h: u32) -> String {
     if uuid.is_empty() {
         return String::new();
     }
-    if uuid.starts_with("http") {
+    if uuid.starts_with("http") || uuid.starts_with("file:") {
         return uuid.to_string(); // YouTube thumbnails are full URLs already
     }
     format!("https://resources.tidal.com/images/{}/{}x{}.jpg", uuid.replace('-', "/"), w, h)

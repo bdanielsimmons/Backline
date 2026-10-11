@@ -83,10 +83,19 @@ pub fn probe_duration(path: &Path) -> f32 {
 pub fn ext_for_file(path: &Path) -> Ext {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
     let parent = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap_or("").to_string();
-    let (artist, title) = match stem.split_once(" - ") {
+    let (mut artist, mut title) = match stem.split_once(" - ") {
         Some((a, t)) => (a.trim().to_string(), t.trim().to_string()),
         None => (parent, stem.clone()),
     };
+    // the file's own tags, when it has them, name it better than its file name
+    if let Some((a, t)) = tag_names(path) {
+        if !t.is_empty() {
+            title = t;
+        }
+        if !a.is_empty() {
+            artist = a;
+        }
+    }
     let src = path.to_string_lossy().to_string();
     Ext {
         kind: "file".to_string(),
@@ -96,6 +105,54 @@ pub fn ext_for_file(path: &Path) -> Ext {
         title,
         artist,
         cover: String::new(),
+    }
+}
+
+/// The artist and title in a file's tags.
+fn tag_names(path: &Path) -> Option<(String, String)> {
+    use lofty::prelude::*;
+    let tagged = lofty::read_from_path(path).ok()?;
+    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+    Some((tag.artist().map(|s| s.to_string()).unwrap_or_default(), tag.title().map(|s| s.to_string()).unwrap_or_default()))
+}
+
+/// A file's cover picture: the one inside it (its tags), else a cover image in its folder
+/// (cover / folder / front / album, .jpg or .png).
+pub fn file_art(path: &Path) -> Option<Vec<u8>> {
+    use lofty::prelude::*;
+    if let Ok(tagged) = lofty::read_from_path(path) {
+        for tag in tagged.tags() {
+            if let Some(p) = tag.pictures().first() {
+                return Some(p.data().to_vec());
+            }
+        }
+    }
+    let dir = path.parent()?;
+    for name in ["cover", "folder", "front", "album", "Cover", "Folder", "Front", "AlbumArt"] {
+        for ext in ["jpg", "jpeg", "png"] {
+            if let Ok(b) = std::fs::read(dir.join(format!("{}.{}", name, ext))) {
+                return Some(b);
+            }
+        }
+    }
+    None
+}
+
+/// Show a file in the system's file browser, selected.
+pub fn reveal(path: &str) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path)).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        if let Some(d) = Path::new(path).parent() {
+            let _ = std::process::Command::new("xdg-open").arg(d).spawn();
+        }
     }
 }
 

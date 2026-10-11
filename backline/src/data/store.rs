@@ -40,6 +40,15 @@ pub struct Version {
     pub note: String,
 }
 
+/// A file's cover: the picture inside it (or beside it), found by the image loader from "file:<path>".
+fn file_cover(kind: &str, src: &str, cover: &str) -> String {
+    if kind == "file" && cover.is_empty() {
+        format!("file:{}", src)
+    } else {
+        cover.to_string()
+    }
+}
+
 impl Version {
     pub fn to_track(&self) -> Track {
         Track {
@@ -48,7 +57,7 @@ impl Version {
             artist: self.artist.clone(),
             artists: Vec::new(),
             album: self.album.clone(),
-            cover: self.cover.clone(),
+            cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
         }
     }
@@ -156,7 +165,7 @@ impl Ext {
             artist: self.artist.clone(),
             artists: Vec::new(),
             album: String::new(),
-            cover: self.cover.clone(),
+            cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
         }
     }

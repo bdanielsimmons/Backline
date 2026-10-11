@@ -575,6 +575,12 @@ impl App {
                         acts.push(Action::EditInfo(e.id, e.title.clone(), e.artist.clone()));
                         ui.close_menu();
                     }
+                    if e.kind == "file"
+                        && menu_item(ui, if cfg!(target_os = "macos") { "Show in Finder" } else { "Show in Explorer" })
+                    {
+                        sources::reveal(&e.src);
+                        ui.close_menu();
+                    }
                     if PRACTICE && menu_item(ui, "Add to a tune...") {
                         acts.push(Action::PickTune(e.to_track()));
                         ui.close_menu();
@@ -669,7 +675,14 @@ impl App {
             }
         });
         if self.files_busy {
-            dim_line(ui, "READING FILES...", 2.0, pal().ink2);
+            let stage = crate::extras::FILES_STAGE.load(Ordering::Relaxed);
+            dim_line(
+                ui,
+                if stage == 1 { "PICK THE FOLDER OR FILES IN THE WINDOW THAT OPENED..." } else { "READING THE FILES..." },
+                2.0,
+                pal().ink2,
+            );
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
         }
         if self.store.files.is_empty() && !self.files_busy {
             ui.add_space(6.0);

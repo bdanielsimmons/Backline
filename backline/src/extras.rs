@@ -86,6 +86,9 @@ fn wave_path(id: i64) -> PathBuf {
     api::config_dir().join("waves").join(format!("{}.pk", id))
 }
 
+/// Adding files: 0 nothing going on, 1 the file window is open, 2 reading what was picked.
+pub(crate) static FILES_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 /// Find the files below the given paths (folders are searched, and remembered for RESCAN).
 fn scan_paths(paths: Vec<PathBuf>) -> (Vec<Ext>, Vec<String>) {
     let mut files: Vec<PathBuf> = Vec::new();
@@ -778,7 +781,10 @@ impl App {
         self.sec = Sec::Files;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
+            FILES_STAGE.store(2, std::sync::atomic::Ordering::Relaxed);
+            ctx.request_repaint();
             let (files, folders) = scan_paths(paths);
+            FILES_STAGE.store(0, std::sync::atomic::Ordering::Relaxed);
             let _ = tx.send(Msg::Added(files, folders));
             ctx.request_repaint();
         });
@@ -789,6 +795,7 @@ impl App {
             return;
         }
         self.files_busy = true;
+        FILES_STAGE.store(1, std::sync::atomic::Ordering::Relaxed);
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
             let paths: Vec<PathBuf> = if folder {
@@ -847,6 +854,7 @@ impl App {
         match m {
             Msg::Added(files, folders) => {
                 self.files_busy = false;
+                let (found, picked_folder) = (files.len(), !folders.is_empty());
                 for f in folders {
                     if !self.store.folders.contains(&f) {
                         self.store.folders.push(f);
@@ -854,7 +862,17 @@ impl App {
                 }
                 let n = self.add_exts(files);
                 self.store_dirty = true;
-                self.set_note(&format!("ADDED {} FILES", n));
+                // say what happened: songs added, nothing there, already here, or nothing picked
+                let note = if n > 0 {
+                    format!("ADDED {} SONG{}", n, if n == 1 { "" } else { "S" })
+                } else if found > 0 {
+                    "THOSE SONGS ARE ALREADY IN YOUR FILES".to_string()
+                } else if picked_folder {
+                    "NO MUSIC FILES IN THAT FOLDER".to_string()
+                } else {
+                    "NOTHING ADDED".to_string()
+                };
+                self.set_note(&note);
             }
             Msg::Scanned(files) => {
                 let n = self.add_exts(files);

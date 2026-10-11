@@ -249,15 +249,6 @@ impl App {
                     ui.set_height(size.y - 24.0);
                     title_line(ui, "PREFERENCES", 3.0, pal().ink);
                     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(size.y - 90.0).show(ui, |ui| {
-                        section_header(ui, "SETUP");
-                        ui.horizontal_wrapped(|ui| {
-                            if retro_btn(ui, "RUN SETUP AGAIN", false).tip("The first-run wizard: look, listening or practice, your music, where it lives").clicked() {
-                                self.show_prefs = false;
-                                self.setup_step = Some(0);
-                                self.dirty = true;
-                            }
-                        });
-
                         section_header(ui, "STORAGE");
                         if self.cache_at.elapsed() > std::time::Duration::from_secs(1) {
                             self.cache_stats = crate::cache::stats();

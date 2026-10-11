@@ -378,7 +378,7 @@ impl App {
         let look = crate::gen_look(self.wa_worn.as_ref());
         let museum = self.wa_worn.clone().filter(|_| look == 0);
         let cur = SKIN.load(Ordering::Relaxed) % PALS.len();
-        for (gi, (title, g)) in [("ORIGINAL", 2usize), ("RETRO ORIGINAL", 0)].into_iter().enumerate() {
+        for (gi, (title, g)) in [(0usize, ("ORIGINAL", 2usize))] {
             ui.add_space(6.0);
             // folded up: its name and the one worn from it; open to pick another
             let worn_here = (if g == 0 { self.wa_worn.is_none() } else { look == g }).then(|| SKIN_NAMES[cur]);
@@ -410,38 +410,61 @@ impl App {
         if menu_item(ui, &head) {
             self.skins_open[2] = !self.skins_open[2];
         }
-        if !self.skins_open[2] {
-            return;
-        }
-        // the one worn first, then the ones worn lately (X takes one off the list)
-        let mut list: Vec<(String, String)> = Vec::new();
-        if let Some(w) = &museum {
-            list.push(w.clone());
-        }
-        for r in &self.wa_recent {
-            if !list.iter().any(|l| l.0 == r.0) {
-                list.push(r.clone());
+        if self.skins_open[2] {
+            // the one worn first, then the ones worn lately (X takes one off the list)
+            let mut list: Vec<(String, String)> = Vec::new();
+            if let Some(w) = &museum {
+                list.push(w.clone());
+            }
+            for r in &self.wa_recent {
+                if !list.iter().any(|l| l.0 == r.0) {
+                    list.push(r.clone());
+                }
+            }
+            for (md5, name) in list {
+                let on = museum.as_ref().is_some_and(|w| w.0 == md5);
+                // X first: the name takes the rest of the row
+                ui.horizontal(|ui| {
+                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list").clicked() {
+                        acts.push(Action::WaForget(md5.clone()));
+                    }
+                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) && !on {
+                        acts.push(Action::WaApply(crate::winamp::WaSkin {
+                            md5: md5.clone(),
+                            name: name.clone(),
+                            shot: String::new(),
+                            download: String::new(),
+                        }));
+                    }
+                });
+            }
+            if menu_item(ui, "  BROWSE WINAMP SKINS...") {
+                acts.push(Action::WaOpen);
             }
         }
-        for (md5, name) in list {
-            let on = museum.as_ref().is_some_and(|w| w.0 == md5);
-            // X first: the name takes the rest of the row
-            ui.horizontal(|ui| {
-                if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list").clicked() {
-                    acts.push(Action::WaForget(md5.clone()));
+        // the old pixel look, last
+        for (gi, (title, g)) in [(1usize, ("RETRO ORIGINAL", 0usize))] {
+            ui.add_space(6.0);
+            // folded up: its name and the one worn from it; open to pick another
+            let worn_here = (if g == 0 { self.wa_worn.is_none() } else { look == g }).then(|| SKIN_NAMES[cur]);
+            let head = format!(
+                "{} {}{}",
+                if self.skins_open[gi] { "-" } else { "+" },
+                title,
+                worn_here.map(|n| format!(":  {}", n)).unwrap_or_default()
+            );
+            if menu_item(ui, &head) {
+                self.skins_open[gi] = !self.skins_open[gi];
+            }
+            if !self.skins_open[gi] {
+                continue;
+            }
+            for (n, name) in SKIN_NAMES.iter().enumerate() {
+                let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
+                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
+                    acts.push(Action::Theme(n, g));
                 }
-                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) && !on {
-                    acts.push(Action::WaApply(crate::winamp::WaSkin {
-                        md5: md5.clone(),
-                        name: name.clone(),
-                        shot: String::new(),
-                        download: String::new(),
-                    }));
-                }
-            });
-        }
-        if menu_item(ui, "  BROWSE WINAMP SKINS...") {
-            acts.push(Action::WaOpen);
+            }
         }
     }
 

@@ -73,8 +73,6 @@ mod palette;
 mod player_win;
 #[path = "ui/prefs.rs"]
 mod prefs;
-#[path = "ui/setup.rs"]
-mod setup;
 #[path = "ui/skin.rs"]
 mod skin;
 #[path = "ui/tools.rs"]
@@ -540,20 +538,22 @@ fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, S
     let museum = worn.filter(|_| look == 0).map(|w| w.1.as_str());
     let cur = SKIN.load(Ordering::Relaxed) % PALS.len();
     // the columns wrap under each other when the space is narrow
-    ui.horizontal_wrapped(|ui| {
-        for (title, g) in [("ORIGINAL", 2usize), ("RETRO ORIGINAL", 0)] {
-            ui.vertical(|ui| {
-                ui.set_min_width(170.0);
-                para(ui, title, pal().ink2);
-                for (n, name) in SKIN_NAMES.iter().enumerate() {
-                    let on = n == cur && if g == 0 { worn.is_none() } else { look == g };
-                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
-                        acts.push(Action::Theme(n, g));
-                        ui.close_menu();
-                    }
+    // a column of Backline's own palettes in one look
+    let column = |ui: &mut egui::Ui, acts: &mut Vec<Action>, title: &str, g: usize| {
+        ui.vertical(|ui| {
+            ui.set_min_width(170.0);
+            para(ui, title, pal().ink2);
+            for (n, name) in SKIN_NAMES.iter().enumerate() {
+                let on = n == cur && if g == 0 { worn.is_none() } else { look == g };
+                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
+                    acts.push(Action::Theme(n, g));
+                    ui.close_menu();
                 }
-            });
-        }
+            }
+        });
+    };
+    ui.horizontal_wrapped(|ui| {
+        column(ui, acts, "ORIGINAL", 2);
         ui.vertical(|ui| {
             ui.set_min_width(170.0);
             para(ui, "WINAMP", pal().ink2);
@@ -578,6 +578,8 @@ fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, S
                 ui.close_menu();
             }
         });
+        // the old pixel look, last
+        column(ui, acts, "RETRO ORIGINAL", 0);
     });
 }
 
@@ -1584,7 +1586,12 @@ fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<Str
                 Some(u) => (true, u.to_string()),
                 None => (false, url.clone()),
             };
-            let img = api.fetch(&real).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
+            // a file's cover comes from the file (or its folder); the rest from the web
+            let bytes = match real.strip_prefix("file:") {
+                Some(path) => sources::file_art(std::path::Path::new(path)),
+                None => api.fetch(&real).ok(),
+            };
+            let img = bytes.and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
                 let im = if gray { im.grayscale() } else { im };
                 let rgba = im.to_rgba8();
                 let size = [rgba.width() as usize, rgba.height() as usize];
@@ -2332,10 +2339,8 @@ struct App {
     thumb: Option<media::ThumbBar>,
     thumb_tried: bool,
     tour_seen: bool,
-    /// the setup wizard's step while it is open (the first run opens it), a desktop shortcut wanted, a message
-    setup_step: Option<u8>,
-    setup_desktop: bool,
-    setup_note: String,
+    /// the very first run: Backline's sleek look goes on once the window is up
+    first_look: bool,
     help_tab: usize,
     /// (track id, cents from A440, confidence) from the tuning check
     tuning: Option<(i64, i32, f32)>,
@@ -2802,9 +2807,7 @@ impl App {
             thumb: None,
             thumb_tried: false,
             tour_seen: false,
-            setup_step: None,
-            setup_desktop: true,
-            setup_note: String::new(),
+            first_look: false,
             help_tab: 0,
             tuning: None,
             tuning_busy: false,
@@ -3044,19 +3047,13 @@ impl App {
         if st.get("binds").is_some() {
             app.binds = prefs::binds_from_json(&st["binds"]);
         }
-        // the very first run (no settings yet): the setup wizard; or one left half done (the installed copy
-        // carries on where the first left off)
-        let first_run = !api::config_dir().join("settings.json").exists();
+        // the very first run (no settings yet)
+        app.first_look = !api::config_dir().join("settings.json").exists() && tour::demo_kind().is_none();
         // a new build since last time (an update): have Windows show its icon afresh
-        if st["icon_build"].as_u64() != Some(update::build() as u64) {
+        if st["icon_build"].as_u64() != Some(update::build()) {
             media::refresh_icons();
             app.dirty = true;
         }
-        app.setup_step = match st["setup_step"].as_u64() {
-            Some(s) => Some(s.min(5) as u8),
-            None if first_run && tour::demo_kind().is_none() => Some(0),
-            None => None,
-        };
         if let Some(b) = st["tour_seen"].as_bool() {
             app.tour_seen = b;
         }
@@ -3241,7 +3238,6 @@ impl App {
             "spec": self.show_spec,
             "tour_seen": self.tour_seen,
             "icon_build": update::build(),
-            "setup_step": self.setup_step,
             "auto_restart": self.auto_restart,
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
@@ -4706,7 +4702,14 @@ impl eframe::App for App {
         };
         // the same in Windows' media flyout: playing whenever sound plays (a practice loop too), paused, or nothing
         let now: media::Shown = match self.cur_track().filter(|_| !self.stopped) {
-            Some(t) => (Some((t.artists_text(), t.title.clone(), cover_url(&t.cover, 320))), if self.paused { 2 } else { 1 }),
+            Some(t) => (
+                Some((
+                    t.artists_text(),
+                    t.title.clone(),
+                    Some(cover_url(&t.cover, 320)).filter(|c| c.starts_with("http")).unwrap_or_default(),
+                )),
+                if self.paused { 2 } else { 1 },
+            ),
             None => (None, 0),
         };
         let playing = now.1 == 1;
@@ -4968,13 +4971,17 @@ impl eframe::App for App {
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
-        self.setup_overlay(ctx, &mut acts);
-        // first time in (after the setup, which offers the tour itself): open the help on the tour page
-        if !self.tour_seen && self.setup_step.is_none() && (self.auth == Auth::In || self.offline) && self.frames >= 10 {
+        // the first time in: once you've chosen Tidal or not, straight into the tour
+        if !self.tour_seen && (self.auth == Auth::In || self.offline) && self.frames >= 10 && self.tour.is_none() {
             self.tour_seen = true;
-            self.help_tab = 0;
-            self.show_help = true;
             self.dirty = true;
+            self.tour_start(0);
+        }
+        // the very first run wears the sleek ORIGINAL look (DARK), not the retro one
+        if self.first_look {
+            self.first_look = false;
+            let dark = SKIN_NAMES.iter().position(|n| *n == "DARK").unwrap_or(0);
+            self.apply(Action::Theme(dark, 2));
         }
         self.tour_overlay(ctx);
         self.demo_tick(ctx);
