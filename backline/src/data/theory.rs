@@ -172,7 +172,7 @@ pub fn name_chords(notes: &[i32], bass: Option<i32>) -> Vec<String> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Suggestion {
     pub root: i32,
-    pub suffix: &'static str,
+    pub suffix: String,
     pub bass: Option<i32>,
     pub exact: bool,
     pub pcs: Vec<i32>,
@@ -198,7 +198,7 @@ impl Suggestion {
     pub fn name(&self, sp: Spelling) -> String {
         let mut suffix = self.suffix.to_string();
         if sp.symbols {
-            suffix = match self.suffix {
+            suffix = match self.suffix.as_str() {
                 "m" => "-".to_string(),
                 "mMaj7" => "-\u{0394}7".to_string(),
                 "m7b5" => "\u{00f8}7".to_string(),
@@ -278,6 +278,7 @@ pub fn suggestions(notes: &[i32], bass: Option<i32>) -> Vec<Suggestion> {
                 None => {}
             }
             score -= suffix.len() as i32;
+            let suffix = suffix.to_string();
             // why it might not work
             let rel = |p: i32| (p - root).rem_euclid(12);
             let played: Vec<i32> = set.iter().map(|p| rel(*p)).collect();
@@ -289,7 +290,7 @@ pub fn suggestions(notes: &[i32], bass: Option<i32>) -> Vec<Suggestion> {
             if has3 && !played.contains(&3) && !played.contains(&4) {
                 warnings.push("No third is played, so it could be major or minor.");
             }
-            if played.contains(&4) && played.contains(&5) && !suffix.contains("sus") {
+            if played.contains(&4) && played.contains(&5) && !suffix.contains("sus") && !suffix.contains("11") {
                 warnings.push("The 11th sits a half step above the major third and clashes with it.");
             }
             if played.contains(&3) && played.contains(&1) {
@@ -302,6 +303,26 @@ pub fn suggestions(notes: &[i32], bass: Option<i32>) -> Vec<Suggestion> {
             found.push((score, Suggestion { root, suffix, bass: b, exact, pcs: c, missing, warnings }));
         }
     }
+    // chords the table doesn't have (G13b9, C7#9b13, Cm9b5...): named from the notes over each note played
+    for &root in &set {
+        let rel: Vec<i32> = set.iter().map(|p| (p - root).rem_euclid(12)).collect();
+        let Some(suffix) = built_name(&rel) else { continue };
+        if found.iter().any(|(_, s)| s.root == root && s.missing.is_empty()) {
+            continue;
+        }
+        let mut score = 97 + 10 - suffix.len() as i32;
+        match bass {
+            Some(b) if b != root => score -= 4,
+            Some(_) => score += 6,
+            None => {}
+        }
+        let mut warnings: Vec<&'static str> = Vec::new();
+        if rel.contains(&3) && rel.contains(&1) && !rel.contains(&4) {
+            warnings.push("A flat 9 on a minor chord is a harsh rub.");
+        }
+        let b = bass.filter(|b| *b != root);
+        found.push((score, Suggestion { root, suffix, bass: b, exact: true, pcs: set.clone(), missing: Vec::new(), warnings }));
+    }
     found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.key().len().cmp(&b.1.key().len())));
     let mut out: Vec<Suggestion> = Vec::new();
     for (_, s) in found {
@@ -313,6 +334,170 @@ pub fn suggestions(notes: &[i32], bass: Option<i32>) -> Vec<Suggestion> {
         }
     }
     out
+}
+
+/// A chord name built from the notes over a root (`rel`: each note's distance above it, the root as 0): the third
+/// (or sus), the seventh, the highest natural extension, then the altered ones - b9, #9, #11, b13, b5, #5. None
+/// when the notes don't make a sensible chord over this root (every note has to be accounted for).
+pub fn built_name(rel: &[i32]) -> Option<String> {
+    let has = |x: i32| rel.contains(&x);
+    let maj3 = has(4);
+    let min3 = has(3) && !maj3;
+    let sharp9 = has(3) && maj3;
+    let sus4 = !maj3 && !min3 && has(5);
+    let sus2 = !maj3 && !min3 && !sus4 && has(2);
+    let (b7, maj7) = (has(10), has(11));
+    let fifth = has(7);
+    let dimish = min3 && has(6) && !fifth;
+    let mut used: Vec<i32> = vec![0];
+    if maj3 {
+        used.push(4);
+    }
+    if min3 {
+        used.push(3);
+    }
+    if sus4 {
+        used.push(5);
+    }
+    if sus2 {
+        used.push(2);
+    }
+    if fifth {
+        used.push(7);
+    }
+    let sus_txt = if sus4 {
+        "sus4"
+    } else if sus2 {
+        "sus2"
+    } else {
+        ""
+    };
+    let no3 = !maj3 && !min3 && !sus4 && !sus2;
+    let name = if b7 || maj7 {
+        if b7 && maj7 {
+            return None;
+        }
+        used.push(if b7 { 10 } else { 11 });
+        // the highest natural extension (the ones below it are implied, played or not)
+        let num = if has(9) && !(dimish && !b7) {
+            used.push(9);
+            if has(2) {
+                used.push(2);
+            }
+            if has(5) && (min3 || sus4) {
+                used.push(5);
+            }
+            "13"
+        } else if has(5) && !sus4 && !maj3 {
+            used.push(5);
+            if has(2) {
+                used.push(2);
+            }
+            "11"
+        } else if has(2) && !sus2 {
+            used.push(2);
+            "9"
+        } else {
+            "7"
+        };
+        let mut alt = String::new();
+        if has(1) {
+            used.push(1);
+            alt += "b9";
+        }
+        if sharp9 {
+            used.push(3);
+            alt += "#9";
+        }
+        if has(5) && !used.contains(&5) {
+            used.push(5);
+            alt += "add11";
+        }
+        let mut b5 = false;
+        if has(6) && !dimish {
+            used.push(6);
+            if fifth || num != "7" {
+                alt += "#11";
+            } else {
+                b5 = true;
+            }
+        }
+        if has(8) {
+            used.push(8);
+            alt += if fifth { "b13" } else { "#5" };
+        }
+        if b5 {
+            alt = format!("b5{}", alt);
+        }
+        if dimish {
+            used.push(6);
+            if b7 {
+                format!("m{}b5{}", num, alt)
+            } else {
+                format!("mMaj{}b5{}", num, alt)
+            }
+        } else if min3 {
+            format!("{}{}{}", if maj7 { "mMaj" } else { "m" }, num, alt)
+        } else if maj7 {
+            format!("maj{}{}{}{}", num, alt, sus_txt, if no3 { "(no3)" } else { "" })
+        } else {
+            format!("{}{}{}{}", num, alt, sus_txt, if no3 { "(no3)" } else { "" })
+        }
+    } else {
+        // no seventh: triads, sixths, added notes
+        if dimish {
+            used.push(6);
+            if has(9) {
+                used.push(9);
+                return used_all(rel, &used).then(|| "dim7".to_string());
+            }
+        }
+        let mut s = String::new();
+        if min3 && !dimish {
+            s.push('m');
+        }
+        if dimish {
+            s.push_str("dim");
+        }
+        if has(9) {
+            used.push(9);
+            if has(2) && !sus2 {
+                used.push(2);
+                s.push_str("69");
+            } else {
+                s.push('6');
+            }
+        } else if has(2) && !sus2 {
+            used.push(2);
+            s.push_str("add9");
+        }
+        if has(5) && !sus4 && (maj3 || min3) {
+            used.push(5);
+            s.push_str("add11");
+        }
+        if maj3 && has(8) && !fifth {
+            used.push(8);
+            s = if s.is_empty() { "aug".to_string() } else { format!("{}#5", s) };
+        }
+        if maj3 && has(6) && !fifth {
+            used.push(6);
+            s.push_str("b5");
+        } else if has(6) && fifth && (maj3 || min3) {
+            used.push(6);
+            s.push_str("add#11");
+        }
+        if no3 && fifth && s.is_empty() {
+            s.push('5');
+        }
+        s.push_str(sus_txt);
+        s
+    };
+    used_all(rel, &used).then_some(name)
+}
+
+/// Every note of `rel` is among `used`.
+fn used_all(rel: &[i32], used: &[i32]) -> bool {
+    rel.iter().all(|r| used.contains(r))
 }
 
 /// The names only, with whether each is exact (plain spelling).
@@ -881,6 +1066,28 @@ pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
 
 #[cfg(test)]
 mod tests {
+    /// The analyzer names chords the table doesn't list, from the notes: the top name for each set of notes.
+    #[test]
+    fn built_names() {
+        let top = |notes: &[i32], bass: i32| super::suggestions(notes, Some(bass)).first().map(|s| s.key()).unwrap_or_default();
+        // G B F E Ab over G (the 13b9 grip: 3 x 3 4 5 4)
+        assert_eq!(top(&[7, 11, 5, 4, 8], 7), "G13b9");
+        assert_eq!(top(&[0, 4, 10, 3, 8], 0), "C7#9#5");
+        assert_eq!(top(&[0, 4, 7, 10, 3, 8], 0), "C7#9b13");
+        assert_eq!(top(&[0, 4, 7, 11, 2, 6], 0), "Cmaj9#11");
+        assert_eq!(top(&[0, 3, 6, 10, 2], 0), "Cm9b5");
+        assert_eq!(top(&[0, 4, 10, 9, 6], 0), "C13#11");
+        assert_eq!(top(&[0, 4, 10, 1, 8], 0), "C7b9#5");
+        assert_eq!(top(&[0, 5, 10, 1], 0), "C7b9sus4");
+        assert_eq!(top(&[0, 4, 11, 9], 0), "Cmaj13");
+        assert_eq!(top(&[0, 3, 11, 2], 0), "CmMaj9");
+        // the table's own still win: C7, Cm7b5, Cdim7, C6/9
+        assert_eq!(top(&[0, 4, 7, 10], 0), "C7");
+        assert_eq!(top(&[0, 3, 6, 10], 0), "Cm7b5");
+        assert_eq!(top(&[0, 3, 6, 9], 0), "Cdim7");
+        assert_eq!(top(&[0, 4, 7, 9, 2], 0), "C69");
+    }
+
     use super::*;
 
     #[test]
