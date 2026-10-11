@@ -307,9 +307,11 @@ pub fn suggestions(notes: &[i32], bass: Option<i32>) -> Vec<Suggestion> {
     for &root in &set {
         let rel: Vec<i32> = set.iter().map(|p| (p - root).rem_euclid(12)).collect();
         let Some(suffix) = built_name(&rel) else { continue };
-        if found.iter().any(|(_, s)| s.root == root && s.missing.is_empty()) {
+        if found.iter().any(|(_, s)| s.root == root && s.exact) {
             continue;
         }
+        // the table's version of the same name with notes missing gives way to this one, made of exactly these notes
+        found.retain(|(_, s)| !(s.root == root && s.suffix == suffix));
         let mut score = 97 + 10 - suffix.len() as i32;
         match bass {
             Some(b) if b != root => score -= 4,
