@@ -517,7 +517,8 @@ impl App {
         wa_text(&t, &clip, pl, 111.0 - shift, 24.0, &title);
         if w > 154.0 && shift > 0.0 {
             wa_text(&t, &clip, pl, 111.0 - shift + w + 25.0, 24.0, &title);
-            ui.ctx().request_repaint();
+            // it moves one skin pixel at a time (22 a second): redrawn that often, not every frame
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(45));
         }
         // kbps, kHz, mono / stereo
         if active {
@@ -539,7 +540,8 @@ impl App {
         let (bands, peaks, wave) = self.viz_data(0);
         if active {
             skin_viz(&p, pl.o + Vec2::new(24.0, 43.0) * pl.s, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
-            ui.ctx().request_repaint();
+            // Winamp's own visualizer ran at about 30 frames a second; so does this one (half the work of every frame)
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
         }
         // volume: the strip picture follows the level; right-click it for the sound output
         let vr = pl.r(107.0, 57.0, 68.0, 13.0);

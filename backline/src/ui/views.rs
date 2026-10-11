@@ -907,6 +907,76 @@ impl App {
         ui.add_space(20.0);
     }
 
+    /// LOOPS > GROUPS: your loop groups - make one, rename one (everywhere its loops are), delete one (asked first;
+    /// its loops stay, in no group). The starting ones are yours to change too.
+    fn group_manager(&mut self, ui: &mut egui::Ui) {
+        let groups = self.store.groups();
+        let counts: Vec<usize> =
+            groups.iter().map(|g| self.store.sections.values().flatten().filter(|s| s.group == *g).count()).collect();
+        ui.horizontal_wrapped(|ui| {
+            label(ui, "GROUPS", 64.0);
+            for (g, n) in groups.iter().zip(counts.iter().copied()) {
+                let r = retro_btn(ui, &format!("{} ({})", g.to_uppercase(), n), self.grp_edit.as_deref() == Some(g))
+                    .tip("Right-click: rename or delete");
+                r.context_menu(|ui| {
+                    if menu_item(ui, "Rename...") {
+                        self.grp_edit = Some(g.clone());
+                        self.grp_name = g.clone();
+                        self.ed.id = crate::tools::F_GROUP_NAME;
+                        ui.close_menu();
+                    }
+                    if menu_item(ui, "Delete...") {
+                        self.grp_ask = Some(g.clone());
+                        ui.close_menu();
+                    }
+                });
+            }
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, bh()), Sense::hover());
+            let o = field(ui, &mut self.ed, crate::tools::F_GROUP_NAME + 100, &mut self.grp_new, rect, "New group...", false);
+            if (o.enter || retro_btn(ui, "+ ADD", false).clicked()) && !self.grp_new.trim().is_empty() {
+                let mut l = self.store.groups();
+                if !l.iter().any(|g| g == self.grp_new.trim()) {
+                    l.push(self.grp_new.trim().to_string());
+                }
+                self.store.loop_groups = Some(l);
+                self.grp_new.clear();
+                self.ed.id = 0;
+                self.store_dirty = true;
+            }
+        });
+        if let Some(old) = self.grp_edit.clone() {
+            ui.horizontal_wrapped(|ui| {
+                label(ui, &format!("RENAME {}", old.to_uppercase()), 160.0);
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
+                let o = field(ui, &mut self.ed, crate::tools::F_GROUP_NAME, &mut self.grp_name, rect, "new name", false);
+                if (o.enter || retro_btn(ui, "SAVE", false).clicked()) && !self.grp_name.trim().is_empty() {
+                    let new = self.grp_name.clone();
+                    self.store.rename_group(&old, &new);
+                    self.store_dirty = true;
+                    self.grp_edit = None;
+                    self.ed.id = 0;
+                }
+                if retro_btn(ui, "CANCEL", false).clicked() {
+                    self.grp_edit = None;
+                    self.ed.id = 0;
+                }
+            });
+        }
+        if let Some(g) = self.grp_ask.clone() {
+            ui.horizontal_wrapped(|ui| {
+                label(ui, &format!("DELETE THE GROUP {}? (ITS LOOPS STAY)", g.to_uppercase()), 330.0);
+                if retro_btn(ui, "YES, DELETE IT", false).clicked() {
+                    self.store.rename_group(&g, "");
+                    self.store_dirty = true;
+                    self.grp_ask = None;
+                }
+                if retro_btn(ui, "KEEP IT", false).clicked() {
+                    self.grp_ask = None;
+                }
+            });
+        }
+    }
+
     /// Take your loops and playlists to another computer: a file to save, send however you like, and open there.
     fn share_buttons(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.horizontal_wrapped(|ui| {
@@ -1486,6 +1556,7 @@ impl App {
         title_line(ui, "LOOPS", 3.0, pal().ink);
         para(ui, "The songs you saved loops on or practised, no tune needed. Click a loop to jump straight to it. Click a song to play it. Right-click for more.", pal().ink2);
         self.share_buttons(ui, acts);
+        self.group_manager(ui);
         self.name_old_loops();
         let today = store::today_days();
         let week_start = store::date_str(today - 6);
@@ -1647,6 +1718,7 @@ impl App {
             let col = if on { pal().bar_txt } else { pal().ink };
             ptext(p, Pos2::new(x, r.min.y + 13.0), Align::Min, &s.name.to_uppercase(), 2.0, col);
             let when = if s.saved.is_empty() { String::new() } else { format!("   SAVED {}", s.saved) };
+            let when = if s.group.is_empty() { when } else { format!("   IN {}{}", s.group.to_uppercase(), when) };
             let sub = format!("FROM {}   {}-{}{}", from.to_uppercase(), fmt_time(s.a), fmt_time(s.b), when);
             ptext_fit(p, Pos2::new(x, r.min.y + 31.0), Align::Min, &sub, 1.0, r.width() - 24.0, pal().ink2);
             if !s.note.is_empty() {
@@ -1666,6 +1738,7 @@ impl App {
                     self.clip_edit = Some((*id, *i));
                     self.clip_name = s.name.clone();
                     self.clip_note = s.note.clone();
+                    self.clip_group = s.group.clone();
                     ui.close_menu();
                 }
                 if let Some(v) = &v {
@@ -1686,41 +1759,7 @@ impl App {
             });
             // renaming / noting this one
             if self.clip_edit == Some((*id, *i)) {
-                let o1 = field_row(
-                    ui,
-                    &mut self.ed,
-                    crate::tools::F_CLIP_NAME,
-                    "NAME",
-                    &mut self.clip_name,
-                    "funky riff, the lick at 2:10...",
-                    None,
-                );
-                let o2 = field_row(
-                    ui,
-                    &mut self.ed,
-                    crate::tools::F_CLIP_NOTE,
-                    "NOTE",
-                    &mut self.clip_note,
-                    "what it is, what to work on",
-                    None,
-                );
-                let mut done = o1.enter || o2.enter;
-                ui.horizontal(|ui| {
-                    ui.add_space(12.0);
-                    if retro_btn(ui, "SAVE", false).clicked() {
-                        done = true;
-                    }
-                    if retro_btn(ui, "CANCEL", false).clicked() {
-                        self.clip_edit = None;
-                        self.ed.id = 0;
-                    }
-                });
-                if done {
-                    acts.push(Action::EditLoop(*id, *i, self.clip_name.clone(), self.clip_note.clone()));
-                    self.clip_edit = None;
-                    self.ed.id = 0;
-                }
-                ui.add_space(6.0);
+                self.loop_editor(ui, acts);
             }
         }
         ui.add_space(20.0);
@@ -2432,39 +2471,167 @@ impl App {
                 acts.push(Action::SaveSection);
             }
         });
-        let secs: Vec<(String, f32, f32)> = tid
-            .filter(|id| !self.is_demo(*id))
-            .and_then(|id| self.store.sections.get(&id))
-            .map(|l| l.iter().map(|s| (s.name.clone(), s.a, s.b)).collect())
-            .unwrap_or_default();
-        ui.horizontal(|ui| {
-            if secs.is_empty() {
-                label(ui, "SAVED LOOPS OF THIS TRACK SHOW UP HERE", 300.0);
+        self.saved_loops(ui, acts, tid);
+
+        ui.add_space(6.0);
+    }
+
+    /// The practice panel's saved loops of this song, by group: click one to loop it; right-click to rename it, add a
+    /// note, put it in a group or delete it (asked first).
+    fn saved_loops(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, tid: Option<i64>) {
+        let Some(id) = tid.filter(|id| !self.is_demo(*id)) else { return };
+        let secs: Vec<crate::store::Section> = self.store.sections.get(&id).cloned().unwrap_or_default();
+        if secs.is_empty() {
+            label(ui, "SAVED LOOPS OF THIS TRACK SHOW UP HERE", 300.0);
+            return;
+        }
+        // groups in the order they first appear, loops with no group first
+        let mut groups: Vec<String> = vec![String::new()];
+        for s in &secs {
+            if !groups.contains(&s.group) {
+                groups.push(s.group.clone());
             }
-            let mut budget = ui.available_width();
-            for (i, (name, a, b)) in secs.iter().enumerate() {
-                let w = (text_w(name, 2.0) + 20.0).clamp(44.0, 150.0);
-                if w + 6.0 > budget {
-                    label(ui, &format!("+{}", secs.len() - i), 40.0);
-                    break;
+        }
+        let mut named: Vec<String> = self.store.groups();
+        for g in groups.iter().filter(|g| !g.is_empty()) {
+            if !named.contains(g) {
+                named.push(g.clone());
+            }
+        }
+        for g in &groups {
+            let members: Vec<usize> = (0..secs.len()).filter(|i| secs[*i].group == *g).collect();
+            if members.is_empty() {
+                continue;
+            }
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(6.0, 4.0);
+                if !g.is_empty() {
+                    label(ui, &g.to_uppercase(), (text_w(&g.to_uppercase(), 1.0) + 16.0).min(160.0));
                 }
-                budget -= w + 6.0;
-                let on = self.loop_on
-                    && self.loop_a.map_or(false, |x| (x - a).abs() < 0.05)
-                    && self.loop_b.map_or(false, |x| (x - b).abs() < 0.05);
-                let r = retro_btn_w(ui, name, w, on).tip(format!("{} - {}   (right-click to delete)", fmt_t(*a), fmt_t(*b)));
-                if r.clicked() {
-                    acts.push(Action::GoSection(i));
-                }
-                r.context_menu(|ui| {
-                    if menu_item(ui, "Delete this loop") {
-                        acts.push(Action::DeleteSection(i));
-                        ui.close_menu();
+                for &i in &members {
+                    let s = &secs[i];
+                    let w = (text_w(&s.name, 2.0) + 20.0).clamp(44.0, 180.0);
+                    let on = self.loop_on
+                        && self.loop_a.is_some_and(|x| (x - s.a).abs() < 0.05)
+                        && self.loop_b.is_some_and(|x| (x - s.b).abs() < 0.05);
+                    let tip = if s.note.is_empty() {
+                        format!("{} - {}   (right-click: rename, note, group, delete)", fmt_t(s.a), fmt_t(s.b))
+                    } else {
+                        format!("{} - {}   {}", fmt_t(s.a), fmt_t(s.b), s.note)
+                    };
+                    let r = retro_btn_w(ui, &s.name, w, on).tip(tip);
+                    if r.clicked() {
+                        acts.push(Action::GoSection(i));
                     }
-                });
+                    r.context_menu(|ui| {
+                        if menu_item(ui, "Rename / add a note...") {
+                            self.clip_edit = Some((id, i));
+                            self.clip_name = s.name.clone();
+                            self.clip_note = s.note.clone();
+                            self.clip_group = s.group.clone();
+                            ui.close_menu();
+                        }
+                        for other in named.iter().filter(|o| **o != s.group) {
+                            if menu_item(ui, &format!("Move to {}", other)) {
+                                acts.push(Action::LoopGroup(id, i, other.clone()));
+                                ui.close_menu();
+                            }
+                        }
+                        if menu_item(ui, "Move to a new group...") {
+                            self.clip_edit = Some((id, i));
+                            self.clip_name = s.name.clone();
+                            self.clip_note = s.note.clone();
+                            self.clip_group = String::new();
+                            self.ed.id = crate::tools::F_CLIP_GROUP;
+                            ui.close_menu();
+                        }
+                        if !s.group.is_empty() && menu_item(ui, "Out of the group") {
+                            acts.push(Action::LoopGroup(id, i, String::new()));
+                            ui.close_menu();
+                        }
+                        if menu_item(ui, "Delete this loop...") {
+                            self.loop_ask = Some((id, i));
+                            ui.close_menu();
+                        }
+                    });
+                }
+            });
+        }
+        if let Some((_, i)) = self.loop_ask.filter(|(lid, _)| *lid == id) {
+            ui.horizontal_wrapped(|ui| {
+                let name = secs.get(i).map(|s| s.name.to_uppercase()).unwrap_or_default();
+                label(ui, &format!("DELETE {}?", name), (text_w(&name, 1.0) + 90.0).min(320.0));
+                if retro_btn(ui, "YES, DELETE IT", false).clicked() {
+                    acts.push(Action::DeleteSection(i));
+                    self.loop_ask = None;
+                }
+                if retro_btn(ui, "KEEP IT", false).clicked() {
+                    self.loop_ask = None;
+                }
+            });
+        }
+        if self.clip_edit.is_some_and(|(lid, _)| lid == id) {
+            self.loop_editor(ui, acts);
+        }
+    }
+
+    /// Editing a loop: its name, a note, the group it's in (with this song's other groups to pick from).
+    fn loop_editor(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let Some((id, i)) = self.clip_edit else { return };
+        let o1 = field_row(
+            ui,
+            &mut self.ed,
+            crate::tools::F_CLIP_NAME,
+            "NAME",
+            &mut self.clip_name,
+            "funky riff, the lick at 2:10...",
+            None,
+        );
+        let o2 = field_row(
+            ui,
+            &mut self.ed,
+            crate::tools::F_CLIP_NOTE,
+            "NOTE",
+            &mut self.clip_note,
+            "what it is, what to work on",
+            None,
+        );
+        let o3 = field_row(
+            ui,
+            &mut self.ed,
+            crate::tools::F_CLIP_GROUP,
+            "GROUP",
+            &mut self.clip_group,
+            "solo licks, head, comping... (empty: none)",
+            None,
+        );
+        let mut groups: Vec<String> = self.store.groups();
+        for s in self.store.sections.get(&id).into_iter().flatten() {
+            if !s.group.is_empty() && !groups.contains(&s.group) {
+                groups.push(s.group.clone());
+            }
+        }
+        let mut done = o1.enter || o2.enter || o3.enter;
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(12.0);
+            for g in &groups {
+                if retro_btn(ui, &g.to_uppercase(), *g == self.clip_group).tip("Put it in this group").clicked() {
+                    self.clip_group = g.clone();
+                }
+            }
+            if retro_btn(ui, "SAVE", false).clicked() {
+                done = true;
+            }
+            if retro_btn(ui, "CANCEL", false).clicked() {
+                self.clip_edit = None;
+                self.ed.id = 0;
             }
         });
-
+        if done {
+            acts.push(Action::EditLoop(id, i, self.clip_name.clone(), self.clip_note.clone(), self.clip_group.clone()));
+            self.clip_edit = None;
+            self.ed.id = 0;
+        }
         ui.add_space(6.0);
     }
 

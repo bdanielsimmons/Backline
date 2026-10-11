@@ -330,7 +330,10 @@ enum Action {
     /// forget saved loop `usize` of this song
     ForgetLoop(i64, usize),
     /// rename a saved loop and set its note: (song, which, name, note)
-    EditLoop(i64, usize, String, String),
+    /// a loop's name, note and group: (song, which, name, note, group)
+    EditLoop(i64, usize, String, String, String),
+    /// put a loop in a group (empty: no group)
+    LoopGroup(i64, usize, String),
     /// sound these chords one after another
     PlaySequence(Vec<Vec<i32>>),
     /// chords one after another, this many seconds apart
@@ -2564,6 +2567,14 @@ struct App {
     clip_edit: Option<(i64, usize)>,
     clip_name: String,
     clip_note: String,
+    clip_group: String,
+    /// a loop waiting to be deleted from the practice panel (song, which), asked first
+    loop_ask: Option<(i64, usize)>,
+    /// LOOPS > GROUPS: the group being renamed (and the name typed), the one asked to delete, a new one's name
+    grp_edit: Option<String>,
+    grp_name: String,
+    grp_ask: Option<String>,
+    grp_new: String,
     sel_anchor: Option<f32>,
     exporting: bool,
 
@@ -3126,6 +3137,12 @@ impl App {
             clip_edit: None,
             clip_name: String::new(),
             clip_note: String::new(),
+            clip_group: String::new(),
+            loop_ask: None,
+            grp_edit: None,
+            grp_name: String::new(),
+            grp_ask: None,
+            grp_new: String::new(),
             sel_anchor: None,
             exporting: false,
             rtab: 0,
@@ -3583,6 +3600,7 @@ impl App {
                 app.wv_zoom = 6.0;
             }
             Ok("lists") => app.sec = Sec::Lists,
+            Ok("loops") => app.sec = Sec::Loops,
             _ => {}
         }
         app

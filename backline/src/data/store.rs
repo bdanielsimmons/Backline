@@ -37,7 +37,31 @@ pub struct Took {
     pub tidal: usize,
 }
 
+/// The loop groups everyone starts with (rename or delete any of them).
+pub const DEFAULT_GROUPS: [&str; 5] = ["Head", "Solo licks", "Comping", "Intro", "Ending"];
+
 impl Store {
+    /// Your loop groups: the ones you made, or the starting ones.
+    pub fn groups(&self) -> Vec<String> {
+        self.loop_groups.clone().unwrap_or_else(|| DEFAULT_GROUPS.iter().map(|g| g.to_string()).collect())
+    }
+
+    /// Rename a group, everywhere a loop is in it ("" removes it: its loops stay, in no group).
+    pub fn rename_group(&mut self, old: &str, new: &str) {
+        let new = new.trim();
+        let mut list = self.groups();
+        list.retain(|g| g != old);
+        if !new.is_empty() && !list.iter().any(|g| g == new) {
+            list.push(new.to_string());
+        }
+        self.loop_groups = Some(list);
+        for s in self.sections.values_mut().flatten() {
+            if s.group == old {
+                s.group = new.to_string();
+            }
+        }
+    }
+
     /// Everything to share: every loop (with its song) and every playlist.
     pub fn share(&self) -> Share {
         let songs = self.sections.keys().filter_map(|id| self.songs.get(id).map(|v| (*id, v.clone()))).collect();
@@ -275,6 +299,8 @@ pub struct Section {
     pub saved: String,
     /// your note on it (what it is, what to work on)
     pub note: String,
+    /// the group it's kept in within the song ("solo licks", "head"...), empty for none
+    pub group: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -389,6 +415,8 @@ pub struct Store {
     pub my_chords: Vec<MyChord>,
     /// grips you added to a chord yourself (by `chords::grip_key`): shown first, marked MINE, removable
     pub custom_grips: HashMap<String, Vec<[Option<u8>; 6]>>,
+    /// your loop groups (None until you change them: the starting ones)
+    pub loop_groups: Option<Vec<String>>,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).
@@ -606,6 +634,19 @@ mod share_tests {
         assert_eq!(again.version, SHARE_VERSION);
         let t = b.take_share(again);
         assert_eq!((t.loops, t.playlists, t.items), (0, 0, 0));
+    }
+
+    #[test]
+    fn groups_rename_and_go_everywhere() {
+        let mut s = Store::default();
+        assert_eq!(s.groups().len(), DEFAULT_GROUPS.len());
+        s.sections.insert(1, vec![Section { name: "a".into(), group: "Head".into(), ..Default::default() }]);
+        s.rename_group("Head", "Melody");
+        assert!(s.groups().contains(&"Melody".to_string()) && !s.groups().contains(&"Head".to_string()));
+        assert_eq!(s.sections[&1][0].group, "Melody");
+        s.rename_group("Melody", "");
+        assert!(!s.groups().contains(&"Melody".to_string()));
+        assert_eq!(s.sections[&1][0].group, "");
     }
 
     #[test]

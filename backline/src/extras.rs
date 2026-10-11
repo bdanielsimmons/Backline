@@ -2121,7 +2121,7 @@ impl App {
                     return;
                 }
                 let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
-                list.push(Section { name: name.clone(), a, b, saved: store::today_str(), note: String::new() });
+                list.push(Section { name: name.clone(), a, b, saved: store::today_str(), ..Default::default() });
                 self.remember_song(&t);
                 self.sec_name.clear();
                 self.store_dirty = true;
@@ -2138,12 +2138,25 @@ impl App {
                 self.player.send(Cmd::Seek(s.a));
             }
             Action::PlaySaved(v, lp) => self.play_saved(&v, lp),
-            Action::EditLoop(id, i, name, note) => {
+            Action::EditLoop(id, i, name, note, group) => {
                 if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
                     if !name.trim().is_empty() {
                         s.name = name.trim().to_string();
                     }
                     s.note = note.trim().to_string();
+                    s.group = group.trim().to_string();
+                    self.store_dirty = true;
+                }
+                let g = group.trim().to_string();
+                if !g.is_empty() && !self.store.groups().contains(&g) {
+                    let mut l = self.store.groups();
+                    l.push(g);
+                    self.store.loop_groups = Some(l);
+                }
+            }
+            Action::LoopGroup(id, i, group) => {
+                if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
+                    s.group = group.trim().to_string();
                     self.store_dirty = true;
                 }
             }

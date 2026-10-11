@@ -66,6 +66,8 @@ pub const F_TR_PROG: u32 = 71;
 pub const F_RD_BPM: u32 = 72;
 pub const F_TIDAL_PL: u32 = 73;
 pub const F_GRIP_NAME: u32 = 74;
+pub const F_CLIP_GROUP: u32 = 75;
+pub const F_GROUP_NAME: u32 = 76;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 
