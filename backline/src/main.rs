@@ -362,6 +362,8 @@ enum Action {
     TogglePrefs,
     FindTuning,
     PlaylistPick(Track),
+    /// put a loop of a song in a playlist: (the song, from, to, the loop's name)
+    PlaylistPickLoop(Track, f32, f32, String),
     PlaylistAdd(usize, Track),
     PlaylistNew(Option<Track>),
     PlaylistFromQueue,
@@ -1296,30 +1298,48 @@ fn dropdown(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str], sel: usize
         &["#######", ".#####.", "..###..", "...#..."],
         pal().ink,
     );
+    // the first frame the list shows, it scrolls to the item chosen now
+    let fresh = key.with("fresh");
     if resp.clicked() {
-        ui.ctx().data_mut(|d| d.insert_temp(key, !open));
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(key, !open);
+            d.insert_temp(fresh, !open);
+        });
     }
+    let just_opened = open && ui.ctx().data_mut(|d| d.remove_temp::<bool>(fresh)).unwrap_or(false);
     let mut pick = None;
     if open {
-        let area = egui::Area::new(key.with("area"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(Pos2::new(rect.min.x, rect.max.y + 1.0))
-            .show(ui.ctx(), |ui| {
-                egui::Frame::none().fill(pal().beige_lt).stroke(egui::Stroke::new(2.0_f32, pal().edge)).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+        // never taller than the room on screen: under the button, or above it when there is more room there;
+        // a long list scrolls, opening on the item chosen now
+        let screen = ui.ctx().screen_rect();
+        let full = items.len() as f32 * 24.0 + 4.0;
+        let below = screen.max.y - rect.max.y - 10.0;
+        let above = rect.min.y - screen.min.y - 10.0;
+        let up = full > below && above > below;
+        let room = if up { above } else { below }.max(120.0);
+        let h = full.min(room);
+        let at = if up { Pos2::new(rect.min.x, rect.min.y - 1.0 - h) } else { Pos2::new(rect.min.x, rect.max.y + 1.0) };
+        let iw = items.iter().map(|it| text_w(it, 2.0) + 28.0).fold(w - 4.0, f32::max) + if full > room { 12.0 } else { 0.0 };
+        let area = egui::Area::new(key.with("area")).order(egui::Order::Foreground).fixed_pos(at).show(ui.ctx(), |ui| {
+            egui::Frame::none().fill(pal().beige_lt).stroke(egui::Stroke::new(2.0_f32, pal().edge)).show(ui, |ui| {
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                egui::ScrollArea::vertical().max_height(h - 4.0).auto_shrink([true, true]).show(ui, |ui| {
                     for (i, it) in items.iter().enumerate() {
-                        let iw = (w - 4.0).max(text_w(it, 2.0) + 28.0);
                         let (r, rr) = ui.allocate_exact_size(Vec2::new(iw, 24.0), Sense::click());
                         if i == sel || rr.hovered() {
                             fill_rect(ui.painter(), r, pal().sel);
                         }
                         ptext(ui.painter(), Pos2::new(r.min.x + 10.0, r.center().y), Align::Min, it, 2.0, pal().ink);
+                        if i == sel && just_opened {
+                            rr.scroll_to_me(Some(Align::Center));
+                        }
                         if rr.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             pick = Some(i);
                         }
                     }
                 });
             });
+        });
         let outside = ui.ctx().input(|i| i.pointer.any_click()) && !resp.hovered() && !area.response.hovered();
         if pick.is_some() || outside || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
             ui.ctx().data_mut(|d| d.insert_temp(key, false));
@@ -1985,30 +2005,7 @@ fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, lik
                 acts.push(Action::Play(tracks.to_vec(), i));
             }
             r.context_menu(|ui| {
-                if menu_item(ui, "Play next") {
-                    acts.push(Action::PlayNext(t.clone()));
-                    ui.close_menu();
-                }
-                if menu_item(ui, "Add to queue") {
-                    acts.push(Action::Enqueue(t.clone()));
-                    ui.close_menu();
-                }
-                goto_items(ui, acts, t, true);
-                {
-                    let lk = if liked.contains(&t.id) { "Remove from My Tracks" } else { "Add to My Tracks" };
-                    if menu_item(ui, lk) {
-                        acts.push(Action::ToggleLike(t.clone()));
-                        ui.close_menu();
-                    }
-                }
-                if PRACTICE && menu_item(ui, "Add to a tune...") {
-                    acts.push(Action::PickTune(t.clone()));
-                    ui.close_menu();
-                }
-                if menu_item(ui, "Add to a playlist...") {
-                    acts.push(Action::PlaylistPick(t.clone()));
-                    ui.close_menu();
-                }
+                song_items(ui, acts, t, liked.contains(&t.id), true, false);
                 link_item(ui, acts, track_link(t, None));
             });
         }
@@ -2025,6 +2022,34 @@ fn track_link(t: &Track, ext: Option<&store::Ext>) -> Option<String> {
         return None;
     }
     Some(if e.src.starts_with("http") { e.src.clone() } else { format!("https://www.youtube.com/watch?v={}", e.src) })
+}
+
+/// What a song's right-click menu offers wherever the song is shown: play it next or later, go to its album or
+/// artist, keep it in My Tracks, put it in a tune or a playlist. `queued`: it is in the queue already.
+pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, liked: bool, tidal: bool, queued: bool) {
+    if !queued {
+        if menu_item(ui, "Play next") {
+            acts.push(Action::PlayNext(t.clone()));
+            ui.close_menu();
+        }
+        if menu_item(ui, "Add to queue") {
+            acts.push(Action::Enqueue(t.clone()));
+            ui.close_menu();
+        }
+    }
+    goto_items(ui, acts, t, tidal);
+    if menu_item(ui, if liked { "Remove from My Tracks" } else { "Add to My Tracks" }) {
+        acts.push(Action::ToggleLike(t.clone()));
+        ui.close_menu();
+    }
+    if PRACTICE && menu_item(ui, "Add to a tune...") {
+        acts.push(Action::PickTune(t.clone()));
+        ui.close_menu();
+    }
+    if menu_item(ui, "Add to a playlist...") {
+        acts.push(Action::PlaylistPick(t.clone()));
+        ui.close_menu();
+    }
 }
 
 /// Menu entry that shows the link and copies it. Nothing is shown when there is no link (local files).
@@ -2429,6 +2454,8 @@ struct App {
     new_pl: String,
     pl_open: Option<usize>,
     pl_pick: Option<Track>,
+    /// the loop being put in a playlist with `pl_pick`: (from, to, name)
+    pl_loop: Option<(f32, f32, String)>,
     yt_results: Vec<store::Ext>,
     /// the opened playlist's name, and whether its songs are shown (it starts folded up)
     yt_title: String,
@@ -2579,6 +2606,8 @@ struct App {
     rd_both: bool,
     /// how far the music is magnified
     rd_zoom: f32,
+    /// which reading guide is open
+    rd_guide: u8,
     cb_frets: [Option<u8>; 6],
     cb_name: String,
     vc_family: u8,
@@ -2791,8 +2820,8 @@ impl App {
             // Latin, Greek and Cyrillic, Japanese, Chinese, Korean, symbols)
             for (name, bytes) in font::system_fallbacks() {
                 // sit its letters on the same baseline as Chakra Petch's
-                let tweak = font::baseline_tweak(include_bytes!("../assets/ChakraPetch-Regular.ttf"), &bytes);
-                fonts.font_data.insert(name.clone(), egui::FontData::from_owned(bytes).tweak(tweak));
+                let tweak = font::baseline_tweak(include_bytes!("../assets/ChakraPetch-Regular.ttf"), bytes);
+                fonts.font_data.insert(name.clone(), egui::FontData::from_static(bytes).tweak(tweak));
                 for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
                     if let Some(f) = fonts.families.get_mut(&fam) {
                         f.push(name.clone());
@@ -2975,6 +3004,7 @@ impl App {
             new_pl: String::new(),
             pl_open: None,
             pl_pick: None,
+            pl_loop: None,
             yt_results: Vec::new(),
             yt_title: String::new(),
             yt_open: false,
@@ -3096,6 +3126,7 @@ impl App {
             rd_bpm_text: String::new(),
             rd_both: true,
             rd_zoom: 1.0,
+            rd_guide: 0,
             cb_frets: [None; 6],
             cb_name: String::new(),
             vc_family: 4,

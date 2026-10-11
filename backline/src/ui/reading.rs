@@ -157,6 +157,8 @@ pub(crate) struct Lesson {
     pub notes: Vec<String>,
     pub pieces: Vec<Piece>,
     pub tempo: u32,
+    /// the chapter it belongs to (a `@chapter` line before it), empty when the book has none
+    pub chapter: String,
 }
 
 // ------------------------------------------------------------------ writing notes down
@@ -307,6 +309,7 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
     let mut lessons: Vec<Lesson> = Vec::new();
     let mut errs = Vec::new();
     let (mut sig, mut pos, mut beats, mut den) = (0i32, 0u8, 4u16, 4u16);
+    let mut chapter = String::new();
     // the piece being read: (name, parts as (part name, music text))
     let mut piece: Option<(String, Vec<(String, String)>)> = None;
     let finish = |piece: &mut Option<(String, Vec<(String, String)>)>,
@@ -335,7 +338,9 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(rest) = line.strip_prefix("@lesson") {
+        if let Some(rest) = line.strip_prefix("@chapter") {
+            chapter = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("@lesson") {
             finish(&mut piece, &mut lessons, &mut errs, sig, pos, (beats, den));
             let rest = rest.trim();
             let (page, title) = rest.split_once(' ').unwrap_or((rest, ""));
@@ -343,6 +348,7 @@ pub(crate) fn parse_book(text: &str) -> (Vec<Lesson>, Vec<String>) {
                 page: page.parse().unwrap_or(0),
                 title: title.trim().to_string(),
                 tempo: 72,
+                chapter: chapter.clone(),
                 ..Default::default()
             });
         } else if let Some(rest) = line.strip_prefix("@ex").or_else(|| line.strip_prefix("@duet")) {
@@ -1346,13 +1352,54 @@ impl App {
         }
         ui.add_space(10.0);
         section_header(ui, "HOW TO WORK");
-        for tip in [
-            "Before you play, look it over: the key, the time, the highest and lowest notes, the hardest rhythm.",
-            "Count a bar in out loud. Play slower than you think you need to, then raise the tempo 5 at a time.",
-            "Eyes on the page, not the neck. Stay in the position: one finger per fret.",
-            "Keep going. A wrong note is fine; stopping isn't. The beat matters more than the notes.",
-            "A little every day beats a lot once a week. Work at your own pace and mark things done when they are.",
-        ] {
+        if let Some(v) = tab_row(ui, &["THE BASICS", "A DAILY ROUTINE", "THE MARKS", "DUETS", "WHEN IT'S HARD", "BEYOND THE BOOK"], self.rd_guide as usize)
+        {
+            self.rd_guide = v as u8;
+        }
+        ui.add_space(4.0);
+        let tips: &[&str] = match self.rd_guide {
+            1 => &[
+                "Five minutes: warm up with yesterday's exercise at its tempo - it should feel easy now.",
+                "Ten minutes: today's new exercise. Look it over, count a bar in, play it through once without stopping, however it goes. Then fix the bars that broke, slowly, and play it through again.",
+                "Five minutes: a MADE-UP LINE in the same key and position, read once, cold. That is real sight reading - music you have never seen. The book is for learning the notes; made-up lines test them.",
+                "Last: a duet with PLAY ALONG, or mark the exercise done and write down the tempo you reached. Twenty minutes a day moves faster than two hours on Sunday.",
+            ],
+            2 => &[
+                "The open box over a note is a down-stroke, the V an up-stroke. Leavitt prints them where the picking matters - follow them exactly; they are the method.",
+                "A small number by a note is the finger (0 open string, 1 index ... 4 little finger). A number in a circle is the string. Together they tell you where on the neck it lives.",
+                "A dot over or under a note: short (staccato). A short line: hold it its full length (tenuto). The > is an accent - pick it harder. The arc with a dot (fermata): hold it as long as feels right.",
+                "Words over the staff: Ritard (slow down), a tempo (back to speed), fine (the end), D.S. al coda (back to the sign, then jump to the coda - written out here as you play it). p, mf, f under the staff: soft, medium, loud.",
+                "POS II, POS V ... marks a move to that position. F.S. is a finger stretch out of the position for one note - go back right after.",
+            ],
+            3 => &[
+                "Learn your part with HEAR IT first if you have to, but then turn it off and read.",
+                "PLAY ALONG plays only the other guitar and the clicks - you play your part. It counts in a bar. If you get lost, don't stop: find beat one of the next bar and jump back in. That is the most important reading skill there is.",
+                "Then swap parts. Each duet is two lessons: the tune and the accompaniment. The 2nd part is usually the one that teaches rhythm.",
+                "BOTH STAVES shows the whole system, the way a real chart looks. Glance at the other part while you play - it trains your eye to read ahead.",
+            ],
+            4 => &[
+                "Too fast? Halve the tempo. Speed comes from playing it right slowly many times, not from forcing it.",
+                "One bar keeps breaking: play just that bar and the first note of the next, four times, slowly. Then the whole line again.",
+                "Lost in the rhythm: tap your foot and say the counts (1 & 2 & ...) without playing. Then play only the rhythm on one open string. Then add the notes.",
+                "Lost on the neck: turn on THE POSITION for a minute and see where the key's notes sit. Turn on SHOW TAB only to check a note you weren't sure of - then turn it off again. If the tab stays on, you are reading tab, not music.",
+                "Chord pages: say each chord's name out loud as you place it. Shapes stick when they have names.",
+            ],
+            5 => &[
+                "Read something every day that you don't know: a lead sheet from a fake book, a Real Book head, a horn part. Read it once through at a slow tempo without stopping before you practise it.",
+                "Read ahead: while you play one bar, your eyes should already be on the next. Cover the bar you're playing with a card if your eyes keep falling back.",
+                "Read in other positions: take a book exercise you know and read it in position V or VII. Same notes, a new map.",
+                "Read rhythms on their own: clap a line of eighths, triplets and rests from any page before you play it.",
+                "Once this book is done, the same work carries on in Volume 2, in the Real Book, and in the horn and piano books - anything with notes on a staff.",
+            ],
+            _ => &[
+                "Before you play, look it over: the key, the time, the highest and lowest notes, the hardest rhythm.",
+                "Count a bar in out loud. Play slower than you think you need to, then raise the tempo 5 at a time.",
+                "Eyes on the page, not the neck. Stay in the position: one finger per fret.",
+                "Keep going. A wrong note is fine; stopping isn't. The beat matters more than the notes.",
+                "A little every day beats a lot once a week. Work at your own pace and mark things done when they are.",
+            ],
+        };
+        for tip in tips {
             para(ui, tip, pal().ink2);
         }
         ui.add_space(20.0);
@@ -1479,14 +1526,45 @@ impl App {
                 format!("P.{}  {}{}", l.page, l.title.to_uppercase(), if all { "  - DONE" } else { "" })
             })
             .collect();
-        let names: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        // chapters (in book order), and the lessons of the one this lesson is in
+        let mut chapters: Vec<String> = Vec::new();
+        for l in &self.rd_book {
+            if !chapters.contains(&l.chapter) {
+                chapters.push(l.chapter.clone());
+            }
+        }
+        let cur_ch = self.rd_book[self.rd_lesson].chapter.clone();
+        let in_ch: Vec<usize> = (0..self.rd_book.len()).filter(|i| self.rd_book[*i].chapter == cur_ch).collect();
+        let ch_names: Vec<String> = chapters
+            .iter()
+            .map(|c| {
+                let ls: Vec<&Lesson> = self.rd_book.iter().filter(|l| &l.chapter == c).collect();
+                let (a, b) = (ls.first().map_or(0, |l| l.page), ls.last().map_or(0, |l| l.page));
+                format!("P.{}-{}  {}", a, b, c.to_uppercase())
+            })
+            .collect();
+        let ch_names: Vec<&str> = ch_names.iter().map(|s| s.as_str()).collect();
+        let lesson_names: Vec<&str> = in_ch.iter().map(|i| names[*i].as_str()).collect();
+        ui.horizontal_wrapped(|ui| {
+            if chapters.len() > 1 {
+                let ci = chapters.iter().position(|c| *c == cur_ch).unwrap_or(0);
+                if let Some(c) = dropdown(ui, "rd_chapter", "", &ch_names, ci, 300.0) {
+                    if let Some(first) = self.rd_book.iter().position(|l| l.chapter == chapters[c]) {
+                        self.rd_lesson = first;
+                        self.rd_piece = 0;
+                        self.rd_part = 0;
+                    }
+                }
+            }
+        });
         ui.horizontal_wrapped(|ui| {
             if retro_btn_w(ui, "<", 30.0, false).tip("The lesson before").clicked() && self.rd_lesson > 0 {
                 self.rd_lesson -= 1;
                 self.rd_piece = 0;
             }
-            if let Some(i) = dropdown(ui, "rd_lesson", "", &names, self.rd_lesson, 380.0) {
-                self.rd_lesson = i;
+            let li = in_ch.iter().position(|i| *i == self.rd_lesson).unwrap_or(0);
+            if let Some(i) = dropdown(ui, "rd_lesson", "", &lesson_names, li, 380.0) {
+                self.rd_lesson = in_ch[i];
                 self.rd_piece = 0;
                 self.rd_part = 0;
             }

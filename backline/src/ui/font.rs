@@ -594,9 +594,20 @@ pub fn wrap(text: &str, px: f32, max_w: f32) -> Vec<String> {
     out
 }
 
-/// The system fonts that cover other scripts, read from where the system keeps them (the first of each group that
+/// A font file mapped from disk for the life of the app: its pages belong to the file, so tens of megabytes of
+/// Japanese, Chinese and Korean letters cost almost no memory until (and unless) they are drawn. Kept as borrowed
+/// bytes, egui uses them where they are instead of copying them for every screen scale.
+fn map_font(path: &str) -> Option<&'static [u8]> {
+    let f = std::fs::File::open(path).ok()?;
+    // safety: system font files are not rewritten while they are installed and in use
+    let m = unsafe { memmap2::Mmap::map(&f) }.ok()?;
+    let m: &'static memmap2::Mmap = Box::leak(Box::new(m));
+    Some(&m[..])
+}
+
+/// The system fonts that cover other scripts, from where the system keeps them (the first of each group that
 /// is there): (name, file contents).
-pub fn system_fallbacks() -> Vec<(String, Vec<u8>)> {
+pub fn system_fallbacks() -> Vec<(String, &'static [u8])> {
     let groups: Vec<Vec<String>> = if cfg!(windows) {
         let w = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".to_string());
         let f = |n: &str| format!(r"{}\Fonts\{}", w, n);
@@ -620,7 +631,7 @@ pub fn system_fallbacks() -> Vec<(String, Vec<u8>)> {
     };
     let mut out = Vec::new();
     for (i, group) in groups.iter().enumerate() {
-        if let Some(bytes) = group.iter().find_map(|f| std::fs::read(f).ok()) {
+        if let Some(bytes) = group.iter().find_map(|f| map_font(f)) {
             out.push((format!("system{}", i), bytes));
         }
     }

@@ -635,28 +635,16 @@ impl App {
                                 if r.clicked() {
                                     acts.push(Action::PlayIndex(i));
                                 }
-                                let lk = if self.liked.contains(&t.id) { "Remove from My Tracks" } else { "Add to My Tracks" };
+                                let liked = self.liked.contains(&t.id);
                                 let link = track_link(&t, self.ext_of(t.id).as_ref());
                                 let tidal = self.ext_of(t.id).is_none();
                                 r.context_menu(|ui| {
-                                    if menu_item(ui, lk) {
-                                        acts.push(Action::ToggleLike(t.clone()));
-                                        ui.close_menu();
-                                    }
-                                    goto_items(ui, acts, &t, tidal);
                                     if menu_item(ui, "Play now") {
                                         acts.push(Action::PlayIndex(i));
                                         ui.close_menu();
                                     }
                                     queue_moves(ui, acts, i, cur);
-                                    if PRACTICE && menu_item(ui, "Add to a tune...") {
-                                        acts.push(Action::PickTune(t.clone()));
-                                        ui.close_menu();
-                                    }
-                                    if menu_item(ui, "Add to a playlist...") {
-                                        acts.push(Action::PlaylistPick(t.clone()));
-                                        ui.close_menu();
-                                    }
+                                    crate::song_items(ui, acts, &t, liked, tidal, true);
                                     link_item(ui, acts, link.clone());
                                     if cur != Some(i) && menu_item(ui, "Remove from queue") {
                                         acts.push(Action::Remove(i));

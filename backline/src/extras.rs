@@ -1468,11 +1468,22 @@ impl App {
             Action::PlaylistPick(t) => {
                 self.set_note(&format!("PICK A PLAYLIST FOR: {}", t.title.to_uppercase()));
                 self.pl_pick = Some(t);
+                self.pl_loop = None;
+                self.apply(Action::Section(Sec::Lists));
+            }
+            Action::PlaylistPickLoop(t, a, b, name) => {
+                self.set_note(&format!("PICK A PLAYLIST FOR THE LOOP: {}", name.to_uppercase()));
+                self.pl_pick = Some(t);
+                self.pl_loop = Some((a, b, name));
                 self.apply(Action::Section(Sec::Lists));
             }
             Action::PlaylistAdd(i, t) => {
                 if i < self.store.playlists.len() {
-                    let v = self.version_of(&t);
+                    let mut v = self.version_of(&t);
+                    if let Some((a, b, name)) = self.pl_loop.take() {
+                        v.loop_ab = Some((a, b));
+                        v.loop_name = name;
+                    }
                     self.store.playlists[i].items.push(v);
                     self.store_dirty = true;
                     let n = self.store.playlists[i].name.to_uppercase();
@@ -1484,7 +1495,11 @@ impl App {
             Action::PlaylistNew(t) => {
                 let typed = self.new_pl.trim().to_string();
                 let name = if typed.is_empty() { format!("Playlist {}", self.store.playlists.len() + 1) } else { typed };
-                let items = t.iter().map(|t| self.version_of(t)).collect();
+                let mut items: Vec<store::Version> = t.iter().map(|t| self.version_of(t)).collect();
+                if let (Some((a, b, lname)), Some(v)) = (self.pl_loop.take(), items.first_mut()) {
+                    v.loop_ab = Some((a, b));
+                    v.loop_name = lname;
+                }
                 self.store.playlists.push(store::Playlist { name, items });
                 self.new_pl.clear();
                 self.pl_pick = None;

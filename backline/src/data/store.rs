@@ -38,6 +38,9 @@ pub struct Version {
     pub dur: f32,
     pub stars: u8,
     pub note: String,
+    /// a loop of the song rather than all of it (a playlist can hold loops): where it starts and ends, its name
+    pub loop_ab: Option<(f32, f32)>,
+    pub loop_name: String,
 }
 
 /// A file's cover: the picture inside it (or beside it), found by the image loader from "file:<path>".

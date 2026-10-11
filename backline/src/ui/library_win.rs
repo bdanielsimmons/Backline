@@ -790,8 +790,10 @@ impl App {
         self.continue_bar(ui, acts);
         ui.add_space(4.0);
 
-        // list well
+        // list well: it stops a little above the window's bottom edge, so its own border shows and the last row
+        // ends inside it instead of running into the frame
         let avail = ui.available_rect_before_wrap();
+        let avail = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - 6.0));
         if avail.height() < 30.0 {
             return;
         }

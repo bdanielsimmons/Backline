@@ -486,8 +486,10 @@ impl App {
                                     acts.push(Action::PlayIndex(i));
                                 }
                                 let link = crate::track_link(t, self.ext_of(t.id).as_ref());
+                                let (liked, tidal) = (self.liked.contains(&t.id), self.ext_of(t.id).is_none());
                                 r.context_menu(|ui| {
                                     crate::player_win::queue_moves(ui, acts, i, cur);
+                                    crate::song_items(ui, acts, t, liked, tidal, true);
                                     crate::link_item(ui, acts, link.clone());
                                     if cur != Some(i) && crate::menu_item(ui, "Remove from queue") {
                                         acts.push(Action::Remove(i));

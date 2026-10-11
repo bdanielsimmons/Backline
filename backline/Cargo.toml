@@ -11,6 +11,8 @@ practice = []
 
 [dependencies]
 ab_glyph = "0.2"
+# the big system fonts for other scripts are mapped from disk, not copied into memory
+memmap2 = "0.9"
 # no accesskit: every widget is hand-painted, so it had nothing to describe (and cost a second Windows API crate)
 eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
