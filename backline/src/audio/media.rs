@@ -341,3 +341,14 @@ pub fn thumb_show(t: &mut ThumbBar, playing: bool) {
 
 #[cfg(not(windows))]
 pub fn thumb_show(_t: &mut ThumbBar, _playing: bool) {}
+
+/// Tell Windows the program's icon may have changed (after an update), so the taskbar, pinned shortcuts and
+/// Explorer stop showing the old one they kept.
+#[cfg(windows)]
+pub fn refresh_icons() {
+    use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+    unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
+}
+
+#[cfg(not(windows))]
+pub fn refresh_icons() {}

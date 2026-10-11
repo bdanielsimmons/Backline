@@ -3035,6 +3035,11 @@ impl App {
         // the very first run (no settings yet): the setup wizard; or one left half done (the installed copy
         // carries on where the first left off)
         let first_run = !api::config_dir().join("settings.json").exists();
+        // a new build since last time (an update): have Windows show its icon afresh
+        if st["icon_build"].as_u64() != Some(update::build() as u64) {
+            media::refresh_icons();
+            app.dirty = true;
+        }
         app.setup_step = match st["setup_step"].as_u64() {
             Some(s) => Some(s.min(5) as u8),
             None if first_run && tour::demo_kind().is_none() => Some(0),
@@ -3223,6 +3228,7 @@ impl App {
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
             "tour_seen": self.tour_seen,
+            "icon_build": update::build(),
             "setup_step": self.setup_step,
             "auto_restart": self.auto_restart,
             "intro": self.intro,
