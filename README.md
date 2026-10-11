@@ -11,6 +11,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Playlists can hold loops - right-click a loop, Add this loop to a playlist; clicking it plays the loop
+- Sight reading: the book in chapters, and guides (a daily routine, what every mark means, duets, when it's hard)
 - Sight reading shows the book's markings - pick strokes, fingerings, string numbers, accents, fermatas, slurs, dynamics
 - Zoom the sight-reading score in and out (buttons or ctrl + mouse wheel)
 - READING (under PRACTICE) - sight-reading lines in a key and position, rhythms from quarters up to triplets and sixteenths, played with a count-in or just clicks while you read
@@ -19,8 +21,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - LOOPS (under PRACTICE) lists the songs you saved loops on or practised this week (or all of them); click a loop to jump straight to it
 - A heart on every song in My Tracks, the other track lists and the playlist - click it to like or unlike
 - Clusters show every voicing as a chord box plus notation and tab, and you can build your own on the neck and keep them in MY CHORDS
-- The lead sheet follows the song playing (or LOCK it), and says what's playing
-- Mini mode is just the player, with the chips along the top to get back out
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
