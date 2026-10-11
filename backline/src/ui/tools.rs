@@ -60,6 +60,8 @@ pub const F_PROG_NEW: u32 = 62;
 pub const F_LN_BPM: u32 = 66;
 pub const F_LN_SUB: u32 = 67;
 pub const F_CB_NAME: u32 = 68;
+pub const F_CLIP_NAME: u32 = 69;
+pub const F_CLIP_NOTE: u32 = 70;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 

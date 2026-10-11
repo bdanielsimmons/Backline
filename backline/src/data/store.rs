@@ -125,6 +125,8 @@ pub struct Section {
     pub b: f32,
     /// the day it was saved (empty for loops saved before this was kept)
     pub saved: String,
+    /// your note on it (what it is, what to work on)
+    pub note: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]

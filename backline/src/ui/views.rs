@@ -1440,8 +1440,18 @@ impl App {
             if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practised, or looped, in the last 7 days").clicked() {
                 self.loops_all = false;
             }
-            if retro_btn(ui, "ALL", self.loops_all).tip("Every song with a saved loop").clicked() {
+            if retro_btn(ui, "ALL", self.loops_all).tip("Every saved loop").clicked() {
                 self.loops_all = true;
+            }
+            ui.add_space(16.0);
+            if retro_btn(ui, "EACH LOOP", !self.loops_by_song)
+                .tip("Every loop on its own - a riff, a lick, a groove - newest first")
+                .clicked()
+            {
+                self.loops_by_song = false;
+            }
+            if retro_btn(ui, "BY SONG", self.loops_by_song).tip("Loops under their songs, with your practice time").clicked() {
+                self.loops_by_song = true;
             }
         });
         ui.add_space(4.0);
@@ -1450,6 +1460,10 @@ impl App {
             if (self.loops_all || l.iter().any(|s| s.saved >= week_start)) && !ids.contains(id) {
                 ids.push(*id);
             }
+        }
+        if !self.loops_by_song {
+            self.clips_list(ui, acts, &ids, &week_start);
+            return;
         }
         let newest =
             |id: &i64| self.store.sections.get(id).and_then(|l| l.iter().map(|s| s.saved.clone()).max()).unwrap_or_default();
@@ -1520,6 +1534,128 @@ impl App {
                 }
             });
             ui.add_space(8.0);
+        }
+        ui.add_space(20.0);
+    }
+
+    /// Every loop on its own, newest first: its name, the song it is from, where, and your note. Click to play it;
+    /// right-click to rename it, note it, play the whole song or forget it.
+    fn clips_list(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, ids: &[i64], week_start: &str) {
+        let mut clips: Vec<(i64, usize, store::Section)> = Vec::new();
+        for id in ids {
+            for (i, s) in self.store.sections.get(id).into_iter().flatten().enumerate() {
+                // this week: loops saved this week, or on a song practised this week
+                if self.loops_all || s.saved.as_str() >= week_start || s.saved.is_empty() {
+                    clips.push((*id, i, s.clone()));
+                }
+            }
+        }
+        clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved));
+        if clips.is_empty() {
+            para(
+                ui,
+                "No loops here yet. In PRACTICE, set A and B on a song, name it (FUNKY RIFF...) and press SAVE.",
+                pal().ink2,
+            );
+            return;
+        }
+        let playing = (self.cur_track().map(|t| t.id), self.loop_a, self.loop_b);
+        for (k, (id, i, s)) in clips.iter().enumerate() {
+            let v = self.store.songs.get(id).cloned();
+            let from = v
+                .as_ref()
+                .map(|v| format!("{} - {}", v.artist, v.title))
+                .unwrap_or_else(|| "a song (play it once to name it)".to_string());
+            let on = playing.0 == Some(*id)
+                && playing.1.is_some_and(|a| (a - s.a).abs() < 0.05)
+                && playing.2.is_some_and(|b| (b - s.b).abs() < 0.05);
+            let h = if s.note.is_empty() { 44.0 } else { 62.0 };
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+            let p = ui.painter();
+            if on {
+                p.rect_filled(r, 2.0, pal().row_sel);
+            } else if resp.hovered() {
+                p.rect_filled(r, 2.0, pal().sel);
+            } else if k % 2 == 1 {
+                p.rect_filled(r, 2.0, pal().row_alt);
+            }
+            let x = r.min.x + 12.0;
+            let col = if on { pal().bar_txt } else { pal().ink };
+            ptext(p, Pos2::new(x, r.min.y + 13.0), Align::Min, &s.name.to_uppercase(), 2.0, col);
+            let when = if s.saved.is_empty() { String::new() } else { format!("   SAVED {}", s.saved) };
+            let sub = format!("FROM {}   {}-{}{}", from.to_uppercase(), fmt_time(s.a), fmt_time(s.b), when);
+            ptext_fit(p, Pos2::new(x, r.min.y + 31.0), Align::Min, &sub, 1.0, r.width() - 24.0, pal().ink2);
+            if !s.note.is_empty() {
+                ptext_fit(p, Pos2::new(x, r.min.y + 48.0), Align::Min, &s.note, 2.0, r.width() - 24.0, pal().dim);
+            }
+            let resp = resp
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .tip("Play it, looping. Right-click to rename it or add a note");
+            if resp.clicked() {
+                if let Some(v) = &v {
+                    acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
+                }
+            }
+            resp.context_menu(|ui| {
+                if menu_item(ui, "Rename / add a note...") {
+                    self.clip_edit = Some((*id, *i));
+                    self.clip_name = s.name.clone();
+                    self.clip_note = s.note.clone();
+                    ui.close_menu();
+                }
+                if let Some(v) = &v {
+                    if menu_item(ui, "Play the whole song") {
+                        acts.push(Action::PlaySaved(v.clone(), None));
+                        ui.close_menu();
+                    }
+                    if PRACTICE && menu_item(ui, "Add the song to a tune...") {
+                        acts.push(Action::PickTune(v.to_track()));
+                        ui.close_menu();
+                    }
+                }
+                if menu_item(ui, "Forget this loop") {
+                    acts.push(Action::ForgetLoop(*id, *i));
+                    ui.close_menu();
+                }
+            });
+            // renaming / noting this one
+            if self.clip_edit == Some((*id, *i)) {
+                let o1 = field_row(
+                    ui,
+                    &mut self.ed,
+                    crate::tools::F_CLIP_NAME,
+                    "NAME",
+                    &mut self.clip_name,
+                    "funky riff, the lick at 2:10...",
+                    None,
+                );
+                let o2 = field_row(
+                    ui,
+                    &mut self.ed,
+                    crate::tools::F_CLIP_NOTE,
+                    "NOTE",
+                    &mut self.clip_note,
+                    "what it is, what to work on",
+                    None,
+                );
+                let mut done = o1.enter || o2.enter;
+                ui.horizontal(|ui| {
+                    ui.add_space(12.0);
+                    if retro_btn(ui, "SAVE", false).clicked() {
+                        done = true;
+                    }
+                    if retro_btn(ui, "CANCEL", false).clicked() {
+                        self.clip_edit = None;
+                        self.ed.id = 0;
+                    }
+                });
+                if done {
+                    acts.push(Action::EditLoop(*id, *i, self.clip_name.clone(), self.clip_note.clone()));
+                    self.clip_edit = None;
+                    self.ed.id = 0;
+                }
+                ui.add_space(6.0);
+            }
         }
         ui.add_space(20.0);
     }

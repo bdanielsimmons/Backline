@@ -1916,7 +1916,7 @@ impl App {
                     return;
                 }
                 let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
-                list.push(Section { name: name.clone(), a, b, saved: store::today_str() });
+                list.push(Section { name: name.clone(), a, b, saved: store::today_str(), note: String::new() });
                 self.remember_song(&t);
                 self.sec_name.clear();
                 self.store_dirty = true;
@@ -1933,6 +1933,15 @@ impl App {
                 self.player.send(Cmd::Seek(s.a));
             }
             Action::PlaySaved(v, lp) => self.play_saved(&v, lp),
+            Action::EditLoop(id, i, name, note) => {
+                if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
+                    if !name.trim().is_empty() {
+                        s.name = name.trim().to_string();
+                    }
+                    s.note = note.trim().to_string();
+                    self.store_dirty = true;
+                }
+            }
             Action::ForgetLoop(id, i) => {
                 if let Some(l) = self.store.sections.get_mut(&id) {
                     if i < l.len() {

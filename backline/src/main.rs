@@ -313,6 +313,8 @@ enum Action {
     PlaySaved(store::Version, Option<(f32, f32)>),
     /// forget saved loop `usize` of this song
     ForgetLoop(i64, usize),
+    /// rename a saved loop and set its note: (song, which, name, note)
+    EditLoop(i64, usize, String, String),
     /// sound these chords one after another
     PlaySequence(Vec<Vec<i32>>),
     /// chords one after another, this many seconds apart
@@ -2472,6 +2474,12 @@ struct App {
     pending_seek: Option<f32>,
     /// LOOPS shows every song with a loop (else just this week's)
     loops_all: bool,
+    /// LOOPS grouped under their songs (else every loop on its own, newest first)
+    loops_by_song: bool,
+    /// the loop being renamed / noted in LOOPS (song id, which), and what is typed
+    clip_edit: Option<(i64, usize)>,
+    clip_name: String,
+    clip_note: String,
     sel_anchor: Option<f32>,
     exporting: bool,
 
@@ -2952,6 +2960,10 @@ impl App {
             sec_name: String::new(),
             pending_seek: None,
             loops_all: false,
+            loops_by_song: false,
+            clip_edit: None,
+            clip_name: String::new(),
+            clip_note: String::new(),
             sel_anchor: None,
             exporting: false,
             rtab: 0,
