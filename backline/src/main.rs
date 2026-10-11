@@ -2641,6 +2641,16 @@ impl App {
             if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
                 f.insert(0, "chakra".to_string());
             }
+            // song names in any language: the system's own fonts take any character the others lack (accented
+            // Latin, Greek and Cyrillic, Japanese, Chinese, Korean, symbols)
+            for (name, bytes) in font::system_fallbacks() {
+                fonts.font_data.insert(name.clone(), egui::FontData::from_owned(bytes));
+                for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+                    if let Some(f) = fonts.families.get_mut(&fam) {
+                        f.push(name.clone());
+                    }
+                }
+            }
             cc.egui_ctx.set_fonts(fonts);
         }
         setup_style(&cc.egui_ctx);

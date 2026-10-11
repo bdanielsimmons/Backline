@@ -991,6 +991,12 @@ impl PixFont {
         swash::FontRef::from_index(&self.bytes, 0).expect("checked in new")
     }
 
+    /// Does this font have every character of `s`?
+    fn covers(&self, s: &str) -> bool {
+        let map = self.font().charmap();
+        s.chars().all(|c| c.is_whitespace() || map.map(c) != 0)
+    }
+
     /// Each character's glyph and its advance in whole pixels at `size` (whole pixels, as Windows lays text out).
     fn glyphs(&self, s: &str, size: f32) -> Vec<(swash::GlyphId, f32)> {
         let font = self.font();
@@ -1110,10 +1116,11 @@ pub(crate) fn sans_width(text: &str, size: f32) -> f32 {
     PIX.with(|c| {
         let c = c.borrow();
         match c.as_ref() {
-            Some(pf) => {
+            Some(pf) if pf.covers(text) => {
                 let ppp = font::ppp();
                 pf.width_at(text, pf.screen_px(size, ppp)) / ppp
             }
+            Some(_) => font::smooth_w(text, size),
             None => text.chars().count() as f32 * size * 0.5,
         }
     })
@@ -1125,6 +1132,10 @@ pub(crate) fn sans_text(p: &egui::Painter, pos: Pos2, align: Align, text: &str, 
     let drawn = PIX.with(|c| {
         let mut c = c.borrow_mut();
         let pf = c.as_mut()?;
+        // characters the skin's font lacks: the smooth font below (it falls back to the system's fonts)
+        if !pf.covers(text) {
+            return None;
+        }
         let ppp = font::ppp();
         let spx = pf.screen_px(size, ppp);
         let mut s = text.to_string();

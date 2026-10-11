@@ -41,6 +41,25 @@ pub fn with_scale<R>(s: f32, f: impl FnOnce() -> R) -> R {
     r
 }
 
+/// Can the pixel font draw all of this (accented letters fold to plain ones)? Text it can't - Japanese, Chinese,
+/// Korean, Greek, symbols - is drawn in the smooth font, which falls back to the system's own fonts.
+fn pixel_ok(text: &str) -> bool {
+    text.chars().all(|c| c == '?' || norm(c) != '?')
+}
+
+/// Draw this in the smooth font: the modern looks, or text the pixel font has no letters for.
+fn smooth(text: &str) -> bool {
+    modern() || (CTX.get().is_some() && !pixel_ok(text))
+}
+
+/// Width of text in the smooth font at `size` points (for text a skin's own font can't draw).
+pub fn smooth_w(text: &str, size: f32) -> f32 {
+    match CTX.get() {
+        Some(c) => c.fonts(|f| f.layout_no_wrap(text.to_string(), egui::FontId::proportional(size), Color32::WHITE).size().x),
+        None => text.chars().count() as f32 * size * 0.5,
+    }
+}
+
 fn mw(text: &str, px: f32) -> f32 {
     match CTX.get() {
         Some(c) => c.fonts(|f| f.layout_no_wrap(text.to_string(), mfont(px), Color32::WHITE).size().x),
@@ -292,7 +311,7 @@ pub fn text_w(text: &str, px: f32) -> f32 {
     if text.contains(DRAWN) {
         return drawn_split(text).iter().map(|s| s.map_or_else(|c| drawn_w(c, px), |s| text_w(s, px))).sum();
     }
-    if skinned() || modern() {
+    if skinned() || smooth(text) {
         return sw(text, px);
     }
     pw(text, spx(px))
@@ -355,7 +374,7 @@ pub fn ptext(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, col
     if skinned() {
         return crate::winamp_ui::sans_text(p, anchor, h, text, skin_size(px), f32::INFINITY, color);
     }
-    if modern() {
+    if smooth(text) {
         let w = mw(text, px);
         let al = match h {
             Align::Min => egui::Align2::LEFT_CENTER,
@@ -478,7 +497,7 @@ pub fn ptext_fit(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32,
         crate::winamp_ui::sans_text(p, anchor, h, text, skin_size(px), max_w, color);
         return;
     }
-    if modern() {
+    if smooth(text) {
         let mut k = px;
         while k > px * 0.55 && mw(text, k) > max_w {
             k -= 0.05;
@@ -573,4 +592,52 @@ pub fn wrap(text: &str, px: f32, max_w: f32) -> Vec<String> {
         out.push(line);
     }
     out
+}
+
+/// The system fonts that cover other scripts, read from where the system keeps them (the first of each group that
+/// is there): (name, file contents).
+pub fn system_fallbacks() -> Vec<(String, Vec<u8>)> {
+    let groups: Vec<Vec<String>> = if cfg!(windows) {
+        let w = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".to_string());
+        let f = |n: &str| format!(r"{}\Fonts\{}", w, n);
+        vec![
+            vec![f("segoeui.ttf")],
+            vec![f("YuGothM.ttc"), f("msgothic.ttc"), f("meiryo.ttc")],
+            vec![f("msyh.ttc"), f("simsun.ttc")],
+            vec![f("malgun.ttf")],
+            vec![f("seguisym.ttf")],
+        ]
+    } else {
+        [
+            vec!["/System/Library/Fonts/Hiragino Sans GB.ttc", "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"],
+            vec!["/System/Library/Fonts/AppleSDGothicNeo.ttc"],
+            vec!["/System/Library/Fonts/Supplemental/Arial Unicode.ttf", "/Library/Fonts/Arial Unicode.ttf"],
+            vec!["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"],
+        ]
+        .into_iter()
+        .map(|g| g.into_iter().map(String::from).collect())
+        .collect()
+    };
+    let mut out = Vec::new();
+    for (i, group) in groups.iter().enumerate() {
+        if let Some(bytes) = group.iter().find_map(|f| std::fs::read(f).ok()) {
+            out.push((format!("system{}", i), bytes));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod script_tests {
+    #[test]
+    fn the_pixel_font_hands_on_what_it_cannot_draw() {
+        // accented letters fold to plain ones; Japanese, Greek and the like go to the smooth font
+        assert!(super::pixel_ok("Café Brasil - Ação"));
+        assert!(super::pixel_ok("What? Yes."));
+        assert!(!super::pixel_ok("坂本龍一"));
+        assert!(!super::pixel_ok("Σαββατο"));
+        if cfg!(windows) {
+            assert!(!super::system_fallbacks().is_empty(), "Windows has fonts for other scripts");
+        }
+    }
 }
