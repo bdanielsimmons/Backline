@@ -123,6 +123,8 @@ pub struct Section {
     pub name: String,
     pub a: f32,
     pub b: f32,
+    /// the day it was saved (empty for loops saved before this was kept)
+    pub saved: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -132,6 +134,8 @@ pub struct Day {
     pub secs: BTreeMap<String, u32>,
     pub loops: u32,
     pub pomos: u32,
+    /// practice time on each song that day (by track id), tune or not
+    pub songs: BTreeMap<i64, u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -224,6 +228,8 @@ pub struct Store {
     pub my_progs: Vec<String>,
     /// lines you typed in from a book: (label, notes)
     pub my_lines: Vec<(String, String)>,
+    /// the songs you saved loops on or practised, so LOOPS and the diary can name and play them
+    pub songs: HashMap<i64, Version>,
     /// voicings you kept (CLUSTERS > MY CHORDS)
     pub my_chords: Vec<MyChord>,
 }

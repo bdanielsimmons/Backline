@@ -258,6 +258,55 @@ impl App {
         .filter(|t| !t.trim().is_empty())
     }
 
+    /// Keep a song's details (for LOOPS and the diary), once.
+    pub(crate) fn remember_song(&mut self, t: &Track) {
+        if !self.store.songs.contains_key(&t.id) {
+            let v = self.version_of(t);
+            self.store.songs.insert(t.id, v);
+            self.store_dirty = true;
+        }
+    }
+
+    /// Play a kept song - in the queue where it already is, else straight after the song playing - and go to one of
+    /// its loops when asked.
+    pub(crate) fn play_saved(&mut self, v: &Version, lp: Option<(f32, f32)>) {
+        if let Some((a, b)) = lp {
+            self.loops.insert(v.id, (a, b));
+            self.practice = true;
+        }
+        // already playing: just go to the loop
+        if self.cur_track().map(|t| t.id) == Some(v.id) {
+            if let Some((a, b)) = lp {
+                self.loop_a = Some(a);
+                self.loop_b = Some(b);
+                self.loop_on = true;
+                self.sync_loop();
+                self.player.send(Cmd::Seek(a));
+            }
+            return;
+        }
+        self.register(v);
+        let at = match self.queue.iter().position(|t| t.id == v.id) {
+            Some(i) => i,
+            None => {
+                let mut q: Vec<Track> = (*self.queue).clone();
+                let at = self.cur.map(|c| c + 1).unwrap_or(0).min(q.len());
+                q.insert(at, v.to_track());
+                self.queue = Arc::new(q);
+                self.orig_queue = None;
+                at
+            }
+        };
+        self.play_index(at);
+        if let Some((a, _)) = lp {
+            if self.buffering {
+                self.pending_seek = Some(a);
+            } else {
+                self.player.send(Cmd::Seek(a));
+            }
+        }
+    }
+
     pub(crate) fn practice_label(&self) -> String {
         match self.cur_tune() {
             Some(i) => self.store.tunes[i].name.clone(),
@@ -309,8 +358,14 @@ impl App {
         self.acc -= secs as f32;
         let label = self.practice_label();
         let date = store::today_str();
+        let song = self.cur_track();
         let d = self.store.day_mut(&date);
         *d.secs.entry(label).or_insert(0) += secs;
+        // and on which song, so free practice still says what you worked on
+        if let Some(t) = song {
+            *d.songs.entry(t.id).or_insert(0) += secs;
+            self.remember_song(&t);
+        }
         self.store_dirty = true;
     }
 
@@ -695,6 +750,10 @@ impl App {
                 self.eq_on = true;
                 self.apply_eq();
             }
+        }
+        // a song with loops saved before songs were remembered: remember it now
+        if self.store.sections.contains_key(&t.id) && !self.is_demo(t.id) {
+            self.remember_song(t);
         }
         match self.loops.get(&t.id).copied().filter(|_| !self.is_demo(t.id)) {
             Some((a, b)) => {
@@ -1240,7 +1299,7 @@ impl App {
     pub(crate) fn apply_extra(&mut self, a: Action) {
         match a {
             Action::Section(s) => {
-                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Chords | Sec::Lines) {
+                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Chords | Sec::Lines) {
                     self.last_practice = s;
                 } else {
                     self.last_music = s;
@@ -1857,7 +1916,8 @@ impl App {
                     return;
                 }
                 let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
-                list.push(Section { name: name.clone(), a, b });
+                list.push(Section { name: name.clone(), a, b, saved: store::today_str() });
+                self.remember_song(&t);
                 self.sec_name.clear();
                 self.store_dirty = true;
                 self.set_note(&format!("SAVED: {}", name.to_uppercase()));
@@ -1871,6 +1931,18 @@ impl App {
                 self.loop_on = true;
                 self.sync_loop();
                 self.player.send(Cmd::Seek(s.a));
+            }
+            Action::PlaySaved(v, lp) => self.play_saved(&v, lp),
+            Action::ForgetLoop(id, i) => {
+                if let Some(l) = self.store.sections.get_mut(&id) {
+                    if i < l.len() {
+                        l.remove(i);
+                        self.store_dirty = true;
+                    }
+                    if l.is_empty() {
+                        self.store.sections.remove(&id);
+                    }
+                }
             }
             Action::DeleteSection(i) => {
                 if let Some(t) = self.cur_track() {

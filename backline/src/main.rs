@@ -203,6 +203,7 @@ enum Sec {
     Sc,
     Tunes,
     Diary,
+    Loops,
     Chords,
     Lines,
     Lists,
@@ -308,6 +309,10 @@ enum Action {
     BacklinePage,
     /// sound these notes (MIDI) as a chord
     PlayNotes(Vec<i32>),
+    /// play a kept song (from LOOPS or the diary), and go to this loop of it
+    PlaySaved(store::Version, Option<(f32, f32)>),
+    /// forget saved loop `usize` of this song
+    ForgetLoop(i64, usize),
     /// sound these chords one after another
     PlaySequence(Vec<Vec<i32>>),
     /// chords one after another, this many seconds apart
@@ -2465,6 +2470,8 @@ struct App {
     last_cap: Instant,
     sec_name: String,
     pending_seek: Option<f32>,
+    /// LOOPS shows every song with a loop (else just this week's)
+    loops_all: bool,
     sel_anchor: Option<f32>,
     exporting: bool,
 
@@ -2944,6 +2951,7 @@ impl App {
             last_cap: Instant::now(),
             sec_name: String::new(),
             pending_seek: None,
+            loops_all: false,
             sel_anchor: None,
             exporting: false,
             rtab: 0,

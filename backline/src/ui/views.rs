@@ -383,8 +383,8 @@ impl App {
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
     /// Each group comes back to the list you last had open in it. The plain build has only MUSIC, so only its row shows.
     pub(crate) fn section_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        const PRACTICE_SECS: [(Sec, &str); 4] =
-            [(Sec::Tunes, "TUNES"), (Sec::Diary, "DIARY"), (Sec::Chords, "CHORDS"), (Sec::Lines, "LINES")];
+        const PRACTICE_SECS: [(Sec, &str); 5] =
+            [(Sec::Tunes, "TUNES"), (Sec::Diary, "DIARY"), (Sec::Loops, "LOOPS"), (Sec::Chords, "CHORDS"), (Sec::Lines, "LINES")];
         // the BACKLINE tab covers its own page and the pages opened from it
         let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
         let in_practice = PRACTICE_SECS.iter().any(|s| s.0 == self.sec);
@@ -1421,6 +1421,140 @@ impl App {
     }
 
     // ---------------------------------------------------------------- DIARY
+    /// LOOPS (under PRACTICE): every song you saved a loop on or practised, without making it a tune - this week's
+    /// first, or all of them. Click a loop to jump straight to it, looping.
+    pub(crate) fn loops_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        ui.add_space(6.0);
+        title_line(ui, "LOOPS", 3.0, pal().ink);
+        para(ui, "The songs you saved loops on or practised, no tune needed. Click a loop to jump straight to it. Click a song to play it. Right-click for more.", pal().ink2);
+        self.name_old_loops();
+        let today = store::today_days();
+        let week_start = store::date_str(today - 6);
+        let mut week: std::collections::HashMap<i64, u32> = std::collections::HashMap::new();
+        for d in self.store.days.iter().filter(|d| d.date >= week_start) {
+            for (id, s) in &d.songs {
+                *week.entry(*id).or_default() += s;
+            }
+        }
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practised, or looped, in the last 7 days").clicked() {
+                self.loops_all = false;
+            }
+            if retro_btn(ui, "ALL", self.loops_all).tip("Every song with a saved loop").clicked() {
+                self.loops_all = true;
+            }
+        });
+        ui.add_space(4.0);
+        let mut ids: Vec<i64> = week.keys().copied().collect();
+        for (id, l) in &self.store.sections {
+            if (self.loops_all || l.iter().any(|s| s.saved >= week_start)) && !ids.contains(id) {
+                ids.push(*id);
+            }
+        }
+        let newest =
+            |id: &i64| self.store.sections.get(id).and_then(|l| l.iter().map(|s| s.saved.clone()).max()).unwrap_or_default();
+        ids.sort_by(|a, b| week.get(b).cmp(&week.get(a)).then(newest(b).cmp(&newest(a))));
+        if ids.is_empty() {
+            para(
+                ui,
+                if self.loops_all {
+                    "No saved loops yet. In PRACTICE, set A and B on a song and press SAVE."
+                } else {
+                    "Nothing this week yet. Practise a loop, or save one, and the song shows up here. ALL has every song with a saved loop."
+                },
+                pal().ink2,
+            );
+            return;
+        }
+        let playing = self.cur_track().map(|t| t.id);
+        for (k, id) in ids.iter().enumerate() {
+            let v = self.store.songs.get(id).cloned();
+            let name = v
+                .as_ref()
+                .map(|v| format!("{} - {}", v.artist, v.title))
+                .unwrap_or_else(|| "A SONG (PLAY IT ONCE TO NAME IT)".to_string());
+            let mins = week.get(id).copied().unwrap_or(0);
+            let state = if playing == Some(*id) { RowState::Playing } else { RowState::Normal };
+            let r = list_row(
+                ui,
+                k,
+                None,
+                || name.clone(),
+                || if mins >= 60 { format!("{} THIS WEEK", mins_text(mins)) } else { String::new() },
+                state,
+                false,
+                false,
+            );
+            if let (Some(r), Some(v)) = (r, &v) {
+                if r.clicked() {
+                    acts.push(Action::PlaySaved(v.clone(), None));
+                }
+                r.context_menu(|ui| {
+                    if PRACTICE && menu_item(ui, "Add to a tune...") {
+                        acts.push(Action::PickTune(v.to_track()));
+                        ui.close_menu();
+                    }
+                });
+            }
+            let loops = self.store.sections.get(id).cloned().unwrap_or_default();
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+                ui.add_space(28.0);
+                if loops.is_empty() {
+                    dim_line(ui, "NO LOOPS SAVED - PRACTISED ONLY", 1.0, pal().dim);
+                }
+                for (i, s) in loops.iter().enumerate() {
+                    let label = format!("{}  {}-{}", s.name.to_uppercase(), fmt_time(s.a), fmt_time(s.b));
+                    let b = retro_btn(ui, &label, false).tip("Play the song at this loop, looping. Right-click to forget it");
+                    if b.clicked() {
+                        if let Some(v) = &v {
+                            acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
+                        }
+                    }
+                    b.context_menu(|ui| {
+                        if menu_item(ui, "Forget this loop") {
+                            acts.push(Action::ForgetLoop(*id, i));
+                            ui.close_menu();
+                        }
+                    });
+                }
+            });
+            ui.add_space(8.0);
+        }
+        ui.add_space(20.0);
+    }
+
+    /// Loops saved before songs were remembered: name them from wherever the song is known (tunes, files, lists,
+    /// the queue).
+    fn name_old_loops(&mut self) {
+        let missing: Vec<i64> = self.store.sections.keys().copied().filter(|id| !self.store.songs.contains_key(id)).collect();
+        for id in missing {
+            let found = self
+                .store
+                .tunes
+                .iter()
+                .flat_map(|t| t.versions.iter())
+                .find(|v| v.id == id)
+                .cloned()
+                .or_else(|| {
+                    self.store
+                        .files
+                        .iter()
+                        .chain(&self.store.yt)
+                        .chain(&self.store.sc)
+                        .chain(&self.store.hearts)
+                        .find(|e| e.id == id)
+                        .map(|e| e.to_version())
+                })
+                .or_else(|| self.store.last.as_ref().and_then(|l| l.queue.iter().find(|v| v.id == id).cloned()))
+                .or_else(|| self.queue.iter().find(|t| t.id == id).map(|t| self.version_of(t)));
+            if let Some(v) = found {
+                self.store.songs.insert(id, v);
+                self.store_dirty = true;
+            }
+        }
+    }
+
     pub(crate) fn diary_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
@@ -1579,6 +1713,45 @@ impl App {
         }
         if loops + pomos > 0 {
             dim_line(ui, &format!("LOOPS {}   FOCUS BLOCKS {}", loops, pomos), 2.0, pal().ink2);
+        }
+        // the songs worked on that day (tunes or free practice); click one to play it
+        let mut songs: Vec<(i64, u32)> = self
+            .store
+            .days
+            .iter()
+            .find(|d| d.date == date)
+            .map(|d| d.songs.iter().map(|(k, v)| (*k, *v)).collect())
+            .unwrap_or_default();
+        songs.sort_by(|a, b| b.1.cmp(&a.1));
+        if !songs.is_empty() {
+            ui.add_space(4.0);
+            dim_line(ui, "SONGS PRACTISED", 1.0, pal().dim);
+            for (k, (id, s)) in songs.iter().enumerate() {
+                let v = self.store.songs.get(id).cloned();
+                let name = v.as_ref().map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "A SONG".to_string());
+                let n_loops = self.store.sections.get(id).map_or(0, |l| l.len());
+                let r = list_row(
+                    ui,
+                    k,
+                    None,
+                    || name.clone(),
+                    || {
+                        if n_loops > 0 {
+                            format!("{}  {} LOOP{}", mins_text(*s), n_loops, if n_loops == 1 { "" } else { "S" })
+                        } else {
+                            mins_text(*s)
+                        }
+                    },
+                    RowState::Normal,
+                    false,
+                    false,
+                );
+                if let (Some(r), Some(v)) = (r, v) {
+                    if r.tip("Play it").clicked() {
+                        acts.push(Action::PlaySaved(v, None));
+                    }
+                }
+            }
         }
 
         let mins_hint = format!("{}", day_secs(self, sel) / 60);
