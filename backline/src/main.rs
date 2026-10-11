@@ -2438,6 +2438,8 @@ struct App {
     ln_at: usize,
     ln_root: i32,
     ln_back: bool,
+    /// what SHUFFLE picks from: 0 the whole book, 1 this chapter, 2 favorites
+    ln_shuffle: u8,
     /// the ABOUT THIS PATTERN panel open
     ln_about: bool,
     /// the HOW THESE PATTERNS WORK panel open
@@ -2883,6 +2885,7 @@ impl App {
             ln_at: 0,
             ln_root: 0,
             ln_back: false,
+            ln_shuffle: 0,
             ln_about: false,
             ln_how: false,
             sl_div: 0,

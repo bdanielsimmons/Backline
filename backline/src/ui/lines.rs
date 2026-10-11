@@ -350,20 +350,39 @@ impl App {
             }
             ui.add_space(10.0);
             let stars: Vec<usize> = (0..n).filter(|i| self.store.lines_stars.contains(&format!("book:{}", i))).collect();
-            let mut picks = vec!["ANY PATTERN", "IN THIS CHAPTER"];
-            if !stars.is_empty() {
-                picks.push("A FAVORITE");
+            // SHUFFLE jumps to a random pattern; right-click it to choose where from (the label says which)
+            if stars.is_empty() && self.ln_shuffle == 2 {
+                self.ln_shuffle = 0;
             }
-            if let Some(i) = dropdown(ui, "ln_rand", "RANDOM", &picks, 0, 150.0) {
-                let pool: Vec<usize> = match i {
-                    0 => (0..n).collect(),
+            let label = ["SHUFFLE", "SHUFFLE: THIS CHAPTER", "SHUFFLE: FAVORITES"][self.ln_shuffle.min(2) as usize];
+            let b = retro_btn(ui, label, false)
+                .tip("A random pattern. Right-click: shuffle from the whole book, this chapter or your favorites");
+            if b.clicked() {
+                let pool: Vec<usize> = match self.ln_shuffle {
                     1 => (0..n).filter(|k| book[*k].chap == chap).collect(),
-                    _ => stars.clone(),
+                    2 => stars.clone(),
+                    _ => (0..n).collect(),
                 };
                 if !pool.is_empty() {
-                    self.ln_at = pool[(rand_u64() as usize) % pool.len()];
+                    let mut k = pool[(rand_u64() as usize) % pool.len()];
+                    if k == self.ln_at && pool.len() > 1 {
+                        k = pool[(pool.iter().position(|x| *x == k).unwrap_or(0) + 1) % pool.len()];
+                    }
+                    self.ln_at = k;
                 }
             }
+            b.context_menu(|ui| {
+                for (m, name) in [(0u8, "From the whole book"), (1, "From this chapter"), (2, "From my favorites")] {
+                    if m == 2 && stars.is_empty() {
+                        continue;
+                    }
+                    let mark = if self.ln_shuffle == m { "> " } else { "   " };
+                    if crate::menu_item(ui, &format!("{}{}", mark, name)) {
+                        self.ln_shuffle = m;
+                        ui.close_menu();
+                    }
+                }
+            });
         });
         let at = self.ln_at;
         let line = &book[at];
@@ -520,7 +539,7 @@ impl App {
                 self.sl_pat = (self.sl_pat + 1) % n;
             }
             ui.add_space(10.0);
-            if retro_btn(ui, "RANDOM", false).tip("Any division, any way of adding notes").clicked() {
+            if retro_btn(ui, "SHUFFLE", false).tip("A random line: any division, any way of adding notes").clicked() {
                 let r = rand_u64();
                 self.sl_div = (r % lines::DIVISIONS.len() as u64) as usize;
                 let s = lines::DIVISIONS[self.sl_div].1;
