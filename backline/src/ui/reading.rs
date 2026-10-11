@@ -1437,6 +1437,28 @@ impl App {
         ui.add_space(20.0);
     }
 
+    /// Add a reading book file: checked (it has to hold lessons), copied to where Backline keeps it, read in.
+    fn rd_add_book(&mut self, path: &std::path::Path) {
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) => return self.set_err(format!("CAN'T OPEN THAT FILE ({})", e)),
+        };
+        let (lessons, _) = parse_book(&text);
+        if lessons.is_empty() {
+            return self.set_err("THAT ISN'T A READING BOOK (NO @lesson LINES IN IT)".to_string());
+        }
+        let dest = book_path();
+        if let Some(d) = dest.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        if let Err(e) = std::fs::write(&dest, text) {
+            return self.set_err(format!("CAN'T SAVE THE BOOK ({})", e));
+        }
+        self.rd_reload();
+        self.rd_lesson = 0;
+        self.set_note(&format!("READING BOOK ADDED: {} LESSONS", lessons.len()));
+    }
+
     /// Read the book file again (after it changed).
     pub(crate) fn rd_reload(&mut self) {
         self.rd_book_loaded = true;
@@ -1537,16 +1559,28 @@ impl App {
 
     /// THE BOOK: lesson by lesson.
     fn rd_book_page(&mut self, ui: &mut egui::Ui) {
+        // a reading book file dropped on the window is added
+        let dropped: Vec<std::path::PathBuf> =
+            ui.ctx().input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        if let Some(path) = dropped.into_iter().find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("txt"))) {
+            self.rd_add_book(&path);
+        }
         if self.rd_book.is_empty() {
             para(ui, "Have William Leavitt's A Modern Method for Guitar, Volume 1? Your own copy can be worked through here lesson by lesson: every exercise, solo and duet written out bar for bar, played, and ticked off as you go. The book is kept on this computer only, in a file called reading_book.txt in Backline's folder; it is never part of Backline. No book? MADE-UP LINES works the same way with fresh lines.", pal().ink2);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "SHOW THE FOLDER", false).clicked() {
-                    crate::sources::reveal(&book_path().to_string_lossy());
+                if retro_btn(ui, "ADD THE BOOK FILE...", false)
+                    .tip("Pick your reading_book.txt (or drop it on the window): it is copied into Backline's folder")
+                    .clicked()
+                {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Reading book", &["txt"]).pick_file() {
+                        self.rd_add_book(&path);
+                    }
                 }
                 if retro_btn(ui, "LOOK AGAIN", false).tip("Read the book file again").clicked() {
                     self.rd_reload();
                 }
             });
+            crate::views::dim_line(ui, "OR DROP THE FILE ON THE WINDOW", 1.0, pal().dim);
             return;
         }
         let total: usize = self.rd_book.iter().map(|l| l.pieces.len()).sum();
@@ -1628,6 +1662,11 @@ impl App {
             }
             if retro_btn(ui, "RELOAD", false).tip("Read the book file again (after pages are added)").clicked() {
                 self.rd_reload();
+            }
+            if retro_btn(ui, "REPLACE BOOK...", false).tip("Use another reading book file (a newer copy, say)").clicked() {
+                if let Some(path) = rfd::FileDialog::new().add_filter("Reading book", &["txt"]).pick_file() {
+                    self.rd_add_book(&path);
+                }
             }
         });
         for e in &self.rd_errs {
