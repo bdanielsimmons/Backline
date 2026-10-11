@@ -383,8 +383,14 @@ impl App {
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
     /// Each group comes back to the list you last had open in it. The plain build has only MUSIC, so only its row shows.
     pub(crate) fn section_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        const PRACTICE_SECS: [(Sec, &str); 5] =
-            [(Sec::Tunes, "TUNES"), (Sec::Diary, "DIARY"), (Sec::Loops, "LOOPS"), (Sec::Chords, "CHORDS"), (Sec::Lines, "LINES")];
+        const PRACTICE_SECS: [(Sec, &str); 6] = [
+            (Sec::Tunes, "TUNES"),
+            (Sec::Diary, "DIARY"),
+            (Sec::Loops, "LOOPS"),
+            (Sec::Reading, "READING"),
+            (Sec::Chords, "CHORDS"),
+            (Sec::Lines, "LINES"),
+        ];
         // the BACKLINE tab covers its own page and the pages opened from it
         let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
         let in_practice = PRACTICE_SECS.iter().any(|s| s.0 == self.sec);

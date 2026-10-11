@@ -1299,7 +1299,7 @@ impl App {
     pub(crate) fn apply_extra(&mut self, a: Action) {
         match a {
             Action::Section(s) => {
-                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Chords | Sec::Lines) {
+                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines) {
                     self.last_practice = s;
                 } else {
                     self.last_music = s;

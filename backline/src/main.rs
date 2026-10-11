@@ -75,6 +75,8 @@ mod palette;
 mod player_win;
 #[path = "ui/prefs.rs"]
 mod prefs;
+#[path = "ui/reading.rs"]
+mod reading;
 #[path = "ui/skin.rs"]
 mod skin;
 #[path = "ui/tools.rs"]
@@ -206,6 +208,7 @@ enum Sec {
     Tunes,
     Diary,
     Loops,
+    Reading,
     Chords,
     Lines,
     Lists,
@@ -2545,6 +2548,19 @@ struct App {
     mv_play: Option<(Instant, Vec<f32>)>,
     /// VOICINGS: SHAPES or WALK THE CHANGES
     vc_page: u8,
+    /// READING: key, position, rhythm level, bars, time (0 4/4, 1 3/4), tempo, the helps shown, the line, and a
+    /// play-through (start, note times, only clicks?, length)
+    rd_key: usize,
+    rd_pos: usize,
+    rd_level: usize,
+    rd_bars: usize,
+    rd_time: usize,
+    rd_bpm: u32,
+    rd_tab: bool,
+    rd_names: bool,
+    rd_map: bool,
+    rd_line: Option<crate::reading::Reading>,
+    rd_play: Option<(Instant, Vec<f32>, bool, f32)>,
     cb_frets: [Option<u8>; 6],
     cb_name: String,
     vc_family: u8,
@@ -3040,6 +3056,17 @@ impl App {
             mv_pedal: true,
             mv_play: None,
             vc_page: 0,
+            rd_key: 0,
+            rd_pos: 1,
+            rd_level: 0,
+            rd_bars: 1,
+            rd_time: 0,
+            rd_bpm: 70,
+            rd_tab: false,
+            rd_names: false,
+            rd_map: false,
+            rd_line: None,
+            rd_play: None,
             cb_frets: [None; 6],
             cb_name: String::new(),
             vc_family: 4,

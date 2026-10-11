@@ -136,6 +136,8 @@ pub struct Day {
     pub secs: BTreeMap<String, u32>,
     pub loops: u32,
     pub pomos: u32,
+    /// sight-reading lines played along to the end
+    pub reads: u32,
     /// practice time on each song that day (by track id), tune or not
     pub songs: BTreeMap<i64, u32>,
 }
