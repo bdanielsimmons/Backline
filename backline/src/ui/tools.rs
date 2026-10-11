@@ -64,6 +64,7 @@ pub const F_CLIP_NAME: u32 = 69;
 pub const F_CLIP_NOTE: u32 = 70;
 pub const F_TR_PROG: u32 = 71;
 pub const F_RD_BPM: u32 = 72;
+pub const F_TIDAL_PL: u32 = 73;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 

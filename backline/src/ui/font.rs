@@ -213,6 +213,54 @@ pub fn glyph(c: char) -> [u8; 9] {
 }
 
 /// Map any character to something the font has (accents folded, the rest becomes '?').
+/// Accented letters beyond Latin-1, each set with the plain letter it is read as.
+const EXTENDED: [(&str, char); 38] = [
+    ("ĀĂĄǍ", 'A'),
+    ("āăąǎ", 'a'),
+    ("ĆĈĊČ", 'C'),
+    ("ćĉċč", 'c'),
+    ("ĎĐ", 'D'),
+    ("ďđ", 'd'),
+    ("ĒĔĖĘĚ", 'E'),
+    ("ēĕėęě", 'e'),
+    ("ĜĞĠĢ", 'G'),
+    ("ĝğġģ", 'g'),
+    ("ĤĦ", 'H'),
+    ("ĥħ", 'h'),
+    ("ĨĪĬĮİǏ", 'I'),
+    ("ĩīĭįıǐ", 'i'),
+    ("Ĵ", 'J'),
+    ("ĵ", 'j'),
+    ("Ķ", 'K'),
+    ("ķ", 'k'),
+    ("ĹĻĽĿŁ", 'L'),
+    ("ĺļľŀł", 'l'),
+    ("ŃŅŇ", 'N'),
+    ("ńņňŉ", 'n'),
+    ("ŌŎŐǑ", 'O'),
+    ("ōŏőǒ", 'o'),
+    ("ŔŖŘ", 'R'),
+    ("ŕŗř", 'r'),
+    ("ŚŜŞŠȘ", 'S'),
+    ("śŝşšș", 's'),
+    ("ŢŤŦȚ", 'T'),
+    ("ţťŧț", 't'),
+    ("ŨŪŬŮŰŲǓ", 'U'),
+    ("ũūŭůűųǔ", 'u'),
+    ("Ŵ", 'W'),
+    ("ŵ", 'w'),
+    ("ŶŸ", 'Y'),
+    ("ŷ", 'y'),
+    ("ŹŻŽ", 'Z'),
+    ("źżž", 'z'),
+];
+
+/// A letter as plain ASCII for a font that has nothing else (a Winamp skin's own letters): every accented Latin
+/// letter folded, Shōga as Shoga, Dvořák as Dvorak; anything else as `norm` reads it.
+pub fn plain(c: char) -> char {
+    norm(EXTENDED.iter().find(|(set, _)| set.contains(c)).map_or(c, |(_, p)| *p))
+}
+
 pub fn norm(c: char) -> char {
     let c = match c {
         'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' => 'A',
@@ -645,6 +693,10 @@ mod script_tests {
         // accented letters fold to plain ones; Japanese, Greek and the like go to the smooth font
         assert!(super::pixel_ok("Café Brasil - Ação"));
         assert!(super::pixel_ok("What? Yes."));
+        // the rest of Latin goes to the smooth font (it has the letters); a skin's own font gets them folded
+        assert!(!super::pixel_ok("Shōga"));
+        assert_eq!(super::plain('ō'), 'o');
+        assert_eq!(super::plain('ř'), 'r');
         assert!(!super::pixel_ok("坂本龍一"));
         assert!(!super::pixel_ok("Σαββατο"));
         if cfg!(windows) {

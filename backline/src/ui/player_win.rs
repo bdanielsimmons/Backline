@@ -695,6 +695,9 @@ impl App {
                 if retro_btn(ui, "CLEAR QUEUE", false).clicked() {
                     acts.push(Action::ClearQueue);
                 }
+                if retro_btn(ui, "SAVE AS PLAYLIST", false).tip("Keep what is queued as a playlist (in LISTS)").clicked() {
+                    acts.push(Action::PlaylistFromQueue);
+                }
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(340.0), bh()), Sense::hover());
                 inset(ui.painter(), rect, pal().lcd);
                 let n = queue.len();

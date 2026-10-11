@@ -955,6 +955,14 @@ impl App {
                     }
                 }
             }
+            Msg::TidalListMade(r) => match r {
+                Ok(name) => {
+                    self.set_note(&format!("MADE {} ON TIDAL", name.to_uppercase()));
+                    self.tidal_lists = None;
+                    self.apply(Action::RefreshLibrary);
+                }
+                Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
+            },
             Msg::TidalListDone(r) => match r {
                 Ok(note) => self.set_note(&note),
                 Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
@@ -1483,7 +1491,30 @@ impl App {
                 self.set_note(&format!("PICK A PLAYLIST FOR: {}", t.title.to_uppercase()));
                 self.pl_pick = Some(t);
                 self.pl_loop = None;
+                self.pl_tidal = false;
                 self.apply(Action::Section(Sec::Lists));
+            }
+            Action::PlaylistPickTidal(t) => {
+                self.set_note(&format!("PICK A TIDAL PLAYLIST FOR: {}", t.title.to_uppercase()));
+                self.pl_pick = Some(t);
+                self.pl_loop = None;
+                self.pl_tidal = true;
+                self.apply(Action::Section(Sec::Lists));
+            }
+            Action::TidalListNew(name) => {
+                let name = name.trim().to_string();
+                if name.is_empty() {
+                    self.set_note("TYPE A NAME FOR THE PLAYLIST FIRST");
+                    return;
+                }
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = api.playlist_create(&name).map(|_| name);
+                    let _ = tx.send(Msg::TidalListMade(r));
+                    ctx.request_repaint();
+                });
+                self.tidal_new_name.clear();
+                self.ed.id = 0;
             }
             Action::TidalListAdd(uuid, name, id) => {
                 let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());

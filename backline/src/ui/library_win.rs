@@ -841,6 +841,28 @@ impl App {
                             );
                         }
                         if let Some(pg) = &page {
+                            // your Tidal playlists: make a new one here
+                            if pg.library && tab == Tab::Lists {
+                                ui.add_space(6.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(6.0);
+                                    let w = (ui.available_width() - 190.0).max(80.0);
+                                    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                                    let o = crate::views::field(
+                                        ui,
+                                        &mut self.ed,
+                                        crate::tools::F_TIDAL_PL,
+                                        &mut self.tidal_new_name,
+                                        rect,
+                                        "New Tidal playlist name...",
+                                        false,
+                                    );
+                                    if o.enter || retro_btn(ui, "+ NEW PLAYLIST", false).tip("Make it on your Tidal account").clicked() {
+                                        acts.push(Action::TidalListNew(self.tidal_new_name.clone()));
+                                    }
+                                });
+                                ui.add_space(4.0);
+                            }
                             page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, acts);
                         }
                     }

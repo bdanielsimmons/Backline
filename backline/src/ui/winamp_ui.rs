@@ -140,7 +140,8 @@ const FONT: &[(char, u8, u8)] = &[
 ];
 
 fn glyph(c: char) -> (u8, u8) {
-    let c = c.to_ascii_lowercase();
+    // the skin's font has plain letters only: Shōga is drawn as Shoga
+    let c = crate::font::plain(c).to_ascii_lowercase();
     FONT.iter().find(|f| f.0 == c).map_or((0, 30), |f| (f.1, f.2))
 }
 
@@ -233,6 +234,7 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             );
             x += tw;
         }
+        bottom_edge(p, outer, bot.min.y);
         // the title on a dark plate in light text, so it reads over any decoration in any skin
         let size = top_h * 0.46;
         let label = title.to_uppercase();
@@ -250,6 +252,44 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
         let _ = text;
         true
     })
+}
+
+/// The bottom of a window, finished like its top: a highlight where the frame's floor begins, the two bottom
+/// corners rounded off (outside the curve is the app's background again) and a dark edge around them, so the window
+/// ends on a clear line whatever colour the skin's frame is.
+fn bottom_edge(p: &egui::Painter, outer: Rect, band_top: f32) {
+    let r = 7.0_f32;
+    p.line_segment(
+        [Pos2::new(outer.min.x + 2.0, band_top + 0.5), Pos2::new(outer.max.x - 2.0, band_top + 0.5)],
+        egui::Stroke::new(1.0_f32, Color32::from_white_alpha(30)),
+    );
+    let bg = crate::pal().app_bg;
+    let cy = outer.max.y - r;
+    let arc = |cx: f32, side: f32| -> Vec<Pos2> {
+        (0..=8)
+            .map(|i| {
+                let a = i as f32 / 8.0 * std::f32::consts::FRAC_PI_2;
+                Pos2::new(cx + side * r * a.cos(), cy + r * a.sin())
+            })
+            .collect()
+    };
+    let mut mesh = egui::Mesh::default();
+    for (cx, side) in [(outer.min.x + r, -1.0_f32), (outer.max.x - r, 1.0)] {
+        let corner = Pos2::new(cx + side * r, outer.max.y);
+        let pts = arc(cx, side);
+        for w in pts.windows(2) {
+            let i = mesh.vertices.len() as u32;
+            for q in [corner, w[0], w[1]] {
+                mesh.colored_vertex(q, bg);
+            }
+            mesh.add_triangle(i, i + 1, i + 2);
+        }
+    }
+    p.add(egui::Shape::mesh(mesh));
+    // the edge: up the left corner, along the bottom, up the right corner
+    let mut edge: Vec<Pos2> = arc(outer.min.x + r, -1.0);
+    edge.extend(arc(outer.max.x - r, 1.0).into_iter().rev());
+    p.add(egui::Shape::line(edge, egui::Stroke::new(1.5_f32, Color32::from_black_alpha(220))));
 }
 
 /// Winamp's own visualizer, 76 x 16 skin pixels from `o` at `s` points per pixel, in the skin's colours
@@ -1483,11 +1523,11 @@ impl App {
         if sel.clicked() {
             acts.push(Action::QueueOp(0));
         }
-        // MISC: sort the queue, and pick the playlist font
+        // MISC: playlists (save the queue as one, a new one, open one), sort the queue, and the playlist font
         let misc = ui
             .interact(bl(101.0), id.with("misc"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Sort the queue, playlist font");
+            .tip("Playlists, sort the queue, playlist font");
         let misc_menu = id.with("misc_menu");
         if misc.clicked() {
             ui.memory_mut(|m| m.toggle_popup(misc_menu));
@@ -1495,6 +1535,22 @@ impl App {
         egui::popup::popup_below_widget(ui, misc_menu, &misc, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
             ui.set_min_width(220.0);
             let before = acts.len();
+            para(ui, "PLAYLISTS", pal().ink2);
+            if menu_item(ui, "Save the queue as a playlist") {
+                acts.push(Action::PlaylistFromQueue);
+            }
+            if menu_item(ui, "New playlist...") {
+                acts.push(Action::Section(crate::Sec::Lists));
+                acts.push(Action::PlaylistOpen(None));
+            }
+            for (i, pl) in self.store.playlists.iter().enumerate().take(12) {
+                if menu_item(ui, &format!("Open  {}", pl.name)) {
+                    acts.push(Action::Section(crate::Sec::Lists));
+                    acts.push(Action::PlaylistOpen(Some(i)));
+                }
+            }
+            ui.add_space(4.0);
+            para(ui, "QUEUE", pal().ink2);
             for (name, op) in [("Sort by artist", 1u8), ("Sort by title", 2), ("Reverse", 3)] {
                 if menu_item(ui, name) {
                     acts.push(Action::QueueOp(op));

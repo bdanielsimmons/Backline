@@ -921,15 +921,21 @@ impl App {
                 Some((a, b, name)) => format!("THE LOOP \"{}\" ({}-{}) OF {} - {}", name, fmt_time(*a), fmt_time(*b), t.artist, t.title),
                 None => format!("\"{} - {}\"", t.artist, t.title),
             };
-            para(ui, &format!("ADD {} TO WHICH PLAYLIST?", what), pal().ink);
+            let which = if self.pl_tidal { "TIDAL PLAYLIST" } else { "PLAYLIST" };
+            para(ui, &format!("ADD {} TO WHICH {}?", what, which), pal().ink);
             ui.horizontal_wrapped(|ui| {
                 if retro_btn(ui, "CANCEL", false).clicked() {
                     self.pl_pick = None;
                     self.pl_loop = None;
+                    self.pl_tidal = false;
                 }
             });
             ui.add_space(4.0);
-            for (i, pl) in self.store.playlists.iter().enumerate() {
+            let backline: &[store::Playlist] = if self.pl_tidal { &[] } else { &self.store.playlists };
+            if !backline.is_empty() {
+                section_header(ui, "BACKLINE PLAYLISTS");
+            }
+            for (i, pl) in backline.iter().enumerate() {
                 let n = pl.items.len();
                 if let Some(r) =
                     list_row(ui, i, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
@@ -974,7 +980,7 @@ impl App {
             let w = (ui.available_width() - 78.0).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let o = field(ui, &mut self.ed, F_NEW_PL, &mut self.new_pl, rect, "New playlist name...", false);
-            if o.enter || retro_btn_w(ui, "NEW", 70.0, false).clicked() {
+            if !self.pl_tidal && (o.enter || retro_btn_w(ui, "NEW", 70.0, false).tip("A new Backline playlist").clicked()) {
                 acts.push(Action::PlaylistNew(self.pl_pick.clone()));
             }
             // a new playlist on your Tidal account, with this song in it
@@ -1997,14 +2003,9 @@ impl App {
         let size = ui.available_size();
         let s = (size.y / 250.0).min(size.x / 760.0).max(0.1).sqrt().clamp(0.85, 2.0);
         let wave_h = 54.0 * s;
-        // the contents stop a little above the window's bottom edge, over a line of their own, so the panel has a
-        // clear bottom like the library's list (the frame alone is the same dark as the contents on some skins)
+        // the contents stop a little above the window's bottom edge, so they never run into it
         let r = ui.available_rect_before_wrap();
         let body = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.max.y - 6.0));
-        ui.painter().line_segment(
-            [Pos2::new(body.min.x, body.max.y + 2.0), Pos2::new(body.max.x, body.max.y + 2.0)],
-            egui::Stroke::new(crate::thick(2.0), pal().edge),
-        );
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(body), |ui| {
             crate::font::with_scale(s, || {
                 egui::ScrollArea::vertical()

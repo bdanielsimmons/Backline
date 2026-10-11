@@ -153,6 +153,8 @@ enum Msg {
     TidalLists(Result<Vec<(String, String)>, String>),
     /// a song put in a Tidal playlist: what to say
     TidalListDone(Result<String, String>),
+    /// a new playlist made on your Tidal account (its name), shown once the library is loaded again
+    TidalListMade(Result<String, String>),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
     Added(Vec<store::Ext>, Vec<String>),
     /// a rescan of the watched folders
@@ -366,9 +368,13 @@ enum Action {
     TogglePrefs,
     FindTuning,
     PlaylistPick(Track),
+    /// pick one of your Tidal playlists for a song
+    PlaylistPickTidal(Track),
     /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
     /// playlist with that name
     TidalListAdd(String, String, i64),
+    /// make a new, empty playlist on your Tidal account with this name
+    TidalListNew(String),
     /// put a loop of a song in a playlist: (the song, from, to, the loop's name)
     PlaylistPickLoop(Track, f32, f32, String),
     PlaylistAdd(usize, Track),
@@ -2053,7 +2059,16 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::PickTune(t.clone()));
         ui.close_menu();
     }
-    if menu_item(ui, "Add to a playlist...") {
+    if menu_item(ui, "Add to a Backline playlist...") {
+        acts.push(Action::PlaylistPick(t.clone()));
+        ui.close_menu();
+    }
+    if t.id > 0 && menu_item(ui, "Add to a Tidal playlist...") {
+        acts.push(Action::PlaylistPickTidal(t.clone()));
+        ui.close_menu();
+    }
+    // the picker's name box: NEW makes a Backline playlist, NEW ON TIDAL one on your Tidal account
+    if menu_item(ui, "New playlist with this song...") {
         acts.push(Action::PlaylistPick(t.clone()));
         ui.close_menu();
     }
@@ -2466,6 +2481,10 @@ struct App {
     /// your own Tidal playlists (None until asked for), and whether they are being fetched
     tidal_lists: Option<Vec<(String, String)>>,
     tidal_lists_busy: bool,
+    /// the name typed for a new Tidal playlist (MY LIBRARY > LISTS)
+    tidal_new_name: String,
+    /// the playlist picker shows only your Tidal playlists
+    pl_tidal: bool,
     yt_results: Vec<store::Ext>,
     /// the opened playlist's name, and whether its songs are shown (it starts folded up)
     yt_title: String,
@@ -3017,6 +3036,8 @@ impl App {
             pl_loop: None,
             tidal_lists: None,
             tidal_lists_busy: false,
+            tidal_new_name: String::new(),
+            pl_tidal: false,
             yt_results: Vec::new(),
             yt_title: String::new(),
             yt_open: false,
@@ -3481,6 +3502,12 @@ impl App {
                 }
                 ctx.request_repaint();
             });
+        }
+        // BACKLINE_OPEN=practice / lists: start with that open (for checking layouts and recording demos)
+        match std::env::var("BACKLINE_OPEN").as_deref() {
+            Ok("practice") => app.practice = true,
+            Ok("lists") => app.sec = Sec::Lists,
+            _ => {}
         }
         app
     }
