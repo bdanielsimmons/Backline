@@ -11,6 +11,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- In LINES, type any tempo, and pick a feel - quarters to sixteenths, quintuplets, sextuplets, septuplets, or any number of notes a beat from 1 to 16
 - Right-click a practice progression to add it to My progressions, or make it a tune with its lead sheet in the key you picked
 - The practice tour now shows the CHORDS tab (strumming a chord), LINES (playing a line) and the lead sheet with the band playing a ii-V-I
 - Tidalite is now called Backline - your library, login, skins and settings move across by themselves
@@ -20,7 +21,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Drag across bars on the lead sheet to loop just those
 - Charts can change time signature bar by bar (iReal Pro imports keep them)
 - Tunes have WRITTEN BY, YEAR, FROM and STYLE, filled in for you when they can be found
-- Set your own key and BPM for any song (right-click > Key and BPM...), kept on this computer
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
