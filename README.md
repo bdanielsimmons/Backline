@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Loop groups: keep a song's licks in groups (Head, Solo licks... or your own); make, rename and delete groups in LOOPS
 - Zoom the practice waveform like Audacity: the mouse wheel over it zooms where the mouse is, + and - zoom where it's playing, FIT shows the whole song
 - EXPORT LOOPS & PLAYLISTS saves one file; IMPORT on another computer adds what it doesn't have (in LOOPS and LISTS)
 - The metronome has its own volume slider, apart from the main volume
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - MY LIBRARY > LISTS: make a new playlist on your Tidal account
 - Add to a playlist now also lists your own Tidal playlists, and NEW ON TIDAL makes one with the song in it
 - Playlists can hold loops - right-click a loop, Add this loop to a playlist; clicking it plays the loop
-- Sight reading: the book in chapters, and guides (a daily routine, what every mark means, duets, when it's hard)
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
