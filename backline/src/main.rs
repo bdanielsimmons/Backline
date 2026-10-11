@@ -81,6 +81,8 @@ mod skin;
 mod tools;
 #[path = "ui/tour.rs"]
 mod tour;
+#[path = "ui/triads.rs"]
+mod triads;
 #[path = "ui/vicon.rs"]
 mod vicon;
 #[path = "ui/views.rs"]
@@ -2323,6 +2325,10 @@ struct App {
     /// how many songs right after the one playing you queued yourself (Play next / Add to queue): they play before
     /// the rest of the album, playlist or radio, and new ones you add go after them
     q_manual: usize,
+    /// the song playing was one you queued (PLAY NEXT / ADD TO QUEUE)
+    cur_queued: bool,
+    /// a queued song leaves the queue once it has played to the end (Preferences; skipping it keeps it)
+    q_drop: bool,
     sleep_at: Option<Instant>,
     sleep_mins: u32,
     mini: bool,
@@ -2517,6 +2523,28 @@ struct App {
     cl_chord: usize,
     /// CLUSTERS: the mode on show in SCALES; the voicing on the neck in BUILD and its name
     cl_mode: usize,
+    /// TRIADS / MOVES: the page, key, triad quality, strings (3 and 4 note), the shape picked, start position,
+    /// typed changes, the bass under a triad; the move, its dip, mode and stack; a move playing (start, step times)
+    tr_page: u8,
+    tr_root: i32,
+    tr_q: usize,
+    tr_set: usize,
+    tr_set4: usize,
+    tr_sel: usize,
+    tr_pos: u8,
+    tr_prog: String,
+    tr_bass: i32,
+    mv_page: u8,
+    mv_move: usize,
+    mv_dip: bool,
+    mv_parent: usize,
+    mv_mode: usize,
+    mv_stack: u8,
+    mv_motion: u8,
+    mv_pedal: bool,
+    mv_play: Option<(Instant, Vec<f32>)>,
+    /// VOICINGS: SHAPES or WALK THE CHANGES
+    vc_page: u8,
     cb_frets: [Option<u8>; 6],
     cb_name: String,
     vc_family: u8,
@@ -2830,6 +2858,8 @@ impl App {
             liked: HashSet::new(),
             q_drag: None,
             q_manual: 0,
+            cur_queued: false,
+            q_drop: true,
             sleep_at: None,
             sleep_mins: 0,
             mini: false,
@@ -2991,6 +3021,25 @@ impl App {
             cl_changes: "Dm7b5 G7 Cmaj7 Gbm7b5 Fm7 Em7 Ebdim7 Dm7 G7 Cmaj7".to_string(),
             cl_chord: 0,
             cl_mode: 0,
+            tr_page: 0,
+            tr_root: 0,
+            tr_q: 0,
+            tr_set: 0,
+            tr_set4: 0,
+            tr_sel: 0,
+            tr_pos: 1,
+            tr_prog: "1 4 5 1".to_string(),
+            tr_bass: 2,
+            mv_page: 0,
+            mv_move: 0,
+            mv_dip: false,
+            mv_parent: 0,
+            mv_mode: 1,
+            mv_stack: 0,
+            mv_motion: 0,
+            mv_pedal: true,
+            mv_play: None,
+            vc_page: 0,
             cb_frets: [None; 6],
             cb_name: String::new(),
             vc_family: 4,
@@ -3131,6 +3180,9 @@ impl App {
         }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
+        if let Some(b) = st["q_drop"].as_bool() {
+            app.q_drop = b;
+        }
         if let Some(b) = st["chart_lock"].as_bool() {
             app.chart_lock = b;
         }
@@ -3349,6 +3401,7 @@ impl App {
             "auto_restart": self.auto_restart,
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
+            "q_drop": self.q_drop,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],
@@ -3721,6 +3774,7 @@ impl App {
 
     fn play_index(&mut self, i: usize) {
         let Some(t) = self.queue.get(i).cloned() else { return };
+        self.cur_queued = matches!(self.cur, Some(c) if i == c + 1) && self.q_manual > 0;
         self.q_manual = match self.cur {
             Some(c) if i == c + 1 => self.q_manual.saturating_sub(1),
             _ => 0,
@@ -4783,6 +4837,26 @@ impl eframe::App for App {
                 if self.repeat == Repeat::One {
                     if let Some(c) = self.cur {
                         self.play_index(c);
+                    }
+                } else if self.cur_queued && self.q_drop && self.cur.is_some_and(|c| c > 0) {
+                    // a song you queued played to the end: it leaves the queue, the next one takes its place
+                    let c = self.cur.unwrap_or(1);
+                    let gone = self.queue.get(c).map(|t| t.id);
+                    let mut q: Vec<Track> = (*self.queue).clone();
+                    q.remove(c);
+                    self.queue = Arc::new(q);
+                    if let (Some(o), Some(id)) = (self.orig_queue.as_mut(), gone) {
+                        if let Some(k) = o.iter().position(|t| t.id == id) {
+                            o.remove(k);
+                        }
+                    }
+                    self.cur = Some(c - 1);
+                    if c < self.queue.len() {
+                        self.play_index(c);
+                    } else if self.repeat == Repeat::All && !self.queue.is_empty() {
+                        self.play_index(0);
+                    } else {
+                        self.stopped = true;
                     }
                 } else if let Some(j) = self.next_index() {
                     self.play_index(j);

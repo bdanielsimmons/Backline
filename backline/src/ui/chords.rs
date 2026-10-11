@@ -357,18 +357,22 @@ impl App {
         // a sequence playing: keep redrawing so the chord sounding now lights up
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
-        if let Some(t) =
-            tab_row(ui, &["FIND A CHORD", "CHORD ANALYZER", "CLUSTERS", "VOICINGS", "PASSING CHORDS"], self.chords_tab as usize)
-        {
+        if let Some(t) = tab_row(
+            ui,
+            &["FIND A CHORD", "CHORD ANALYZER", "TRIADS", "VOICINGS", "CLUSTERS", "PASSING CHORDS", "MOVES (EXPERIMENTAL)"],
+            self.chords_tab as usize,
+        ) {
             self.chords_tab = t as u8;
         }
         ui.add_space(6.0);
         match self.chords_tab {
             0 => self.chord_find(ui, acts),
             1 => self.chord_analyze(ui, acts),
-            2 => self.clusters(ui, acts),
+            2 => self.triads(ui, acts),
             3 => self.voicings(ui, acts),
-            _ => self.passing(ui, acts),
+            4 => self.clusters(ui, acts),
+            5 => self.passing(ui, acts),
+            _ => self.moves(ui, acts),
         }
     }
 
@@ -787,6 +791,16 @@ impl App {
     /// The voicing family tabs and string sets (shared by VOICINGS and PASSING CHORDS): (family, strings, notes
     /// dropped, reach).
     fn voicing_picker(&mut self, ui: &mut egui::Ui, about: bool) -> (usize, &'static [usize], &'static [usize], u8) {
+        self.voicing_picker_from(ui, about, 0)
+    }
+
+    /// The voicing picker without its first `first` families (VOICINGS leaves the triads to TRIADS).
+    fn voicing_picker_from(
+        &mut self,
+        ui: &mut egui::Ui,
+        about: bool,
+        first: usize,
+    ) -> (usize, &'static [usize], &'static [usize], u8) {
         const FAMILIES: [&str; 7] = ["TRIADS", "SPREAD TRIADS", "SHELLS", "CLOSE", "DROP 2", "DROP 3", "DROP 2&4"];
         const ABOUT: [&str; 7] = [
             "Three notes on three neighbouring strings. Learn all three inversions (root, 3rd or 5th on the bottom) on every set of strings and you can find any major or minor chord anywhere on the neck.",
@@ -797,8 +811,11 @@ impl App {
             "Drop the third highest note instead. The bass sits on the 6th or 5th string with a string skipped: a big, full sound for chord melody and comping.",
             "Drop the second and fourth highest notes. Wide and open across two string groups.",
         ];
-        if let Some(v) = tab_row(ui, &FAMILIES, self.vc_family as usize) {
-            self.vc_family = v as u8;
+        if (self.vc_family as usize) < first {
+            self.vc_family = first as u8;
+        }
+        if let Some(v) = tab_row(ui, &FAMILIES[first..], self.vc_family as usize - first) {
+            self.vc_family = (v + first) as u8;
             self.vc_set = 0;
         }
         let fam = (self.vc_family as usize).min(6);
@@ -899,12 +916,24 @@ impl App {
     /// drop 2 / drop 3 / drop 2 & 4 seventh chords - every inversion on a string set, then walked through the changes
     /// of a tune with the smallest moves.
     fn voicings(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let (fam, strings, drop, reach) = self.voicing_picker(ui, true);
+        if let Some(v) = tab_row(ui, &["SHAPES", "WALK THE CHANGES"], self.vc_page as usize) {
+            self.vc_page = v as u8;
+        }
+        ui.add_space(6.0);
+        let (fam, strings, drop, reach) = self.voicing_picker_from(ui, true, 2);
+        if self.vc_page == 1 {
+            self.walk_changes(ui, acts, fam, strings, drop, reach);
+            return;
+        }
         let triads = fam <= 1;
         let sharps = self.chord_sp.sharps;
-        if let Some(pc) = Self::note_row(ui, "ROOT", self.vc_root, sharps) {
-            self.vc_root = pc;
-        }
+        const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+        let _ = sharps;
+        ui.horizontal_wrapped(|ui| {
+            if let Some(k) = dropdown(ui, "vc_root", "ROOT", &KEYS, self.vc_root as usize, 110.0) {
+                self.vc_root = k as i32;
+            }
+        });
         let types: Vec<(&str, Vec<i32>)> = if triads {
             theory::TRIAD_TYPES.iter().map(|(n, v)| (*n, v.to_vec())).collect()
         } else {
@@ -981,9 +1010,18 @@ impl App {
                 });
             }
         });
-        // the drill: these voicings through a tune, each chord the closest grip to the one before
-        ui.add_space(8.0);
-        section_header(ui, "WALK THE CHANGES");
+    }
+
+    /// WALK THE CHANGES: these voicings through a tune, each chord the closest grip to the one before.
+    fn walk_changes(
+        &mut self,
+        ui: &mut egui::Ui,
+        acts: &mut Vec<Action>,
+        fam: usize,
+        strings: &[usize],
+        drop: &[usize],
+        reach: u8,
+    ) {
         para(ui, "Every chord of the tune in this voicing on these strings, each one the nearest grip to the last - the way you would comp it. Play along, then try it without looking.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         let walk = Self::led_grips(&changes, fam, strings, drop, reach);

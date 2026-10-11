@@ -11,7 +11,7 @@ use crate::views::field;
 
 /// What a card's buttons asked for.
 #[derive(PartialEq)]
-enum CardAct {
+pub(crate) enum CardAct {
     None,
     Edit,
     Remove,
@@ -72,6 +72,41 @@ pub(crate) fn chord_staff(
         &crate::lines_ui::CLEF,
         pal().ink,
     );
+    let x = rect.center().x + 16.0;
+    chord_heads(p, x, bottom, g, notes, tint, sharps);
+    let Some(grip) = grip else { return };
+    let tg = 8.0_f32;
+    let tab_top = bottom + 34.0;
+    for s in 0..6 {
+        let y = tab_top + s as f32 * tg;
+        p.line_segment([Pos2::new(left, y), Pos2::new(right, y)], line);
+    }
+    for (k, ch) in ["T", "A", "B"].iter().enumerate() {
+        ptext(p, Pos2::new(left + 8.0, tab_top + 6.0 + k as f32 * 14.0), Align::Center, ch, 1.0, pal().ink2);
+    }
+    for (s, f) in grip.iter().enumerate() {
+        let Some(f) = f else { continue };
+        let y = tab_top + (5 - s) as f32 * tg;
+        let txt = f.to_string();
+        let m = theory::STANDARD[s] + *f as i32;
+        let col = tint(m.rem_euclid(12)).unwrap_or(pal().ink);
+        p.rect_filled(Rect::from_center_size(Pos2::new(x, y), Vec2::new(text_w(&txt, 1.0) + 6.0, tg)), 0.0, paper);
+        ptext(p, Pos2::new(x, y), Align::Center, &txt, 1.0, col);
+    }
+}
+
+/// The notes of a chord stacked on a staff whose bottom line is at `bottom` (`g` between lines), at `x`: the upper
+/// of two notes a step apart set beside the other, ledger lines, sharps and flats in columns.
+pub(crate) fn chord_heads(
+    p: &egui::Painter,
+    x: f32,
+    bottom: f32,
+    g: f32,
+    notes: &[i32],
+    tint: &dyn Fn(i32) -> Option<Color32>,
+    sharps: bool,
+) {
+    let line = Stroke::new(1.0_f32, pal().ink2);
     let mut sorted = notes.to_vec();
     sorted.sort();
     sorted.dedup();
@@ -84,7 +119,6 @@ pub(crate) fn chord_staff(
         })
         .collect();
     let y_of = |step: i32| bottom - (step - 30) as f32 * g / 2.0;
-    let x = rect.center().x + 16.0;
     let mut side = vec![0.0_f32; spelled.len()];
     for i in 1..spelled.len() {
         if spelled[i].0 - spelled[i - 1].0 <= 1 && side[i - 1] == 0.0 {
@@ -124,32 +158,13 @@ pub(crate) fn chord_staff(
             crate::lines_ui::accidental(p, Pos2::new(x - g * 2.0 - k as f32 * g * 1.6, c.y), acc, g, col);
         }
     }
-    let Some(grip) = grip else { return };
-    let tg = 8.0_f32;
-    let tab_top = bottom + 34.0;
-    for s in 0..6 {
-        let y = tab_top + s as f32 * tg;
-        p.line_segment([Pos2::new(left, y), Pos2::new(right, y)], line);
-    }
-    for (k, ch) in ["T", "A", "B"].iter().enumerate() {
-        ptext(p, Pos2::new(left + 8.0, tab_top + 6.0 + k as f32 * 14.0), Align::Center, ch, 1.0, pal().ink2);
-    }
-    for (s, f) in grip.iter().enumerate() {
-        let Some(f) = f else { continue };
-        let y = tab_top + (5 - s) as f32 * tg;
-        let txt = f.to_string();
-        let m = theory::STANDARD[s] + *f as i32;
-        let col = tint(m.rem_euclid(12)).unwrap_or(pal().ink);
-        p.rect_filled(Rect::from_center_size(Pos2::new(x, y), Vec2::new(text_w(&txt, 1.0) + 6.0, tg)), 0.0, paper);
-        ptext(p, Pos2::new(x, y), Align::Center, &txt, 1.0, col);
-    }
 }
 
 /// How tall chord_staff wants to be.
-const STAFF_H: f32 = 136.0;
+pub(crate) const STAFF_H: f32 = 136.0;
 
 /// A small piano, two octaves from C3, with notes marked in their own colours and named.
-fn piano_marked(ui: &mut egui::Ui, w: f32, marks: &[(i32, Color32)], sharps: bool) {
+pub(crate) fn piano_marked(ui: &mut egui::Ui, w: f32, marks: &[(i32, Color32)], sharps: bool) {
     let h = 64.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
     let p = ui.painter();
@@ -274,7 +289,7 @@ impl App {
 
     /// One voicing as a card: its name, the chord box, the staff and tab, and HEAR / SAVE (and EDIT / X when asked).
     #[allow(clippy::too_many_arguments)]
-    fn voicing_card(
+    pub(crate) fn voicing_card(
         &mut self,
         ui: &mut egui::Ui,
         acts: &mut Vec<Action>,
@@ -348,7 +363,7 @@ impl App {
     }
 
     /// A wrapping grid of cards with room between them.
-    fn card_grid(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    pub(crate) fn card_grid(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(22.0, 22.0);

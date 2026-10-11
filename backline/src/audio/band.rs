@@ -814,6 +814,20 @@ pub fn chord_sound(midis: &[i32]) -> Vec<i16> {
     mix.finish()
 }
 
+/// Notes played string by string: (string, note, start in seconds, how hard); a note of -1 damps the string. Each
+/// note rings until the next one on its string (or `end`), as on a guitar.
+pub fn string_events(ev: &[(usize, i32, f32, f32)], end: f32) -> Vec<i16> {
+    let mut mix = Mix::new(end + 0.3, 60.0);
+    for e in ev {
+        if e.1 < 0 {
+            continue;
+        }
+        let next = ev.iter().filter(|o| o.0 == e.0 && o.2 > e.2).map(|o| o.2).fold(f32::INFINITY, f32::min);
+        mix.pluck(e.2, (next.min(end) - e.2).max(0.05), e.1, e.3);
+    }
+    mix.finish()
+}
+
 /// Chords one after another, `gap` seconds apart, each strummed and left to ring into the next.
 pub fn sequence_sound(chords: &[Vec<i32>], gap: f32) -> Vec<i16> {
     let mut mix = Mix::new(chords.len() as f32 * gap + 2.5, 60.0);

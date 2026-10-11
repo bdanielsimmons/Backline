@@ -334,6 +334,15 @@ impl App {
                             }
                         });
 
+                        section_header(ui, "QUEUE");
+                        if check_box(ui, "A QUEUED SONG LEAVES THE QUEUE ONCE IT HAS PLAYED", self.q_drop)
+                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE drop out after playing to the end (skipping one keeps it). Off: they stay")
+                            .clicked()
+                        {
+                            self.q_drop = !self.q_drop;
+                            self.dirty = true;
+                        }
+
                         section_header(ui, "OPENING SOUND");
                         para(ui, "A little sound when Backline opens: its own chime, or a short sound file of yours.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
