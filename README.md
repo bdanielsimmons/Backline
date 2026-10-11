@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- EXPORT LOOPS & PLAYLISTS saves one file; IMPORT on another computer adds what it doesn't have (in LOOPS and LISTS)
 - The metronome has its own volume slider, apart from the main volume
 - Made-up reading lines show the fingering for the position (finger and string over each note), with its own FINGERING switch
 - Your own grips for any chord: SAVE GRIP AS in the analyzer (type the name or pick root, kind, type), or ADD MY OWN GRIP in the finder; marked MINE, right-click to delete
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Playlists can hold loops - right-click a loop, Add this loop to a playlist; clicking it plays the loop
 - Sight reading: the book in chapters, and guides (a daily routine, what every mark means, duets, when it's hard)
 - Sight reading shows the book's markings - pick strokes, fingerings, string numbers, accents, fermatas, slurs, dynamics
-- Zoom the sight-reading score in and out (buttons or ctrl + mouse wheel)
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
