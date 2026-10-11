@@ -1437,3 +1437,35 @@ mod tests {
         assert_eq!(h[0].heads[0].midi, h[1].heads[0].midi + 1);
     }
 }
+
+/// Your own book file, when there is one: every line has to read (run with --ignored to check it).
+#[cfg(test)]
+#[test]
+#[ignore]
+fn my_book_reads() {
+    let text = std::fs::read_to_string(book_path()).expect("no reading_book.txt");
+    let (lessons, errs) = parse_book(&text);
+    assert!(errs.is_empty(), "{:#?}", errs);
+    for l in &lessons {
+        for p in &l.pieces {
+            for (pn, r) in &p.parts {
+                let bar = r.beats as u32 * BEAT as u32;
+                for (i, b) in r.bars.iter().enumerate() {
+                    let n: u32 = b.notes.iter().map(|x| x.dur as u32).sum();
+                    // a pickup bar at the start, or a short last bar, may be under length
+                    assert!(
+                        n == bar || i == 0 || i + 1 == r.bars.len(),
+                        "page {} {} {} bar {}: {} of {}",
+                        l.page,
+                        p.name,
+                        pn,
+                        i + 1,
+                        n,
+                        bar
+                    );
+                }
+            }
+        }
+        println!("page {} {}: {} pieces", l.page, l.title, l.pieces.len());
+    }
+}
