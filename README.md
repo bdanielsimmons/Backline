@@ -11,16 +11,16 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Sight reading shows the book's markings - pick strokes, fingerings, string numbers, accents, fermatas, slurs, dynamics
+- Zoom the sight-reading score in and out (buttons or ctrl + mouse wheel)
+- READING (under PRACTICE) - sight-reading lines in a key and position, rhythms from quarters up to triplets and sixteenths, played with a count-in or just clicks while you read
+- TRIADS (under CHORDS) maps a triad's inversions on the neck, voice-leads your changes with triads, and names a triad over any bass
+- MOVES (experimental): gospel triad moves with hammer-ons, slides and whammy dips marked, and McCoy Tyner style 4ths and clusters planed through a mode
+- LOOPS (under PRACTICE) lists the songs you saved loops on or practised this week (or all of them); click a loop to jump straight to it
 - A heart on every song in My Tracks, the other track lists and the playlist - click it to like or unlike
 - Clusters show every voicing as a chord box plus notation and tab, and you can build your own on the neck and keep them in MY CHORDS
 - The lead sheet follows the song playing (or LOCK it), and says what's playing
 - Mini mode is just the player, with the chips along the top to get back out
-- Song names in Japanese, Chinese, Korean, Greek, Cyrillic and other scripts show properly instead of empty boxes
-- In LINES, type any tempo, and pick a feel - quarters to sixteenths, quintuplets, sextuplets, septuplets, or any number of notes a beat from 1 to 16
-- Right-click a practice progression to add it to My progressions, or make it a tune with its lead sheet in the key you picked
-- The practice tour now shows the CHORDS tab (strumming a chord), LINES (playing a line) and the lead sheet with the band playing a ii-V-I
-- Tracks stream without being saved to disk; switch SAVING on under DISK to keep them
-- LINES under PRACTICE - Slonimsky's Diary (lines from Slonimsky's system, or a pattern book you add) and scales in intervals, in notation and tab, looped, counted
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
