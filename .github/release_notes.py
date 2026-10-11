@@ -22,7 +22,7 @@ changes, new = [], []
 for entry in log.split("\x1e")[1:]:
     subject, _, body = entry.partition("\x1f")
     subject = re.sub(r"\s*\[(no )?release\]", "", subject.strip())
-    if subject.startswith("README: what's new"):
+    if subject.startswith("README: what's new") or subject in ("", "Release"):
         continue
     lines = [f"- **{subject}**"]
     for line in body.splitlines():
