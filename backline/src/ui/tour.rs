@@ -340,6 +340,11 @@ impl App {
             song: None,
         };
         self.tour_play = Some(snap);
+        // from the first moment: the library shows nothing of yours (the tour's song joins it once it is here)
+        self.lib_tab = crate::Tab::Tracks;
+        self.page =
+            Some(std::sync::Arc::new(crate::api::Page { title: "My Tracks".to_string(), library: true, ..Default::default() }));
+        self.sec = crate::Sec::Tidal;
         // the tour's song: right away when it was fetched before, otherwise once it arrives
         match crate::tour_song::ready() {
             Some(path) => self.tour_put_on(path),
@@ -357,6 +362,11 @@ impl App {
     /// sections, stems) and nothing it does is saved (practice time, loops, EQ).
     pub(crate) fn is_demo(&self, id: i64) -> bool {
         self.tour_play.as_ref().and_then(|s| s.song) == Some(id)
+    }
+
+    /// Your library page as it was before the tour (more of your songs arriving during a tour go there).
+    pub(crate) fn tour_library(&mut self) -> Option<&mut std::sync::Arc<crate::api::Page>> {
+        self.tour_play.as_mut()?.page.as_mut().filter(|p| p.library)
     }
 
     /// The song playing is the tour's own.
@@ -492,10 +502,9 @@ impl App {
         self.apply_eq();
         self.store.last = s.last;
         self.store_dirty = true;
-        if s.song.is_some() {
-            self.page = s.page.clone();
-            self.demo_track = None;
-        }
+        // your page as it was (with any of your songs that arrived during the tour)
+        self.page = s.page.clone();
+        self.demo_track = None;
         if s.song.is_none() {
             return;
         }

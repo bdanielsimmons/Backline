@@ -918,7 +918,9 @@ impl App {
         }
         if let Some(t) = self.pl_pick.clone() {
             let what = match &self.pl_loop {
-                Some((a, b, name)) => format!("THE LOOP \"{}\" ({}-{}) OF {} - {}", name, fmt_time(*a), fmt_time(*b), t.artist, t.title),
+                Some((a, b, name)) => {
+                    format!("THE LOOP \"{}\" ({}-{}) OF {} - {}", name, fmt_time(*a), fmt_time(*b), t.artist, t.title)
+                }
                 None => format!("\"{} - {}\"", t.artist, t.title),
             };
             let which = if self.pl_tidal { "TIDAL PLAYLIST" } else { "PLAYLIST" };
@@ -958,10 +960,14 @@ impl App {
                 }
                 match &self.tidal_lists {
                     None => dim_line(ui, "LOADING...", 1.0, pal().dim),
-                    Some(l) if l.is_empty() => dim_line(ui, "NONE YET - TYPE A NAME BELOW AND PRESS NEW ON TIDAL", 1.0, pal().dim),
+                    Some(l) if l.is_empty() => {
+                        dim_line(ui, "NONE YET - TYPE A NAME BELOW AND PRESS NEW ON TIDAL", 1.0, pal().dim)
+                    }
                     Some(l) => {
                         for (k, (uuid, name)) in l.iter().enumerate() {
-                            if let Some(r) = list_row(ui, k, Some(k + 1), || name.clone(), String::new, RowState::Normal, false, false) {
+                            if let Some(r) =
+                                list_row(ui, k, Some(k + 1), || name.clone(), String::new, RowState::Normal, false, false)
+                            {
                                 if r.clicked() {
                                     acts.push(Action::TidalListAdd(uuid.clone(), name.clone(), t.id));
                                 }
@@ -985,7 +991,9 @@ impl App {
             }
             // a new playlist on your Tidal account, with this song in it
             if let Some(t) = self.pl_pick.as_ref().filter(|t| t.id > 0 && self.api.has_token() && self.pl_loop.is_none()) {
-                if retro_btn(ui, "NEW ON TIDAL", false).tip("Make this a playlist on your Tidal account, with the song in it").clicked()
+                if retro_btn(ui, "NEW ON TIDAL", false)
+                    .tip("Make this a playlist on your Tidal account, with the song in it")
+                    .clicked()
                     && !self.new_pl.trim().is_empty()
                 {
                     acts.push(Action::TidalListAdd(String::new(), self.new_pl.trim().to_string(), t.id));
@@ -1498,7 +1506,7 @@ impl App {
         }
         let newest =
             |id: &i64| self.store.sections.get(id).and_then(|l| l.iter().map(|s| s.saved.clone()).max()).unwrap_or_default();
-        ids.sort_by(|a, b| week.get(b).cmp(&week.get(a)).then(newest(b).cmp(&newest(a))));
+        ids.sort_by(|a, b| week.get(b).cmp(&week.get(a)).then(newest(b).cmp(&newest(a))).then(a.cmp(b)));
         if ids.is_empty() {
             para(
                 ui,
@@ -1585,7 +1593,8 @@ impl App {
                 }
             }
         }
-        clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved));
+        // newest first; loops saved the same day in a fixed order (the songs come from a map, in no set order)
+        clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved).then(a.0.cmp(&b.0)).then(a.1.cmp(&b.1)));
         if clips.is_empty() {
             para(
                 ui,
@@ -2010,6 +2019,7 @@ impl App {
             crate::font::with_scale(s, || {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                     .drag_to_scroll(false)
                     .show(ui, |ui| self.practice_body(ui, acts, wave_h));
             });

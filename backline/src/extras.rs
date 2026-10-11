@@ -28,6 +28,8 @@ pub enum Knob {
     LoopA,
     LoopB,
     Bpm,
+    /// the metronome's own tempo (it doesn't follow the song's)
+    MetroBpm,
     Beats,
     Unit,
     GapPlay,
@@ -448,7 +450,8 @@ impl App {
 
     /// Tempo the metronome clicks at right now (beats per real minute).
     fn metro_tempo(&self, playing: bool) -> f32 {
-        let base = (if self.bpm > 0 { self.bpm } else { self.mt_bpm }) as f32 + self.mt_add;
+        // its own tempo: the song's BPM and the band's are set apart from it
+        let base = self.mt_bpm as f32 + self.mt_add;
         if self.mt.follow && self.practice && playing {
             base * self.speed as f32 / 100.0
         } else {
@@ -2135,7 +2138,9 @@ impl App {
                     let n = (self.taps.len() - 1) as f32;
                     let heard = 60.0 / (span / n).max(0.05);
                     let factor = if self.practice { self.speed as f32 / 100.0 } else { 1.0 };
+                    // tapping finds the music's tempo: the song's and the metronome's both take it
                     self.knob_set(Knob::Bpm, (heard / factor).round());
+                    self.knob_set(Knob::MetroBpm, (heard / factor).round());
                 } else {
                     self.set_note("KEEP TAPPING...");
                 }
@@ -2449,6 +2454,7 @@ impl App {
             Knob::LoopA => self.loop_a.unwrap_or(0.0),
             Knob::LoopB => self.loop_b.unwrap_or(0.0),
             Knob::Bpm => (if self.bpm > 0 { self.bpm } else { self.mt_bpm }) as f32,
+            Knob::MetroBpm => self.mt_bpm as f32,
             Knob::Beats => self.mt.beats as f32,
             Knob::Unit => self.mt.unit as f32,
             Knob::GapPlay => self.mt.gap_play as f32,
@@ -2470,11 +2476,13 @@ impl App {
             Knob::Speed => self.apply(Action::Speed(u(25.0, 250.0))),
             Knob::LoopA => self.apply(Action::SetAAt(v.max(0.0))),
             Knob::LoopB => self.apply(Action::SetBAt(v.max(0.0))),
-            Knob::Bpm => {
-                let b = u(30.0, 400.0);
-                self.mt_bpm = b;
+            Knob::MetroBpm => {
+                self.mt_bpm = u(30.0, 400.0);
                 self.mt_add = 0.0;
                 self.mt_step_at = Instant::now();
+            }
+            Knob::Bpm => {
+                let b = u(30.0, 400.0);
                 self.bpm = b;
                 if self.cur.is_some() && !self.stopped {
                     self.set_bpm(b as i32);

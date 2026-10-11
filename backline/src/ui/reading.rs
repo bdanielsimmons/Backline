@@ -1352,8 +1352,11 @@ impl App {
         }
         ui.add_space(10.0);
         section_header(ui, "HOW TO WORK");
-        if let Some(v) = tab_row(ui, &["THE BASICS", "A DAILY ROUTINE", "THE MARKS", "DUETS", "WHEN IT'S HARD", "BEYOND THE BOOK"], self.rd_guide as usize)
-        {
+        if let Some(v) = tab_row(
+            ui,
+            &["THE BASICS", "A DAILY ROUTINE", "THE MARKS", "DUETS", "WHEN IT'S HARD", "BEYOND THE BOOK"],
+            self.rd_guide as usize,
+        ) {
             self.rd_guide = v as u8;
         }
         ui.add_space(4.0);

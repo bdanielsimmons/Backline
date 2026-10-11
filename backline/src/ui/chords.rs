@@ -6,11 +6,20 @@ use super::*;
 use crate::theory;
 use crate::views::field;
 
+thread_local! {
+    /// the analyzer's chord has a seventh over this root (its sixth is then named 13)
+    static SEVENTH: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
+
 /// A note's role in a chord with this root, and its colour: the root red, thirds blue, fifths green, sixths and
 /// sevenths orange, the colour notes (9, 11) purple.
 pub(crate) fn degree(pc: i32, root: i32) -> (&'static str, Color32) {
     const NAMES: [&str; 12] = ["R", "b9", "9", "b3", "3", "11", "b5", "5", "#5", "6", "b7", "7"];
     let s = (pc - root).rem_euclid(12) as usize;
+    // over a seventh the sixth is the 13th (G13b9: its E is the 13)
+    if s == 9 && SEVENTH.with(|c| c.get() == Some(root.rem_euclid(12))) {
+        return ("13", Color32::from_rgb(178, 96, 255));
+    }
     let col = match s {
         0 => Color32::from_rgb(235, 64, 64),
         3 | 4 => Color32::from_rgb(64, 140, 255),
@@ -489,22 +498,18 @@ impl App {
             section_header(ui, "GUITAR");
             let q = self.chord_q.trim().to_string();
             let shapes = self.shapes_for(&q, &c);
-            if shapes.is_empty() {
+            if shapes.is_empty() && !self.store.custom_grips.contains_key(&grip_key(&q)) {
                 para(ui, "No comfortable shape in reach for this one.", pal().ink2);
             }
-            ui.horizontal_wrapped(|ui| {
-                for s in &shapes {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 140.0), Sense::click());
-                    let (root, pcs) = (c.root, c.pcs.clone());
-                    chord_box_labelled(ui.painter(), r, s, &|m| degree_in(m, root, &pcs).0.to_string());
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear this shape").clicked() {
-                        let notes: Vec<i32> =
-                            s.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
-                        acts.push(Action::PlayNotes(notes));
-                    }
-                    ui.add_space(10.0);
-                }
-            });
+            self.chord_grips(ui, acts, &grip_key(&q), &c, &shapes, false);
+            if retro_btn(ui, "+ ADD MY OWN GRIP", false)
+                .tip("Lay it down on the neck in the CHORD ANALYZER, then save it here")
+                .clicked()
+            {
+                self.grip_for = Some((grip_key(&q), q.clone()));
+                self.an_frets = [None; 6];
+                self.chords_tab = 1;
+            }
             ui.add_space(6.0);
             section_header(ui, "SCALES THAT FIT");
             for (name, steps) in theory::scales_for(&c) {
@@ -520,6 +525,23 @@ impl App {
 
     fn chord_analyze(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         para(ui, "Lay notes down on the guitar neck: one per string, left of the nut is the open string, click a note again to lift it. Each one sounds as you place it, and the chord is worked out as you go.", pal().ink2);
+        // laying down a grip for a chord from the finder
+        if let Some((key, name)) = self.grip_for.clone() {
+            ui.horizontal_wrapped(|ui| {
+                crate::views::label(ui, &format!("YOUR GRIP FOR {}:", name.to_uppercase()), 200.0);
+                let ready = self.an_frets.iter().flatten().count() >= 2;
+                if retro_btn(ui, "SAVE IT", false).tip("Keep the grip on the neck with this chord").clicked() && ready {
+                    self.store.custom_grips.entry(key.clone()).or_default().push(self.an_frets);
+                    self.store_dirty = true;
+                    self.grip_for = None;
+                    self.chords_tab = 0;
+                }
+                if retro_btn(ui, "CANCEL", false).clicked() {
+                    self.grip_for = None;
+                    self.chords_tab = 0;
+                }
+            });
+        }
         // the notes so far, lowest first, and what they could be
         let notes: Vec<i32> =
             self.an_frets.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
@@ -530,6 +552,15 @@ impl App {
         let pick = |k: &Option<String>| k.as_ref().and_then(|k| found.iter().find(|s| &s.key() == k)).cloned();
         let shown = pick(&self.an_hover).or_else(|| pick(&self.an_pick)).or_else(|| found.first().cloned());
         let root = shown.as_ref().map(|s| s.root).or(bass);
+        // for this frame's labels: a seventh over the root makes the sixth a 13 (set again every frame, cleared below)
+        SEVENTH.with(|c| c.set(root.filter(|rt| pcs.iter().any(|p| matches!((p - rt).rem_euclid(12), 10 | 11)))));
+        struct Clear;
+        impl Drop for Clear {
+            fn drop(&mut self) {
+                SEVENTH.with(|c| c.set(None));
+            }
+        }
+        let _clear = Clear;
         let ghost: Vec<i32> = shown.as_ref().map(|s| s.missing.clone()).unwrap_or_default();
         // the neck, as big as you like
         let zoom = self.neck_zoom;
@@ -569,6 +600,16 @@ impl App {
                 self.an_frets = [None; 6];
                 self.an_pick = None;
             }
+            if retro_btn(ui, "SAVE GRIP AS...", self.gs_open)
+                .tip("Keep this grip under a chord name you choose (typed, or picked: root, kind, type)")
+                .clicked()
+            {
+                self.gs_open = !self.gs_open;
+                // start from what the analyzer thinks it is
+                if self.gs_open {
+                    self.gs_name = shown.as_ref().map(|s| s.key()).unwrap_or_default();
+                }
+            }
             let mut v: Vec<i32> = pcs.clone();
             v.sort();
             v.dedup();
@@ -585,6 +626,9 @@ impl App {
                 420.0,
             );
         });
+        if self.gs_open {
+            self.save_grip_panel(ui);
+        }
         section_header(ui, "POSSIBLE CHORDS");
         // how the names are written, and the details
         ui.horizontal_wrapped(|ui| {
@@ -659,27 +703,22 @@ impl App {
             let shapes = self.shapes_for(&s.key(), &c);
             ui.add_space(6.0);
             section_header(ui, &format!("GRIPS FOR {}", s.name(sp)));
-            if shapes.is_empty() {
+            let key = grip_key(&s.key());
+            if shapes.is_empty() && !self.store.custom_grips.contains_key(&key) {
                 para(ui, "No comfortable grip in reach for this one.", pal().ink2);
             }
-            ui.horizontal_wrapped(|ui| {
-                for g in &shapes {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 140.0), Sense::click());
-                    let (root, pcs) = (c.root, c.pcs.clone());
-                    chord_box_labelled(ui.painter(), r, g, &|m| degree_in(m, root, &pcs).0.to_string());
-                    let resp =
-                        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear it; double-click to lay it on the neck");
-                    if resp.clicked() {
-                        let notes: Vec<i32> =
-                            g.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
-                        acts.push(Action::PlayNotes(notes));
-                    }
-                    if resp.double_clicked() {
-                        self.an_frets = *g;
-                    }
-                    ui.add_space(10.0);
-                }
-            });
+            self.chord_grips(ui, acts, &key, &c, &shapes, true);
+            let mine = self.store.custom_grips.get(&key).is_some_and(|v| v.contains(&self.an_frets));
+            if self.an_frets.iter().flatten().count() >= 2
+                && !mine
+                && self.grip_for.is_none()
+                && retro_btn(ui, &format!("+ ADD AS MY GRIP FOR {}", s.name(sp)), false)
+                    .tip("Keep the grip on the neck with this chord (marked MINE; right-click it to delete)")
+                    .clicked()
+            {
+                self.store.custom_grips.entry(key).or_default().push(self.an_frets);
+                self.store_dirty = true;
+            }
         }
         // the details: each chord broken down
         if self.chord_details && !found.is_empty() {
@@ -1126,6 +1165,153 @@ impl App {
             .collect()
     }
 
+    /// A chord's grips in a row: yours first (outlined, marked MINE; right-click to delete, asked first), then the
+    /// ones worked out. Click one to hear it; with `to_neck` a double-click lays it on the analyzer's neck.
+    fn chord_grips(
+        &mut self,
+        ui: &mut egui::Ui,
+        acts: &mut Vec<Action>,
+        key: &str,
+        c: &theory::ChordNotes,
+        shapes: &[[Option<u8>; 6]],
+        to_neck: bool,
+    ) {
+        let mine: Vec<[Option<u8>; 6]> = self.store.custom_grips.get(key).cloned().unwrap_or_default();
+        if let Some((k, i)) = self.grip_ask.clone().filter(|(k, _)| k == key) {
+            ui.horizontal_wrapped(|ui| {
+                crate::views::label(ui, "DELETE YOUR GRIP?", 170.0);
+                if retro_btn(ui, "YES, DELETE IT", false).clicked() {
+                    if let Some(v) = self.store.custom_grips.get_mut(&k) {
+                        if i < v.len() {
+                            v.remove(i);
+                        }
+                        if v.is_empty() {
+                            self.store.custom_grips.remove(&k);
+                        }
+                    }
+                    self.store_dirty = true;
+                    self.grip_ask = None;
+                }
+                if retro_btn(ui, "KEEP IT", false).clicked() {
+                    self.grip_ask = None;
+                }
+            });
+        }
+        let (root, pcs) = (c.root, c.pcs.clone());
+        let all: Vec<(Option<usize>, [Option<u8>; 6])> = mine
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (Some(i), *g))
+            .chain(shapes.iter().filter(|g| !mine.contains(g)).map(|g| (None, *g)))
+            .collect();
+        ui.horizontal_wrapped(|ui| {
+            for (own, g) in &all {
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 140.0), Sense::click());
+                chord_box_labelled(ui.painter(), r, g, &|m| degree_in(m, root, &pcs).0.to_string());
+                let tip = if own.is_some() {
+                    "Your grip: click to hear it; right-click to delete it"
+                } else if to_neck {
+                    "Hear it; double-click to lay it on the neck"
+                } else {
+                    "Hear this shape"
+                };
+                if let Some(i) = own {
+                    // your own: a gold outline and a tag
+                    let gold = Color32::from_rgb(235, 185, 60);
+                    ui.painter().rect_stroke(r.shrink(1.0), 3.0, Stroke::new(2.0_f32, gold));
+                    ptext(ui.painter(), Pos2::new(r.max.x - 6.0, r.min.y + 8.0), Align::Max, "MINE", 1.0, gold);
+                    let i = *i;
+                    resp.context_menu(|ui| {
+                        if crate::menu_item(ui, "Delete this grip") {
+                            self.grip_ask = Some((key.to_string(), i));
+                            ui.close_menu();
+                        }
+                    });
+                }
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+                if resp.clicked() {
+                    let notes: Vec<i32> =
+                        g.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
+                    acts.push(Action::PlayNotes(notes));
+                }
+                if to_neck && resp.double_clicked() {
+                    self.an_frets = *g;
+                }
+                ui.add_space(10.0);
+            }
+        });
+    }
+
+    /// SAVE GRIP AS: name the grip on the neck yourself (typed, or root / kind / type from the funnel) and keep it
+    /// with that chord, marked MINE wherever the chord's grips show.
+    fn save_grip_panel(&mut self, ui: &mut egui::Ui) {
+        const ROOTS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            crate::views::label(ui, "NAME", 50.0);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(200.0, crate::bh()), Sense::hover());
+            crate::views::field(ui, &mut self.ed, crate::tools::F_GRIP_NAME, &mut self.gs_name, rect, "G13b9, Cmaj9/E...", false);
+            ui.add_space(8.0);
+            crate::views::label(ui, "OR PICK", 70.0);
+            let (mut r, mut f, mut k) = self.gs_pick;
+            let fams: Vec<&str> = theory::FINDER_FAMILIES.iter().map(|(n, _)| *n).collect();
+            f = f.min(fams.len() - 1);
+            let types: Vec<&str> = theory::FINDER_FAMILIES[f].1.iter().map(|(l, _)| *l).collect();
+            k = k.min(types.len().saturating_sub(1));
+            let mut changed = false;
+            if let Some(i) = crate::dropdown(ui, "gs_root", "", &ROOTS, r, 60.0) {
+                r = i;
+                changed = true;
+            }
+            if let Some(i) = crate::dropdown(ui, "gs_fam", "", &fams, f, 130.0) {
+                f = i;
+                k = 0;
+                changed = true;
+            }
+            let types: Vec<&str> = theory::FINDER_FAMILIES[f].1.iter().map(|(l, _)| *l).collect();
+            if let Some(i) = crate::dropdown(ui, "gs_type", "", &types, k, 130.0) {
+                k = i;
+                changed = true;
+            }
+            self.gs_pick = (r, f, k);
+            if changed {
+                let suffix = theory::FINDER_FAMILIES[f].1.get(k).map_or("", |(_, s)| *s);
+                self.gs_name = format!("{}{}", ROOTS[r], suffix);
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            let name = self.gs_name.trim().to_string();
+            let ready = !name.is_empty() && self.an_frets.iter().flatten().count() >= 2;
+            let known = theory::chord_notes(&name).is_some();
+            if retro_btn(ui, "SAVE", false).tip("Keep the grip with this chord (marked MINE)").clicked() && ready {
+                let key = grip_key(&name);
+                let list = self.store.custom_grips.entry(key).or_default();
+                if !list.contains(&self.an_frets) {
+                    list.push(self.an_frets);
+                }
+                self.store_dirty = true;
+                self.gs_open = false;
+                self.ed.id = 0;
+                self.set_note(&format!("SAVED AS A GRIP FOR {}", name.to_uppercase()));
+            }
+            if retro_btn(ui, "CANCEL", false).clicked() {
+                self.gs_open = false;
+                self.ed.id = 0;
+            }
+            if !name.is_empty() && !known {
+                crate::views::dim_line(
+                    ui,
+                    "NOT A CHORD NAME BACKLINE READS - IT WILL ONLY SHOW UNDER EXACTLY THIS NAME",
+                    1.0,
+                    pal().dim,
+                );
+            } else if !ready {
+                crate::views::dim_line(ui, "LAY THE GRIP ON THE NECK FIRST", 1.0, pal().dim);
+            }
+        });
+        ui.add_space(4.0);
+    }
+
     /// Guitar shapes for a chord, worked out once and kept.
     pub(crate) fn shapes_for(&mut self, name: &str, c: &theory::ChordNotes) -> Vec<[Option<u8>; 6]> {
         if let Some(s) = self.shape_cache.get(name) {
@@ -1166,6 +1352,15 @@ impl App {
                 chord_box_labelled(ui.painter(), gr, s, &|m| degree_in(m, root, &pcs).0.to_string());
             }
         });
+    }
+}
+
+/// The name your own grips are kept under: the root as a pitch (so Ab and G# are one chord) and the rest as typed.
+pub(crate) fn grip_key(name: &str) -> String {
+    let (r, rest) = crate::chart::split_root(name.trim());
+    match crate::chart::note_index(r) {
+        Some(pc) => format!("{}:{}", pc.rem_euclid(12), rest.trim()),
+        None => name.trim().to_lowercase(),
     }
 }
 

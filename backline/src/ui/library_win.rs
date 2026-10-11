@@ -768,7 +768,7 @@ impl App {
 
         // library tabs
         let is_lib = self.sec == Sec::Tidal && self.page.as_ref().map(|p| p.library).unwrap_or(false);
-        if is_lib && !self.show_log && !self.show_cache && !self.show_winamp {
+        if is_lib && !self.show_log && !self.show_cache && !self.show_winamp && !self.show_tl {
             const TABS: [(Tab, &str); 4] =
                 [(Tab::Tracks, "MY TRACKS"), (Tab::Lists, "LISTS"), (Tab::Albums, "ALBUMS"), (Tab::Artists, "ARTISTS")];
             let names: Vec<&str> = TABS.iter().map(|t| t.1).collect();
@@ -787,7 +787,10 @@ impl App {
                 acts.push(Action::ClearStatus);
             }
         }
-        self.continue_bar(ui, acts);
+        // (not on the BACKLINE pages: settings, skins, the log)
+        if !(self.show_tl || self.show_winamp || self.show_log || self.show_cache) {
+            self.continue_bar(ui, acts);
+        }
         ui.add_space(4.0);
 
         // list well: it stops a little above the window's bottom edge, so its own border shows and the last row
@@ -825,59 +828,68 @@ impl App {
                 self.backline_page(ui, acts);
                 return;
             }
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.push_id((serial, sec_i), |ui| match sec {
-                    Sec::Tidal => {
-                        if loading {
-                            ui.add_space(6.0);
-                            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.0), Sense::hover());
-                            ptext(
-                                ui.painter(),
-                                Pos2::new(rect.min.x + 8.0, rect.center().y),
-                                Align::Min,
-                                "LOADING...",
-                                2.0,
-                                pal().ink2,
-                            );
-                        }
-                        if let Some(pg) = &page {
-                            // your Tidal playlists: make a new one here
-                            if pg.library && tab == Tab::Lists {
+            // the scrollbar's room is always kept: a page about as tall as the window would otherwise gain and lose
+            // its scrollbar every frame (the width changes, rows wrap, the height changes) and flicker
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .show(ui, |ui| {
+                    ui.push_id((serial, sec_i), |ui| match sec {
+                        Sec::Tidal => {
+                            if loading {
                                 ui.add_space(6.0);
-                                ui.horizontal(|ui| {
-                                    ui.add_space(6.0);
-                                    let w = (ui.available_width() - 190.0).max(80.0);
-                                    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-                                    let o = crate::views::field(
-                                        ui,
-                                        &mut self.ed,
-                                        crate::tools::F_TIDAL_PL,
-                                        &mut self.tidal_new_name,
-                                        rect,
-                                        "New Tidal playlist name...",
-                                        false,
-                                    );
-                                    if o.enter || retro_btn(ui, "+ NEW PLAYLIST", false).tip("Make it on your Tidal account").clicked() {
-                                        acts.push(Action::TidalListNew(self.tidal_new_name.clone()));
-                                    }
-                                });
-                                ui.add_space(4.0);
+                                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.0), Sense::hover());
+                                ptext(
+                                    ui.painter(),
+                                    Pos2::new(rect.min.x + 8.0, rect.center().y),
+                                    Align::Min,
+                                    "LOADING...",
+                                    2.0,
+                                    pal().ink2,
+                                );
                             }
-                            page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, acts);
+                            if let Some(pg) = &page {
+                                // your Tidal playlists: make a new one here
+                                if pg.library && tab == Tab::Lists {
+                                    ui.add_space(6.0);
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(6.0);
+                                        let w = (ui.available_width() - 190.0).max(80.0);
+                                        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                                        let o = crate::views::field(
+                                            ui,
+                                            &mut self.ed,
+                                            crate::tools::F_TIDAL_PL,
+                                            &mut self.tidal_new_name,
+                                            rect,
+                                            "New Tidal playlist name...",
+                                            false,
+                                        );
+                                        if o.enter
+                                            || retro_btn(ui, "+ NEW PLAYLIST", false)
+                                                .tip("Make it on your Tidal account")
+                                                .clicked()
+                                        {
+                                            acts.push(Action::TidalListNew(self.tidal_new_name.clone()));
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                }
+                                page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, acts);
+                            }
                         }
-                    }
-                    Sec::Files => self.files_view(ui, acts),
-                    Sec::Yt => self.yt_view(ui, acts),
-                    Sec::Sc => self.sc_view(ui, acts),
-                    Sec::Tunes => self.tunes_view(ui, acts),
-                    Sec::Diary => self.diary_view(ui, acts),
-                    Sec::Loops => self.loops_view(ui, acts),
-                    Sec::Reading => self.reading_view(ui, acts),
-                    Sec::Chords => self.chords_view(ui, acts),
-                    Sec::Lines => self.lines_view(ui, acts),
-                    Sec::Lists => self.playlists_view(ui, acts),
+                        Sec::Files => self.files_view(ui, acts),
+                        Sec::Yt => self.yt_view(ui, acts),
+                        Sec::Sc => self.sc_view(ui, acts),
+                        Sec::Tunes => self.tunes_view(ui, acts),
+                        Sec::Diary => self.diary_view(ui, acts),
+                        Sec::Loops => self.loops_view(ui, acts),
+                        Sec::Reading => self.reading_view(ui, acts),
+                        Sec::Chords => self.chords_view(ui, acts),
+                        Sec::Lines => self.lines_view(ui, acts),
+                        Sec::Lists => self.playlists_view(ui, acts),
+                    });
                 });
-            });
         });
     }
 }

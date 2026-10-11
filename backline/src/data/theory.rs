@@ -624,7 +624,11 @@ pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> 
             // strings not played in between the played ones are hard to mute
             let first = played[0].0;
             let last = played[played.len() - 1].0;
-            let gaps = (first..=last).filter(|i| shape[*i].is_none()).count() as i32;
+            let mut gaps = (first..=last).filter(|i| shape[*i].is_none()).count() as i32;
+            // except the string just above the bass: the bass finger leans on it (G13b9 as 3 x 3 4 5 4)
+            if gaps == 1 && first + 1 < shape.len() && shape[first + 1].is_none() {
+                gaps = 0;
+            }
             let mut score = played.len() as i32 * 10 - gaps * 25 - lo as i32 * 2 - if missing.is_empty() { 0 } else { 6 };
             // fingers: more than four fretted notes needs a barre at the lowest fret
             let fingers = fretted.iter().filter(|f| **f > lo).count() + usize::from(lo > 0);
@@ -639,10 +643,10 @@ pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> 
     for (_, s) in best {
         // different enough from the ones already chosen (another position on the neck)
         let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
-        if !out.iter().any(|o| *o == s || pos(o).abs_diff(pos(&s)) < 3) {
+        if !out.iter().any(|o| *o == s || pos(o).abs_diff(pos(&s)) < 2) {
             out.push(s);
         }
-        if out.len() == 3 {
+        if out.len() == 4 {
             break;
         }
     }
@@ -819,7 +823,7 @@ pub fn cluster_voicings(bass: i32, pair: [i32; 2], extras: &[i32], tuning: &[i32
     let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
     let mut out: Vec<[Option<u8>; 6]> = Vec::new();
     for (_, s) in found {
-        if !out.iter().any(|o| *o == s || pos(o).abs_diff(pos(&s)) < 3) {
+        if !out.iter().any(|o| *o == s || pos(o).abs_diff(pos(&s)) < 2) {
             out.push(s);
         }
         if out.len() == 4 {
@@ -1088,6 +1092,11 @@ mod tests {
         for pc in [0, 4, 10, 3, 8] {
             assert!(c.pcs.contains(&pc), "C7#9b13 lacks {}", pc);
         }
+        // the jazz grip, with the A string muted under the bass, is among the first grips offered
+        let g = chord_notes("G13b9").unwrap();
+        let grips = guitar_shapes(&g, &STANDARD);
+        let want = [Some(3), None, Some(3), Some(4), Some(5), Some(4)];
+        assert!(grips.iter().any(|s| *s == want), "3x3454 not offered: {:?}", &grips[..grips.len().min(3)]);
         // G B F E Ab over G (the 13b9 grip: 3 x 3 4 5 4)
         assert_eq!(top(&[7, 11, 5, 4, 8], 7), "G13b9");
         assert_eq!(top(&[0, 4, 10, 3, 8], 0), "C7#9#5");

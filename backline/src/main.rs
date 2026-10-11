@@ -2569,6 +2569,14 @@ struct App {
     cb_lo: i32,
     chord_q: String,
     an_frets: [Option<u8>; 6],
+    /// your grip waiting to be deleted (chord key, which), asked to confirm first
+    grip_ask: Option<(String, usize)>,
+    /// laying down a grip for this chord (key, name as shown), from the finder
+    grip_for: Option<(String, String)>,
+    /// the analyzer's SAVE GRIP AS panel: open, the name, and the funnel's root / kind / type
+    gs_open: bool,
+    gs_name: String,
+    gs_pick: (usize, usize, usize),
     /// how chord names are written, the details panel, the neck's size, how strong the hover rings are
     chord_sp: theory::Spelling,
     chord_details: bool,
@@ -3106,6 +3114,11 @@ impl App {
             cb_lo: 0,
             chord_q: "Dm7".to_string(),
             an_frets: [None; 6],
+            grip_ask: None,
+            grip_for: None,
+            gs_open: false,
+            gs_name: String::new(),
+            gs_pick: (0, 2, 0),
             chord_sp: theory::Spelling { slash: true, ..theory::Spelling::default() },
             chord_details: false,
             cl_key: 0,
@@ -3763,8 +3776,8 @@ impl App {
                     self.login_err = e;
                 }
                 Msg::Page(mut p, push) => {
-                    // a tour (or recording one): the library holds only the tour's song
-                    if p.library && (tour::demo_kind().is_some() || self.demo_track.is_some()) {
+                    // a tour (or recording one): the library holds only the tour's song (your own comes back after)
+                    if p.library && (tour::demo_kind().is_some() || self.tour_play.is_some()) {
                         p.tracks = self.demo_track.iter().cloned().collect();
                         p.total = p.tracks.len();
                     }
@@ -3810,7 +3823,12 @@ impl App {
                     if g == self.lib_gen {
                         self.liked.extend(v.iter().map(|t| t.id));
                         let mut done = false;
-                        if let Some(p) = self.page.as_mut() {
+                        // during a tour your songs go to your library as it was, not the tour's page
+                        if let Some(p) = self.tour_library() {
+                            push_tracks(p, &v);
+                            done = true;
+                        }
+                        if let Some(p) = self.page.as_mut().filter(|_| !done) {
                             if p.library {
                                 push_tracks(p, &v);
                                 done = true;
@@ -5310,7 +5328,7 @@ impl eframe::App for App {
         }
         self.hist_track();
         // keep the library copy current (more songs arrive in pages; likes change it)
-        if self.page.as_ref().is_some_and(|p| p.library) {
+        if self.page.as_ref().is_some_and(|p| p.library) && self.tour_play.is_none() {
             self.lib_page = self.page.clone();
         }
         let busy = self.cur.is_some() && !self.stopped && !self.paused;

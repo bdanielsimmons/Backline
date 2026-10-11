@@ -241,6 +241,8 @@ pub struct Store {
     pub reading_done: HashMap<String, String>,
     /// voicings you kept (CLUSTERS > MY CHORDS)
     pub my_chords: Vec<MyChord>,
+    /// grips you added to a chord yourself (by `chords::grip_key`): shown first, marked MINE, removable
+    pub custom_grips: HashMap<String, Vec<[Option<u8>; 6]>>,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).
