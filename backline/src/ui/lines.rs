@@ -224,6 +224,7 @@ impl App {
             }
         }
         let before = self.ln_bpm;
+        let before_sub = self.ln_sub;
         let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
         ui.horizontal_wrapped(|ui| {
             self.seq_button(
@@ -289,6 +290,22 @@ impl App {
         if self.ln_bpm != before {
             self.store.lines_tempo.insert(key.to_string(), self.ln_bpm);
             self.store_dirty = true;
+        }
+        // changed while it plays: carry on from the note sounding, at the new speed (looping goes on at it too)
+        if self.ln_bpm != before || self.ln_sub != before_sub {
+            if let (Some(i), Some(seq)) = (self.seq_now("line"), self.seq_last.clone()) {
+                let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
+                if i < seq.len() {
+                    self.player.send(Cmd::StopOnce);
+                    self.player.send(Cmd::Once(crate::band::line_sound(&seq[i..], gap), 0.9));
+                    self.seq_play = Some((
+                        Instant::now() - std::time::Duration::from_secs_f32(i as f32 * gap),
+                        gap,
+                        "line".to_string(),
+                        seq.len(),
+                    ));
+                }
+            }
         }
         ui.horizontal_wrapped(|ui| {
             let starred = self.store.lines_stars.iter().any(|s| s == key);

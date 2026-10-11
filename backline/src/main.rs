@@ -2571,6 +2571,11 @@ struct App {
     rd_piece: usize,
     rd_part: usize,
     rd_tempo_for: (usize, usize),
+    /// what is playing, to carry on at a new tempo: (part, other part, only clicks, from beat, count-in length, secs a beat)
+    rd_ctx: Option<(crate::reading::Reading, Option<crate::reading::Reading>, bool, f32, f32, f32)>,
+    rd_bpm_text: String,
+    /// a duet shown as both staves
+    rd_both: bool,
     cb_frets: [Option<u8>; 6],
     cb_name: String,
     vc_family: u8,
@@ -3085,6 +3090,9 @@ impl App {
             rd_piece: 0,
             rd_part: 0,
             rd_tempo_for: (usize::MAX, 0),
+            rd_ctx: None,
+            rd_bpm_text: String::new(),
+            rd_both: true,
             cb_frets: [None; 6],
             cb_name: String::new(),
             vc_family: 4,

@@ -826,13 +826,21 @@ pub fn chord_sound(midis: &[i32]) -> Vec<i16> {
 
 /// A sight-reading line: a bar of clicks to count you in, then a click on every beat for `length` seconds, with these
 /// notes (each a chord or a single note: the notes, start and length in seconds from the end of the count-in).
-pub fn reading_sound(notes: &[(Vec<i32>, f32, f32)], beats: u32, count_in: u32, spb: f32, length: f32) -> Vec<i16> {
+pub fn reading_sound(
+    notes: &[(Vec<i32>, f32, f32)],
+    beats: u32,
+    count_in: u32,
+    first_beat: u32,
+    spb: f32,
+    length: f32,
+) -> Vec<i16> {
     let lead = count_in as f32 * spb;
     let total = lead + length + 1.5;
     let mut mix = Mix::new(total, 60.0);
     let n_beats = count_in + (length / spb).ceil() as u32;
     for k in 0..n_beats {
-        let accent = k % beats.max(1) == 0;
+        // the one of each bar a little higher (counted from where the line picks up)
+        let accent = if k < count_in { k % beats.max(1) == 0 } else { (k - count_in + first_beat) % beats.max(1) == 0 };
         mix.tick(k as f32 * spb, accent, if k < count_in { 1.0 } else { 0.6 });
     }
     for (ms, at, d) in notes {

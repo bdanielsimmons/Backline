@@ -621,18 +621,29 @@ fn draw_rest(p: &egui::Painter, x: f32, bottom: f32, g: f32, dur: u16, col: Colo
 /// Draw a line of music on staves, as many bars to a row as fit. `lit` is the note sounding now (counted through
 /// the bars as written). With `tab` the tab is under each staff; with `names` the note names are.
 fn draw_reading(ui: &mut egui::Ui, r: &Reading, lit: Option<usize>, tab: bool, names: bool) {
+    draw_score(ui, &[(r, lit, "")], tab, names);
+}
+
+/// Several parts (a duet) as systems: their staves braced together, the bars lined up and wrapping as one, each
+/// part named on the first row. Each part has its own note sounding now (counted through its bars as written).
+fn draw_score(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], tab: bool, names: bool) {
+    let Some(first) = parts.first() else { return };
     let g = 7.0_f32;
-    let sig = r.sig;
+    let sig = first.0.sig;
+    let beats = first.0.beats;
     let slot = |d: u16| 20.0 + d as f32 * 1.7;
     let bar_w = |b: &Bar| {
         18.0 + b.notes.iter().map(|n| slot(n.dur) + if n.heads.iter().any(|h| h.acc != 0) { 8.0 } else { 0.0 }).sum::<f32>()
     };
+    let n_bars = parts.iter().map(|p| p.0.bars.len()).max().unwrap_or(0);
+    // a bar is as wide as its busiest part
+    let shared = |bi: usize| parts.iter().filter_map(|p| p.0.bars.get(bi)).map(|b| bar_w(b)).fold(0.0, f32::max);
     let w = ui.available_width().max(300.0);
     let head_w = |first: bool| 40.0 + sig.unsigned_abs() as f32 * 9.0 + if first { 26.0 } else { 0.0 };
     let mut rows: Vec<Vec<usize>> = Vec::new();
     let mut used = 0.0;
-    for (bi, b) in r.bars.iter().enumerate() {
-        let need = bar_w(b);
+    for bi in 0..n_bars {
+        let need = shared(bi);
         if rows.is_empty() || used + need > w - 12.0 {
             rows.push(Vec::new());
             used = head_w(rows.len() == 1);
@@ -642,339 +653,380 @@ fn draw_reading(ui: &mut egui::Ui, r: &Reading, lit: Option<usize>, tab: bool, n
         }
         used += need;
     }
-    // where each bar's notes start in the written count, and in beats from the top of the bar
-    let mut first_note = Vec::new();
-    let mut n = 0;
-    for b in &r.bars {
-        first_note.push(n);
-        n += b.notes.len();
-    }
     let (above, staff_h, below) = (50.0, 4.0 * g, 48.0);
     let tab_h = if tab { 58.0 } else { 0.0 };
     let names_h = if names { 18.0 } else { 0.0 };
-    let row_h = above + staff_h + below + tab_h + names_h;
+    let block_h = above + staff_h + below + tab_h + names_h;
+    let multi = parts.len() > 1;
     for (ri, row) in rows.iter().enumerate() {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, block_h * parts.len() as f32), Sense::hover());
         let p = ui.painter();
         p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().beige_lt);
-        let top = rect.min.y + above;
-        let bottom = top + staff_h;
-        let y_of = |step: i32| bottom - (step - 30) as f32 * g / 2.0;
         let line = Stroke::new(1.0_f32, pal().ink2);
         let ink = pal().ink;
-        let natural_w: f32 = row.iter().map(|b| bar_w(&r.bars[*b])).sum();
+        let natural_w: f32 = row.iter().map(|b| shared(*b)).sum();
         let x_head = rect.min.x + head_w(ri == 0);
         let room = rect.max.x - 10.0 - x_head;
-        let stretch = if ri + 1 == rows.len() && natural_w < room * 0.6 { 1.0 } else { room / natural_w };
-        let x_end = x_head + natural_w * stretch;
-        for k in 0..5 {
-            let y = top + k as f32 * g;
-            p.line_segment([Pos2::new(rect.min.x + 6.0, y), Pos2::new(x_end, y)], line);
-        }
-        pixmap(
-            p,
-            Pos2::new(rect.min.x + 10.0, top - 1.7 * g),
-            7.4 * g / crate::lines_ui::CLEF.len() as f32,
-            &crate::lines_ui::CLEF,
-            ink,
-        );
-        const SHARP_STEPS: [i32; 7] = [38, 35, 39, 36, 33, 37, 34];
-        const FLAT_STEPS: [i32; 7] = [34, 37, 33, 36, 32, 35, 31];
-        for k in 0..(sig.unsigned_abs() as usize).min(7) {
-            let st = if sig > 0 { SHARP_STEPS[k] } else { FLAT_STEPS[k] };
-            crate::lines_ui::accidental(p, Pos2::new(rect.min.x + 40.0 + k as f32 * 9.0, y_of(st)), sig.signum(), g, ink);
-        }
-        if ri == 0 {
-            let tx = rect.min.x + 40.0 + sig.unsigned_abs() as f32 * 9.0 + 12.0;
-            ptext(p, Pos2::new(tx, top + g), Align::Center, &r.beats.to_string(), 3.0, ink);
-            ptext(p, Pos2::new(tx, top + 3.0 * g), Align::Center, "4", 3.0, ink);
-        }
-        if let Some(b0) = row.first() {
-            ptext(p, Pos2::new(rect.min.x + 8.0, top - 3.0 * g), Align::Min, &(b0 + 1).to_string(), 1.0, pal().dim);
-        }
-        let tab_top = bottom + below;
-        let tab_y = |s: usize| tab_top + (5 - s) as f32 * 9.0;
-        if tab {
-            for s in 0..6 {
-                p.line_segment([Pos2::new(rect.min.x + 6.0, tab_y(s)), Pos2::new(x_end, tab_y(s))], line);
-            }
-        }
-        // a tie waiting for its next note: (x, step, stem up)
-        let mut tie_from: Option<(f32, Vec<i32>, bool)> = None;
-        let mut x = x_head;
+        let stretch_row = if ri + 1 == rows.len() && natural_w < room * 0.6 { 1.0 } else { room / natural_w };
+        let x_end = x_head + natural_w * stretch_row;
+        // where each bar of the row starts, and how wide it is
+        let mut bar_x: Vec<(f32, f32)> = Vec::new();
+        let mut xx = x_head;
         for bi in row {
-            let b = &r.bars[*bi];
-            if b.rep_start {
-                p.line_segment([Pos2::new(x + 2.0, top), Pos2::new(x + 2.0, bottom)], Stroke::new(3.0_f32, ink));
-                p.line_segment([Pos2::new(x + 6.0, top), Pos2::new(x + 6.0, bottom)], line);
-                for dy in [1.5, 2.5] {
-                    p.circle_filled(Pos2::new(x + 10.0, top + dy * g), 1.8, ink);
+            let wd = shared(*bi) * stretch_row;
+            bar_x.push((xx, wd));
+            xx += wd;
+        }
+        let staff_top = |pi: usize| rect.min.y + pi as f32 * block_h + above;
+        if multi {
+            // the brace joining the staves, and the bar lines running through them all
+            let (y0, y1) = (staff_top(0), staff_top(parts.len() - 1) + staff_h);
+            p.line_segment([Pos2::new(rect.min.x + 6.0, y0), Pos2::new(rect.min.x + 6.0, y1)], Stroke::new(3.0_f32, ink));
+            for (x0, wd) in &bar_x {
+                p.line_segment([Pos2::new(x0 + wd, y0), Pos2::new(x0 + wd, y1)], line);
+            }
+        }
+        for (pi, (r, lit, pname)) in parts.iter().enumerate() {
+            let lit = *lit;
+            let top = staff_top(pi);
+            let bottom = top + staff_h;
+            let y_of = |step: i32| bottom - (step - 30) as f32 * g / 2.0;
+            let mut first_note = Vec::new();
+            let mut n = 0;
+            for b in &r.bars {
+                first_note.push(n);
+                n += b.notes.len();
+            }
+            if multi && ri == 0 && !pname.is_empty() {
+                ptext(p, Pos2::new(rect.min.x + 14.0, top - 3.6 * g), Align::Min, &pname.to_uppercase(), 1.0, pal().ink2);
+            }
+            for k in 0..5 {
+                let y = top + k as f32 * g;
+                p.line_segment([Pos2::new(rect.min.x + 6.0, y), Pos2::new(x_end, y)], line);
+            }
+            pixmap(
+                p,
+                Pos2::new(rect.min.x + 10.0, top - 1.7 * g),
+                7.4 * g / crate::lines_ui::CLEF.len() as f32,
+                &crate::lines_ui::CLEF,
+                ink,
+            );
+            const SHARP_STEPS: [i32; 7] = [38, 35, 39, 36, 33, 37, 34];
+            const FLAT_STEPS: [i32; 7] = [34, 37, 33, 36, 32, 35, 31];
+            for k in 0..(sig.unsigned_abs() as usize).min(7) {
+                let st = if sig > 0 { SHARP_STEPS[k] } else { FLAT_STEPS[k] };
+                crate::lines_ui::accidental(p, Pos2::new(rect.min.x + 40.0 + k as f32 * 9.0, y_of(st)), sig.signum(), g, ink);
+            }
+            if ri == 0 {
+                let tx = rect.min.x + 40.0 + sig.unsigned_abs() as f32 * 9.0 + 12.0;
+                ptext(p, Pos2::new(tx, top + g), Align::Center, &beats.to_string(), 3.0, ink);
+                ptext(p, Pos2::new(tx, top + 3.0 * g), Align::Center, "4", 3.0, ink);
+            }
+            if let (0, Some(b0)) = (pi, row.first()) {
+                ptext(p, Pos2::new(rect.min.x + 8.0, top - 3.0 * g), Align::Min, &(b0 + 1).to_string(), 1.0, pal().dim);
+            }
+            let tab_top = bottom + below;
+            let tab_y = |s: usize| tab_top + (5 - s) as f32 * 9.0;
+            if tab {
+                for s in 0..6 {
+                    p.line_segment([Pos2::new(rect.min.x + 6.0, tab_y(s)), Pos2::new(x_end, tab_y(s))], line);
                 }
             }
-            x += 9.0 * stretch + if b.rep_start { 8.0 } else { 0.0 };
-            // where each note sits
-            let mut xs: Vec<f32> = Vec::new();
-            let mut starts: Vec<u16> = Vec::new();
-            let mut xx = x;
-            let mut at = 0u16;
-            for n in &b.notes {
-                let accw = if n.heads.iter().any(|h| h.acc != 0) { 8.0 } else { 0.0 };
-                xs.push(xx + accw + slot(n.dur) * stretch * 0.35);
-                starts.push(at);
-                xx += (slot(n.dur) + accw) * stretch;
-                at += n.dur;
-            }
-            // beam groups: short notes inside one beat
-            let mut groups: Vec<Vec<usize>> = Vec::new();
-            let mut cur: Vec<usize> = Vec::new();
-            for (k, n) in b.notes.iter().enumerate() {
-                let short = n.dur < BEAT && n.dur != 8 && !n.heads.is_empty();
-                let same_beat = cur.last().is_some_and(|l| starts[*l] / BEAT == starts[k] / BEAT);
-                if short && same_beat {
-                    cur.push(k);
-                } else {
-                    if !cur.is_empty() {
-                        groups.push(std::mem::take(&mut cur));
+            // a tie waiting for its next note: (x, step, stem up)
+            let mut tie_from: Option<(f32, Vec<i32>, bool)> = None;
+            for (j, bi) in row.iter().enumerate() {
+                let Some(b) = r.bars.get(*bi) else { continue };
+                // this part's notes spread over the bar's shared width
+                let (x0, wd) = bar_x[j];
+                let stretch = wd / bar_w(b);
+                let mut x = x0;
+                if b.rep_start {
+                    p.line_segment([Pos2::new(x + 2.0, top), Pos2::new(x + 2.0, bottom)], Stroke::new(3.0_f32, ink));
+                    p.line_segment([Pos2::new(x + 6.0, top), Pos2::new(x + 6.0, bottom)], line);
+                    for dy in [1.5, 2.5] {
+                        p.circle_filled(Pos2::new(x + 10.0, top + dy * g), 1.8, ink);
                     }
-                    if short {
+                }
+                x += 9.0 * stretch + if b.rep_start { 8.0 } else { 0.0 };
+                // where each note sits
+                let mut xs: Vec<f32> = Vec::new();
+                let mut starts: Vec<u16> = Vec::new();
+                let mut xx = x;
+                let mut at = 0u16;
+                for n in &b.notes {
+                    let accw = if n.heads.iter().any(|h| h.acc != 0) { 8.0 } else { 0.0 };
+                    xs.push(xx + accw + slot(n.dur) * stretch * 0.35);
+                    starts.push(at);
+                    xx += (slot(n.dur) + accw) * stretch;
+                    at += n.dur;
+                }
+                // beam groups: short notes inside one beat
+                let mut groups: Vec<Vec<usize>> = Vec::new();
+                let mut cur: Vec<usize> = Vec::new();
+                for (k, n) in b.notes.iter().enumerate() {
+                    let short = n.dur < BEAT && n.dur != 8 && !n.heads.is_empty();
+                    let same_beat = cur.last().is_some_and(|l| starts[*l] / BEAT == starts[k] / BEAT);
+                    if short && same_beat {
                         cur.push(k);
-                    }
-                }
-            }
-            if !cur.is_empty() {
-                groups.push(cur);
-            }
-            let mean_step = |k: usize| {
-                let h = &b.notes[k].heads;
-                h.iter().map(|x| x.step).sum::<i32>() as f32 / h.len().max(1) as f32
-            };
-            let mut tips: Vec<Option<(f32, bool)>> = vec![None; b.notes.len()];
-            for gr in groups.iter().filter(|g| g.len() > 1) {
-                let up = gr.iter().map(|k| mean_step(*k)).sum::<f32>() / gr.len() as f32 <= 34.0;
-                let ys: Vec<f32> = gr.iter().flat_map(|k| b.notes[*k].heads.iter().map(|h| y_of(h.step))).collect();
-                let tip = if up {
-                    ys.iter().cloned().fold(f32::INFINITY, f32::min) - 3.4 * g
-                } else {
-                    ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 3.4 * g
-                };
-                for k in gr {
-                    tips[*k] = Some((tip, up));
-                }
-            }
-            // sharps, flats and naturals written in this bar so far (by staff step)
-            let mut shown: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
-            for (k, n) in b.notes.iter().enumerate() {
-                let gi = first_note[*bi] + k;
-                let cx = xs[k];
-                let on = lit == Some(gi);
-                let col = if on { pal().red } else { ink };
-                if on {
-                    p.rect_filled(
-                        Rect::from_min_max(Pos2::new(cx - 11.0, rect.min.y + 6.0), Pos2::new(cx + 13.0, bottom + below - 4.0)),
-                        2.0,
-                        pal().red.gamma_multiply(0.15),
-                    );
-                }
-                if n.heads.is_empty() {
-                    draw_rest(p, cx, bottom, g, n.dur, col);
-                    tie_from = None;
-                    continue;
-                }
-                let rad = g * 0.58;
-                let up = tips[k].map(|t| t.1).unwrap_or(mean_step(k) <= 34.0);
-                // ledger lines
-                let lo = n.heads.iter().map(|h| h.step).min().unwrap_or(30);
-                let hi = n.heads.iter().map(|h| h.step).max().unwrap_or(30);
-                let mut s = 28;
-                while s >= lo {
-                    p.line_segment(
-                        [
-                            Pos2::new(cx - 9.0, y_of(s)),
-                            Pos2::new(cx + 9.0 + rad * 2.0 * (n.heads.len() > 1) as i32 as f32, y_of(s)),
-                        ],
-                        line,
-                    );
-                    s -= 2;
-                }
-                let mut s = 40;
-                while s <= hi {
-                    p.line_segment(
-                        [
-                            Pos2::new(cx - 9.0, y_of(s)),
-                            Pos2::new(cx + 9.0 + rad * 2.0 * (n.heads.len() > 1) as i32 as f32, y_of(s)),
-                        ],
-                        line,
-                    );
-                    s += 2;
-                }
-                // heads (the upper of two a step apart beside the other), dots, accidentals
-                let open = n.dur >= 2 * BEAT;
-                let mut side = vec![0.0f32; n.heads.len()];
-                for i in 1..n.heads.len() {
-                    if n.heads[i].step - n.heads[i - 1].step <= 1 && side[i - 1] == 0.0 {
-                        side[i] = rad * 2.0;
-                    }
-                }
-                let mut acc_col = 0;
-                for (i, h) in n.heads.iter().enumerate().rev() {
-                    let c = Pos2::new(cx + side[i], y_of(h.step));
-                    if open {
-                        p.circle_stroke(c, rad - 0.6, Stroke::new(1.8_f32, col));
                     } else {
-                        p.circle_filled(c, rad, col);
-                    }
-                    if matches!(n.dur, 9 | 18 | 36) {
-                        let dy = if h.step % 2 == 0 { -g / 2.0 } else { 0.0 };
-                        p.circle_filled(Pos2::new(cx + side.iter().cloned().fold(0.0, f32::max) + rad + 4.0, c.y + dy), 1.8, col);
-                    }
-                    let expected = shown.get(&h.step).copied().unwrap_or(key_acc(sig, h.step.rem_euclid(7)));
-                    if h.acc != expected {
-                        let ax = cx - g * 2.0 - acc_col as f32 * g * 1.5;
-                        if h.acc == 0 {
-                            natural(p, Pos2::new(ax, c.y), g, col);
-                        } else {
-                            crate::lines_ui::accidental(p, Pos2::new(ax, c.y), h.acc, g, col);
+                        if !cur.is_empty() {
+                            groups.push(std::mem::take(&mut cur));
                         }
-                        acc_col = (acc_col + 1) % 2;
-                        shown.insert(h.step, h.acc);
+                        if short {
+                            cur.push(k);
+                        }
                     }
                 }
-                // a tie arriving here from the note before
-                if let Some((fx, steps, tup)) = tie_from.take() {
-                    for st in steps {
-                        let y = y_of(st) + if tup { g * 0.9 } else { -g * 0.9 };
-                        let mid = Pos2::new((fx + cx) / 2.0, y + if tup { 5.0 } else { -5.0 });
-                        let pts: Vec<Pos2> = (0..=8)
-                            .map(|t| {
-                                let t = t as f32 / 8.0;
-                                let a = Pos2::new(fx + 4.0, y);
-                                let z = Pos2::new(cx - 4.0, y);
-                                let u = 1.0 - t;
-                                Pos2::new(
-                                    u * u * a.x + 2.0 * u * t * mid.x + t * t * z.x,
-                                    u * u * a.y + 2.0 * u * t * mid.y + t * t * z.y,
+                if !cur.is_empty() {
+                    groups.push(cur);
+                }
+                let mean_step = |k: usize| {
+                    let h = &b.notes[k].heads;
+                    h.iter().map(|x| x.step).sum::<i32>() as f32 / h.len().max(1) as f32
+                };
+                let mut tips: Vec<Option<(f32, bool)>> = vec![None; b.notes.len()];
+                for gr in groups.iter().filter(|g| g.len() > 1) {
+                    let up = gr.iter().map(|k| mean_step(*k)).sum::<f32>() / gr.len() as f32 <= 34.0;
+                    let ys: Vec<f32> = gr.iter().flat_map(|k| b.notes[*k].heads.iter().map(|h| y_of(h.step))).collect();
+                    let tip = if up {
+                        ys.iter().cloned().fold(f32::INFINITY, f32::min) - 3.4 * g
+                    } else {
+                        ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 3.4 * g
+                    };
+                    for k in gr {
+                        tips[*k] = Some((tip, up));
+                    }
+                }
+                // sharps, flats and naturals written in this bar so far (by staff step)
+                let mut shown: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+                for (k, n) in b.notes.iter().enumerate() {
+                    let gi = first_note[*bi] + k;
+                    let cx = xs[k];
+                    let on = lit == Some(gi);
+                    let col = if on { pal().red } else { ink };
+                    if on {
+                        p.rect_filled(
+                            Rect::from_min_max(
+                                Pos2::new(cx - 11.0, top - above + 6.0),
+                                Pos2::new(cx + 13.0, bottom + below - 4.0),
+                            ),
+                            2.0,
+                            pal().red.gamma_multiply(0.15),
+                        );
+                    }
+                    if n.heads.is_empty() {
+                        draw_rest(p, cx, bottom, g, n.dur, col);
+                        tie_from = None;
+                        continue;
+                    }
+                    let rad = g * 0.58;
+                    let up = tips[k].map(|t| t.1).unwrap_or(mean_step(k) <= 34.0);
+                    // ledger lines
+                    let lo = n.heads.iter().map(|h| h.step).min().unwrap_or(30);
+                    let hi = n.heads.iter().map(|h| h.step).max().unwrap_or(30);
+                    let mut s = 28;
+                    while s >= lo {
+                        p.line_segment(
+                            [
+                                Pos2::new(cx - 9.0, y_of(s)),
+                                Pos2::new(cx + 9.0 + rad * 2.0 * (n.heads.len() > 1) as i32 as f32, y_of(s)),
+                            ],
+                            line,
+                        );
+                        s -= 2;
+                    }
+                    let mut s = 40;
+                    while s <= hi {
+                        p.line_segment(
+                            [
+                                Pos2::new(cx - 9.0, y_of(s)),
+                                Pos2::new(cx + 9.0 + rad * 2.0 * (n.heads.len() > 1) as i32 as f32, y_of(s)),
+                            ],
+                            line,
+                        );
+                        s += 2;
+                    }
+                    // heads (the upper of two a step apart beside the other), dots, accidentals
+                    let open = n.dur >= 2 * BEAT;
+                    let mut side = vec![0.0f32; n.heads.len()];
+                    for i in 1..n.heads.len() {
+                        if n.heads[i].step - n.heads[i - 1].step <= 1 && side[i - 1] == 0.0 {
+                            side[i] = rad * 2.0;
+                        }
+                    }
+                    let mut acc_col = 0;
+                    for (i, h) in n.heads.iter().enumerate().rev() {
+                        let c = Pos2::new(cx + side[i], y_of(h.step));
+                        if open {
+                            p.circle_stroke(c, rad - 0.6, Stroke::new(1.8_f32, col));
+                        } else {
+                            p.circle_filled(c, rad, col);
+                        }
+                        if matches!(n.dur, 9 | 18 | 36) {
+                            let dy = if h.step % 2 == 0 { -g / 2.0 } else { 0.0 };
+                            p.circle_filled(
+                                Pos2::new(cx + side.iter().cloned().fold(0.0, f32::max) + rad + 4.0, c.y + dy),
+                                1.8,
+                                col,
+                            );
+                        }
+                        let expected = shown.get(&h.step).copied().unwrap_or(key_acc(sig, h.step.rem_euclid(7)));
+                        if h.acc != expected {
+                            let ax = cx - g * 2.0 - acc_col as f32 * g * 1.5;
+                            if h.acc == 0 {
+                                natural(p, Pos2::new(ax, c.y), g, col);
+                            } else {
+                                crate::lines_ui::accidental(p, Pos2::new(ax, c.y), h.acc, g, col);
+                            }
+                            acc_col = (acc_col + 1) % 2;
+                            shown.insert(h.step, h.acc);
+                        }
+                    }
+                    // a tie arriving here from the note before
+                    if let Some((fx, steps, tup)) = tie_from.take() {
+                        for st in steps {
+                            let y = y_of(st) + if tup { g * 0.9 } else { -g * 0.9 };
+                            let mid = Pos2::new((fx + cx) / 2.0, y + if tup { 5.0 } else { -5.0 });
+                            let pts: Vec<Pos2> = (0..=8)
+                                .map(|t| {
+                                    let t = t as f32 / 8.0;
+                                    let a = Pos2::new(fx + 4.0, y);
+                                    let z = Pos2::new(cx - 4.0, y);
+                                    let u = 1.0 - t;
+                                    Pos2::new(
+                                        u * u * a.x + 2.0 * u * t * mid.x + t * t * z.x,
+                                        u * u * a.y + 2.0 * u * t * mid.y + t * t * z.y,
+                                    )
+                                })
+                                .collect();
+                            p.add(egui::Shape::line(pts, Stroke::new(1.3_f32, col)));
+                        }
+                    }
+                    if n.tie {
+                        tie_from = Some((cx, n.heads.iter().map(|h| h.step).collect(), up));
+                    }
+                    if n.dur < 4 * BEAT {
+                        let ys: Vec<f32> = n.heads.iter().map(|h| y_of(h.step)).collect();
+                        let (ytop, ybot) = (
+                            ys.iter().cloned().fold(f32::INFINITY, f32::min),
+                            ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+                        );
+                        let tip = tips[k].map(|t| t.0).unwrap_or(if up { ytop - 3.4 * g } else { ybot + 3.4 * g });
+                        let sx = if up { cx + rad - 0.5 } else { cx - rad + 0.5 };
+                        p.line_segment(
+                            [Pos2::new(sx, if up { ybot } else { ytop }), Pos2::new(sx, tip)],
+                            Stroke::new(1.3_f32, col),
+                        );
+                        let lone = groups.iter().find(|gr| gr.contains(&k)).is_none_or(|gr| gr.len() < 2);
+                        if n.dur < BEAT && n.dur != 8 && lone {
+                            let flags = if n.dur <= 3 { 2 } else { 1 };
+                            for f in 0..flags {
+                                let d = if up { 1.0 } else { -1.0 };
+                                let fy = tip + f as f32 * 6.0 * d;
+                                let pts = vec![
+                                    Pos2::new(sx, fy),
+                                    Pos2::new(sx + 6.0, fy + 7.0 * d),
+                                    Pos2::new(sx + 5.0, fy + 13.0 * d),
+                                ];
+                                p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, col)));
+                            }
+                        }
+                        if n.dur == 8 {
+                            let ty = if up { tip - 8.0 } else { tip + 8.0 };
+                            ptext(p, Pos2::new(cx, ty), Align::Center, "3", 1.0, pal().ink2);
+                        }
+                    }
+                    if tab {
+                        let midis: Vec<i32> = n.heads.iter().map(|h| h.midi).collect();
+                        for sf in finger_all(&midis, r.pos).into_iter().flatten() {
+                            let txt = sf.1.to_string();
+                            p.rect_filled(
+                                Rect::from_center_size(Pos2::new(cx, tab_y(sf.0)), Vec2::new(text_w(&txt, 1.0) + 6.0, 9.0)),
+                                0.0,
+                                pal().beige_lt,
+                            );
+                            ptext(p, Pos2::new(cx, tab_y(sf.0)), Align::Center, &txt, 1.0, col);
+                        }
+                    }
+                    if names {
+                        let nm: Vec<String> = n
+                            .heads
+                            .iter()
+                            .rev()
+                            .map(|h| {
+                                format!(
+                                    "{}{}",
+                                    ["C", "D", "E", "F", "G", "A", "B"][h.step.rem_euclid(7) as usize],
+                                    match h.acc {
+                                        1 => "#",
+                                        -1 => "b",
+                                        _ => "",
+                                    }
                                 )
                             })
                             .collect();
-                        p.add(egui::Shape::line(pts, Stroke::new(1.3_f32, col)));
-                    }
-                }
-                if n.tie {
-                    tie_from = Some((cx, n.heads.iter().map(|h| h.step).collect(), up));
-                }
-                if n.dur < 4 * BEAT {
-                    let ys: Vec<f32> = n.heads.iter().map(|h| y_of(h.step)).collect();
-                    let (ytop, ybot) =
-                        (ys.iter().cloned().fold(f32::INFINITY, f32::min), ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max));
-                    let tip = tips[k].map(|t| t.0).unwrap_or(if up { ytop - 3.4 * g } else { ybot + 3.4 * g });
-                    let sx = if up { cx + rad - 0.5 } else { cx - rad + 0.5 };
-                    p.line_segment([Pos2::new(sx, if up { ybot } else { ytop }), Pos2::new(sx, tip)], Stroke::new(1.3_f32, col));
-                    let lone = groups.iter().find(|gr| gr.contains(&k)).is_none_or(|gr| gr.len() < 2);
-                    if n.dur < BEAT && n.dur != 8 && lone {
-                        let flags = if n.dur <= 3 { 2 } else { 1 };
-                        for f in 0..flags {
-                            let d = if up { 1.0 } else { -1.0 };
-                            let fy = tip + f as f32 * 6.0 * d;
-                            let pts =
-                                vec![Pos2::new(sx, fy), Pos2::new(sx + 6.0, fy + 7.0 * d), Pos2::new(sx + 5.0, fy + 13.0 * d)];
-                            p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, col)));
-                        }
-                    }
-                    if n.dur == 8 {
-                        let ty = if up { tip - 8.0 } else { tip + 8.0 };
-                        ptext(p, Pos2::new(cx, ty), Align::Center, "3", 1.0, pal().ink2);
-                    }
-                }
-                if tab {
-                    let midis: Vec<i32> = n.heads.iter().map(|h| h.midi).collect();
-                    for sf in finger_all(&midis, r.pos).into_iter().flatten() {
-                        let txt = sf.1.to_string();
-                        p.rect_filled(
-                            Rect::from_center_size(Pos2::new(cx, tab_y(sf.0)), Vec2::new(text_w(&txt, 1.0) + 6.0, 9.0)),
-                            0.0,
-                            pal().beige_lt,
+                        ptext(
+                            p,
+                            Pos2::new(cx, top - above + block_h - 10.0),
+                            Align::Center,
+                            &nm.join(""),
+                            1.0,
+                            if on { pal().red } else { pal().dim },
                         );
-                        ptext(p, Pos2::new(cx, tab_y(sf.0)), Align::Center, &txt, 1.0, col);
                     }
                 }
-                if names {
-                    let nm: Vec<String> = n
-                        .heads
-                        .iter()
-                        .rev()
-                        .map(|h| {
-                            format!(
-                                "{}{}",
-                                ["C", "D", "E", "F", "G", "A", "B"][h.step.rem_euclid(7) as usize],
-                                match h.acc {
-                                    1 => "#",
-                                    -1 => "b",
-                                    _ => "",
-                                }
-                            )
-                        })
-                        .collect();
-                    ptext(
-                        p,
-                        Pos2::new(cx, rect.max.y - 10.0),
-                        Align::Center,
-                        &nm.join(""),
-                        1.0,
-                        if on { pal().red } else { pal().dim },
+                // beams: one for eighths, a second for sixteenths, a 3 over triplets
+                for gr in groups.iter().filter(|g| g.len() > 1) {
+                    let Some((tip, up)) = tips[gr[0]] else { continue };
+                    let sx = |k: usize| xs[k] + if up { g * 0.58 - 0.5 } else { -g * 0.58 + 0.5 };
+                    let (a, z) = (sx(gr[0]), sx(gr[gr.len() - 1]));
+                    let thick = 3.0;
+                    let y1 = if up { tip } else { tip - thick };
+                    p.rect_filled(Rect::from_min_max(Pos2::new(a, y1), Pos2::new(z, y1 + thick)), 0.0, ink);
+                    let y2 = if up { tip + 5.0 } else { tip - 5.0 - thick };
+                    for (j, k) in gr.iter().enumerate() {
+                        if b.notes[*k].dur > 3 {
+                            continue;
+                        }
+                        let next16 = gr.get(j + 1).is_some_and(|kk| b.notes[*kk].dur <= 3);
+                        let x0 = sx(*k);
+                        let x1 = if next16 {
+                            sx(gr[j + 1])
+                        } else if j + 1 < gr.len() {
+                            x0 + 8.0
+                        } else {
+                            x0 - 8.0
+                        };
+                        p.rect_filled(Rect::from_min_max(Pos2::new(x0.min(x1), y2), Pos2::new(x0.max(x1), y2 + thick)), 0.0, ink);
+                    }
+                    if b.notes[gr[0]].dur == 4 {
+                        let ty = if up { tip - 9.0 } else { tip + 9.0 };
+                        ptext(p, Pos2::new((a + z) / 2.0, ty), Align::Center, "3", 1.0, pal().ink2);
+                    }
+                }
+                x += (bar_w(b) - 9.0) * stretch;
+                let end = *bi + 1 == n_bars;
+                if b.rep_end {
+                    for dy in [1.5, 2.5] {
+                        p.circle_filled(Pos2::new(x - 10.0, top + dy * g), 1.8, ink);
+                    }
+                }
+                if end || b.rep_end {
+                    p.line_segment([Pos2::new(x - 4.0, top), Pos2::new(x - 4.0, bottom)], line);
+                    p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], Stroke::new(3.0_f32, ink));
+                } else {
+                    p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], line);
+                }
+            }
+            // a tie running over the end of the row
+            if let Some((fx, steps, tup)) = tie_from {
+                for st in steps {
+                    let y = y_of(st) + if tup { g * 0.9 } else { -g * 0.9 };
+                    p.line_segment(
+                        [Pos2::new(fx + 4.0, y), Pos2::new(x_end, y + if tup { 3.0 } else { -3.0 })],
+                        Stroke::new(1.3_f32, pal().ink),
                     );
                 }
-            }
-            // beams: one for eighths, a second for sixteenths, a 3 over triplets
-            for gr in groups.iter().filter(|g| g.len() > 1) {
-                let Some((tip, up)) = tips[gr[0]] else { continue };
-                let sx = |k: usize| xs[k] + if up { g * 0.58 - 0.5 } else { -g * 0.58 + 0.5 };
-                let (a, z) = (sx(gr[0]), sx(gr[gr.len() - 1]));
-                let thick = 3.0;
-                let y1 = if up { tip } else { tip - thick };
-                p.rect_filled(Rect::from_min_max(Pos2::new(a, y1), Pos2::new(z, y1 + thick)), 0.0, ink);
-                let y2 = if up { tip + 5.0 } else { tip - 5.0 - thick };
-                for (j, k) in gr.iter().enumerate() {
-                    if b.notes[*k].dur > 3 {
-                        continue;
-                    }
-                    let next16 = gr.get(j + 1).is_some_and(|kk| b.notes[*kk].dur <= 3);
-                    let x0 = sx(*k);
-                    let x1 = if next16 {
-                        sx(gr[j + 1])
-                    } else if j + 1 < gr.len() {
-                        x0 + 8.0
-                    } else {
-                        x0 - 8.0
-                    };
-                    p.rect_filled(Rect::from_min_max(Pos2::new(x0.min(x1), y2), Pos2::new(x0.max(x1), y2 + thick)), 0.0, ink);
-                }
-                if b.notes[gr[0]].dur == 4 {
-                    let ty = if up { tip - 9.0 } else { tip + 9.0 };
-                    ptext(p, Pos2::new((a + z) / 2.0, ty), Align::Center, "3", 1.0, pal().ink2);
-                }
-            }
-            x += (bar_w(b) - 9.0) * stretch;
-            let end = *bi + 1 == r.bars.len();
-            if b.rep_end {
-                for dy in [1.5, 2.5] {
-                    p.circle_filled(Pos2::new(x - 10.0, top + dy * g), 1.8, ink);
-                }
-            }
-            if end || b.rep_end {
-                p.line_segment([Pos2::new(x - 4.0, top), Pos2::new(x - 4.0, bottom)], line);
-                p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], Stroke::new(3.0_f32, ink));
-            } else {
-                p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], line);
-            }
-        }
-        // a tie running over the end of the row
-        if let Some((fx, steps, tup)) = tie_from {
-            for st in steps {
-                let y = y_of(st) + if tup { g * 0.9 } else { -g * 0.9 };
-                p.line_segment(
-                    [Pos2::new(fx + 4.0, y), Pos2::new(x_end, y + if tup { 3.0 } else { -3.0 })],
-                    Stroke::new(1.3_f32, pal().ink),
-                );
             }
         }
         ui.add_space(6.0);
@@ -1076,12 +1128,28 @@ impl App {
         let lit_on = self.rd_play.is_some();
         ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, "TEMPO", 60.0);
+            let before = self.rd_bpm;
             if retro_btn_w(ui, "-", 28.0, false).clicked() {
                 self.rd_bpm = (self.rd_bpm - 5).max(30);
             }
-            crate::lcd_box(ui, &format!("{} BPM", self.rd_bpm), 80.0, pal().ink);
+            if self.rd_bpm_text.is_empty() || self.ed.id != crate::tools::F_RD_BPM {
+                self.rd_bpm_text = self.rd_bpm.to_string();
+            }
+            let (r, _) = ui.allocate_exact_size(Vec2::new(64.0, bh()), Sense::hover());
+            let o = crate::views::field(ui, &mut self.ed, crate::tools::F_RD_BPM, &mut self.rd_bpm_text, r, "BPM", false);
+            if o.enter {
+                if let Ok(b) = self.rd_bpm_text.trim().parse::<u32>() {
+                    self.rd_bpm = b.clamp(30, 300);
+                }
+                self.ed.id = 0;
+            }
             if retro_btn_w(ui, "+", 28.0, false).clicked() {
-                self.rd_bpm = (self.rd_bpm + 5).min(220);
+                self.rd_bpm = (self.rd_bpm + 5).min(300);
+            }
+            crate::views::label(ui, "BPM", 40.0);
+            // a change while it plays: it carries on at the new tempo
+            if self.rd_bpm != before {
+                self.rd_retempo();
             }
             ui.add_space(10.0);
             if retro_btn(ui, "HEAR IT", false).tip("A bar to count you in, then this part").clicked() {
@@ -1225,6 +1293,10 @@ impl App {
                         self.rd_part = i;
                     }
                 }
+                ui.add_space(10.0);
+                if retro_btn(ui, "BOTH STAVES", self.rd_both).tip("The whole duet as systems (off: just your part)").clicked() {
+                    self.rd_both = !self.rd_both;
+                }
             });
         }
         if self.rd_tempo_for != (self.rd_lesson, self.rd_piece) {
@@ -1237,7 +1309,24 @@ impl App {
         ui.add_space(4.0);
         self.rd_controls(ui, &mine, other.as_ref());
         let lit = self.rd_lit(ui);
-        draw_reading(ui, &mine, lit, self.rd_tab, self.rd_names);
+        if piece.parts.len() > 1 && self.rd_both {
+            // the whole duet as systems, your part marked
+            let names: Vec<String> = piece
+                .parts
+                .iter()
+                .enumerate()
+                .map(|(i, (pn, _))| if i == self.rd_part { format!("{} (YOU)", pn) } else { pn.clone() })
+                .collect();
+            let parts: Vec<(&Reading, Option<usize>, &str)> = piece
+                .parts
+                .iter()
+                .enumerate()
+                .map(|(i, (_, r))| (r, if i == self.rd_part { lit } else { None }, names[i].as_str()))
+                .collect();
+            draw_score(ui, &parts, self.rd_tab, self.rd_names);
+        } else {
+            draw_reading(ui, &mine, lit, self.rd_tab, self.rd_names);
+        }
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             let done = self.store.reading_done.get(&key).cloned();
@@ -1329,21 +1418,45 @@ impl App {
     /// Start a play-through: this part (and the other guitar's, when given), or only the clicks and the other part
     /// when `along`; a bar to count in.
     fn rd_start(&mut self, mine: &Reading, other: Option<&Reading>, along: bool) {
+        self.rd_start_at(mine, other, along, 0.0, true);
+    }
+
+    /// Start a play-through from beat `from` (in the order played), counted in or not.
+    fn rd_start_at(&mut self, mine: &Reading, other: Option<&Reading>, along: bool, from: f32, count_in: bool) {
         let spb = 60.0 / self.rd_bpm.max(30) as f32;
-        let order = play_order(mine);
+        let order: Vec<(usize, f32, f32, Vec<i32>)> = play_order(mine).into_iter().filter(|n| n.1 >= from - 1e-3).collect();
+        let shift = |v: &[(usize, f32, f32, Vec<i32>)]| -> Vec<(Vec<i32>, f32, f32)> {
+            v.iter().filter(|n| n.1 >= from - 1e-3).map(|(_, at, d, m)| (m.clone(), (at - from) * spb, d * spb)).collect()
+        };
         let mut notes: Vec<(Vec<i32>, f32, f32)> = Vec::new();
         if !along {
-            notes.extend(order.iter().map(|(_, at, d, m)| (m.clone(), at * spb, d * spb)));
+            notes.extend(shift(&order));
         }
         if let Some(o) = other {
-            notes.extend(play_order(o).iter().map(|(_, at, d, m)| (m.clone(), at * spb, d * spb)));
+            notes.extend(shift(&play_order(o)));
         }
-        let count = mine.beats as u32;
+        let count = if count_in { mine.beats as u32 } else { 0 };
         let lead = count as f32 * spb;
-        let total = lead + order.iter().map(|(_, at, d, _)| (at + d) * spb).fold(0.0, f32::max);
+        let total = lead + order.iter().map(|(_, at, d, _)| (at + d - from) * spb).fold(0.0, f32::max);
         self.player.send(Cmd::StopOnce);
-        self.player.send(Cmd::Once(crate::band::reading_sound(&notes, mine.beats as u32, count, spb, total - lead), 0.9));
-        self.rd_play = Some((Instant::now(), order.iter().map(|(gi, at, _, _)| (lead + at * spb, *gi)).collect(), along, total));
+        self.player.send(Cmd::Once(
+            crate::band::reading_sound(&notes, mine.beats as u32, count, from.round() as u32, spb, total - lead),
+            0.9,
+        ));
+        self.rd_play =
+            Some((Instant::now(), order.iter().map(|(gi, at, _, _)| (lead + (at - from) * spb, *gi)).collect(), along, total));
+        self.rd_ctx = Some((mine.clone(), other.cloned(), along, from, lead, spb));
+    }
+
+    /// The tempo changed: a play-through carries on from the next beat at the new tempo.
+    fn rd_retempo(&mut self) {
+        self.rd_bpm_text = self.rd_bpm.to_string();
+        let (Some((t0, ..)), Some((mine, other, along, from, lead, spb))) = (self.rd_play.clone(), self.rd_ctx.clone()) else {
+            return;
+        };
+        let el = t0.elapsed().as_secs_f32();
+        let at = if el < lead { from } else { (from + (el - lead) / spb).ceil() };
+        self.rd_start_at(&mine, other.as_ref(), along, at, el < lead);
     }
 
     /// The note sounding now in a play-through; a play-along that reaches the end is counted in the diary.
