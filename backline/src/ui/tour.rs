@@ -289,6 +289,8 @@ pub(crate) struct TourPlay {
     placed: usize,
     paused: bool,
     band: bool,
+    /// the page that was showing (your library, Tidal home...): the tour shows only its own song, then puts it back
+    page: Option<std::sync::Arc<crate::api::Page>>,
     /// the tour's song, once it is the one playing
     song: Option<i64>,
 }
@@ -334,6 +336,7 @@ impl App {
             placed: 0,
             paused: false,
             band: false,
+            page: self.page.clone(),
             song: None,
         };
         self.tour_play = Some(snap);
@@ -369,16 +372,16 @@ impl App {
         let mut track = crate::sources::ext_for_file(&path).to_track();
         // its own cover, drawn for Backline
         track.cover = crate::tour_song::COVER.to_string();
-        // recording a demo: this song is all the library shows
-        if self.demo_rec.is_some() {
-            self.demo_track = Some(track.clone());
-            if let Some(p) = self.page.as_ref().filter(|p| p.library) {
-                let mut p = (**p).clone();
-                p.tracks = vec![track.clone()];
-                p.total = 1;
-                self.page = Some(std::sync::Arc::new(p));
-            }
-        }
+        // a tour shows nobody's own music: its song is all the library holds (your page comes back at the end)
+        self.demo_track = Some(track.clone());
+        self.page = Some(std::sync::Arc::new(crate::api::Page {
+            title: "My Tracks".to_string(),
+            tracks: vec![track.clone()],
+            library: true,
+            total: 1,
+            ..Default::default()
+        }));
+        self.sec = crate::Sec::Tidal;
         if let Some(s) = self.tour_play.as_mut() {
             s.song = Some(track.id);
         }
@@ -489,6 +492,10 @@ impl App {
         self.apply_eq();
         self.store.last = s.last;
         self.store_dirty = true;
+        if s.song.is_some() {
+            self.page = s.page.clone();
+            self.demo_track = None;
+        }
         if s.song.is_none() {
             return;
         }

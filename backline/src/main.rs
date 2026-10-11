@@ -3763,8 +3763,8 @@ impl App {
                     self.login_err = e;
                 }
                 Msg::Page(mut p, push) => {
-                    // recording a demo: the library holds only the tour's song
-                    if p.library && tour::demo_kind().is_some() {
+                    // a tour (or recording one): the library holds only the tour's song
+                    if p.library && (tour::demo_kind().is_some() || self.demo_track.is_some()) {
                         p.tracks = self.demo_track.iter().cloned().collect();
                         p.total = p.tracks.len();
                     }

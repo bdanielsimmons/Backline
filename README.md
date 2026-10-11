@@ -8,6 +8,14 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 **See it in action:** [the tour](https://github.com/bdanielsimmons/Backline/releases/download/demo/backline-tour.mp4) · [the practice tour](https://github.com/bdanielsimmons/Backline/releases/download/demo/backline-practice-tour.mp4) (MP4 videos)
 <!-- demo:end -->
 
+<!-- shots:start -->
+| | |
+|---|---|
+| ![The player, library and playlist](screenshots/player.png) | ![The equalizer](screenshots/equalizer.png) |
+| ![The album view](screenshots/album-view.png) | ![Practice: loop a spot](screenshots/practice.png) |
+| ![Name a chord from the neck or piano](screenshots/chord-namer.png) | ![The lead sheet and the band](screenshots/lead-sheet.png) |
+<!-- shots:end -->
+
 ## What's new
 
 <!-- whats-new -->
