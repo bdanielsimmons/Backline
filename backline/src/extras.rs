@@ -945,6 +945,20 @@ impl App {
 
     pub(crate) fn drain_extra(&mut self, m: Msg) {
         match m {
+            Msg::TidalLists(r) => {
+                self.tidal_lists_busy = false;
+                match r {
+                    Ok(l) => self.tidal_lists = Some(l),
+                    Err(e) => {
+                        self.tidal_lists = Some(Vec::new());
+                        self.set_err(format!("TIDAL PLAYLISTS: {}", e));
+                    }
+                }
+            }
+            Msg::TidalListDone(r) => match r {
+                Ok(note) => self.set_note(&note),
+                Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
+            },
             Msg::Added(files, folders) => {
                 self.files_busy = false;
                 let (found, picked_folder) = (files.len(), !folders.is_empty());
@@ -1470,6 +1484,24 @@ impl App {
                 self.pl_pick = Some(t);
                 self.pl_loop = None;
                 self.apply(Action::Section(Sec::Lists));
+            }
+            Action::TidalListAdd(uuid, name, id) => {
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                let fresh = uuid.is_empty();
+                if fresh {
+                    // the new one shows in the list next time it is opened
+                    self.tidal_lists = None;
+                }
+                std::thread::spawn(move || {
+                    let r = if fresh { api.playlist_create(&name) } else { Ok(uuid) }
+                        .and_then(|u| api.playlist_add(&u, id))
+                        .map(|_| format!("ADDED TO {} ON TIDAL", name.to_uppercase()));
+                    let _ = tx.send(Msg::TidalListDone(r));
+                    ctx.request_repaint();
+                });
+                self.pl_pick = None;
+                self.pl_loop = None;
+                self.new_pl.clear();
             }
             Action::PlaylistPickLoop(t, a, b, name) => {
                 self.set_note(&format!("PICK A PLAYLIST FOR THE LOOP: {}", name.to_uppercase()));

@@ -149,6 +149,10 @@ enum Msg {
     Lyrics(i64, Result<(Vec<(f32, String)>, bool), String>),
     Media(u8),
     LikeFailed(i64, bool, String),
+    /// your own Tidal playlists, for adding to: (id, name)
+    TidalLists(Result<Vec<(String, String)>, String>),
+    /// a song put in a Tidal playlist: what to say
+    TidalListDone(Result<String, String>),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
     Added(Vec<store::Ext>, Vec<String>),
     /// a rescan of the watched folders
@@ -362,6 +366,9 @@ enum Action {
     TogglePrefs,
     FindTuning,
     PlaylistPick(Track),
+    /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
+    /// playlist with that name
+    TidalListAdd(String, String, i64),
     /// put a loop of a song in a playlist: (the song, from, to, the loop's name)
     PlaylistPickLoop(Track, f32, f32, String),
     PlaylistAdd(usize, Track),
@@ -2456,6 +2463,9 @@ struct App {
     pl_pick: Option<Track>,
     /// the loop being put in a playlist with `pl_pick`: (from, to, name)
     pl_loop: Option<(f32, f32, String)>,
+    /// your own Tidal playlists (None until asked for), and whether they are being fetched
+    tidal_lists: Option<Vec<(String, String)>>,
+    tidal_lists_busy: bool,
     yt_results: Vec<store::Ext>,
     /// the opened playlist's name, and whether its songs are shown (it starts folded up)
     yt_title: String,
@@ -3005,6 +3015,8 @@ impl App {
             pl_open: None,
             pl_pick: None,
             pl_loop: None,
+            tidal_lists: None,
+            tidal_lists_busy: false,
             yt_results: Vec::new(),
             yt_title: String::new(),
             yt_open: false,

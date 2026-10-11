@@ -939,6 +939,31 @@ impl App {
                     }
                 }
             }
+            if t.id > 0 && self.pl_loop.is_none() && self.api.has_token() {
+                ui.add_space(8.0);
+                section_header(ui, "YOUR TIDAL PLAYLISTS");
+                if self.tidal_lists.is_none() && !self.tidal_lists_busy {
+                    self.tidal_lists_busy = true;
+                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                    std::thread::spawn(move || {
+                        let _ = tx.send(crate::Msg::TidalLists(api.own_playlists()));
+                        ctx.request_repaint();
+                    });
+                }
+                match &self.tidal_lists {
+                    None => dim_line(ui, "LOADING...", 1.0, pal().dim),
+                    Some(l) if l.is_empty() => dim_line(ui, "NONE YET - TYPE A NAME BELOW AND PRESS NEW ON TIDAL", 1.0, pal().dim),
+                    Some(l) => {
+                        for (k, (uuid, name)) in l.iter().enumerate() {
+                            if let Some(r) = list_row(ui, k, Some(k + 1), || name.clone(), String::new, RowState::Normal, false, false) {
+                                if r.clicked() {
+                                    acts.push(Action::TidalListAdd(uuid.clone(), name.clone(), t.id));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             ui.add_space(6.0);
         } else {
             title_line(ui, "PLAYLISTS", 3.0, pal().ink);
@@ -951,6 +976,14 @@ impl App {
             let o = field(ui, &mut self.ed, F_NEW_PL, &mut self.new_pl, rect, "New playlist name...", false);
             if o.enter || retro_btn_w(ui, "NEW", 70.0, false).clicked() {
                 acts.push(Action::PlaylistNew(self.pl_pick.clone()));
+            }
+            // a new playlist on your Tidal account, with this song in it
+            if let Some(t) = self.pl_pick.as_ref().filter(|t| t.id > 0 && self.api.has_token() && self.pl_loop.is_none()) {
+                if retro_btn(ui, "NEW ON TIDAL", false).tip("Make this a playlist on your Tidal account, with the song in it").clicked()
+                    && !self.new_pl.trim().is_empty()
+                {
+                    acts.push(Action::TidalListAdd(String::new(), self.new_pl.trim().to_string(), t.id));
+                }
             }
         });
         if self.pl_pick.is_none() {
@@ -1964,11 +1997,21 @@ impl App {
         let size = ui.available_size();
         let s = (size.y / 250.0).min(size.x / 760.0).max(0.1).sqrt().clamp(0.85, 2.0);
         let wave_h = 54.0 * s;
-        crate::font::with_scale(s, || {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .drag_to_scroll(false)
-                .show(ui, |ui| self.practice_body(ui, acts, wave_h));
+        // the contents stop a little above the window's bottom edge, over a line of their own, so the panel has a
+        // clear bottom like the library's list (the frame alone is the same dark as the contents on some skins)
+        let r = ui.available_rect_before_wrap();
+        let body = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.max.y - 6.0));
+        ui.painter().line_segment(
+            [Pos2::new(body.min.x, body.max.y + 2.0), Pos2::new(body.max.x, body.max.y + 2.0)],
+            egui::Stroke::new(crate::thick(2.0), pal().edge),
+        );
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(body), |ui| {
+            crate::font::with_scale(s, || {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .drag_to_scroll(false)
+                    .show(ui, |ui| self.practice_body(ui, acts, wave_h));
+            });
         });
     }
 

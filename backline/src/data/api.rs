@@ -674,6 +674,80 @@ impl Api {
         Ok(out)
     }
 
+    /// The playlists you made on Tidal (the ones you can add to): (id, name).
+    pub fn own_playlists(&self) -> Res<Vec<(String, String)>> {
+        let v = self.get(&format!("/users/{}/playlists", self.uid()), &[("limit", "100")])?;
+        Ok(arr(&v["items"])
+            .iter()
+            .filter_map(|p| Some((p["uuid"].as_str()?.to_string(), p["title"].as_str().unwrap_or("").to_string())))
+            .collect())
+    }
+
+    /// The token, country and user id for a change to your Tidal account (the token renewed first if it is about
+    /// to run out).
+    fn auth(&self) -> (String, String, i64) {
+        let (exp, has_rt) = {
+            let s = self.session.lock().unwrap();
+            (s.expires_at, !s.refresh_token.is_empty())
+        };
+        if has_rt && exp > 0 && exp < now() + 60 {
+            let _ = self.refresh();
+        }
+        let s = self.session.lock().unwrap();
+        (s.access_token.clone(), s.country.clone(), s.user_id)
+    }
+
+    /// Add a track to one of your Tidal playlists (already in it: left as it is).
+    pub fn playlist_add(&self, uuid: &str, id: i64) -> Res<()> {
+        let (tok, country, _) = self.auth();
+        // Tidal wants the playlist's current version with a change, so two edits never cross
+        let head = self
+            .http
+            .get(format!("{}/playlists/{}", API, uuid))
+            .bearer_auth(&tok)
+            .query(&[("countryCode", country.as_str())])
+            .send()
+            .map_err(e2s)?;
+        let etag = head.headers().get("etag").and_then(|e| e.to_str().ok()).unwrap_or("*").to_string();
+        let idstr = id.to_string();
+        let r = self
+            .http
+            .post(format!("{}/playlists/{}/items", API, uuid))
+            .bearer_auth(&tok)
+            .header("If-None-Match", etag)
+            .query(&[("countryCode", country.as_str())])
+            .form(&[("trackIds", idstr.as_str()), ("onDupes", "SKIP"), ("onArtifactNotFound", "SKIP")])
+            .send()
+            .map_err(e2s)?;
+        let st = r.status();
+        log(&format!("POST playlist {} item {} -> {}", uuid, id, st.as_u16()));
+        if st.is_success() {
+            Ok(())
+        } else {
+            Err(format!("{}: {}", st.as_u16(), r.text().unwrap_or_default().chars().take(120).collect::<String>()))
+        }
+    }
+
+    /// Make a new playlist on your Tidal account; its id.
+    pub fn playlist_create(&self, title: &str) -> Res<String> {
+        let (tok, country, uid) = self.auth();
+        let r = self
+            .http
+            .post(format!("{}/users/{}/playlists", API, uid))
+            .bearer_auth(&tok)
+            .query(&[("countryCode", country.as_str())])
+            .form(&[("title", title), ("description", "")])
+            .send()
+            .map_err(e2s)?;
+        let st = r.status();
+        log(&format!("POST new playlist -> {}", st.as_u16()));
+        let v: Value = r.json().map_err(e2s)?;
+        match v["uuid"].as_str() {
+            Some(u) if st.is_success() => Ok(u.to_string()),
+            _ => Err(format!("{}: could not make the playlist", st.as_u16())),
+        }
+    }
+
     /// Like (true) or unlike (false) a track.
     pub fn set_liked(&self, id: i64, like: bool) -> Res<()> {
         let (exp, has_rt) = {
