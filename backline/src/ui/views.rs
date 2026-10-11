@@ -2081,11 +2081,15 @@ impl App {
                 start = under - frac * dur1 / zoom;
             }
         }
-        let chip_at = |k: f32, w: f32| Rect::from_min_size(Pos2::new(bar.min.x + 6.0 + k, bar.max.y - 18.0), Vec2::new(w, 14.0));
+        let chip_at = |k: f32, w: f32| Rect::from_min_size(Pos2::new(bar.min.x + 6.0 + k, bar.max.y - 24.0), Vec2::new(w, 14.0));
         let span = dur1 / zoom;
         // zoomed: the view keeps up with the song (turning the page as it reaches the edge), unless you are dragging
         let dragging = self.sel_anchor.is_some() || self.marker_drag != 0 || self.seek_drag.is_some() || wheel != 0.0;
-        if zoom > 1.0 && !dragging && (shown < start || shown > start + span) {
+        // clicking the waveform or zooming: the view follows the song again
+        if resp.clicked() || resp.drag_started() || wheel != 0.0 {
+            self.wv_free = false;
+        }
+        if zoom > 1.0 && !dragging && !self.wv_free && (shown < start || shown > start + span) {
             start = shown - span * 0.05;
         }
         let start = start.clamp(0.0, (dur1 - span).max(0.0));
@@ -2154,11 +2158,48 @@ impl App {
                 1.0,
                 pal().ink,
             );
+            // time marks along the top, as close as the zoom allows (a second, a tenth of one...)
+            let step = [0.1f32, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0]
+                .into_iter()
+                .find(|s| span / s <= 9.0)
+                .unwrap_or(600.0);
+            let mut t = (start / step).ceil() * step;
+            // (no labels under the time readout in the corner)
+            let readout = bar.max.x - 8.0 - crate::font::text_w(&format!("{} / {}", fmt_t(shown), fmt_t(dur)), 1.0) - 40.0;
+            while t <= start + span + 1e-3 {
+                let x = at(t);
+                fill_rect(&p, Rect::from_min_max(Pos2::new(x, bar.min.y + 2.0), Pos2::new(x + 1.0, bar.min.y + 6.0)), pal().ink2);
+                if x < readout {
+                    let (m, s) = ((t / 60.0).floor() as u32, t % 60.0);
+                    let lab = if step < 1.0 { format!("{}:{:04.1}", m, s) } else { format!("{}:{:02}", m, s.round() as u32) };
+                    ptext(&p, Pos2::new(x + 3.0, bar.min.y + 7.0), Align::Min, &lab, 0.7, pal().dim);
+                }
+                t += step;
+            }
+            // zoomed: a scrollbar along the bottom to move through the song (drag it, or click where to look)
+            if self.wv_zoom > 1.0 {
+                let track = Rect::from_min_max(Pos2::new(inn.min.x, bar.max.y - 7.0), Pos2::new(inn.max.x, bar.max.y - 3.0));
+                let r = ui
+                    .interact(track.expand2(Vec2::new(0.0, 4.0)), ui.id().with("wv_scroll"), Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::Grab)
+                    .tip("Drag to look through the song (it keeps playing)");
+                fill_rect(&p, track, pal().ink.gamma_multiply(0.15));
+                let w = (track.width() * span / dur1).max(14.0);
+                let x0 = track.min.x + (track.width() - w) * (start / (dur1 - span).max(0.001));
+                let thumb = Rect::from_min_size(Pos2::new(x0, track.min.y - 1.0), Vec2::new(w, track.height() + 2.0));
+                fill_rect(&p, thumb, if r.hovered() || r.dragged() { pal().ink } else { pal().ink2 });
+                if let Some(pp) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
+                    let frac = ((pp.x - track.min.x - w / 2.0) / (track.width() - w).max(1.0)).clamp(0.0, 1.0);
+                    self.wv_start = frac * (dur1 - span).max(0.0);
+                    self.wv_free = true;
+                }
+            }
             // zoom buttons, over the waveform's corner (they take effect from the next frame)
             let zoom_by = |me: &mut Self, by: f32| {
                 let frac = ((shown - start) / span).clamp(0.0, 1.0);
                 me.wv_zoom = (me.wv_zoom * by).clamp(1.0, 400.0);
                 me.wv_start = shown - frac * dur1 / me.wv_zoom;
+                me.wv_free = false;
             };
             if crate::chip(ui, chip_at(0.0, 18.0), "-", false, "wv_out").tip("Zoom out").clicked() {
                 zoom_by(self, 0.5);
@@ -2174,6 +2215,7 @@ impl App {
             {
                 self.wv_zoom = 1.0;
                 self.wv_start = 0.0;
+                self.wv_free = false;
             }
 
             // shift + drag selects a loop; plain click / drag seeks

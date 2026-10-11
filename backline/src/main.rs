@@ -2326,6 +2326,8 @@ struct App {
     /// the practice waveform's zoom (1 = the whole song) and the second its view starts at
     wv_zoom: f32,
     wv_start: f32,
+    /// you scrolled the zoomed view away from the playhead: it stays put until you click, zoom or FIT
+    wv_free: bool,
     bands: Vec<f32>,
     peaks: Vec<f32>,
     show_log: bool,
@@ -2938,6 +2940,7 @@ impl App {
             seek_drag: None,
             wv_zoom: 1.0,
             wv_start: 0.0,
+            wv_free: false,
             bands: vec![0.0; 32],
             peaks: vec![0.0; 32],
             show_log: false,
@@ -3569,6 +3572,16 @@ impl App {
         // BACKLINE_OPEN=practice / lists: start with that open (for checking layouts and recording demos)
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
+            Ok("zoom") => {
+                app.practice = true;
+                if let Some(p) = tour_song::ready() {
+                    let t = sources::ext_for_file(&p).to_track();
+                    app.srcmap.insert(t.id, Src::File(p));
+                    app.queue = Arc::new(vec![t]);
+                    app.play_index(0);
+                }
+                app.wv_zoom = 6.0;
+            }
             Ok("lists") => app.sec = Sec::Lists,
             _ => {}
         }
