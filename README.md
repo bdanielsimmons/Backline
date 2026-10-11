@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- The metronome has its own volume slider, apart from the main volume
 - Made-up reading lines show the fingering for the position (finger and string over each note), with its own FINGERING switch
 - Your own grips for any chord: SAVE GRIP AS in the analyzer (type the name or pick root, kind, type), or ADD MY OWN GRIP in the finder; marked MINE, right-click to delete
 - Right-click any song: Add to a Backline playlist, Add to a Tidal playlist, or New playlist with this song
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Sight reading: the book in chapters, and guides (a daily routine, what every mark means, duets, when it's hard)
 - Sight reading shows the book's markings - pick strokes, fingerings, string numbers, accents, fermatas, slurs, dynamics
 - Zoom the sight-reading score in and out (buttons or ctrl + mouse wheel)
-- READING (under PRACTICE) - sight-reading lines in a key and position, rhythms from quarters up to triplets and sixteenths, played with a count-in or just clicks while you read
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
