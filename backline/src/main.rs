@@ -2377,9 +2377,9 @@ struct App {
     /// how many songs right after the one playing you queued yourself (Play next / Add to queue): they play before
     /// the rest of the album, playlist or radio, and new ones you add go after them
     q_manual: usize,
-    /// the song playing was one you queued (PLAY NEXT / ADD TO QUEUE)
-    cur_queued: bool,
-    /// a queued song leaves the queue once it has played to the end (Preferences; skipping it keeps it)
+    /// songs you added (PLAY NEXT / ADD TO QUEUE): they leave the queue once playing moves on past them
+    q_added: HashSet<i64>,
+    /// a song you queued leaves the queue once playing moves on past it (Preferences)
     q_drop: bool,
     sleep_at: Option<Instant>,
     sleep_mins: u32,
@@ -2645,6 +2645,10 @@ struct App {
     rd_zoom: f32,
     /// which reading guide is open
     rd_guide: u8,
+    /// the book's markings on the music (fingers, strings, pick strokes...)
+    rd_marks: bool,
+    /// made-up lines: the position's fingering written over the notes
+    rd_fingering: bool,
     cb_frets: [Option<u8>; 6],
     cb_name: String,
     vc_family: u8,
@@ -2958,8 +2962,8 @@ impl App {
             liked: HashSet::new(),
             q_drag: None,
             q_manual: 0,
-            cur_queued: false,
             q_drop: true,
+            q_added: HashSet::new(),
             sleep_at: None,
             sleep_mins: 0,
             mini: false,
@@ -3173,6 +3177,8 @@ impl App {
             rd_both: true,
             rd_zoom: 1.0,
             rd_guide: 0,
+            rd_marks: true,
+            rd_fingering: true,
             cb_frets: [None; 6],
             cb_name: String::new(),
             vc_family: 4,
@@ -3916,13 +3922,22 @@ impl App {
         self.kbps = if dur > 1.0 { (bytes as f32 * 8.0 / 1000.0 / dur) as u32 } else { 0 };
     }
 
-    fn play_index(&mut self, i: usize) {
+    fn play_index(&mut self, mut i: usize) {
+        // the next song in line (not a jump): one fewer of your queued songs ahead
+        let next_in_line = self.cur.is_some_and(|c| i == c + 1);
+        if let Some(c) = self.cur.filter(|c| i > *c && self.q_drop) {
+            if let Some(id) = self.queue.get(c).map(|t| t.id).filter(|id| self.q_added.remove(id)) {
+                Arc::make_mut(&mut self.queue).remove(c);
+                if let Some(o) = self.orig_queue.as_mut() {
+                    if let Some(k) = o.iter().position(|t| t.id == id) {
+                        o.remove(k);
+                    }
+                }
+                i -= 1;
+            }
+        }
         let Some(t) = self.queue.get(i).cloned() else { return };
-        self.cur_queued = matches!(self.cur, Some(c) if i == c + 1) && self.q_manual > 0;
-        self.q_manual = match self.cur {
-            Some(c) if i == c + 1 => self.q_manual.saturating_sub(1),
-            _ => 0,
-        };
+        self.q_manual = if next_in_line { self.q_manual.saturating_sub(1) } else { 0 };
         self.cur = Some(i);
         self.on_track_change(&t);
         self.q_scroll = true;
@@ -4464,6 +4479,7 @@ impl App {
                     let p = cur_id.and_then(|id| o.iter().position(|x| x.id == id)).map(|p| p + 1).unwrap_or(o.len());
                     o.insert(p.min(o.len()), t.clone());
                 }
+                self.q_added.insert(t.id);
                 Arc::make_mut(&mut self.queue).insert(at, t);
                 if self.cur.is_none() {
                     self.play_index(0);
@@ -4473,6 +4489,7 @@ impl App {
                 }
             }
             Action::Enqueue(t) => {
+                self.q_added.insert(t.id);
                 if let Some(o) = self.orig_queue.as_mut() {
                     o.push(t.clone());
                 }
@@ -4981,26 +4998,6 @@ impl eframe::App for App {
                 if self.repeat == Repeat::One {
                     if let Some(c) = self.cur {
                         self.play_index(c);
-                    }
-                } else if self.cur_queued && self.q_drop && self.cur.is_some_and(|c| c > 0) {
-                    // a song you queued played to the end: it leaves the queue, the next one takes its place
-                    let c = self.cur.unwrap_or(1);
-                    let gone = self.queue.get(c).map(|t| t.id);
-                    let mut q: Vec<Track> = (*self.queue).clone();
-                    q.remove(c);
-                    self.queue = Arc::new(q);
-                    if let (Some(o), Some(id)) = (self.orig_queue.as_mut(), gone) {
-                        if let Some(k) = o.iter().position(|t| t.id == id) {
-                            o.remove(k);
-                        }
-                    }
-                    self.cur = Some(c - 1);
-                    if c < self.queue.len() {
-                        self.play_index(c);
-                    } else if self.repeat == Repeat::All && !self.queue.is_empty() {
-                        self.play_index(0);
-                    } else {
-                        self.stopped = true;
                     }
                 } else if let Some(j) = self.next_index() {
                     self.play_index(j);

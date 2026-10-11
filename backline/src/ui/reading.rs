@@ -459,6 +459,26 @@ fn position_notes(key: usize, pos: u8) -> Vec<i32> {
 
 /// Where the notes of a chord (or a single note) are played in a position: a (string, fret) each, every note on its
 /// own string, the first finger's frets first.
+/// A line with each note's finger and string written over it, for the position it is read in: one finger per fret
+/// from the position's first fret (0 an open string), the string numbered 1 (high E) to 6 (low E).
+fn with_fingering(r: &Reading) -> Reading {
+    let mut out = r.clone();
+    let first = if r.pos == 0 { 1 } else { r.pos as i32 };
+    for b in &mut out.bars {
+        for n in &mut b.notes {
+            if n.heads.len() != 1 {
+                continue;
+            }
+            if let Some(Some((s, f))) = finger_all(&[n.heads[0].midi], r.pos).first() {
+                let finger = if *f == 0 { 0 } else { (*f as i32 - first + 1).clamp(1, 4) };
+                n.marks.fingers = finger.to_string();
+                n.marks.string = 6 - *s as u8;
+            }
+        }
+    }
+    out
+}
+
 fn finger_all(midis: &[i32], pos: u8) -> Vec<Option<(usize, u8)>> {
     let (lo, hi) = window(pos);
     let core = |f: u8| if pos == 0 { f <= 3 } else { f >= pos && f <= pos + 3 };
@@ -1173,6 +1193,11 @@ fn draw_score_at(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], t
     }
 }
 
+thread_local! {
+    /// the book's marks on show (fingers, strings, pick strokes, accents, words); MARKS turns them off
+    static SHOW_MARKS: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
 /// The marks printed with a note: words and the pick stroke, finger and string over it (`ceil` is the top of the
 /// note and its stem), accents and staccato by the head away from the stem, a fermata on top, and slurs.
 #[allow(clippy::too_many_arguments)]
@@ -1189,6 +1214,9 @@ fn draw_marks(
     slur_from: &mut Option<(f32, f32)>,
     col: Color32,
 ) {
+    if !SHOW_MARKS.with(|s| s.get()) {
+        return;
+    }
     let m = &n.marks;
     let ink = pal().ink;
     // stacked upwards from over the staff (or the note, if higher)
@@ -1210,15 +1238,16 @@ fn draw_marks(
             y -= g;
         }
     }
+    // the finger (a plain number), then the string over it (a number in a circle), each in its own space
     if n.heads.len() <= 1 && !m.fingers.is_empty() && m.fingers != "x" {
-        ptext(p, Pos2::new(cx, y - 7.0), Align::Center, &m.fingers, 0.8, pal().ink2);
-        y -= 10.0;
+        ptext(p, Pos2::new(cx, y - 6.0), Align::Center, &m.fingers, 0.8, pal().ink2);
+        y -= 13.0;
     }
     if m.string > 0 {
-        let c = Pos2::new(cx, y - 6.0);
-        p.circle_stroke(c, 5.0, Stroke::new(1.0_f32, pal().ink2));
-        ptext(p, Pos2::new(c.x, c.y - 4.0), Align::Center, &m.string.to_string(), 0.7, pal().ink2);
-        y -= 13.0;
+        let c = Pos2::new(cx, y - 7.0);
+        p.circle_stroke(c, 6.0, Stroke::new(1.0_f32, pal().ink2));
+        ptext(p, c, Align::Center, &m.string.to_string(), 0.7, pal().ink2);
+        y -= 16.0;
     }
     if m.pick != 0 {
         let (l, r, t0, b0) = (cx - 4.0, cx + 4.0, y - 9.0, y - 2.0);
@@ -1474,6 +1503,14 @@ impl App {
             if retro_btn(ui, "NOTE NAMES", self.rd_names).clicked() {
                 self.rd_names = !self.rd_names;
             }
+            if self.rd_mode == 0
+                && retro_btn(ui, "MARKS", self.rd_marks)
+                .tip("The book's markings: fingers (plain numbers, 0 = open), strings (numbers in circles), pick strokes, accents, words")
+                .clicked()
+            {
+                self.rd_marks = !self.rd_marks;
+            }
+            SHOW_MARKS.with(|s| s.set(self.rd_marks));
             // magnify the music (ctrl + the mouse wheel over the page does it too)
             ui.add_space(10.0);
             crate::views::label(ui, "ZOOM", 44.0);
@@ -1740,8 +1777,19 @@ impl App {
         });
         let Some(line) = self.rd_line.clone() else { return };
         self.rd_controls(ui, &line, None);
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "FINGERING", self.rd_fingering)
+                .tip("Over each note: the finger in this position (0 = open string) and the string, in a circle")
+                .clicked()
+            {
+                self.rd_fingering = !self.rd_fingering;
+            }
+        });
+        // only the fingering is marked on a made-up line
+        SHOW_MARKS.with(|s| s.set(self.rd_fingering));
+        let shown = if self.rd_fingering { with_fingering(&line) } else { line };
         let lit = self.rd_lit(ui);
-        draw_reading(ui, &line, lit, self.rd_tab, self.rd_names, self.rd_zoom);
+        draw_reading(ui, &shown, lit, self.rd_tab, self.rd_names, self.rd_zoom);
         crate::views::dim_line(ui, "PLAY ALONG TO THE END TO COUNT A LINE", 1.0, pal().dim);
     }
 
@@ -1848,6 +1896,19 @@ mod tests {
                     assert_eq!((notes.last().unwrap() - tonic).rem_euclid(12), 0, "ends home");
                     assert!(!r.bars[0].notes[0].heads.is_empty(), "starts on a note");
                 }
+            }
+        }
+    }
+
+    /// Made-up lines in a position get a finger (1-4 inside the position, 0 open) and a string on every note.
+    #[test]
+    fn made_up_fingering() {
+        for pos in [0u8, 2, 5] {
+            let r = with_fingering(&make_line(42, 0, pos, 2, 8, 4));
+            for n in r.bars.iter().flat_map(|b| &b.notes).filter(|n| !n.heads.is_empty()) {
+                let f: i32 = n.marks.fingers.parse().unwrap_or(-1);
+                assert!((0..=4).contains(&f), "pos {} finger {:?}", pos, n.marks.fingers);
+                assert!((1..=6).contains(&n.marks.string), "pos {} string {}", pos, n.marks.string);
             }
         }
     }

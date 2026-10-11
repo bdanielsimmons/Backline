@@ -1451,9 +1451,11 @@ impl App {
             let tidal = self.ext_of(tr.id).is_none();
             let link = track_link(tr, self.ext_of(tr.id).as_ref());
             let tr = tr.clone();
+            let liked = self.liked.contains(&tr.id);
             h.context_menu(|ui| {
                 crate::player_win::queue_moves(ui, acts, i, cur);
-                goto_items(ui, acts, &tr, tidal);
+                // the same as every song's menu: album / artist, My Tracks, tunes, playlists (Backline and Tidal)
+                crate::song_items(ui, acts, &tr, liked, tidal, true);
                 link_item(ui, acts, link.clone());
                 if menu_item(ui, "Remove from the queue") {
                     acts.push(Action::Remove(i));

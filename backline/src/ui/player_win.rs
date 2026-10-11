@@ -161,8 +161,9 @@ impl App {
         if let Some(t) = track.as_ref().filter(|t| self.ext_of(t.id).is_none()) {
             let t = (*t).clone();
             let tr = ui.interact(tb, ui.id().with("title_menu"), Sense::click());
-            tr.tip("Right-click: go to the album, the artist or the track radio, or see the credits").context_menu(|ui| {
-                goto_items(ui, acts, &t, true);
+            let liked = self.liked.contains(&t.id);
+            tr.tip("Right-click: album, artist, radio, credits, My Tracks, playlists").context_menu(|ui| {
+                crate::song_items(ui, acts, &t, liked, true, true);
             });
         }
 

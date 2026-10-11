@@ -336,7 +336,7 @@ impl App {
 
                         section_header(ui, "QUEUE");
                         if check_box(ui, "A QUEUED SONG LEAVES THE QUEUE ONCE IT HAS PLAYED", self.q_drop)
-                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE drop out after playing to the end (skipping one keeps it). Off: they stay")
+                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE drop out once they have played or you skip on past them. The playlist's own songs always stay. Off: they stay")
                             .clicked()
                         {
                             self.q_drop = !self.q_drop;
