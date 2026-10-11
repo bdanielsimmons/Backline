@@ -142,7 +142,9 @@ pub fn file_art(path: &Path) -> Option<Vec<u8>> {
 pub fn reveal(path: &str) {
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path)).spawn();
+        use std::os::windows::process::CommandExt;
+        let path = path.replace('/', "\\");
+        let _ = std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path)).spawn();
     }
     #[cfg(target_os = "macos")]
     {

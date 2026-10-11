@@ -2644,7 +2644,9 @@ impl App {
             // song names in any language: the system's own fonts take any character the others lack (accented
             // Latin, Greek and Cyrillic, Japanese, Chinese, Korean, symbols)
             for (name, bytes) in font::system_fallbacks() {
-                fonts.font_data.insert(name.clone(), egui::FontData::from_owned(bytes));
+                // sit its letters on the same baseline as Chakra Petch's
+                let tweak = font::baseline_tweak(include_bytes!("../assets/ChakraPetch-Regular.ttf"), &bytes);
+                fonts.font_data.insert(name.clone(), egui::FontData::from_owned(bytes).tweak(tweak));
                 for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
                     if let Some(f) = fonts.families.get_mut(&fam) {
                         f.push(name.clone());
@@ -4809,7 +4811,9 @@ impl eframe::App for App {
             }
 
             if self.mini {
-                egui::CentralPanel::default().frame(panel_frame()).show(ctx, |ui| self.player_window(ui, &mut acts));
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none().fill(pal().app_bg))
+                    .show(ctx, |ui| self.player_window(ui, &mut acts));
             } else if self.art_view {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(pal().app_bg))

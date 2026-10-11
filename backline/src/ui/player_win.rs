@@ -4,8 +4,15 @@ use super::*;
 
 impl App {
     pub(crate) fn player_window(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let inner = ui.max_rect();
-        window_deco(ui, inner, "PLAYER");
+        // mini: just the deck, no window around it, with the chips on a strip along the top
+        let inner = if self.mini {
+            let r = ui.max_rect();
+            Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.min.y + 26.0), Pos2::new(r.max.x - 4.0, r.max.y - 4.0))
+        } else {
+            let r = ui.max_rect();
+            window_deco(ui, r, "PLAYER");
+            r
+        };
         let s = (inner.width() / 300.0).min(inner.height() / 138.0).max(0.5);
         let ox = inner.min.x + (inner.width() - 300.0 * s) / 2.0;
         let oy = inner.min.y + (inner.height() - 138.0 * s) / 2.0;
@@ -25,7 +32,7 @@ impl App {
         // ---- mode switch and window chips on the title line
         {
             let chip_h = 16.0;
-            let ty = inner.min.y - 18.0 - chip_h / 2.0;
+            let ty = if self.mini { inner.min.y - 22.0 } else { inner.min.y - 18.0 - chip_h / 2.0 };
             let mut right = inner.max.x - 8.0;
             let mut place = |w: f32| {
                 let r = Rect::from_min_size(Pos2::new(right - w, ty), Vec2::new(w, chip_h));

@@ -641,3 +641,20 @@ mod script_tests {
         }
     }
 }
+
+/// A fallback font's letters sit where egui puts them by that font's own height, so ones with tall line spacing
+/// (Japanese, Chinese) ride high next to the main font. This moves them onto the main font's baseline.
+pub fn baseline_tweak(main: &[u8], other: &[u8]) -> egui::FontTweak {
+    use ab_glyph::{Font, FontRef, ScaleFont};
+    let m = |b: &[u8]| {
+        FontRef::try_from_slice(b).ok().map(|f| {
+            let s = f.as_scaled(1.0);
+            (s.ascent(), s.line_gap())
+        })
+    };
+    match (m(main), m(other)) {
+        // egui: baseline = ascent + (main height - this height) / 2; heights are 1 + line gap at this scale
+        (Some((am, gm)), Some((ao, go))) => egui::FontTweak { y_offset_factor: am - ao - 0.5 * (gm - go), ..Default::default() },
+        _ => egui::FontTweak::default(),
+    }
+}

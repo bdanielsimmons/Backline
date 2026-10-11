@@ -1116,14 +1116,31 @@ pub(crate) fn sans_width(text: &str, size: f32) -> f32 {
     PIX.with(|c| {
         let c = c.borrow();
         match c.as_ref() {
-            Some(pf) if pf.covers(text) => {
-                let ppp = font::ppp();
-                pf.width_at(text, pf.screen_px(size, ppp)) / ppp
-            }
-            Some(_) => font::smooth_w(text, size),
+            Some(pf) => mixed_w(pf, text, size),
             None => text.chars().count() as f32 * size * 0.5,
         }
     })
+}
+
+/// Split text into runs the skin's font can draw (true) and runs it can't (false).
+fn runs(pf: &PixFont, text: &str) -> Vec<(bool, String)> {
+    let mut out: Vec<(bool, String)> = Vec::new();
+    let mut buf = [0u8; 4];
+    for ch in text.chars() {
+        let ok = pf.covers(ch.encode_utf8(&mut buf));
+        match out.last_mut() {
+            Some((k, s)) if *k == ok || ch.is_whitespace() => s.push(ch),
+            _ => out.push((ok, ch.to_string())),
+        }
+    }
+    out
+}
+
+/// Width of a line drawn in the skin's font, with the characters it lacks in the smooth font.
+fn mixed_w(pf: &PixFont, text: &str, size: f32) -> f32 {
+    let ppp = font::ppp();
+    let spx = pf.screen_px(size, ppp);
+    runs(pf, text).iter().map(|(ok, s)| if *ok { pf.width_at(s, spx) / ppp } else { font::smooth_w(s, size) }).sum()
 }
 
 /// One line in the playlist font, cut with "..." to `max_w`; `pos` is the left / centre / right middle point and
@@ -1132,11 +1149,40 @@ pub(crate) fn sans_text(p: &egui::Painter, pos: Pos2, align: Align, text: &str, 
     let drawn = PIX.with(|c| {
         let mut c = c.borrow_mut();
         let pf = c.as_mut()?;
-        // characters the skin's font lacks: the smooth font below (it falls back to the system's fonts)
-        if !pf.covers(text) {
-            return None;
-        }
         let ppp = font::ppp();
+        // characters the skin's font lacks (Japanese, ...): only those in the smooth font, the rest stays the skin's
+        if !pf.covers(text) {
+            let mut s = text.to_string();
+            if mixed_w(pf, &s, size) > max_w {
+                while !s.is_empty() && mixed_w(pf, &format!("{}\u{2026}", s), size) > max_w {
+                    s.pop();
+                }
+                s = format!("{}\u{2026}", s.trim_end());
+            }
+            let w = mixed_w(pf, &s, size);
+            let mut x = match align {
+                Align::Min => pos.x,
+                Align::Center => pos.x - w / 2.0,
+                Align::Max => pos.x - w,
+            };
+            let spx = pf.screen_px(size, ppp);
+            let snap = |v: f32| (v * ppp).round() / ppp;
+            for (ok, run) in runs(pf, &s) {
+                if ok {
+                    let (tex, sz) = pf.line(p.ctx(), &run, spx);
+                    let (rw, rh) = (sz.x / ppp, sz.y / ppp);
+                    let r = Rect::from_min_size(Pos2::new(snap(x), snap(pos.y - rh / 2.0)), Vec2::new(rw, rh));
+                    p.image(tex, r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), col);
+                    x += rw;
+                } else {
+                    let g = p.layout_no_wrap(run, egui::FontId::proportional(size), col);
+                    let gw = g.size().x;
+                    p.galley(Pos2::new(snap(x), snap(pos.y - g.size().y / 2.0)), g, col);
+                    x += gw;
+                }
+            }
+            return Some(w);
+        }
         let spx = pf.screen_px(size, ppp);
         let mut s = text.to_string();
         if pf.width_at(&s, spx) / ppp > max_w {
