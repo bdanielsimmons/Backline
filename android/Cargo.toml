@@ -19,6 +19,14 @@ base64 = "0.22"
 dirs = "5"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "isomp4", "flac", "mp3", "alac", "pcm", "wav", "ogg", "vorbis"] }
 webbrowser = "1"
+# YT: YouTube's own API from Rust (yt-dlp needs Python, which a phone doesn't have)
+rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# the clipboard (PASTE) through Android's own API
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
 
 [package.metadata.android]
 package = "com.v9studio.backline"

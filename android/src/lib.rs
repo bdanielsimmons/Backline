@@ -31,6 +31,10 @@ enum Msg {
     Liked(Result<Vec<Track>, String>),
     Lists(Result<Vec<Card>, String>),
     ListTracks(String, Result<Vec<Track>, String>),
+    /// YT: clips read from a link (a video, or a playlist's videos)
+    YtAdded(Result<Vec<YtItem>, String>),
+    /// YT: a playlist with this many videos - ask before adding them all (link, name, count)
+    YtAsk(String, String, u64),
     /// the song's audio, and its length when the file had to tell us (0: the track already knows)
     Audio(u64, Result<(Vec<u8>, f32, Vec<u8>), String>),
 }
@@ -97,6 +101,28 @@ struct App {
     tr_root: i32,
     tr_q: usize,
     tr_set: usize,
+    /// the metronome (the desktop's own click), on since when (for the beat lights)
+    metro: band::Metro,
+    metro_since: Option<std::time::Instant>,
+    /// YT: the clips added, the link being typed, a big playlist waiting for a yes
+    yt: Vec<YtItem>,
+    yt_link: String,
+    yt_ask: Option<(String, String, u64)>,
+}
+
+/// A YouTube clip in the YT list.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct YtItem {
+    vid: String,
+    title: String,
+    channel: String,
+    secs: f32,
+}
+
+impl YtItem {
+    fn track(&self) -> Track {
+        Track { id: yt_id(&self.vid), title: self.title.clone(), artist: self.channel.clone(), duration: self.secs, ..Default::default() }
+    }
 }
 
 impl App {
@@ -162,6 +188,11 @@ impl App {
             tr_root: 0,
             tr_q: 0,
             tr_set: 0,
+            metro: band::Metro::default(),
+            metro_since: None,
+            yt: load_json("yt.json"),
+            yt_link: String::new(),
+            yt_ask: None,
         }
     }
 
@@ -191,6 +222,19 @@ impl App {
         self.sync_loop();
         self.player.send(Cmd::Stop);
         self.wave.clear();
+        // a YouTube clip: its audio (kept, so it plays again without the internet)
+        if let Some(vid) = self.yt.iter().find(|y| yt_id(&y.vid) == t.id).map(|y| y.vid.clone()) {
+            self.spawn(move |_| {
+                Msg::Audio(
+                    g,
+                    yt_audio(&vid).map(|b| {
+                        let (d, w) = wave(&b);
+                        (b, d, w)
+                    }),
+                )
+            });
+            return;
+        }
         // a song on the phone: read it (and how long it is); a Tidal one: fetched
         if let Some(path) = self.files.iter().find(|f| f.0.id == t.id).map(|f| f.1.clone()) {
             self.spawn(move |_| {
@@ -288,6 +332,27 @@ impl App {
                         Err(e) => self.note = format!("Couldn't open {}: {}", name, e),
                     }
                 }
+                Msg::YtAdded(r) => {
+                    self.busy = false;
+                    match r {
+                        Ok(items) => {
+                            let n = items.len();
+                            for it in items {
+                                if !self.yt.iter().any(|y| y.vid == it.vid) {
+                                    self.yt.push(it);
+                                }
+                            }
+                            save_json("yt.json", &self.yt);
+                            self.yt_link.clear();
+                            self.note = format!("Added {} from YouTube", n);
+                        }
+                        Err(e) => self.note = format!("YouTube: {}", e),
+                    }
+                }
+                Msg::YtAsk(link, name, n) => {
+                    self.busy = false;
+                    self.yt_ask = Some((link, name, n));
+                }
                 Msg::Audio(g, r) if g == self.gen => {
                     self.loading = false;
                     match r {
@@ -350,8 +415,8 @@ impl App {
     }
 
     fn library_ui(&mut self, ui: &mut egui::Ui) {
-        ui.columns(2, |c| {
-            for (k, name) in ["TIDAL", "FILES"].into_iter().enumerate() {
+        ui.columns(3, |c| {
+            for (k, name) in ["TIDAL", "FILES", "YT"].into_iter().enumerate() {
                 if c[k].add_sized(Vec2::new(c[k].available_width(), 40.0), egui::SelectableLabel::new(self.lib_tab == k as u8, name)).clicked() {
                     self.lib_tab = k as u8;
                     if k == 1 {
@@ -362,6 +427,10 @@ impl App {
         });
         if self.lib_tab == 1 {
             self.files_ui(ui);
+            return;
+        }
+        if self.lib_tab == 2 {
+            self.yt_ui(ui);
             return;
         }
         if !self.logged_in {
@@ -487,6 +556,124 @@ impl App {
         }
     }
 
+    /// YT: paste a YouTube link (a video or a playlist) and its audio plays like any song.
+    fn yt_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.yt_link).hint_text("A YouTube link").desired_width(ui.available_width() - 170.0));
+            if ui.button("PASTE").clicked() {
+                if let Some(s) = clipboard() {
+                    self.yt_link = s.trim().to_string();
+                }
+            }
+            if ui.button("ADD").clicked() && !self.busy {
+                self.yt_add(self.yt_link.trim().to_string(), None);
+            }
+        });
+        if self.busy {
+            ui.spinner();
+        }
+        // a big playlist: only with a yes
+        if let Some((link, name, n)) = self.yt_ask.clone() {
+            ui.label(RichText::new(format!("\"{}\" has {} videos.", name, n)).strong());
+            ui.horizontal(|ui| {
+                if ui.button(format!("ADD ALL {}", n)).clicked() {
+                    self.yt_ask = None;
+                    self.yt_add(link.clone(), Some(n as usize));
+                }
+                if ui.button("FIRST 25").clicked() {
+                    self.yt_ask = None;
+                    self.yt_add(link.clone(), Some(25));
+                }
+                if ui.button("CANCEL").clicked() {
+                    self.yt_ask = None;
+                }
+            });
+        }
+        if self.yt.is_empty() {
+            ui.label(RichText::new("Copy a link in the YouTube app (Share > Copy link), then PASTE and ADD.").weak());
+            return;
+        }
+        let mut play = None;
+        let mut drop = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            for (i, y) in self.yt.iter().enumerate() {
+                let t = y.track();
+                let r = track_row(ui, &t, self.cur_track().map(|c| c.id) == Some(t.id));
+                if r.clicked() {
+                    play = Some(i);
+                }
+                // hold a clip to take it off the list
+                if r.long_touched() || r.secondary_clicked() {
+                    drop = Some(i);
+                }
+            }
+        });
+        if let Some(i) = drop {
+            self.yt.remove(i);
+            save_json("yt.json", &self.yt);
+            self.note = "Taken off the list".to_string();
+        } else if let Some(i) = play {
+            self.queue = self.yt.iter().map(|y| y.track()).collect();
+            self.play(i);
+        }
+    }
+
+    /// Read a link: a video is added; a playlist is added up to `limit` videos, asking first when it is big.
+    fn yt_add(&mut self, link: String, limit: Option<usize>) {
+        if link.is_empty() {
+            return;
+        }
+        self.busy = true;
+        self.spawn(move |_| {
+            let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+                Ok(r) => r,
+                Err(e) => return Msg::YtAdded(Err(e.to_string())),
+            };
+            rt.block_on(async move {
+                let rp = match yt_client() {
+                    Ok(r) => r,
+                    Err(e) => return Msg::YtAdded(Err(e)),
+                };
+                if let Some(list) = list_id(&link) {
+                    let mut pl = match rp.query().playlist(&list).await {
+                        Ok(p) => p,
+                        Err(e) => return Msg::YtAdded(Err(e.to_string())),
+                    };
+                    let n = pl.video_count;
+                    let Some(limit) = limit.or((n <= 25).then_some(25)) else {
+                        return Msg::YtAsk(link.clone(), pl.name.clone(), n);
+                    };
+                    let _ = pl.videos.extend_limit(rp.query(), limit).await;
+                    let items = pl
+                        .videos
+                        .items
+                        .iter()
+                        .take(limit)
+                        .map(|v| YtItem {
+                            vid: v.id.clone(),
+                            title: v.name.clone(),
+                            channel: v.channel.as_ref().map(|c| c.name.clone()).unwrap_or_default(),
+                            secs: v.duration.unwrap_or(0) as f32,
+                        })
+                        .collect();
+                    return Msg::YtAdded(Ok(items));
+                }
+                let Some(vid) = video_id(&link) else {
+                    return Msg::YtAdded(Err("that doesn't look like a YouTube link".to_string()));
+                };
+                match rp.query().player(&vid).await {
+                    Ok(p) => Msg::YtAdded(Ok(vec![YtItem {
+                        vid,
+                        title: p.details.name.clone().unwrap_or_default(),
+                        channel: p.details.channel_name.clone().unwrap_or_default(),
+                        secs: p.details.duration as f32,
+                    }])),
+                    Err(e) => Msg::YtAdded(Err(e.to_string())),
+                }
+            })
+        });
+    }
+
     fn files_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("LOOK AGAIN").clicked() {
             self.scan_files();
@@ -511,8 +698,10 @@ impl App {
 
     fn player_ui(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.cur_track().cloned() else {
-            ui.add_space(80.0);
+            ui.add_space(30.0);
             ui.vertical_centered(|ui| ui.label(RichText::new("Pick a song in the library").weak()));
+            ui.add_space(30.0);
+            self.metro_ui(ui);
             return;
         };
         ui.add_space(20.0);
@@ -687,18 +876,13 @@ impl App {
                 };
             }
             ui.label(format!("{:.0} BPM", self.bpm));
-            // tap the tempo in
             if ui.button("TAP").clicked() {
-                let now = std::time::Instant::now();
-                self.taps.retain(|x| now.duration_since(*x).as_secs_f32() < 3.0);
-                self.taps.push(now);
-                if self.taps.len() >= 2 {
-                    let span = now.duration_since(self.taps[0]).as_secs_f32();
-                    self.bpm = (60.0 * (self.taps.len() - 1) as f32 / span).clamp(30.0, 300.0).round();
-                }
+                self.tap();
             }
         });
         self.player.ctl.set_count_in(self.count_in, self.bpm);
+        ui.separator();
+        self.metro_ui(ui);
         // bookmarks
         ui.separator();
         ui.label(RichText::new("BOOKMARKS").strong());
@@ -882,6 +1066,94 @@ impl App {
         }
     }
 
+    /// Tap the tempo in: the beats tapped in the last few seconds set it.
+    fn tap(&mut self) {
+        let now = std::time::Instant::now();
+        self.taps.retain(|x| now.duration_since(*x).as_secs_f32() < 3.0);
+        self.taps.push(now);
+        if self.taps.len() >= 2 {
+            let span = now.duration_since(self.taps[0]).as_secs_f32();
+            self.bpm = (60.0 * (self.taps.len() - 1) as f32 / span).clamp(30.0, 300.0).round();
+        }
+    }
+
+    /// The metronome sounds as set (or stops), from the top of the bar.
+    fn metro_apply(&mut self) {
+        if self.metro.on {
+            let body = band::click_loop(&self.metro, self.bpm);
+            self.player.send(Cmd::Pcm(0, Vec::new(), body, 0.8));
+            self.metro_since = Some(std::time::Instant::now());
+        } else {
+            self.player.send(Cmd::Pcm(0, Vec::new(), Vec::new(), 0.0));
+            self.metro_since = None;
+        }
+    }
+
+    /// METRONOME: on / off, the tempo (with TAP), beats in a bar, the subdivision, and a light for each beat.
+    fn metro_ui(&mut self, ui: &mut egui::Ui) {
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("METRONOME").strong());
+            if ui.add_sized(Vec2::new(70.0, 44.0), egui::SelectableLabel::new(self.metro.on, if self.metro.on { "ON" } else { "OFF" })).clicked() {
+                self.metro.on = !self.metro.on;
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            for (s, d) in [("-5", -5.0), ("-1", -1.0)] {
+                if ui.button(s).clicked() {
+                    self.bpm = (self.bpm + d).clamp(30.0, 300.0);
+                    changed = true;
+                }
+            }
+            ui.add_sized(Vec2::new(70.0, 44.0), egui::Label::new(RichText::new(format!("{:.0}", self.bpm)).size(24.0).strong()));
+            for (s, d) in [("+1", 1.0), ("+5", 5.0)] {
+                if ui.button(s).clicked() {
+                    self.bpm = (self.bpm + d).clamp(30.0, 300.0);
+                    changed = true;
+                }
+            }
+            if ui.button("TAP").clicked() {
+                self.tap();
+                changed = true;
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label("BEATS");
+            for n in 2..=7u32 {
+                if ui.add_sized(Vec2::new(36.0, 40.0), egui::SelectableLabel::new(self.metro.beats == n, n.to_string())).clicked() {
+                    self.metro.beats = n;
+                    changed = true;
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            for (k, name) in ["BEATS ONLY", "8THS", "TRIPLETS", "16THS"].into_iter().enumerate() {
+                if ui.selectable_label(self.metro.sub == k as u8, name).clicked() {
+                    self.metro.sub = k as u8;
+                    changed = true;
+                }
+            }
+        });
+        // a light for each beat of the bar, the one sounding lit
+        let n = self.metro.beats.clamp(1, 32) as usize;
+        let lit = self.metro_since.map(|s| (s.elapsed().as_secs_f32() * self.bpm / 60.0) as usize % n);
+        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+        let step = (r.width() / n as f32).min(60.0);
+        for k in 0..n {
+            let c = egui::pos2(r.min.x + step * (k as f32 + 0.5), r.center().y);
+            let on = lit == Some(k);
+            let col = if on && k == 0 { Color32::from_rgb(230, 80, 80) } else if on { Color32::WHITE } else { Color32::from_gray(70) };
+            ui.painter().circle_filled(c, 12.0, col);
+        }
+        if self.metro.on {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
+        }
+        if changed {
+            self.metro_apply();
+        }
+    }
+
     /// While browsing: the song playing, small, along the bottom; tap it for the player.
     fn now_bar(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.cur_track().cloned() else { return };
@@ -1018,6 +1290,128 @@ fn wave(bytes: &[u8]) -> (f32, Vec<u8>) {
     (dur, peaks)
 }
 
+/// A YouTube clip's track number (its own range, apart from Tidal's and the files').
+fn yt_id(vid: &str) -> i64 {
+    -(1 + (hash(&format!("yt:{}", vid)) & 0x7fff_ffff_ffff) as i64) - 0x1_0000_0000_0000
+}
+
+/// The video in a link: watch?v=, youtu.be/, shorts/, or the bare 11-letter id.
+fn video_id(link: &str) -> Option<String> {
+    let l = link.trim();
+    let take = |s: &str| -> Option<String> {
+        let id: String = s.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+        (id.len() == 11).then_some(id)
+    };
+    for key in ["v=", "youtu.be/", "shorts/", "embed/", "live/"] {
+        if let Some(i) = l.find(key) {
+            return take(&l[i + key.len()..]);
+        }
+    }
+    take(l)
+}
+
+/// The playlist in a link (list=...), when it is only a playlist (a video in a playlist is the video).
+fn list_id(link: &str) -> Option<String> {
+    if link.contains("v=") || link.contains("youtu.be/") {
+        return None;
+    }
+    let i = link.find("list=")?;
+    let id: String = link[i + 5..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    (!id.is_empty()).then_some(id)
+}
+
+fn yt_client() -> Result<rustypipe::client::RustyPipe, String> {
+    let dir = api::config_dir().join("yt_client");
+    let _ = std::fs::create_dir_all(&dir);
+    rustypipe::client::RustyPipe::builder().storage_dir(dir).build().map_err(|e| e.to_string())
+}
+
+/// A clip's audio (AAC in an m4a, which the player reads), fetched once and kept.
+fn yt_audio(vid: &str) -> Result<Vec<u8>, String> {
+    let dir = api::config_dir().join("yt");
+    let file = dir.join(format!("{}.m4a", vid));
+    if let Ok(b) = std::fs::read(&file) {
+        return Ok(b);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?;
+    let stream = rt.block_on(async {
+        let rp = yt_client()?;
+        let p = rp.query().player(vid).await.map_err(|e| e.to_string())?;
+        p.audio_streams
+            .iter()
+            .filter(|s| s.format == rustypipe::model::AudioFormat::M4a)
+            .max_by_key(|s| s.bitrate)
+            .map(|s| (s.url.clone(), s.size))
+            .ok_or_else(|| "no audio this phone can play".to_string())
+    })?;
+    // in pieces: YouTube slows down one long download
+    let http = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build().map_err(|e| e.to_string())?;
+    let (url, size) = stream;
+    let mut out: Vec<u8> = Vec::with_capacity(size as usize);
+    let piece = 4 * 1024 * 1024u64;
+    let mut at = 0u64;
+    while at < size.max(1) {
+        let end = (at + piece - 1).min(size.saturating_sub(1));
+        let b = http
+            .get(&url)
+            .header("Range", format!("bytes={}-{}", at, end))
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.bytes())
+            .map_err(|e| e.to_string())?;
+        if b.is_empty() {
+            break;
+        }
+        at += b.len() as u64;
+        out.extend_from_slice(&b);
+        if size == 0 {
+            break;
+        }
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(&file, &out);
+    Ok(out)
+}
+
+/// What is on the phone's clipboard (PASTE), through Android's ClipboardManager.
+fn clipboard() -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        use jni::objects::{JObject, JString};
+        let ctx = ndk_context::android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+        let mut env = vm.attach_current_thread().ok()?;
+        let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let name = env.new_string("clipboard").ok()?;
+        let cm = env.call_method(&activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[(&name).into()]).ok()?.l().ok()?;
+        let clip = env.call_method(&cm, "getPrimaryClip", "()Landroid/content/ClipData;", &[]).ok()?.l().ok()?;
+        if clip.is_null() {
+            return None;
+        }
+        let item = env.call_method(&clip, "getItemAt", "(I)Landroid/content/ClipData$Item;", &[0i32.into()]).ok()?.l().ok()?;
+        let text = env.call_method(&item, "getText", "()Ljava/lang/CharSequence;", &[]).ok()?.l().ok()?;
+        if text.is_null() {
+            return None;
+        }
+        let s = env.call_method(&text, "toString", "()Ljava/lang/String;", &[]).ok()?.l().ok()?;
+        let s: String = env.get_string(&JString::from(s)).ok()?.into();
+        return Some(s);
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+fn load_json<T: serde::de::DeserializeOwned + Default>(name: &str) -> T {
+    std::fs::read_to_string(api::config_dir().join(name)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+fn save_json<T: serde::Serialize>(name: &str, v: &T) {
+    let _ = std::fs::create_dir_all(api::config_dir());
+    if let Ok(s) = serde_json::to_string(v) {
+        let _ = std::fs::write(api::config_dir().join(name), s);
+    }
+}
+
 fn marks_file() -> std::path::PathBuf {
     api::config_dir().join("bookmarks.json")
 }
@@ -1126,4 +1520,28 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
         ..Default::default()
     };
     let _ = eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc)))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn links() {
+        assert_eq!(video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1").as_deref(), Some("dQw4w9WgXcQ"));
+        assert_eq!(video_id("https://youtu.be/dQw4w9WgXcQ?si=x").as_deref(), Some("dQw4w9WgXcQ"));
+        assert_eq!(list_id("https://youtube.com/playlist?list=PLabc_-1").as_deref(), Some("PLabc_-1"));
+        assert_eq!(list_id("https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc"), None);
+    }
+
+    /// Online: fetches a clip's audio (nothing plays). cargo test -- --ignored
+    #[test]
+    #[ignore]
+    fn yt_fetch() {
+        let dir = std::env::temp_dir().join("backline_yt_test");
+        std::env::set_var("BACKLINE_HOME", &dir);
+        let b = yt_audio("jNQXAC9IVRw").expect("audio");
+        let (d, w) = wave(&b);
+        assert!(d > 10.0 && !w.is_empty(), "{} s", d);
+    }
 }
