@@ -211,21 +211,6 @@ pub(crate) fn piano_marked(ui: &mut egui::Ui, w: f32, marks: &[(i32, Color32)], 
     }
 }
 
-/// The notes of a cluster over a bass, climbing from the bass (for the piano and the staff).
-fn stacked(bass: i32, pcs: &[i32]) -> Vec<i32> {
-    let mut out = vec![48 + bass.rem_euclid(12)];
-    let mut last = out[0];
-    for pc in pcs {
-        let mut m = 48 + pc.rem_euclid(12);
-        while m <= last {
-            m += 12;
-        }
-        out.push(m);
-        last = m;
-    }
-    out
-}
-
 impl App {
     fn cl_gap(&self) -> i32 {
         if self.cl_semi {
@@ -513,10 +498,32 @@ impl App {
         );
         ui.add_space(6.0);
         let col = self.cl_col();
-        let notes = stacked(bass, &pair);
-        let marks: Vec<(i32, Color32)> = vec![(notes[0], CL_BASS), (notes[1], col), (notes[2], col)];
+        // each in its own place: the bass in the low octave, the cluster in the high one, so walking one leaves the
+        // other where it is
+        let mut lo = 60 + pair[0].rem_euclid(12);
+        let span = (pair[1] - pair[0]).rem_euclid(12);
+        if lo + span > 71 {
+            lo -= 12;
+        }
+        let marks: Vec<(i32, Color32)> = vec![(48 + bass.rem_euclid(12), CL_BASS), (lo, col), (lo + span, col)];
         piano_marked(ui, ui.available_width().min(420.0), &marks, sharps);
         ui.add_space(8.0);
+        if Self::fits(bass, &pair) == 0 {
+            para(
+                ui,
+                &format!(
+                    "No scale holds {} and {} over {}: as the {} and {} of a chord on {} they rub against it rather than colour it. It can still be played as a passing sound, but no chord name fits it.",
+                    n(pair[0]),
+                    n(pair[1]),
+                    n(bass),
+                    word(pair[0]).to_lowercase(),
+                    word(pair[1]).to_lowercase(),
+                    n(bass)
+                ),
+                pal().ink2,
+            );
+            return;
+        }
         crate::views::dim_line(ui, "SCALES THAT HOLD IT", 1.0, pal().dim);
         self.scale_options(ui, bass, &pair);
     }
@@ -544,7 +551,7 @@ impl App {
         let col = self.cl_col();
         // the scale on the staff, with its tab
         let notes: Vec<i32> = (0..8).map(|d| 48 + key + scale[d % 7] + if d == 7 { 12 } else { 0 }).collect();
-        crate::lines_ui::line_score(ui, acts, &notes, 8, sharps, None, None);
+        crate::lines_ui::line_score(ui, acts, &notes, 2, sharps, None, None);
         let pairs: Vec<String> = theory::pairs_in(&scale, step)
             .iter()
             .map(|d| {
@@ -641,6 +648,13 @@ impl App {
             self.cl_low = pc;
         }
         let pair = [self.cl_low, (self.cl_low + self.cl_gap()).rem_euclid(12)];
+        // the bass, on its own keyboard: faded keys are basses no scale holds the cluster over
+        let no_fit: Vec<i32> = (0..12).filter(|b| Self::fits(*b, &pair) == 0).collect();
+        if let Some(pc) = self.note_picker(ui, "cl_fc_bass", "THE BASS", self.fc_bass, &[(self.fc_bass, CL_BASS)], &no_fit) {
+            self.fc_bass = pc;
+        }
+        crate::views::dim_line(ui, "FADED KEYS: NO SCALE HOLDS THE CLUSTER OVER THAT BASS", 1.0, pal().dim);
+        ui.add_space(4.0);
         // the walk: every bass under it
         let word = |p: i32, b: i32| theory::degree_word(p, b).split(' ').next().unwrap_or("").to_uppercase();
         let rows: Vec<(String, String, usize, String)> = (0..12)
@@ -651,11 +665,11 @@ impl App {
                 (theory::note_name(b, sharps).to_string(), format!("{} + {}", word(pair[0], b), word(pair[1], b)), fits, chord)
             })
             .collect();
-        let sel = (0..12).find(|k| (pair[0] + 1 - k).rem_euclid(12) == self.cl_bass).unwrap_or(0) as usize;
+        let sel = (0..12).find(|k| (pair[0] + 1 - k).rem_euclid(12) == self.fc_bass).unwrap_or(0) as usize;
         if let Some(k) = Self::walk_table(ui, ["BASS", "THE CLUSTER IS", "FITS", "MAKES"], &rows, sel) {
-            self.cl_bass = (pair[0] + 1 - k as i32).rem_euclid(12);
+            self.fc_bass = (pair[0] + 1 - k as i32).rem_euclid(12);
         }
-        let bass = self.cl_bass;
+        let bass = self.fc_bass;
         self.pair_summary(ui, bass, pair);
         if Self::fits(bass, &pair) > 0 {
             section_header(ui, "VOICINGS");
@@ -673,6 +687,14 @@ impl App {
             self.cl_bass = pc;
         }
         let bass = self.cl_bass;
+        let col = self.cl_col();
+        let fb = [self.fb_low, (self.fb_low + gap).rem_euclid(12)];
+        let no_fit: Vec<i32> = (0..12).filter(|lo| Self::fits(bass, &[*lo, (lo + gap).rem_euclid(12)]) == 0).collect();
+        if let Some(pc) = self.note_picker(ui, "cl_fb_top", "THE CLUSTER", fb[0], &[(fb[0], col), (fb[1], col)], &no_fit) {
+            self.fb_low = pc;
+        }
+        crate::views::dim_line(ui, "FADED KEYS: NO SCALE HOLDS A CLUSTER FROM THERE OVER THIS BASS", 1.0, pal().dim);
+        ui.add_space(4.0);
         let word = |p: i32| theory::degree_word(p, bass).split(' ').next().unwrap_or("").to_uppercase();
         let rows: Vec<(String, String, usize, String)> = (0..12)
             .map(|k| {
@@ -688,11 +710,11 @@ impl App {
                 )
             })
             .collect();
-        let sel = (0..12).find(|k| (bass - 1 + k).rem_euclid(12) == self.cl_low).unwrap_or(0) as usize;
+        let sel = (0..12).find(|k| (bass - 1 + k).rem_euclid(12) == self.fb_low).unwrap_or(0) as usize;
         if let Some(k) = Self::walk_table(ui, ["CLUSTER", "OVER THE BASS IT IS", "FITS", "MAKES"], &rows, sel) {
-            self.cl_low = (bass - 1 + k as i32).rem_euclid(12);
+            self.fb_low = (bass - 1 + k as i32).rem_euclid(12);
         }
-        let pair = [self.cl_low, (self.cl_low + gap).rem_euclid(12)];
+        let pair = [self.fb_low, (self.fb_low + gap).rem_euclid(12)];
         self.pair_summary(ui, bass, pair);
         if Self::fits(bass, &pair) > 0 {
             section_header(ui, "VOICINGS");

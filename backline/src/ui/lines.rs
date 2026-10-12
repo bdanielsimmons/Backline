@@ -16,8 +16,9 @@ pub(crate) const CLEF: [&str; 18] = [
 ];
 
 /// A single-note line written out: a treble staff (guitar music is written an octave above how it sounds) with the
-/// tab under it and the note names under that, `group` notes beamed together, the note at `lit` lit up. Click a
-/// note to hear it.
+/// tab under it and the note names under that, `group` notes to a beat beamed together (1: quarter notes, unbeamed;
+/// 2 and 3 one beam; 4 to 7 two; 8 and up three; a tuplet - 3, 5, 6, 7... - numbered), the note at `lit` lit up.
+/// Click a note to hear it.
 pub(crate) fn line_score(
     ui: &mut egui::Ui,
     acts: &mut Vec<Action>,
@@ -36,7 +37,14 @@ pub(crate) fn line_score(
     let slot = 26.0_f32;
     let left = 44.0_f32;
     let w = ui.available_width().max(240.0);
-    let beam = if group <= 1 { 2 } else { group };
+    let beam = group.max(1);
+    let beams = match beam {
+        1 => 0,
+        2 | 3 => 1,
+        4..=7 => 2,
+        _ => 3,
+    };
+    let tuplet = !beam.is_power_of_two();
     let mut per = (((w - left - 12.0) / slot).floor() as usize).max(4);
     // whole beat groups on each row
     if per > beam {
@@ -146,21 +154,31 @@ pub(crate) fn line_score(
                 let col = if lit == Some(i + j) { pal().red } else { pal().ink };
                 p.line_segment([Pos2::new(h.0 + dx, h.1), Pos2::new(h.0 + dx, tip)], Stroke::new(1.3_f32, col));
             }
+            let (a, b) = (grp[0].0 + dx, grp[grp.len() - 1].0 + dx);
             if grp.len() > 1 {
-                let (a, b) = (grp[0].0 + dx, grp[grp.len() - 1].0 + dx);
-                p.rect_filled(
-                    Rect::from_min_max(
-                        Pos2::new(a, tip.min(tip + if up { 3.0 } else { -3.0 })),
-                        Pos2::new(b, tip.max(tip + if up { 3.0 } else { -3.0 })),
-                    ),
-                    0.0,
-                    pal().ink,
-                );
-                if grp.len() == 3 {
-                    // a triplet
-                    let y = if up { tip - 7.0 } else { tip + 7.0 };
-                    ptext(p, Pos2::new((a + b) / 2.0, y), Align::Center, "3", 1.0, pal().ink2);
+                for n in 0..beams {
+                    let y = tip + if up { n as f32 * 5.0 } else { -(n as f32) * 5.0 };
+                    p.rect_filled(
+                        Rect::from_min_max(
+                            Pos2::new(a, y.min(y + if up { 3.0 } else { -3.0 })),
+                            Pos2::new(b, y.max(y + if up { 3.0 } else { -3.0 })),
+                        ),
+                        0.0,
+                        pal().ink,
+                    );
                 }
+            } else if beams > 0 {
+                // a lone note of a beat: its flags
+                for n in 0..beams {
+                    let y = tip + if up { n as f32 * 5.0 } else { -(n as f32) * 5.0 };
+                    let fy = y + if up { 6.0 } else { -6.0 };
+                    p.line_segment([Pos2::new(a, y), Pos2::new(a + 6.0, fy)], Stroke::new(2.0_f32, pal().ink));
+                }
+            }
+            // a whole tuplet gets its number
+            if tuplet && grp.len() == beam {
+                let y = if up { tip - 7.0 } else { tip + 7.0 + 5.0 * (beams.max(1) - 1) as f32 };
+                ptext(p, Pos2::new((a + b) / 2.0, y), Align::Center, &beam.to_string(), 1.0, pal().ink2);
             }
             k = end;
         }
@@ -292,8 +310,17 @@ impl App {
             self.store_dirty = true;
         }
         // changed while it plays: carry on from the note sounding, at the new speed (looping goes on at it too)
-        if self.ln_bpm != before || self.ln_sub != before_sub {
-            if let (Some(i), Some(seq)) = (self.seq_now("line"), self.seq_last.clone()) {
+        let new_line = self.seq_now("line").is_some()
+            && self
+                .seq_last
+                .as_ref()
+                .is_some_and(|s| s.len() != notes.len() || s.iter().zip(notes).any(|(a, b)| a.first() != Some(b)));
+        if self.ln_bpm != before || self.ln_sub != before_sub || new_line {
+            if let (Some(i), Some(_)) = (self.seq_now("line"), self.seq_last.clone()) {
+                // the line as it is now (a changed scale, pattern or direction takes over at once)
+                let seq: Vec<Vec<i32>> = notes.iter().map(|m| vec![*m]).collect();
+                self.seq_last = Some(seq.clone());
+                let i = i.min(seq.len().saturating_sub(1));
                 let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
                 if i < seq.len() {
                     self.player.send(Cmd::StopOnce);
@@ -479,7 +506,7 @@ impl App {
         self.line_player(ui, acts, &notes, &key);
         let lit = self.seq_now("line");
         let tab = tab.iter().all(|x| x.is_some()).then_some(tab);
-        line_score(ui, acts, &notes, line.seq.len(), false, lit, tab);
+        line_score(ui, acts, &notes, self.ln_sub as usize, false, lit, tab);
         // what it is made of, and how the recipe works, folded away until wanted
         if fold_row(ui, "ABOUT THIS PATTERN", &mut self.ln_about) {
             for text in pattern_about(line, shift) {
@@ -619,7 +646,7 @@ impl App {
         let key = format!("slon:{}:{}:{}", self.sl_div, self.sl_kind, self.sl_pat);
         self.line_player(ui, acts, &notes, &key);
         let lit = self.seq_now("line");
-        line_score(ui, acts, &notes, fig.len(), false, lit, None);
+        line_score(ui, acts, &notes, self.ln_sub as usize, false, lit, None);
         if fold_row(ui, "HOW THESE LINES WORK", &mut self.ln_how) {
             para(ui, &format!("{} Slonimsky calls the notes of the division the principal tones, and builds lines by adding notes to each one the same way: between it and the next (interpolation), below it (infrapolation), or above the next one (ultrapolation). This line: {} The same shape is played from every principal tone - learn it slowly, then move it to all twelve notes.", dabout, lines::KINDS[self.sl_kind].1), pal().ink2);
         }
@@ -687,15 +714,9 @@ impl App {
         let notes = lines::scale_line(root, steps, self.sc_pat, self.sc_oct, self.sc_dir);
         let key = format!("scale:{}:{}:{}", sname, self.sc_pat, self.sc_root);
         self.line_player(ui, acts, &notes, &key);
-        let group = match self.sc_pat {
-            1..=4 => 2,
-            5 => 3,
-            6 => 4,
-            7 => 3,
-            _ => 1,
-        };
         let lit = self.seq_now("line");
-        line_score(ui, acts, &notes, group, sharps, lit, None);
+        // written in the feel: triplets in threes, sixteenths in fours...
+        line_score(ui, acts, &notes, self.ln_sub as usize, sharps, lit, None);
     }
 
     // ------------------------------------------------------------------ practice progressions (under TUNES)

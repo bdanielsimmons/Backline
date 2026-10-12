@@ -2665,6 +2665,9 @@ struct App {
     cl_semi: bool,
     cl_low: i32,
     cl_bass: i32,
+    /// FIXED CLUSTER's own bass, and FIXED BASS's own cluster (its lower note), so walking one tab leaves the other be
+    fc_bass: i32,
+    fb_low: i32,
     cl_changes: String,
     cl_chord: usize,
     /// CLUSTERS: the mode on show in SCALES; the voicing on the neck in BUILD and its name
@@ -3234,6 +3237,8 @@ impl App {
             cl_semi: true,
             cl_low: 11,
             cl_bass: 0,
+            fc_bass: 0,
+            fb_low: 11,
             cl_changes: "Dm7b5 G7 Cmaj7 Gbm7b5 Fm7 Em7 Ebdim7 Dm7 G7 Cmaj7".to_string(),
             cl_chord: 0,
             cl_mode: 0,
@@ -3698,6 +3703,17 @@ impl App {
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
             Ok("mine") => app.sec = Sec::Mine,
+            Ok("scales") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 1;
+                app.ln_sub = 3;
+            }
+            Ok("cluster") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 4;
+                app.cl_view = 1;
+                app.fc_bass = 3;
+            }
             Ok("group") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
