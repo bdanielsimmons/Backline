@@ -367,7 +367,12 @@ impl App {
         // mini: the window is the player - the deck fills it, no cover beside it
         let side = if self.mini { 0.0 } else { (area.height() * 0.55).min(area.width() * 0.14) };
         let skin_area = if self.mini { area } else { area.shrink2(Vec2::new(side + 20.0, 0.0)) };
-        let pl = Place::fit(skin_area);
+        // mini: the deck fills the window edge to edge (the window has its shape); otherwise whole pixels, centred
+        let pl = if self.mini {
+            Place { o: skin_area.min, s: (skin_area.width() / 275.0).min(skin_area.height() / 116.0) }
+        } else {
+            Place::fit(skin_area)
+        };
         let right = pl.o.x + 275.0 * pl.s;
         let cover = Rect::from_center_size(Pos2::new((right + area.max.x) / 2.0, area.center().y), Vec2::splat(side));
         // the tour points at the skinned player and its cover too
@@ -383,27 +388,6 @@ impl App {
             if ui.interact(bar, tid.with("drag"), Sense::drag()).drag_started() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
-            // the options button (top left): pin, back to full size, close
-            let ob = ui
-                .interact(at(6.0), tid.with("options"), Sense::click())
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip("Options: keep on top, full window, close");
-            let menu = tid.with("options_menu");
-            if ob.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(menu));
-            }
-            egui::popup::popup_below_widget(ui, menu, &ob, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                ui.set_min_width(200.0);
-                if menu_item(ui, if self.pinned { "> Keep on top (pinned)" } else { "  Keep on top (pin)" }) {
-                    acts.push(Action::TogglePin);
-                }
-                if menu_item(ui, "  Back to the full window") {
-                    acts.push(Action::ToggleMini);
-                }
-                if menu_item(ui, "  Close Backline") {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
         }
         {
             let r = at(254.0);

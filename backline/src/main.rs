@@ -2426,6 +2426,8 @@ struct App {
     sleep_at: Option<Instant>,
     sleep_mins: u32,
     mini: bool,
+    /// the mini window's size, asked for again a moment after going mini (the title bar coming off can change it)
+    mini_size_at: Option<(Instant, Vec2)>,
     pinned: bool,
     saved_size: Vec2,
     show_eq: bool,
@@ -3040,6 +3042,7 @@ impl App {
             sleep_at: None,
             sleep_mins: 0,
             mini: false,
+            mini_size_at: None,
             pinned: false,
             saved_size: Vec2::ZERO,
             show_eq: false,
@@ -4974,10 +4977,12 @@ impl App {
                     // display scaling the deck fills the window exactly - no dark border round it
                     let ppp = self.ctx.pixels_per_point();
                     let k = (2.0 * ppp).round().max(1.0) / ppp;
+                    // a skin's deck is the whole window: no system title bar (its own one drags the window). Taken
+                    // off first: taking it off after sizing keeps the outer size and grows the inside round the deck
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(self.wa_art.is_none()));
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(deck + extra));
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(deck * k + extra));
-                    // a skin's deck is the whole window: no system title bar (its own one drags the window)
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(self.wa_art.is_none()));
+                    self.mini_size_at = Some((Instant::now(), deck * k + extra));
                     // a little player is for listening
                     if self.practice {
                         self.apply(Action::TogglePractice);
@@ -5148,6 +5153,17 @@ impl eframe::App for App {
         }
         font::set_ppp(ctx.pixels_per_point());
         font::set_modern(style() != 0);
+        // the mini window's size once more, after the title bar has come off
+        if let Some((at, size)) = self.mini_size_at {
+            if at.elapsed() > Duration::from_millis(300) {
+                self.mini_size_at = None;
+                if self.mini {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                }
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+        }
         tour::begin_frame();
         // the window's scale and size settle over the first frames: keep drawing until they do
         {

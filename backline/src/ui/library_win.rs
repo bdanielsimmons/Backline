@@ -736,6 +736,13 @@ impl App {
         ui.set_min_width(240.0);
         let before = acts.len();
         let mut done = false;
+        // the window: keep it on top, the mini player and back
+        if menu_item(ui, if self.pinned { "Keep on top  (on)" } else { "Keep on top" }) {
+            acts.push(Action::TogglePin);
+        }
+        if menu_item(ui, if self.mini { "Back to the full window" } else { "Mini player" }) {
+            acts.push(Action::ToggleMini);
+        }
         if menu_item(ui, "Preferences") {
             acts.push(Action::TogglePrefs);
         }
