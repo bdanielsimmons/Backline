@@ -29,7 +29,12 @@ jobs:
           export CARGO_APK_RELEASE_KEYSTORE_PASSWORD=testpass
           cargo apk build --release
           mkdir -p "$GITHUB_WORKSPACE/out"
-          find target -name '*.apk' -exec cp {} "$GITHUB_WORKSPACE/out/backline.apk" \;
+          apk=$(find target -name '*.apk' | head -1)
+          # signed again with Android's own tools (v2/v3 signatures: newer phones refuse the older kind)
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$bt/zipalign" -f -p 4 "$apk" "$RUNNER_TEMP/aligned.apk"
+          "$bt/apksigner" sign --ks "$RUNNER_TEMP/test.jks" --ks-pass pass:testpass --key-pass pass:testpass             --out "$GITHUB_WORKSPACE/out/backline.apk" "$RUNNER_TEMP/aligned.apk"
+          "$bt/apksigner" verify --print-certs "$GITHUB_WORKSPACE/out/backline.apk" | head -3
           ls -la "$GITHUB_WORKSPACE/out"
       - uses: actions/upload-artifact@v4
         with:
