@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- WHAT'S NEW: after an update, the changes in this version and the few before it (any time from the BACKLINE page)
 - Favourite Winamp skins: + FAVOURITE for the one you're wearing, or right-click any skin; a FAVOURITES list wears one again (X takes it off)
 - Loop groups: keep a song's licks in groups (Head, Solo licks... or your own); make, rename and delete groups in LOOPS
 - Zoom the practice waveform like Audacity: the mouse wheel over it zooms where the mouse is, + and - zoom where it's playing, FIT shows the whole song
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Your own grips for any chord: SAVE GRIP AS in the analyzer (type the name or pick root, kind, type), or ADD MY OWN GRIP in the finder; marked MINE, right-click to delete
 - Right-click any song: Add to a Backline playlist, Add to a Tidal playlist, or New playlist with this song
 - MY LIBRARY > LISTS: make a new playlist on your Tidal account
-- Add to a playlist now also lists your own Tidal playlists, and NEW ON TIDAL makes one with the song in it
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
