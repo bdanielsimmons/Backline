@@ -511,8 +511,41 @@ impl App {
         ui.horizontal(|ui| {
             title_line(ui, "WINAMP SKINS", 3.0, pal().ink);
             // the ones worn lately, in a drop-down: click one to wear it again, X to take it off the list
-            if !self.wa_recent.is_empty() {
+            let favs = self.wa_favs.clone();
+            if !self.wa_recent.is_empty() || !favs.is_empty() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // your favourites: kept for good, until you take them off
+                    if !favs.is_empty() {
+                        let fd = retro_btn(ui, "FAVOURITES  v", false).tip("Your favourite skins");
+                        let fmenu = ui.id().with("wa_favs");
+                        if fd.clicked() {
+                            ui.memory_mut(|m| m.toggle_popup(fmenu));
+                        }
+                        let worn_now = self.wa_worn.as_ref().map(|w| w.0.clone());
+                        egui::popup::popup_below_widget(ui, fmenu, &fd, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                            ui.set_min_width(260.0);
+                            for (md5, name) in favs.clone() {
+                                ui.horizontal(|ui| {
+                                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it out of your favourites").clicked() {
+                                        acts.push(Action::WaFav(md5.clone(), name.clone()));
+                                    }
+                                    let on = worn_now.as_deref() == Some(md5.as_str());
+                                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {
+                                        acts.push(Action::WaApply(crate::winamp::WaSkin {
+                                            md5,
+                                            name,
+                                            shot: String::new(),
+                                            download: String::new(),
+                                        }));
+                                        ui.memory_mut(|m| m.close_popup());
+                                    }
+                                });
+                            }
+                        });
+                    }
+                    if self.wa_recent.is_empty() {
+                        return;
+                    }
                     let dd = retro_btn(ui, "WORN LATELY  v", false).tip("Skins you wore lately");
                     let menu = ui.id().with("worn_lately");
                     if dd.clicked() {
@@ -543,7 +576,18 @@ impl App {
             }
         });
         para(ui, "From the Winamp Skin Museum. Click one to wear it. The back arrow takes you back.", pal().ink2);
-        if let Some((_, name)) = &self.wa_worn {
+        if let Some((md5, name)) = self.wa_worn.clone().filter(|w| !w.0.starts_with("gen:")) {
+            ui.horizontal(|ui| {
+                para(ui, &format!("WEARING: {}", name.to_uppercase()), pal().ink);
+                let fav = self.wa_favs.iter().any(|f| f.0 == md5);
+                if retro_btn(ui, if fav { "* FAVOURITE" } else { "+ FAVOURITE" }, fav)
+                    .tip(if fav { "In your favourites - click to take it out" } else { "Keep this skin in your favourites" })
+                    .clicked()
+                {
+                    acts.push(Action::WaFav(md5.clone(), name.clone()));
+                }
+            });
+        } else if let Some((_, name)) = &self.wa_worn {
             para(ui, &format!("WEARING: {}", name.to_uppercase()), pal().ink);
         }
         ui.horizontal(|ui| {
@@ -580,7 +624,16 @@ impl App {
                     ui.spacing_mut().item_spacing.x = gap;
                     for s in row {
                         let (cell, r) = ui.allocate_exact_size(Vec2::new(cw, ch + 22.0), Sense::click());
-                        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}  (click to wear it)", s.name));
+                        let r = r
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .tip(format!("{}  (click to wear it, right-click to favourite it)", s.name));
+                        let fav = self.wa_favs.iter().any(|f| f.0 == s.md5);
+                        r.context_menu(|ui| {
+                            if menu_item(ui, if fav { "Remove from favourites" } else { "Add to favourites" }) {
+                                acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
+                                ui.close_menu();
+                            }
+                        });
                         let shot = Rect::from_min_size(cell.min, Vec2::new(cw, ch));
                         match self.images.get(&s.shot) {
                             Some(id) => {

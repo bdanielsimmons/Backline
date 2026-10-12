@@ -10,6 +10,10 @@ const RATE: u32 = 44100;
 /// Play the opening sound on `device` at `vol` (0..1), off the main thread. `file`: your own sound (its first
 /// eight seconds); None: Backline's chime.
 pub fn play(file: Option<String>, device: Option<String>, vol: f32) {
+    // muted (a test copy, a demo recording): no chime
+    if crate::player::MUTED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     std::thread::spawn(move || {
         let Ok((_stream, handle)) = crate::player::open_named(device.as_deref()) else { return };
         let Ok(sink) = rodio::Sink::try_new(&handle) else { return };

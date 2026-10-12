@@ -2305,7 +2305,8 @@ impl App {
         // little smaller to about twice as big
         let size = ui.available_size();
         let s = (size.y / 250.0).min(size.x / 760.0).max(0.1).sqrt().clamp(0.85, 2.0);
-        let wave_h = 54.0 * s;
+        // the waveform's height is yours to drag (the handle under it)
+        let wave_h = 54.0 * s * self.wv_h.clamp(0.6, 4.0);
         // the contents stop a little above the window's bottom edge, so they never run into it
         let r = ui.available_rect_before_wrap();
         let body = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.max.y - 6.0));
@@ -2331,6 +2332,29 @@ impl App {
 
         // ---- waveform timeline
         let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), wave_h), Sense::click_and_drag());
+        // a handle along its bottom edge: drag it down for a taller waveform, up for a shorter one; double-click resets
+        {
+            let grip = Rect::from_min_max(Pos2::new(bar.min.x, bar.max.y - 2.0), Pos2::new(bar.max.x, bar.max.y + 5.0));
+            let g = ui
+                .interact(grip, ui.id().with("wv_height"), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeVertical)
+                .tip("Drag to make the waveform taller or shorter (double-click: back to normal)");
+            if g.dragged() {
+                let base = wave_h / self.wv_h.clamp(0.6, 4.0);
+                self.wv_h = (self.wv_h + g.drag_delta().y / base.max(1.0)).clamp(0.6, 4.0);
+                self.dirty = true;
+            }
+            if g.double_clicked() {
+                self.wv_h = 1.0;
+                self.dirty = true;
+            }
+            let shade = if g.hovered() || g.dragged() { pal().ink } else { pal().ink2.gamma_multiply(0.5) };
+            ui.painter().rect_filled(
+                Rect::from_center_size(Pos2::new(bar.center().x, bar.max.y + 1.5), Vec2::new(36.0, 3.0)),
+                1.0,
+                shade,
+            );
+        }
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Click to jump. Shift + drag to select a loop (inside a loop: slide it). Ctrl + drag A or B to move it. Right-click for more.");
@@ -2355,7 +2379,9 @@ impl App {
                 start = under - frac * dur1 / zoom;
             }
         }
-        let chip_at = |k: f32, w: f32| Rect::from_min_size(Pos2::new(bar.min.x + 6.0 + k, bar.max.y - 24.0), Vec2::new(w, 14.0));
+        // the zoom buttons, each as wide as its text (at any text size), one after the other
+        let chip_w = |t: &str| (crate::font::text_w(t, 1.0) + 12.0).max(18.0);
+        let chip_at = |k: f32, w: f32| Rect::from_min_size(Pos2::new(bar.min.x + 6.0 + k, bar.max.y - 24.0), Vec2::new(w, 16.0));
         let span = dur1 / zoom;
         // zoomed: the view keeps up with the song (turning the page as it reaches the edge), unless you are dragging
         let dragging = self.sel_anchor.is_some() || self.marker_drag != 0 || self.seek_drag.is_some() || wheel != 0.0;
@@ -2442,11 +2468,17 @@ impl App {
             let readout = bar.max.x - 8.0 - crate::font::text_w(&format!("{} / {}", fmt_t(shown), fmt_t(dur)), 1.0) - 40.0;
             while t <= start + span + 1e-3 {
                 let x = at(t);
-                fill_rect(&p, Rect::from_min_max(Pos2::new(x, bar.min.y + 2.0), Pos2::new(x + 1.0, bar.min.y + 6.0)), pal().ink2);
+                fill_rect(&p, Rect::from_min_max(Pos2::new(x, bar.min.y + 2.0), Pos2::new(x + 1.0, bar.min.y + 7.0)), pal().ink);
                 if x < readout {
                     let (m, s) = ((t / 60.0).floor() as u32, t % 60.0);
                     let lab = if step < 1.0 { format!("{}:{:04.1}", m, s) } else { format!("{}:{:02}", m, s.round() as u32) };
-                    ptext(&p, Pos2::new(x + 3.0, bar.min.y + 7.0), Align::Min, &lab, 0.7, pal().dim);
+                    let lw = crate::font::text_w(&lab, 0.7);
+                    p.rect_filled(
+                        Rect::from_min_size(Pos2::new(x + 1.5, bar.min.y + 2.0), Vec2::new(lw + 4.0, 10.0)),
+                        1.0,
+                        egui::Color32::from_black_alpha(190),
+                    );
+                    ptext(&p, Pos2::new(x + 3.0, bar.min.y + 7.0), Align::Min, &lab, 0.7, egui::Color32::from_gray(235));
                 }
                 t += step;
             }
@@ -2475,17 +2507,18 @@ impl App {
                 me.wv_start = shown - frac * dur1 / me.wv_zoom;
                 me.wv_free = false;
             };
-            if crate::chip(ui, chip_at(0.0, 18.0), "-", false, "wv_out").tip("Zoom out").clicked() {
+            let (w1, w2, w3) = (chip_w("-"), chip_w("+"), chip_w("FIT"));
+            if crate::chip(ui, chip_at(0.0, w1), "-", false, "wv_out").tip("Zoom out").clicked() {
                 zoom_by(self, 0.5);
             }
-            if crate::chip(ui, chip_at(20.0, 18.0), "+", false, "wv_in")
+            if crate::chip(ui, chip_at(w1 + 3.0, w2), "+", false, "wv_in")
                 .tip("Zoom in where it is playing (or the mouse wheel over the waveform)")
                 .clicked()
             {
                 zoom_by(self, 2.0);
             }
             if self.wv_zoom > 1.0
-                && crate::chip(ui, chip_at(40.0, 30.0), "FIT", false, "wv_fit").tip("The whole song again").clicked()
+                && crate::chip(ui, chip_at(w1 + w2 + 6.0, w3), "FIT", false, "wv_fit").tip("The whole song again").clicked()
             {
                 self.wv_zoom = 1.0;
                 self.wv_start = 0.0;

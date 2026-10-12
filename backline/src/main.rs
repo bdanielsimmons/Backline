@@ -273,6 +273,8 @@ enum Action {
     Intro(u8),
     /// take a skin off the list of ones worn lately
     WaForget(String),
+    /// a Winamp skin into your favourites, or out again: (md5, name)
+    WaFav(String, String),
     /// play through another sound output (None = the system default)
     SetDevice(Option<String>),
     /// covers as spinning records, or square
@@ -2334,6 +2336,8 @@ struct App {
     wv_start: f32,
     /// you scrolled the zoomed view away from the playhead: it stays put until you click, zoom or FIT
     wv_free: bool,
+    /// the practice waveform's height (1 = normal; you drag it), kept with your settings
+    wv_h: f32,
     bands: Vec<f32>,
     peaks: Vec<f32>,
     show_log: bool,
@@ -2364,6 +2368,8 @@ struct App {
     wa_worn: Option<(String, String)>,
     /// Winamp skins worn lately (md5, name), newest first, to go back to one in a click
     wa_recent: Vec<(String, String)>,
+    /// your favourite Winamp skins (md5, name), kept until you remove them (their files stay on disk)
+    wa_favs: Vec<(String, String)>,
     /// the worn Winamp skin's own pictures, drawn for the player and the equalizer
     wa_art: Option<winamp_ui::WaTex>,
     /// the album view cover's border (right-click the cover): 0 none, 1 subtle, 2 the skin's colour
@@ -2964,6 +2970,7 @@ impl App {
             wv_zoom: 1.0,
             wv_start: 0.0,
             wv_free: false,
+            wv_h: 1.0,
             bands: vec![0.0; 32],
             peaks: vec![0.0; 32],
             show_log: false,
@@ -2986,6 +2993,7 @@ impl App {
             wa_end: false,
             wa_worn: None,
             wa_recent: Vec::new(),
+            wa_favs: Vec::new(),
             wa_art: None,
             art_border: 1,
             cap_size: 1,
@@ -3377,6 +3385,9 @@ impl App {
         }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
+        if let Some(v) = st["wv_h"].as_f64() {
+            app.wv_h = v as f32;
+        }
         if let Some(v) = st["mt_vol"].as_f64() {
             app.mt_vol = v as f32;
         }
@@ -3451,6 +3462,9 @@ impl App {
             app.art_border = (b as u8).min(2);
         }
         // the Winamp skin worn last time, from its saved file
+        if let Some(list) = st["wa_favs"].as_array() {
+            app.wa_favs = list.iter().filter_map(|v| Some((v[0].as_str()?.to_string(), v[1].as_str()?.to_string()))).collect();
+        }
         if let Some(list) = st["wa_recent"].as_array() {
             app.wa_recent = list.iter().filter_map(|v| Some((v[0].as_str()?.to_string(), v[1].as_str()?.to_string()))).collect();
         }
@@ -3603,6 +3617,10 @@ impl App {
                 ctx.request_repaint();
             });
         }
+        // a test copy (BACKLINE_OPEN, or BACKLINE_MUTE) makes no sound: it plays, but nothing reaches the speakers
+        if std::env::var_os("BACKLINE_OPEN").is_some() || std::env::var_os("BACKLINE_MUTE").is_some() {
+            crate::player::MUTED.store(true, Ordering::Relaxed);
+        }
         // BACKLINE_OPEN=practice / lists: start with that open (for checking layouts and recording demos)
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
@@ -3648,6 +3666,7 @@ impl App {
             "neck_zoom": self.neck_zoom,
             "q_drop": self.q_drop,
             "mt_vol": self.mt_vol,
+            "wv_h": self.wv_h,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],
@@ -3667,6 +3686,7 @@ impl App {
             "balance": self.balance,
             "winamp": self.wa_worn,
             "wa_recent": self.wa_recent,
+            "wa_favs": self.wa_favs,
             "plain": self.wa_worn.is_none(),
             "art_border": self.art_border,
             "cap_size": self.cap_size,
@@ -4484,6 +4504,16 @@ impl App {
             }
             Action::WaForget(md5) => {
                 self.wa_recent.retain(|r| r.0 != md5);
+                self.dirty = true;
+            }
+            Action::WaFav(md5, name) => {
+                if self.wa_favs.iter().any(|f| f.0 == md5) {
+                    self.wa_favs.retain(|f| f.0 != md5);
+                    self.set_note(&format!("REMOVED FROM FAVOURITES: {}", name.to_uppercase()));
+                } else {
+                    self.wa_favs.push((md5, name.clone()));
+                    self.set_note(&format!("FAVOURITE: {}", name.to_uppercase()));
+                }
                 self.dirty = true;
             }
             Action::Intro(m) => match m {
