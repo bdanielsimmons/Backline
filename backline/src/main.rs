@@ -3896,6 +3896,11 @@ impl App {
     }
 
     fn fetch_lyrics(&mut self, id: i64) {
+        // only Tidal has lyrics: a file, YouTube or SoundCloud song simply has none (no asking)
+        if id <= 0 {
+            self.lyrics = Some(Lyrics { id, status: 2, lines: Vec::new(), synced: false });
+            return;
+        }
         self.lyrics = Some(Lyrics { id, status: 0, lines: Vec::new(), synced: false });
         self.lyric_scroll = 0.0;
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
@@ -5688,7 +5693,21 @@ fn main() -> eframe::Result<()> {
             .with_taskbar(false);
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
-    eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+    crate::api::log(&format!("start: build {}", update::build()));
+    let r = eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc)))));
+    // the window couldn't open (graphics, often after sleep or a driver update): say so, don't just vanish
+    if let Err(e) = &r {
+        crate::api::log(&format!("start: the window could not open: {}", e));
+        rfd::MessageDialog::new()
+            .set_title("Backline")
+            .set_level(rfd::MessageLevel::Error)
+            .set_description(format!(
+                "Backline couldn't open its window.\n\n{}\n\nTry again in a moment; if it keeps happening, restarting the computer or updating the graphics driver usually fixes it. Details are in log.txt in %APPDATA%\\backline.",
+                e
+            ))
+            .show();
+    }
+    r
 }
 
 #[cfg(test)]

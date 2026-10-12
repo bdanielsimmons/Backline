@@ -189,6 +189,7 @@ pub fn apply_staged_at_start() -> bool {
         }
         return false;
     }
+    api::log("update at start: installing the downloaded version");
     match apply() {
         Ok(()) => true,
         Err(e) => {

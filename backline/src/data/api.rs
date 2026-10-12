@@ -680,11 +680,22 @@ impl Api {
 
     /// The playlists you made on Tidal (the ones you can add to): (id, name).
     pub fn own_playlists(&self) -> Res<Vec<(String, String)>> {
-        let v = self.get(&format!("/users/{}/playlists", self.uid()), &[("limit", "100")])?;
-        Ok(arr(&v["items"])
-            .iter()
-            .filter_map(|p| Some((p["uuid"].as_str()?.to_string(), p["title"].as_str().unwrap_or("").to_string())))
-            .collect())
+        // Tidal gives at most 50 at a time
+        let mut out = Vec::new();
+        for page in 0..10 {
+            let off = (page * 50).to_string();
+            let v = self.get(&format!("/users/{}/playlists", self.uid()), &[("limit", "50"), ("offset", off.as_str())])?;
+            let items = arr(&v["items"]);
+            out.extend(
+                items
+                    .iter()
+                    .filter_map(|p| Some((p["uuid"].as_str()?.to_string(), p["title"].as_str().unwrap_or("").to_string()))),
+            );
+            if items.len() < 50 {
+                break;
+            }
+        }
+        Ok(out)
     }
 
     /// The token, country and user id for a change to your Tidal account (the token renewed first if it is about
