@@ -2680,6 +2680,8 @@ struct App {
     tr_set: usize,
     tr_set4: usize,
     tr_sel: usize,
+    /// TRIADS > MAP: every note of the triad lit on the whole neck, under the shapes
+    tr_whole: bool,
     tr_pos: u8,
     tr_prog: String,
     tr_bass: i32,
@@ -3248,6 +3250,7 @@ impl App {
             tr_set: 0,
             tr_set4: 0,
             tr_sel: 0,
+            tr_whole: true,
             tr_pos: 1,
             tr_prog: "1 4 5 1".to_string(),
             tr_bass: 2,
@@ -3431,6 +3434,7 @@ impl App {
             app.wv_h = v as f32;
         }
         app.seen_build = st["seen_build"].as_u64().unwrap_or(0);
+        app.tr_whole = st["tr_whole"].as_bool().unwrap_or(true);
         // the first start of a new version: what changed (and in the few before it, for anyone who skipped some);
         // a first install (no settings yet) has nothing to catch up on
         let installed_before = st.as_object().is_some_and(|o| !o.is_empty());
@@ -3708,6 +3712,10 @@ impl App {
                 app.ln_tab = 1;
                 app.ln_sub = 3;
             }
+            Ok("triads") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 2;
+            }
             Ok("cluster") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 4;
@@ -3747,6 +3755,7 @@ impl App {
             "mine_off": self.mine_off,
             "mt_vol": self.mt_vol,
             "seen_build": self.seen_build,
+            "tr_whole": self.tr_whole,
             "wv_h": self.wv_h,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,

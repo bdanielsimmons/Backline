@@ -177,7 +177,15 @@ fn grip_name(g: &[Option<u8>; 6], sp: theory::Spelling) -> String {
 
 /// A neck lying down (high string on top) with several grips on it: the picked one bold, its notes named by
 /// `label`, the others faint, each grip's notes joined by a line. A click on a dot picks that grip.
-fn fret_map(ui: &mut egui::Ui, grips: &[[Option<u8>; 6]], sel: usize, label: &dyn Fn(i32) -> (String, Color32)) -> Option<usize> {
+/// With `whole`, every note of those pitch classes on every string and fret is lit too, under the shapes, so you
+/// see how they sit in the whole neck.
+fn fret_map(
+    ui: &mut egui::Ui,
+    grips: &[[Option<u8>; 6]],
+    sel: usize,
+    label: &dyn Fn(i32) -> (String, Color32),
+    whole: Option<&[i32]>,
+) -> Option<usize> {
     let w = ui.available_width().min(940.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 170.0), Sense::click());
     let neck = Rect::from_min_max(rect.min + Vec2::new(30.0, 10.0), rect.max - Vec2::new(8.0, 26.0));
@@ -203,6 +211,22 @@ fn fret_map(ui: &mut egui::Ui, grips: &[[Option<u8>; 6]], sel: usize, label: &dy
             [Pos2::new(neck.min.x, y_of(s)), Pos2::new(neck.max.x, y_of(s))],
             Stroke::new(1.0_f32, pal().ink.gamma_multiply(0.5)),
         );
+    }
+    // the whole neck: each note of the chord wherever it falls, ringed in its colour
+    if let Some(pcs) = whole {
+        for s in 0..6 {
+            for f in 0..=15u8 {
+                let m = theory::STANDARD[s] + f as i32;
+                if !pcs.contains(&m.rem_euclid(12)) {
+                    continue;
+                }
+                let c = Pos2::new(x_of(f), y_of(s));
+                let (txt, col) = label(m);
+                p.circle_filled(c, sh * 0.36, pal().lcd);
+                p.circle_stroke(c, sh * 0.36, Stroke::new(1.5_f32, col));
+                ptext(p, c, Align::Center, &txt, 1.0, col);
+            }
+        }
     }
     let mut dots: Vec<(Pos2, usize)> = Vec::new();
     // the faint ones first, the picked one on top
@@ -631,13 +655,20 @@ impl App {
             let (d, c) = degree(m, root);
             (d.to_string(), c)
         };
-        if let Some(i) = fret_map(ui, &grips, self.tr_sel, &label) {
+        if let Some(i) = fret_map(ui, &grips, self.tr_sel, &label, self.tr_whole.then_some(pcs.as_slice())) {
             self.tr_sel = i;
             acts.push(Action::PlayNotes(grip_notes(&grips[i])));
         }
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "HEAR THEM UP THE NECK", false).clicked() {
                 acts.push(Action::PlaySequence(grips.iter().map(grip_notes).collect()));
+            }
+            if retro_btn(ui, "WHOLE NECK", self.tr_whole)
+                .tip("Light every root, 3rd and 5th on every string, so you see how the shapes sit in the whole neck")
+                .clicked()
+            {
+                self.tr_whole = !self.tr_whole;
+                self.dirty = true;
             }
             ui.add_space(8.0);
             crate::views::label(ui, "R ROOT   3 THIRD   5 FIFTH", 200.0);
