@@ -3,7 +3,8 @@ on:
   push:
     branches: ['**']
     # docs-only pushes (README etc.) and release-notes tweaks don't build or release
-    paths-ignore: ['**.md', '.github/release_notes.py']
+    # (the phone app in android/ has its own workflow)
+    paths-ignore: ['**.md', '.github/release_notes.py', 'android/**', '.github/workflows/android.yml']
   workflow_dispatch:
 jobs:
   build:
@@ -33,7 +34,7 @@ jobs:
           # lets the app know which build it is, so it can find newer releases
           BACKLINE_BUILD: ${{ github.run_number }}
         run: |
-          manifest=$(find . -name Cargo.toml -not -path '*/target/*' | head -1)
+          manifest=$(find . -name Cargo.toml -not -path '*/target/*' -not -path './android/*' | head -1)
           if [ -z "$manifest" ]; then
             echo "ERROR: no Cargo.toml anywhere in the repo - the files didn't upload"
             find . -maxdepth 3 -not -path './.git/*' | head -50

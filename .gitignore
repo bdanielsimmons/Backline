@@ -7,3 +7,6 @@
 
 # your own copy of a reading method (READING > THE BOOK), kept on this computer only
 reading_book.txt
+
+# the phone app's build output
+/android/target/
