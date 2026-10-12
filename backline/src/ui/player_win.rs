@@ -39,7 +39,7 @@ impl App {
             let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - w, inner.min.y - 22.0), Vec2::new(w, 16.0));
             let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - 26.0, r.min.y), Vec2::new(26.0, 16.0));
             let fc = chip(ui, r, "", false, "c_mini").tip("Back to the full window");
-            size_icon(ui.painter(), r, true);
+            size_icon(ui.painter(), r, false);
             if fc.clicked() {
                 acts.push(Action::ToggleMini);
             }
@@ -55,7 +55,7 @@ impl App {
             // each chip as wide as its word in the font being worn
             let fit = |s: &str| text_w(s, 1.0) + 14.0;
             let r_pin = place(fit("PIN"));
-            let r_mini = place(26.0);
+            let r_mini = place(fit(if self.mini { "FULL" } else { "MINI" }));
             let r_prac = place(if PRACTICE { fit("PRACTICE") } else { 0.0 });
             let r_lis = place(if PRACTICE { fit("LISTEN") } else { 0.0 });
             let r_focus = place(if PRACTICE { fit("FOCUS") } else { 0.0 });
@@ -82,9 +82,7 @@ impl App {
             if chip(ui, r_pin, "PIN", self.pinned, "c_pin").tip("Keep this window on top").clicked() {
                 acts.push(Action::TogglePin);
             }
-            let mc = chip(ui, r_mini, "", false, "c_mini").tip("The mini player");
-            size_icon(ui.painter(), r_mini, false);
-            if mc.clicked() {
+            if chip(ui, r_mini, "MINI", false, "c_mini").tip("The mini player").clicked() {
                 acts.push(Action::ToggleMini);
             }
             if PRACTICE {

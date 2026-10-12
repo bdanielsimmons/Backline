@@ -1400,7 +1400,8 @@ impl Tip for egui::Response {
         }
         let Some(m) = self.ctx.input(|i| i.pointer.hover_pos()) else { return self };
         let px = spx(1.0);
-        let lines = wrap(text.as_ref(), px, 300.0);
+        // one line, wrapping only when it would not fit
+        let lines = wrap(text.as_ref(), px, (self.ctx.screen_rect().width() - 24.0).clamp(120.0, 640.0));
         let h = lines.len() as f32 * (px * 9.0 + 5.0) + 12.0;
         let w = lines.iter().map(|l| text_w(l, px)).fold(0.0, f32::max) + 16.0;
         let screen = self.ctx.screen_rect();
@@ -2430,6 +2431,8 @@ struct App {
     mini_size_at: Option<(Instant, Vec2)>,
     pinned: bool,
     saved_size: Vec2,
+    /// the window was maximized when the mini player came on
+    saved_max: bool,
     show_eq: bool,
     eq_gains: [f32; 10],
     /// the equalizer's preamp, in dB (-12 to +12)
@@ -3045,6 +3048,7 @@ impl App {
             mini_size_at: None,
             pinned: false,
             saved_size: Vec2::ZERO,
+            saved_max: false,
             show_eq: false,
             eq_gains: [0.0; 10],
             eq_pre: 0.0,
@@ -4970,6 +4974,14 @@ impl App {
             Action::ToggleMini => {
                 self.mini = !self.mini;
                 if self.mini {
+                    // fullscreen first gives way: the mini player is a small window
+                    if self.fullscreen {
+                        self.apply(Action::ToggleFullscreen);
+                    }
+                    self.saved_max = self.ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                    if self.saved_max {
+                        self.ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                    }
                     self.saved_size = self.ctx.screen_rect().size();
                     // the window takes the deck's own shape, at twice its pixels: a Winamp skin's main window is
                     // 275 x 116, Backline's own deck 300 x 138; plus the strip of chips along the top
@@ -4996,7 +5008,13 @@ impl App {
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(980.0, 640.0)));
                     let sz = if self.saved_size.x > 100.0 { self.saved_size } else { Vec2::new(1280.0, 820.0) };
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(sz));
+                    // never bigger than the screen (the title bar and the taskbar take some of it)
+                    let room = self.ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1920.0, 1080.0))
+                        - Vec2::new(16.0, 90.0);
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(sz.min(room)));
+                    if self.saved_max {
+                        self.ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+                    }
                 }
             }
             Action::TogglePin => {

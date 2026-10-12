@@ -377,8 +377,8 @@ impl App {
         let cover = Rect::from_center_size(Pos2::new((right + area.max.x) / 2.0, area.center().y), Vec2::splat(side));
         // the tour points at the skinned player and its cover too
         crate::tour::note("PLAYER", Rect::from_min_size(pl.o, Vec2::new(275.0 * pl.s, 116.0 * pl.s)));
-        // the deck's title-bar buttons. Its middle one switches size: in the full window two overlapping squares
-        // (to the mini player), in mini one big square (back to the full window). In mini the deck is the window,
+        // the deck's title-bar buttons. Its middle one switches size: in mini two overlapping squares
+        // (back to the full window), in the full window one square (to the mini player). In mini the deck is the window,
         // so minimize and close work as Winamp's did
         let tid = ui.id().with("wa_titlebar");
         let at = |x: f32| Rect::from_min_size(pl.o + Vec2::new(x, 3.0) * pl.s, Vec2::new(9.0, 9.0) * pl.s);
@@ -391,21 +391,6 @@ impl App {
         }
         {
             let r = at(254.0);
-            let p = ui.painter();
-            p.rect_filled(r, 0.0, Color32::from_gray(28));
-            p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, Color32::from_gray(90)));
-            let ink = Stroke::new((pl.s * 0.8).max(1.0), Color32::from_gray(225));
-            let m = r.width() * 0.2;
-            if self.mini {
-                p.rect_stroke(r.shrink(m), 0.0, ink);
-            } else {
-                let w = r.width() * 0.45;
-                let back = Rect::from_min_size(Pos2::new(r.max.x - m - w, r.min.y + m), Vec2::splat(w));
-                let front = Rect::from_min_size(Pos2::new(r.min.x + m, r.max.y - m - w), Vec2::splat(w));
-                p.rect_stroke(back, 0.0, ink);
-                p.rect_filled(front, 0.0, Color32::from_gray(28));
-                p.rect_stroke(front, 0.0, ink);
-            }
             let tip = if self.mini { "Back to the full window" } else { "The mini player" };
             if ui.interact(r, tid.with("size"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked()
             {
@@ -756,6 +741,26 @@ impl App {
         }
         if rph.clicked() {
             acts.push(Action::Repeat);
+        }
+        // the size switch's picture, drawn over the skin's own button (after the deck, so it shows): two
+        // overlapping squares in mini (back to the full window), one square in the full window (go mini)
+        {
+            let r = at(254.0);
+            let p = ui.painter();
+            p.rect_filled(r, 0.0, Color32::from_gray(28));
+            p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, Color32::from_gray(90)));
+            let ink = Stroke::new((pl.s * 0.8).max(1.0), Color32::from_gray(225));
+            let m = r.width() * 0.2;
+            if !self.mini {
+                p.rect_stroke(r.shrink(m), 0.0, ink);
+            } else {
+                let w = r.width() * 0.45;
+                let back = Rect::from_min_size(Pos2::new(r.max.x - m - w, r.min.y + m), Vec2::splat(w));
+                let front = Rect::from_min_size(Pos2::new(r.min.x + m, r.max.y - m - w), Vec2::splat(w));
+                p.rect_stroke(back, 0.0, ink);
+                p.rect_filled(front, 0.0, Color32::from_gray(28));
+                p.rect_stroke(front, 0.0, ink);
+            }
         }
         self.wa_art = Some(t);
     }
