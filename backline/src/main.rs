@@ -389,6 +389,8 @@ enum Action {
     /// save your loops and playlists to a file / bring in a file from another computer
     /// open the WHAT'S NEW panel (notes of the latest versions)
     News,
+    /// a bookmark on the song where it is now
+    Bookmark,
     ShareExport,
     ShareImport,
     /// the preview's go-ahead: save the export / bring the import in
@@ -2458,6 +2460,8 @@ struct App {
     speed: u32,
     loops: HashMap<i64, (f32, f32)>,
     menu_t: f32,
+    /// the colour new bookmarks get: None for a random one each time
+    mark_col: Option<[u8; 3]>,
     show_cache: bool,
     keep_cache: bool,
     cache_stats: (usize, u64),
@@ -3077,6 +3081,7 @@ impl App {
             speed: 100,
             loops: HashMap::new(),
             menu_t: 0.0,
+            mark_col: None,
             show_cache: false,
             // tracks are streamed, not kept; saving them to disk is switched on by hand
             keep_cache: false,
@@ -3435,6 +3440,7 @@ impl App {
         }
         app.seen_build = st["seen_build"].as_u64().unwrap_or(0);
         app.tr_whole = st["tr_whole"].as_bool().unwrap_or(true);
+        app.mark_col = serde_json::from_value(st["mark_col"].clone()).unwrap_or(None);
         // the first start of a new version: what changed (and in the few before it, for anyone who skipped some);
         // a first install (no settings yet) has nothing to catch up on
         let installed_before = st.as_object().is_some_and(|o| !o.is_empty());
@@ -3712,6 +3718,11 @@ impl App {
                 app.ln_tab = 1;
                 app.ln_sub = 3;
             }
+            Ok("bookmarks") => {
+                app.practice = true;
+                app.more = true;
+                app.mtab = 3;
+            }
             Ok("triads") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 2;
@@ -3756,6 +3767,7 @@ impl App {
             "mt_vol": self.mt_vol,
             "seen_build": self.seen_build,
             "tr_whole": self.tr_whole,
+            "mark_col": self.mark_col,
             "wv_h": self.wv_h,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
@@ -4089,7 +4101,23 @@ impl App {
                     if g == self.play_gen {
                         self.buffering = false;
                         self.stopped = true;
-                        self.set_err(format!("CAN'T PLAY: {}", e));
+                        // a Tidal song out of reach (offline, or Tidal down): on to the next song that is on this
+                        // computer - your files and the songs kept - rather than stopping
+                        let tidal = self.cur_track().is_some_and(|t| self.srcmap.get(&t.id).is_none());
+                        let here = |t: &Track| cache::has(t.id) || matches!(self.srcmap.get(&t.id), Some(Src::File(_)));
+                        let next = self.cur.and_then(|c| (c + 1..self.queue.len()).find(|k| here(&self.queue[*k])));
+                        match next.filter(|_| tidal) {
+                            Some(k) => {
+                                let name = self.queue[k].title.to_uppercase();
+                                self.play_index(k);
+                                self.set_err(format!("TIDAL CAN'T BE REACHED - ON TO {}, WHICH IS ON THIS COMPUTER", name));
+                            }
+                            None if tidal => self.set_err(format!(
+                                "TIDAL CAN'T BE REACHED ({}). SONGS WITH LOOPS OR BOOKMARKS, AND YOUR FILES, STILL PLAY",
+                                e
+                            )),
+                            None => self.set_err(format!("CAN'T PLAY: {}", e)),
+                        }
                     }
                 }
                 Msg::Prefetched(id, b) => self.prefetched = Some((id, b)),
@@ -4138,6 +4166,24 @@ impl App {
         self.kbps = if dur > 1.0 { (bytes as f32 * 8.0 / 1000.0 / dur) as u32 } else { 0 };
     }
 
+    /// A song with saved loops or bookmarks: it stays on this computer, so practising it never waits on Tidal.
+    pub(crate) fn practised(&self, id: i64) -> bool {
+        self.store.sections.get(&id).is_some_and(|l| !l.is_empty()) || self.store.marks.get(&id).is_some_and(|l| !l.is_empty())
+    }
+
+    /// Keep this song on this computer (in the background), now that it has loops or bookmarks.
+    pub(crate) fn keep_for_practice(&mut self, id: i64) {
+        if cache::has(id) || matches!(self.srcmap.get(&id), Some(Src::File(_))) || self.is_demo(id) {
+            return;
+        }
+        let lossless = self.prefer_lossless;
+        let src = self.srcmap.get(&id).cloned();
+        let api = self.api.clone();
+        std::thread::spawn(move || {
+            let _ = fetch_audio(&api, id, lossless, true, src);
+        });
+    }
+
     fn play_index(&mut self, mut i: usize) {
         // the next song in line (not a jump): one fewer of your queued songs ahead
         let next_in_line = self.cur.is_some_and(|c| i == c + 1);
@@ -4181,7 +4227,7 @@ impl App {
         }
         self.buffering = true;
         let lossless = self.prefer_lossless;
-        let keep = self.keep_cache;
+        let keep = self.keep_cache || self.practised(t.id);
         let src = self.srcmap.get(&t.id).cloned();
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
@@ -4229,7 +4275,7 @@ impl App {
         self.prefetching = next.id;
         let id = next.id;
         let lossless = self.prefer_lossless;
-        let keep = self.keep_cache;
+        let keep = self.keep_cache || self.practised(id);
         let src = self.srcmap.get(&id).cloned();
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {

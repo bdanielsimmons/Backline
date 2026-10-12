@@ -1415,9 +1415,58 @@ impl Player {
     }
 }
 
+/// How the song is being heard, for EXPORT WAV: speed, pitch (cents), ear mode, balance and the equalizer.
+pub struct Fx {
+    pub speed: u32,
+    pub cents: i32,
+    pub chan: u32,
+    pub balance: i32,
+    pub eq: ([f32; 10], f32, bool),
+}
+
+/// The player's own chain (speed, pitch, ear mode, balance, equalizer) run off-line over `src`, so a file saved
+/// sounds the way the song is playing. Returns the samples, channels and rate.
+pub fn render<S: Source<Item = i16>>(src: S, fx: &Fx) -> (Vec<i16>, u16, u32) {
+    let ctl = Arc::new(Ctl::new());
+    ctl.rate.store(src.sample_rate(), Ordering::Relaxed);
+    ctl.set_speed(fx.speed);
+    ctl.set_semis(fx.cents);
+    ctl.set_chan(fx.chan);
+    ctl.set_balance(fx.balance);
+    let eq = Arc::new(EqShared::new());
+    eq.set(fx.eq.0, fx.eq.1, fx.eq.2);
+    let chain = Equalizer::new(Chan::new(Resample::new(Stretch::new(src, ctl.clone()), ctl.clone()), ctl), eq);
+    let (ch, rate) = (chain.channels(), chain.sample_rate());
+    (chain.collect(), ch, rate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tone(secs: f32) -> rodio::buffer::SamplesBuffer<i16> {
+        let n = (secs * 44100.0) as usize;
+        let v: Vec<i16> = (0..n)
+            .flat_map(|i| {
+                let s = ((i as f32 * 440.0 * std::f32::consts::TAU / 44100.0).sin() * 8000.0) as i16;
+                [s, s]
+            })
+            .collect();
+        rodio::buffer::SamplesBuffer::new(2, 44100, v)
+    }
+
+    #[test]
+    fn render_keeps_length_and_follows_speed() {
+        let plain = Fx { speed: 100, cents: 0, chan: 0, balance: 0, eq: ([0.0; 10], 0.0, false) };
+        let (a, ch, rate) = render(tone(2.0), &plain);
+        assert_eq!((ch, rate), (2, 44100));
+        let secs = a.len() as f32 / 2.0 / 44100.0;
+        assert!((secs - 2.0).abs() < 0.2, "as it is: {} s", secs);
+        let half = Fx { speed: 50, ..plain };
+        let (b, _, _) = render(tone(2.0), &half);
+        let secs = b.len() as f32 / 2.0 / 44100.0;
+        assert!((secs - 4.0).abs() < 0.4, "half speed is twice as long: {} s", secs);
+    }
 
     fn stereo(b: i32) -> Vec<i16> {
         let ctl = Arc::new(Ctl::new());

@@ -317,6 +317,15 @@ pub struct Section {
     pub group: String,
 }
 
+/// A bookmark on a song's waveform: where, its colour, and a name if you gave it one.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct Bookmark {
+    pub t: f32,
+    pub col: [u8; 3],
+    pub name: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct Day {
@@ -398,6 +407,8 @@ pub struct Last {
 pub struct Store {
     pub tunes: Vec<Tune>,
     pub sections: HashMap<i64, Vec<Section>>,
+    /// bookmarks along each song's waveform (by track id), in time order
+    pub marks: HashMap<i64, Vec<Bookmark>>,
     pub days: Vec<Day>,
     pub entries: Vec<Entry>,
     pub folders: Vec<String>,

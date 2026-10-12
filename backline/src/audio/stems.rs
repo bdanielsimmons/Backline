@@ -74,18 +74,39 @@ pub fn have_stems(id: i64) -> bool {
 
 /// Total size of all saved stems, in bytes.
 pub fn stems_size() -> u64 {
-    fn walk(p: &Path) -> u64 {
-        let mut t = 0;
-        if let Ok(rd) = std::fs::read_dir(p) {
-            for e in rd.flatten() {
-                if let Ok(m) = e.metadata() {
-                    t += if m.is_dir() { walk(&e.path()) } else { m.len() };
-                }
+    walk(&crate::api::config_dir().join("stems"))
+}
+
+fn walk(p: &Path) -> u64 {
+    let mut t = 0;
+    if let Ok(rd) = std::fs::read_dir(p) {
+        for e in rd.flatten() {
+            if let Ok(m) = e.metadata() {
+                t += if m.is_dir() { walk(&e.path()) } else { m.len() };
             }
         }
-        t
     }
-    walk(&crate::api::config_dir().join("stems"))
+    t
+}
+
+thread_local! {
+    /// (song, its stems' size, all stems' size), so the STEMS tab doesn't read the disk every frame
+    static SIZES: std::cell::Cell<Option<(i64, u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// The size of this song's stems and of all the stems kept, in bytes (read once per song).
+pub fn sizes(id: i64) -> (u64, u64) {
+    if let Some((_, a, b)) = SIZES.with(|c| c.get()).filter(|s| s.0 == id) {
+        return (a, b);
+    }
+    let (a, b) = (walk(&stems_dir(id)), stems_size());
+    SIZES.with(|c| c.set(Some((id, a, b))));
+    (a, b)
+}
+
+/// About how big a song's stems will be: four stereo tracks of 16-bit 44.1 kHz audio.
+pub fn size_guess(secs: f32) -> u64 {
+    (secs.max(0.0) * 44100.0 * 2.0 * 2.0 * 4.0) as u64
 }
 
 // ---------------------------------------------------------------- download

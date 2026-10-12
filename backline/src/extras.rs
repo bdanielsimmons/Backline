@@ -1606,6 +1606,12 @@ impl App {
                 self.new_pl.clear();
             }
             Action::ShareExport => self.share_view = Some((false, self.store.share())),
+            Action::Bookmark => {
+                if let Some(t) = self.cur_track().filter(|t| !self.is_demo(t.id)) {
+                    let at = self.pos();
+                    self.add_mark(t.id, at);
+                }
+            }
             Action::News => {
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
@@ -2160,6 +2166,7 @@ impl App {
                 }
                 let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
                 list.push(Section { name: name.clone(), a, b, saved: store::today_str(), ..Default::default() });
+                self.keep_for_practice(t.id);
                 self.remember_song(&t);
                 // saving a loop is practice: the song is in this week's list
                 let date = store::today_str();
@@ -2317,22 +2324,28 @@ impl App {
                 self.set_note(&format!("PITCH {:+.2} SEMITONES (SPEED UNCHANGED)", self.semis as f32 / 100.0));
             }
             Action::Export => {
-                let (Some(a), Some(b)) = (self.loop_a, self.loop_b) else {
-                    self.set_note("SET LOOP A AND B FIRST");
+                // the A-B loop when there is one, else the whole song
+                let (a, b) = match (self.loop_a, self.loop_b) {
+                    (Some(a), Some(b)) if b > a => (a, b),
+                    _ => (0.0, 0.0),
+                };
+                let whole = b <= a;
+                let Some(t) = self.cur_track() else {
+                    self.set_note("PLAY A SONG FIRST");
                     return;
                 };
-                let Some(t) = self.cur_track() else { return };
                 if self.exporting {
                     return;
                 }
-                let bytes = match self.srcmap.get(&t.id) {
-                    Some(Src::File(p)) => std::fs::read(p).ok(),
-                    _ => cache::get(t.id),
+                // as you hear it: speed, and in practice mode the pitch and ear mode; balance and the equalizer
+                let fx = crate::player::Fx {
+                    speed: self.speed,
+                    cents: if self.practice { self.semis } else { 0 },
+                    chan: if self.practice { self.chan } else { 0 },
+                    balance: self.balance,
+                    eq: (self.eq_gains, self.eq_pre, self.eq_on),
                 };
-                let Some(bytes) = bytes else {
-                    self.set_note("PLAY IT ONCE FIRST SO IT IS STORED, THEN EXPORT");
-                    return;
-                };
+                let (api, lossless, src) = (self.api.clone(), self.prefer_lossless, self.srcmap.get(&t.id).cloned());
                 // what you hear: only the stems that are on, when the song has been split and some are off
                 let stems = if self.stem_on.iter().any(|on| !on) && stems::have_stems(t.id) {
                     stems::load(t.id).ok().map(|s| (s.data, self.stem_on))
@@ -2352,13 +2365,15 @@ impl App {
                     .get(&t.id)
                     .and_then(|l| l.iter().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05))
                     .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "loop".to_string());
-                let name = loop_file_name(store::now_local(), &t.artist, &t.title, &what, a, b, stems.is_some());
+                    .unwrap_or_else(|| if whole { "whole song".to_string() } else { "loop".to_string() });
+                let (fa, fb) = if whole { (0.0, t.duration) } else { (a, b) };
+                let name = loop_file_name(store::now_local(), &t.artist, &t.title, &what, fa, fb, stems.is_some());
+                let id = t.id;
                 self.exporting = true;
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
                     let Some(path) = rfd::FileDialog::new()
-                        .set_title("Save the loop as a WAV")
+                        .set_title(if whole { "Save the song as a WAV" } else { "Save the loop as a WAV" })
                         .set_directory(&dir)
                         .set_file_name(&name)
                         .add_filter("WAV audio", &["wav"])
@@ -2368,15 +2383,24 @@ impl App {
                         ctx.request_repaint();
                         return;
                     };
-                    let r = match stems {
-                        Some((data, on)) => sources::export_stems_wav(&data, on, a, b, &path),
-                        None => sources::export_wav(bytes, a, b, &path),
-                    }
-                    .map(|_| {
-                        // show it in Explorer, so it is easy to find later
-                        sources::reveal(&path.to_string_lossy());
-                        path.display().to_string()
-                    });
+                    // the samples (the stems that are on, or the song itself; fetched if it isn't on this computer),
+                    // then the player's own effects over them
+                    let samples = match stems {
+                        Some((data, on)) => Ok((sources::mix_stems_span(&data, on, a, b), 2u16, 44100u32)),
+                        None => {
+                            crate::fetch_audio(&api, id, lossless, false, src).and_then(|bytes| sources::decode_span(bytes, a, b))
+                        }
+                    };
+                    let r = samples
+                        .and_then(|(data, ch, rate)| {
+                            let (out, ch, rate) = crate::player::render(rodio::buffer::SamplesBuffer::new(ch, rate, data), &fx);
+                            sources::write_wav(&path, ch, rate, &out)
+                        })
+                        .map(|_| {
+                            // show it in Explorer, so it is easy to find later
+                            sources::reveal(&path.to_string_lossy());
+                            path.display().to_string()
+                        });
                     let _ = tx.send(Msg::Exported(r));
                     ctx.request_repaint();
                 });

@@ -4,7 +4,6 @@
 use crate::decode::SymSource;
 use crate::store::{hash_id, Ext};
 use rodio::Source;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -605,76 +604,59 @@ pub fn wave_peaks(bytes: Vec<u8>) -> Option<Vec<u8>> {
     }
 }
 
-/// Write the part between `a` and `b` seconds as a 16-bit WAV file.
-/// Write a loop from split stems: only the stems that are `on`, mixed (stereo, 44.1 kHz), from `a` to `b` seconds.
-pub fn export_stems_wav(data: &[Vec<i16>; 4], on: [bool; 4], a: f32, b: f32, path: &Path) -> Result<(), String> {
-    let (s0, s1) = ((a.max(0.0) * 44100.0) as usize * 2, (b.max(0.0) * 44100.0) as usize * 2);
-    let len = data.iter().map(|d| d.len()).max().unwrap_or(0);
-    let s1 = s1.min(len);
-    if s1 <= s0 {
+/// Samples from `a` to `b` seconds of an encoded song (all of it with `b` at 0), with its channels and rate.
+pub fn decode_span(bytes: Vec<u8>, a: f32, b: f32) -> Result<(Vec<i16>, u16, u32), String> {
+    let mut src = SymSource::new(bytes)?;
+    let (ch, rate) = (src.channels(), src.sample_rate());
+    if a > 0.0 {
+        src.try_seek(Duration::from_secs_f32(a)).map_err(|_| "can't seek in this file".to_string())?;
+    }
+    let data: Vec<i16> = if b > a { src.take(((b - a) * rate as f32) as usize * ch as usize).collect() } else { src.collect() };
+    if data.is_empty() {
         return Err("nothing to export".to_string());
     }
-    let mut mixed: Vec<i16> = Vec::with_capacity(s1 - s0);
-    for i in s0..s1 {
-        let v: i32 = (0..4).filter(|k| on[*k]).map(|k| data[k].get(i).copied().unwrap_or(0) as i32).sum();
-        mixed.push(v.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
-    }
-    if let Some(d) = path.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    let n = (mixed.len() * 2) as u32;
-    let mut out: Vec<u8> = Vec::with_capacity(44 + n as usize);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + n).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&44100u32.to_le_bytes());
-    out.extend_from_slice(&(44100u32 * 4).to_le_bytes());
-    out.extend_from_slice(&4u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&n.to_le_bytes());
-    for s in mixed {
-        out.extend_from_slice(&s.to_le_bytes());
-    }
-    std::fs::write(path, out).map_err(|e| e.to_string())
+    Ok((data, ch, rate))
 }
 
-pub fn export_wav(bytes: Vec<u8>, a: f32, b: f32, path: &Path) -> Result<(), String> {
-    let mut src = SymSource::new(bytes)?;
-    let (ch, rate) = (src.channels() as usize, src.sample_rate());
-    src.try_seek(Duration::from_secs_f32(a.max(0.0))).map_err(|_| "can't seek in this file".to_string())?;
-    let want = ((b - a).max(0.0) * rate as f32) as usize * ch;
-    let data: Vec<i16> = src.take(want).collect();
+/// The stems that are on, mixed, from `a` to `b` seconds (to the end with `b` at 0): stereo at 44.1 kHz.
+pub fn mix_stems_span(data: &[Vec<i16>; 4], on: [bool; 4], a: f32, b: f32) -> Vec<i16> {
+    let len = data.iter().map(|d| d.len()).max().unwrap_or(0);
+    let s0 = ((a.max(0.0) * 44100.0) as usize * 2).min(len);
+    let s1 = if b > a { ((b * 44100.0) as usize * 2).min(len) } else { len };
+    (s0..s1.max(s0))
+        .map(|i| {
+            let v: i32 = (0..4).filter(|k| on[*k]).map(|k| data[k].get(i).copied().unwrap_or(0) as i32).sum();
+            v.clamp(i16::MIN as i32, i16::MAX as i32) as i16
+        })
+        .collect()
+}
+
+/// Write 16-bit samples as a WAV file.
+pub fn write_wav(path: &Path, ch: u16, rate: u32, data: &[i16]) -> Result<(), String> {
     if data.is_empty() {
         return Err("nothing to export".to_string());
     }
     if let Some(d) = path.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let mut f = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let len = (data.len() * 2) as u32;
-    let mut h: Vec<u8> = Vec::with_capacity(44);
-    h.extend_from_slice(b"RIFF");
-    h.extend_from_slice(&(36 + len).to_le_bytes());
-    h.extend_from_slice(b"WAVEfmt ");
-    h.extend_from_slice(&16u32.to_le_bytes());
-    h.extend_from_slice(&1u16.to_le_bytes());
-    h.extend_from_slice(&(ch as u16).to_le_bytes());
-    h.extend_from_slice(&rate.to_le_bytes());
-    h.extend_from_slice(&(rate * ch as u32 * 2).to_le_bytes());
-    h.extend_from_slice(&((ch * 2) as u16).to_le_bytes());
-    h.extend_from_slice(&16u16.to_le_bytes());
-    h.extend_from_slice(b"data");
-    h.extend_from_slice(&len.to_le_bytes());
-    f.write_all(&h).map_err(|e| e.to_string())?;
-    let mut buf = Vec::with_capacity(data.len() * 2);
+    let mut out: Vec<u8> = Vec::with_capacity(44 + len as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&ch.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * ch as u32 * 2).to_le_bytes());
+    out.extend_from_slice(&(ch * 2).to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&len.to_le_bytes());
     for s in data {
-        buf.extend_from_slice(&s.to_le_bytes());
+        out.extend_from_slice(&s.to_le_bytes());
     }
-    f.write_all(&buf).map_err(|e| e.to_string())
+    std::fs::write(path, out).map_err(|e| e.to_string())
 }
 
 // ------------------------------------------------------------ tune lookup

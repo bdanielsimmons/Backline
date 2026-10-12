@@ -390,6 +390,70 @@ fn sub_tabs(ui: &mut egui::Ui, items: &[(Sec, &str)], cur: usize) -> Option<usiz
     hit
 }
 
+/// The bookmark colours: bright enough to read a dark number on, apart enough to tell apart.
+const MARK_COLS: [[u8; 3]; 8] = [
+    [235, 80, 80],
+    [245, 150, 50],
+    [240, 215, 70],
+    [110, 210, 100],
+    [80, 200, 210],
+    [90, 140, 245],
+    [175, 120, 240],
+    [240, 120, 190],
+];
+
+/// The bookmark colours as a row of swatches in a menu, the current one outlined; the one clicked.
+fn mark_swatches(ui: &mut egui::Ui, cur: Option<[u8; 3]>) -> Option<[u8; 3]> {
+    let mut out = None;
+    ui.horizontal(|ui| {
+        for c in MARK_COLS {
+            let (r, resp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+            ui.painter().rect_filled(r.shrink(2.0), 2.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
+            if cur == Some(c) || resp.hovered() {
+                ui.painter().rect_stroke(r, 2.0, egui::Stroke::new(1.5_f32, pal().ink));
+            }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                out = Some(c);
+            }
+        }
+    });
+    // any colour: a pixel colour wheel (round the wheel the hue, out from the middle the strength)
+    let cells = 15;
+    let cell = 8.0_f32;
+    let (r, resp) = ui.allocate_exact_size(Vec2::splat(cells as f32 * cell), Sense::click());
+    let c0 = r.center();
+    let rad = cells as f32 * cell / 2.0;
+    let col_at = |p: Pos2| -> Option<[u8; 3]> {
+        let d = p - c0;
+        let dist = d.length() / rad;
+        if dist > 1.0 {
+            return None;
+        }
+        let hue = (d.y.atan2(d.x) / std::f32::consts::TAU).rem_euclid(1.0);
+        let c = egui::Color32::from(egui::ecolor::Hsva::new(hue, (dist * 1.15).min(1.0) * 0.85, 1.0, 1.0));
+        Some([c.r(), c.g(), c.b()])
+    };
+    for y in 0..cells {
+        for x in 0..cells {
+            let cr = Rect::from_min_size(r.min + Vec2::new(x as f32 * cell, y as f32 * cell), Vec2::splat(cell));
+            if let Some(c) = col_at(cr.center()) {
+                ui.painter().rect_filled(cr, 0.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
+            }
+        }
+    }
+    if let Some(pp) =
+        resp.on_hover_cursor(egui::CursorIcon::Crosshair).interact_pointer_pos().filter(|_| ui.input(|i| i.pointer.any_click()))
+    {
+        // the cell's own colour, as drawn
+        let cx = ((pp.x - r.min.x) / cell).floor() * cell + r.min.x + cell / 2.0;
+        let cy = ((pp.y - r.min.y) / cell).floor() * cell + r.min.y + cell / 2.0;
+        if let Some(c) = col_at(Pos2::new(cx, cy)) {
+            out = Some(c);
+        }
+    }
+    out
+}
+
 impl App {
     // ------------------------------------------------------------ switchers
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
@@ -2484,6 +2548,24 @@ impl App {
         });
     }
 
+    /// A bookmark on this song at `t`: the colour picked for them, or a random one of the swatches.
+    pub(crate) fn add_mark(&mut self, id: i64, t: f32) {
+        let col = self.mark_col.unwrap_or_else(|| {
+            let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+            let used: Vec<[u8; 3]> = self.store.marks.get(&id).map(|l| l.iter().map(|m| m.col).collect()).unwrap_or_default();
+            // a colour not on this song yet, when there is one
+            let free: Vec<[u8; 3]> = MARK_COLS.iter().copied().filter(|c| !used.contains(c)).collect();
+            let pool = if free.is_empty() { MARK_COLS.to_vec() } else { free };
+            pool[n as usize % pool.len()]
+        });
+        let list = self.store.marks.entry(id).or_default();
+        list.push(crate::store::Bookmark { t, col, name: String::new() });
+        list.sort_by(|a, b| a.t.total_cmp(&b.t));
+        self.store_dirty = true;
+        self.set_note(&format!("BOOKMARK AT {}", fmt_t(t)));
+        self.keep_for_practice(id);
+    }
+
     fn practice_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32) {
         let dur = self.track_len();
         let pos = self.pos();
@@ -2520,7 +2602,7 @@ impl App {
         }
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to jump. Shift + drag to select a loop (inside a loop: slide it). Ctrl + drag A or B to move it. Right-click for more.");
+            .tip("Click to jump. Shift + drag to select a loop (inside a loop: slide it). Ctrl + drag A or B to move it. Alt + click for a bookmark (on one: remove it). Right-click for more.");
         inset(ui.painter(), bar, pal().lcd);
         let inn = bar.shrink2(Vec2::new(5.0, 5.0));
         // zoom (like Audacity's): the mouse wheel over the waveform zooms in and out where the mouse is; + and -
@@ -2671,6 +2753,100 @@ impl App {
                 me.wv_free = false;
             };
             let (w1, w2, w3) = (chip_w("-"), chip_w("+"), chip_w("FIT"));
+            // bookmarks: + MARK drops one where the song is; right-click it for the colour they get
+            if let Some(id) = tid.filter(|id| !self.is_demo(*id)) {
+                let w4 = chip_w("+ MARK");
+                let mb = crate::chip(ui, chip_at(w1 + w2 + w3 + 9.0, w4), "+ MARK", false, "wv_mark").tip(
+                    "A bookmark where the song is now (or the K key, or alt + click on the waveform). Right-click: their colour. Click a bookmark's flag to jump to it, right-click it to recolour or remove it",
+                );
+                if mb.clicked() {
+                    self.add_mark(id, shown);
+                }
+                let one = self.mark_col;
+                mb.context_menu(|ui| {
+                    if menu_item(ui, if one.is_none() { "* Random colours" } else { "  Random colours" }) {
+                        self.mark_col = None;
+                        self.dirty = true;
+                        ui.close_menu();
+                    }
+                    crate::views::dim_line(ui, "OR ALL ONE COLOUR", 1.0, pal().dim);
+                    if let Some(c) = mark_swatches(ui, one) {
+                        self.mark_col = Some(c);
+                        self.dirty = true;
+                        ui.close_menu();
+                    }
+                    if self.store.marks.get(&id).is_some_and(|m| !m.is_empty()) && menu_item(ui, "Remove this song's bookmarks") {
+                        self.store.marks.remove(&id);
+                        self.store_dirty = true;
+                        ui.close_menu();
+                    }
+                });
+                // each bookmark: a line in its colour and a numbered flag along the bottom
+                let marks = self.store.marks.get(&id).cloned().unwrap_or_default();
+                let mut drop = None;
+                let mut recolour = None;
+                let mut rename = None;
+                for (k, m) in marks.iter().enumerate() {
+                    if m.t < start || m.t > start + span {
+                        continue;
+                    }
+                    let col = egui::Color32::from_rgb(m.col[0], m.col[1], m.col[2]);
+                    let x = at(m.t);
+                    fill_rect(
+                        &p,
+                        Rect::from_min_max(Pos2::new(x - 1.0, bar.min.y + 12.0), Pos2::new(x + 1.0, bar.max.y - 2.0)),
+                        col,
+                    );
+                    let lab = if m.name.is_empty() { (k + 1).to_string() } else { m.name.clone() };
+                    let fw = crate::font::text_w(&lab, 1.0) + 8.0;
+                    let flag = Rect::from_min_size(Pos2::new(x, bar.max.y - 40.0), Vec2::new(fw, 13.0));
+                    p.rect_filled(flag, 1.0, col);
+                    ptext(&p, flag.center(), Align::Center, &lab, 1.0, egui::Color32::from_gray(12));
+                    let fr = ui
+                        .interact(flag.expand(2.0), ui.id().with(("wv_bm", k)), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .tip(format!(
+                            "Bookmark {} at {} - click to jump, alt + click to remove, right-click to recolour",
+                            k + 1,
+                            fmt_t(m.t)
+                        ));
+                    if fr.clicked() && ui.input(|i| i.modifiers.alt) {
+                        drop = Some(k);
+                    } else if fr.clicked() {
+                        acts.push(Action::Seek(m.t));
+                    }
+                    fr.context_menu(|ui| {
+                        if menu_item(ui, "Rename...") {
+                            rename = Some(k);
+                            ui.close_menu();
+                        }
+                        if let Some(c) = mark_swatches(ui, Some(m.col)) {
+                            recolour = Some((k, c));
+                            ui.close_menu();
+                        }
+                        if menu_item(ui, "Remove this bookmark") {
+                            drop = Some(k);
+                            ui.close_menu();
+                        }
+                    });
+                }
+                // rename: the BOOKMARKS tab, its name ready to type
+                if let Some(k) = rename {
+                    self.more = true;
+                    self.mtab = 3;
+                    self.ed.id = 5000 + k as u32;
+                }
+                if let Some(list) = self.store.marks.get_mut(&id) {
+                    if let Some((k, c)) = recolour {
+                        list[k].col = c;
+                        self.store_dirty = true;
+                    }
+                    if let Some(k) = drop {
+                        list.remove(k);
+                        self.store_dirty = true;
+                    }
+                }
+            }
             if crate::chip(ui, chip_at(0.0, w1), "-", false, "wv_out").tip("Zoom out").clicked() {
                 zoom_by(self, 0.5);
             }
@@ -2755,6 +2931,21 @@ impl App {
                     }
                     self.sel_anchor = None;
                 }
+            } else if resp.clicked() && ui.input(|i| i.modifiers.alt) {
+                // alt + click: a bookmark there - or, on one, takes it away (the song plays on)
+                if let (Some(id), Some(pp)) = (tid.filter(|id| !self.is_demo(*id)), resp.interact_pointer_pos()) {
+                    let near = self.store.marks.get(&id).and_then(|l| l.iter().position(|m| (at(m.t) - pp.x).abs() <= 6.0));
+                    match near {
+                        Some(k) => {
+                            if let Some(l) = self.store.marks.get_mut(&id) {
+                                l.remove(k);
+                            }
+                            self.store_dirty = true;
+                            self.set_note("BOOKMARK REMOVED");
+                        }
+                        None => self.add_mark(id, time_at(pp.x)),
+                    }
+                }
             } else {
                 if resp.dragged() || resp.clicked() {
                     if let Some(pp) = resp.interact_pointer_pos() {
@@ -2773,7 +2964,17 @@ impl App {
                 }
             }
             let (mt, lo, pr) = (self.menu_t, self.loop_on, self.practice);
-            resp.context_menu(|ui| crate::loop_menu(ui, acts, mt, both, lo, pr));
+            let mut mark_here = false;
+            resp.context_menu(|ui| {
+                crate::loop_menu(ui, acts, mt, both, lo, pr);
+                if menu_item(ui, &format!("Bookmark here  {}", fmt_t(mt))) {
+                    mark_here = true;
+                    ui.close_menu();
+                }
+            });
+            if let Some(id) = tid.filter(|id| mark_here && !self.is_demo(*id)) {
+                self.add_mark(id, mt);
+            }
         } else {
             ptext(ui.painter(), bar.center(), Align::Center, "PLAY A TRACK TO START", 2.0, pal().dim);
         }
@@ -2781,7 +2982,7 @@ impl App {
 
         // ---- the panel's tabs: the loop and speed tools first, then the bigger tools (TRAINER, PITCH & EAR, STEMS)
         let cur = if self.more { self.mtab as usize + 1 } else { 0 };
-        if let Some(i) = tab_row(ui, &["LOOP & SPEED", "TRAINER", "PITCH & EAR", "STEMS"], cur) {
+        if let Some(i) = tab_row(ui, &["LOOP & SPEED", "TRAINER", "PITCH & EAR", "STEMS", "BOOKMARKS"], cur) {
             self.more = i > 0;
             if i > 0 {
                 self.mtab = (i - 1) as u8;
@@ -3066,9 +3267,91 @@ impl App {
         ui.add_space(6.0);
     }
 
-    /// The practice panel's other tabs: TRAINER (0), PITCH & EAR (1), STEMS (2).
+    /// BOOKMARKS: this song's bookmarks in time order - jump to one, name it, recolour or remove it.
+    fn bookmarks_tab(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let Some(id) = self.cur_track().map(|t| t.id).filter(|id| !self.is_demo(*id)) else {
+            crate::views::dim_line(ui, "PLAY A SONG TO BOOKMARK IT", 1.0, pal().dim);
+            return;
+        };
+        let now = self.pos();
+        if let Some(t) = self.cur_track() {
+            let song = if t.artist.is_empty() { t.title.clone() } else { format!("{} - {}", t.artist, t.title) };
+            dim_line(ui, &format!("BOOKMARKS IN {}", song.to_uppercase()), 2.0, pal().ink);
+        }
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, &format!("+ BOOKMARK AT {}", fmt_t(now)), false)
+                .tip(format!(
+                    "A bookmark where the song is now (or the {} key, or alt + click on the waveform)",
+                    self.key_text(crate::prefs::Cmd::Bookmark)
+                ))
+                .clicked()
+            {
+                self.add_mark(id, now);
+            }
+            let n = self.store.marks.get(&id).map_or(0, |l| l.len());
+            if n > 0 && retro_btn(ui, "REMOVE ALL", false).tip("Take every bookmark off this song").clicked() {
+                self.store.marks.remove(&id);
+                self.store_dirty = true;
+            }
+        });
+        ui.add_space(4.0);
+        let n = self.store.marks.get(&id).map_or(0, |l| l.len());
+        if n == 0 {
+            para(ui, "No bookmarks on this song yet. They are fixed points to find your way: the solo, the key change, the bar you keep missing.", pal().ink2);
+            return;
+        }
+        let mut drop = None;
+        let mut recolour = None;
+        for k in 0..n {
+            let m = self.store.marks[&id][k].clone();
+            ui.horizontal(|ui| {
+                let col = egui::Color32::from_rgb(m.col[0], m.col[1], m.col[2]);
+                // its colour: right-click for another
+                let (sw, sr) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::click());
+                ui.painter().rect_filled(sw.shrink2(Vec2::new(2.0, 4.0)), 2.0, col);
+                ptext(ui.painter(), sw.center(), Align::Center, &(k + 1).to_string(), 1.0, egui::Color32::from_gray(12));
+                sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click: another colour").context_menu(|ui| {
+                    if let Some(c) = mark_swatches(ui, Some(m.col)) {
+                        recolour = Some((k, c));
+                        ui.close_menu();
+                    }
+                });
+                if retro_btn_w(ui, &fmt_t(m.t), 70.0, false).tip("Jump here").clicked() {
+                    acts.push(Action::Seek(m.t));
+                }
+                let w = (ui.available_width() - 40.0).clamp(80.0, 360.0);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                let fid = 5000 + k as u32;
+                if let Some(list) = self.store.marks.get_mut(&id) {
+                    let o = field(ui, &mut self.ed, fid, &mut list[k].name, r, "Name it (solo, bridge, key change...)", false);
+                    if o.changed {
+                        self.store_dirty = true;
+                    }
+                }
+                if retro_btn_w(ui, "X", 28.0, false).tip("Remove this bookmark").clicked() {
+                    drop = Some(k);
+                }
+            });
+        }
+        if let Some(list) = self.store.marks.get_mut(&id) {
+            if let Some((k, c)) = recolour {
+                list[k].col = c;
+                self.store_dirty = true;
+            }
+            if let Some(k) = drop {
+                list.remove(k);
+                self.store_dirty = true;
+            }
+        }
+    }
+
+    /// The practice panel's other tabs: TRAINER (0), PITCH & EAR (1), STEMS (2), BOOKMARKS (3).
     fn more_tools(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let tid = self.cur_track().map(|t| t.id);
+        if self.mtab == 3 {
+            self.bookmarks_tab(ui, acts);
+            return;
+        }
         match self.mtab {
             0 => {
                 // the count-off is its own thing: clicks before every pass of the loop, with or without the trainer
@@ -3185,7 +3468,7 @@ impl App {
                                             acts.push(Action::Chan);
                                         }
                                         if retro_btn_w(ui, if self.exporting { "SAVING..." } else { "EXPORT WAV" }, 100.0, false)
-                                            .tip("Save the A-B loop as a WAV file in Music/Backline loops")
+                                            .tip("Save the song as you hear it - stems on or off, speed, pitch, ear mode, equalizer - as a WAV: the A-B loop when there is one, else the whole song")
                                             .clicked()
                                         {
                                             acts.push(Action::Export);
@@ -3235,8 +3518,21 @@ impl App {
                     if retro_btn_w(ui, "ALL", 44.0, false).clicked() {
                         acts.push(Action::StemAll);
                     }
+                    // what they take on this computer
+                    if let Some(id) = tid {
+                        let (this, all) = stems::sizes(id);
+                        crate::views::dim_line(
+                            ui,
+                            &format!("THIS SONG'S STEMS: {}   ALL STEMS: {}", cache::fmt_size(this), cache::fmt_size(all)),
+                            1.0,
+                            pal().dim,
+                        );
+                    }
                 } else if retro_btn_w(ui, "SPLIT THIS TRACK", 190.0, false)
-                    .tip("Separates the stored track into drums, bass, other and vocals. Takes a few minutes; saved afterwards.")
+                    .tip(format!(
+                        "Separates the track into drums, bass, other and vocals. Takes a few minutes; kept afterwards (about {} for this song).",
+                        cache::fmt_size(stems::size_guess(self.track_len()))
+                    ))
                     .clicked()
                 {
                     acts.push(Action::StemSplit);
