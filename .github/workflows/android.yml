@@ -2,7 +2,8 @@ name: android
 on:
   push:
     branches: ['**']
-    paths: ['android/**', '.github/workflows/android.yml']
+    # the phone app, and the desktop engine files it compiles in
+    paths: ['android/**', '.github/workflows/android.yml', 'backline/src/data/**', 'backline/src/audio/**']
   workflow_dispatch:
 jobs:
   apk:
