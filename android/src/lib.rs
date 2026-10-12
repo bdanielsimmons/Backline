@@ -916,7 +916,7 @@ impl App {
             }
         });
         if self.more {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.more_ui(ui, &t));
+            self.more_ui(ui, &t);
         }
         if self.show_queue {
             self.queue_list(ui);
@@ -1035,15 +1035,14 @@ impl App {
         });
     }
 
+    /// The queue, in the player's own page (it scrolls with it).
     fn queue_list(&mut self, ui: &mut egui::Ui) {
         let mut play = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for (i, t) in self.queue.iter().enumerate() {
-                if track_row(ui, t, Some(i) == self.cur).clicked() {
-                    play = Some(i);
-                }
+        for (i, t) in self.queue.iter().enumerate() {
+            if track_row(ui, t, Some(i) == self.cur).clicked() {
+                play = Some(i);
             }
-        });
+        }
         if let Some(i) = play {
             self.play(i);
         }
@@ -1118,17 +1117,30 @@ impl App {
                 self.eq = [0.0; 10];
             }
         });
+        // ten slim bars: drag one up or down (+-12 dB), the middle line is flat
         let bands = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
-        ui.horizontal(|ui| {
-            let w = (ui.available_width() / 10.0 - 6.0).max(20.0);
-            for (k, b) in bands.iter().enumerate() {
-                ui.vertical(|ui| {
-                    ui.set_width(w);
-                    ui.add(egui::Slider::new(&mut self.eq[k], -12.0..=12.0).vertical().show_value(false));
-                    ui.label(RichText::new(*b).size(11.0));
-                });
-            }
-        });
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 170.0), Sense::click_and_drag());
+        let p = ui.painter();
+        let area = egui::Rect::from_min_max(r.min, egui::pos2(r.max.x, r.max.y - 20.0));
+        let col_w = area.width() / 10.0;
+        let mid = area.center().y;
+        p.line_segment([egui::pos2(area.min.x, mid), egui::pos2(area.max.x, mid)], egui::Stroke::new(1.0, pal::GROOVE));
+        if let Some(pp) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
+            let k = (((pp.x - area.min.x) / col_w).floor() as usize).min(9);
+            self.eq[k] = (((mid - pp.y) / (area.height() / 2.0)) * 12.0).clamp(-12.0, 12.0).round();
+            self.eq_on = true;
+        }
+        for (k, b) in bands.iter().enumerate() {
+            let cx = area.min.x + col_w * (k as f32 + 0.5);
+            let track = egui::Rect::from_center_size(egui::pos2(cx, mid), Vec2::new(6.0, area.height()));
+            p.rect_filled(track, 3.0, pal::LCD);
+            let y = mid - self.eq[k] / 12.0 * (area.height() / 2.0);
+            let fill = egui::Rect::from_x_y_ranges(cx - 3.0..=cx + 3.0, y.min(mid)..=y.max(mid));
+            let c = if self.eq_on { pal::ACCENT } else { pal::GROOVE };
+            p.rect_filled(fill, 3.0, c);
+            p.circle_filled(egui::pos2(cx, y), 9.0, if self.eq_on { pal::ACCENT_HI } else { pal::DIM });
+            p.text(egui::pos2(cx, r.max.y - 8.0), egui::Align2::CENTER_CENTER, *b, egui::FontId::proportional(11.0), pal::DIM);
+        }
         self.player.eq.set(self.eq, 0.0, self.eq_on);
     }
 
@@ -1781,7 +1793,10 @@ impl eframe::App for App {
                 }
             }
             match self.tab {
-                Tab::Player => self.player_ui(ui),
+                // the player is one page that scrolls (MORE and the queue open below the tools)
+                Tab::Player => {
+                    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.player_ui(ui));
+                }
                 Tab::Library => self.library_ui(ui),
                 Tab::Chords => self.chords_ui(ui),
             }

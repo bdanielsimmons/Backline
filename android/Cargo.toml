@@ -36,6 +36,8 @@ rquickjs = { version = "0.9", features = ["bindgen"] }
 [package.metadata.android]
 package = "com.v9studio.backline"
 apk_name = "backline"
+# the launcher icon (Backline's own, at each screen density)
+resources = "res"
 build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
 
 [package.metadata.android.sdk]
@@ -47,6 +49,7 @@ name = "android.permission.INTERNET"
 
 [package.metadata.android.application]
 label = "Backline"
+icon = "@mipmap/ic_launcher"
 
 [package.metadata.android.application.activity]
 orientation = "portrait"
