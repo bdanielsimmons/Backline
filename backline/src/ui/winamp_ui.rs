@@ -377,9 +377,10 @@ impl App {
         let cover = Rect::from_center_size(Pos2::new((right + area.max.x) / 2.0, area.center().y), Vec2::splat(side));
         // the tour points at the skinned player and its cover too
         crate::tour::note("PLAYER", Rect::from_min_size(pl.o, Vec2::new(275.0 * pl.s, 116.0 * pl.s)));
-        // the deck's title-bar buttons. Its middle one switches size: in mini two overlapping squares
-        // (back to the full window), in the full window one square (to the mini player). In mini the deck is the window,
-        // so minimize and close work as Winamp's did
+        // the deck's title-bar buttons. The middle one is the window's size, as Windows' own: one square goes
+        // fullscreen, two overlapping squares (while fullscreen) come back; in mini it goes back to the full window.
+        // The mini player has its own button beside them. In mini the deck is the window, so minimize and close work
+        // as Winamp's did
         let tid = ui.id().with("wa_titlebar");
         let at = |x: f32| Rect::from_min_size(pl.o + Vec2::new(x, 3.0) * pl.s, Vec2::new(9.0, 9.0) * pl.s);
         if self.mini {
@@ -391,8 +392,23 @@ impl App {
         }
         {
             let r = at(254.0);
-            let tip = if self.mini { "Back to the full window" } else { "The mini player" };
+            let tip = if self.mini {
+                "Back to the full window"
+            } else if self.fullscreen {
+                "Leave fullscreen"
+            } else {
+                "Fullscreen"
+            };
             if ui.interact(r, tid.with("size"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked()
+            {
+                acts.push(if self.mini { Action::ToggleMini } else { Action::ToggleFullscreen });
+            }
+            if !self.mini
+                && ui
+                    .interact(at(234.0), tid.with("mini"), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .tip("The mini player")
+                    .clicked()
             {
                 acts.push(Action::ToggleMini);
             }
@@ -742,16 +758,26 @@ impl App {
         if rph.clicked() {
             acts.push(Action::Repeat);
         }
-        // the size switch's picture, drawn over the skin's own button (after the deck, so it shows): two
-        // overlapping squares in mini (back to the full window), one square in the full window (go mini)
+        // the size buttons' pictures, drawn over the skin's own (after the deck, so they show): one square, or two
+        // overlapping squares while fullscreen; and the mini player's button, a little window in the corner
         {
-            let r = at(254.0);
             let p = ui.painter();
-            p.rect_filled(r, 0.0, Color32::from_gray(28));
-            p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, Color32::from_gray(90)));
+            let face = |r: Rect| {
+                p.rect_filled(r, 0.0, Color32::from_gray(28));
+                p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, Color32::from_gray(90)));
+            };
             let ink = Stroke::new((pl.s * 0.8).max(1.0), Color32::from_gray(225));
-            let m = r.width() * 0.2;
             if !self.mini {
+                let r = at(234.0);
+                face(r);
+                let m = r.width() * 0.2;
+                let w = Vec2::new(r.width() * 0.4, r.height() * 0.3);
+                p.rect_filled(Rect::from_min_size(r.max - Vec2::splat(m) - w, w), 0.0, Color32::from_gray(225));
+            }
+            let r = at(254.0);
+            face(r);
+            let m = r.width() * 0.2;
+            if self.mini || !self.fullscreen {
                 p.rect_stroke(r.shrink(m), 0.0, ink);
             } else {
                 let w = r.width() * 0.45;
