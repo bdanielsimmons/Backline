@@ -356,13 +356,25 @@ fn stars_text(n: u8) -> String {
 fn sub_tabs(ui: &mut egui::Ui, items: &[(Sec, &str)], cur: usize) -> Option<usize> {
     let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::hover());
     let pad = 18.0;
-    let total: f32 = items.iter().map(|s| text_w(s.1, 2.0) + pad).sum();
+    let total: f32 = items.iter().map(|s| if s.1 == "|" { 14.0 } else { text_w(s.1, 2.0) + pad }).sum();
     let shrink = ((row.width() - 8.0) / total).min(1.0);
     let (mut x, mut hit) = (row.min.x + 4.0, None);
     for (i, (_, name)) in items.iter().enumerate() {
+        // "|" is a bar between groups of tabs, not a tab
+        if *name == "|" {
+            let bx = x + 6.0 * shrink;
+            fill_rect(
+                ui.painter(),
+                Rect::from_min_max(Pos2::new(bx, row.min.y + 4.0), Pos2::new(bx + 2.0, row.max.y - 4.0)),
+                pal().ink2,
+            );
+            x += 14.0 * shrink;
+            continue;
+        }
         let w = (text_w(name, 2.0) + pad) * shrink;
         let r = Rect::from_min_max(Pos2::new(x, row.min.y), Pos2::new(x + w, row.max.y));
-        let resp = ui.interact(r, ui.id().with(("subtab", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp =
+            ui.interact(r, ui.id().with(("subtab", i, *name)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let on = i == cur;
         let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
         crate::ui_text(ui.painter(), r.center() - Vec2::new(0.0, 1.0), Align::Center, name, 2.0, w - 4.0, col);
@@ -450,12 +462,20 @@ impl App {
             return;
         }
         // everything you keep (MY TRACKS, LISTS), then each source on its own
-        let mut items: Vec<(Sec, &str)> = vec![(Sec::Mine, "MY TRACKS"), (Sec::Lists, "LISTS")];
+        // each source, then a bar, then everything you keep (MY TRACKS, LISTS)
+        let mut items: Vec<(Sec, &str)> = Vec::new();
         if !self.offline {
             items.push((Sec::Tidal, "TIDAL"));
         }
-        items.extend([(Sec::Files, "FILES"), (Sec::Sc, "SOUNDCLOUD"), (Sec::Yt, "YT")]);
-        let cur = items.iter().position(|s| s.0 == self.sec).unwrap_or(0);
+        items.extend([
+            (Sec::Files, "FILES"),
+            (Sec::Sc, "SOUNDCLOUD"),
+            (Sec::Yt, "YT"),
+            (Sec::Mine, "|"),
+            (Sec::Mine, "MY TRACKS"),
+            (Sec::Lists, "LISTS"),
+        ]);
+        let cur = items.iter().position(|s| s.0 == self.sec && s.1 != "|").unwrap_or(0);
         if let Some(i) = sub_tabs(ui, &items, cur) {
             match items[i].0 {
                 // TIDAL goes back to the Tidal page you had
