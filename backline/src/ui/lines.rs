@@ -875,10 +875,19 @@ impl App {
                 let voiced: Vec<Vec<i32>> =
                     chords.iter().filter_map(|c| theory::chord_notes(c)).map(|c| crate::chords::piano_voicing(&c)).collect();
                 self.seq_button(ui, acts, "HEAR", "Each chord in turn", &tag, || voiced.clone(), 1.0);
+                // the chords on one line (a long one ends in ... rather than wrapping a chord onto a line of its own)
+                let room = (ui.available_width() - if mine { 36.0 } else { 0.0 }).max(60.0);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(room, bh()), Sense::hover());
+                let mut x = r.min.x;
                 for (k, c) in chords.iter().enumerate() {
+                    let w = text_w(c, 2.0) + 12.0;
+                    if x + w > r.max.x - 14.0 && k + 1 < chords.len() {
+                        ptext(ui.painter(), Pos2::new(x + 6.0, r.center().y), Align::Min, "...", 2.0, pal().dim);
+                        break;
+                    }
                     let col = if sounding == Some(k) { pal().red } else { pal().ink };
-                    let (r, _) = ui.allocate_exact_size(Vec2::new(text_w(c, 2.0) + 12.0, bh()), Sense::hover());
-                    ptext(ui.painter(), r.center(), Align::Center, c, 2.0, col);
+                    ptext(ui.painter(), Pos2::new(x + w / 2.0, r.center().y), Align::Center, c, 2.0, col);
+                    x += w;
                 }
                 if mine && retro_btn_w(ui, "X", 28.0, false).tip("Remove it").clicked() {
                     remove = Some(i);

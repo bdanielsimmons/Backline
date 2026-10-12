@@ -1091,7 +1091,7 @@ impl App {
     /// The export / import preview, over the dimmed app: what is in the file (songs, loops, playlists) and, for an
     /// import, what is new to you and what can't play here - then go ahead or cancel.
     pub(crate) fn share_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
-        let Some((importing, s)) = self.share_view.clone().map(|(i, s)| (i, s)) else {
+        let Some((importing, s)) = self.share_view.clone() else {
             self.share_pick = None;
             return;
         };

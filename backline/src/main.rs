@@ -3643,6 +3643,10 @@ impl App {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
             }
+            Ok("prog") => {
+                app.sec = Sec::Tunes;
+                app.prog_shown = vec![true];
+            }
             Ok("group") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;

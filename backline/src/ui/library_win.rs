@@ -394,12 +394,15 @@ impl App {
             if !self.skins_open[gi] {
                 continue;
             }
-            for (n, name) in SKIN_NAMES.iter().enumerate() {
-                let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
-                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
-                    acts.push(Action::Theme(n, g));
+            // in a box of its own, so opening it doesn't push the page away
+            crate::views::contained(ui, ("skin_list", 0), |ui| {
+                for (n, name) in SKIN_NAMES.iter().enumerate() {
+                    let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
+                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
+                        acts.push(Action::Theme(n, g));
+                    }
                 }
-            }
+            });
         }
         ui.add_space(6.0);
         let head = format!(
@@ -459,12 +462,15 @@ impl App {
             if !self.skins_open[gi] {
                 continue;
             }
-            for (n, name) in SKIN_NAMES.iter().enumerate() {
-                let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
-                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
-                    acts.push(Action::Theme(n, g));
+            // in a box of its own, so opening it doesn't push the page away
+            crate::views::contained(ui, ("skin_list", 1), |ui| {
+                for (n, name) in SKIN_NAMES.iter().enumerate() {
+                    let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
+                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
+                        acts.push(Action::Theme(n, g));
+                    }
                 }
-            }
+            });
         }
     }
 
