@@ -2580,8 +2580,8 @@ struct App {
     grp_name: String,
     grp_ask: Option<String>,
     grp_new: String,
-    /// LOOPS: the group on show (None: all), and the + tab's name box open
-    loops_group: Option<String>,
+    /// LOOPS: shown as each loop (0), by song (1) or by group (2); the new group name box open
+    loops_mode: u8,
     /// export / import waiting in its preview panel: (importing, the file's contents)
     share_view: Option<(bool, store::Share)>,
     /// what's ticked in that preview: songs (their loops) and playlists (by name); None until the panel opens
@@ -3156,7 +3156,7 @@ impl App {
             grp_name: String::new(),
             grp_ask: None,
             grp_new: String::new(),
-            loops_group: None,
+            loops_mode: 0,
             share_view: None,
             share_pick: None,
             grp_adding: false,
@@ -3618,6 +3618,10 @@ impl App {
             }
             Ok("lists") => app.sec = Sec::Lists,
             Ok("loops") => app.sec = Sec::Loops,
+            Ok("groups") => {
+                app.sec = Sec::Loops;
+                app.loops_mode = 2;
+            }
             Ok("export") => {
                 app.sec = Sec::Loops;
                 app.share_view = Some((false, app.store.share()));

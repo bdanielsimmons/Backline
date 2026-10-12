@@ -907,93 +907,152 @@ impl App {
         ui.add_space(20.0);
     }
 
-    /// LOOPS > GROUPS: your loop groups - make one, rename one (everywhere its loops are), delete one (asked first;
-    /// its loops stay, in no group). The starting ones are yours to change too.
-    fn group_manager(&mut self, ui: &mut egui::Ui) {
+    /// LOOPS > GROUPS: every group with its loops under it (and the loops in no group), each group's name a
+    /// heading - right-click it to rename or delete it (asked first; its loops stay). + NEW GROUP makes one. Loops:
+    /// click to play, right-click to rename, note, move or forget.
+    fn groups_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let groups = self.store.groups();
-        let counts: Vec<usize> =
-            groups.iter().map(|g| self.store.sections.values().flatten().filter(|s| s.group == *g).count()).collect();
-        ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "ALL", self.loops_group.is_none()).tip("Every loop").clicked() {
-                self.loops_group = None;
+        let mut all: Vec<(i64, usize, store::Section)> =
+            self.store.sections.iter().flat_map(|(id, l)| l.iter().enumerate().map(move |(i, s)| (*id, i, s.clone()))).collect();
+        all.sort_by(|a, b| a.2.name.cmp(&b.2.name).then(a.0.cmp(&b.0)).then(a.1.cmp(&b.1)));
+        let mut heads = groups.clone();
+        heads.push(String::new());
+        for g in &heads {
+            let members: Vec<&(i64, usize, store::Section)> = all.iter().filter(|x| x.2.group == *g).collect();
+            if g.is_empty() && members.is_empty() {
+                continue;
             }
-            for (g, n) in groups.iter().zip(counts.iter().copied()) {
-                let on = self.loops_group.as_deref() == Some(g);
-                let r = retro_btn(ui, &format!("{} {}", g.to_uppercase(), n), on)
-                    .tip("Show this group's loops. Right-click: rename or delete");
-                if r.clicked() {
-                    self.loops_group = if on { None } else { Some(g.clone()) };
-                }
-                r.context_menu(|ui| {
-                    if menu_item(ui, "Rename...") {
+            ui.add_space(6.0);
+            let title = if g.is_empty() { "NO GROUP".to_string() } else { g.to_uppercase() };
+            let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
+            ui.painter().rect_filled(rect, 2.0, pal().row_alt);
+            ptext(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, &title, 2.0, pal().ink);
+            let n = format!("{} {}", members.len(), if members.len() == 1 { "LOOP" } else { "LOOPS" });
+            ptext(ui.painter(), Pos2::new(rect.max.x - 8.0, rect.center().y), Align::Max, &n, 1.0, pal().dim);
+            if !g.is_empty() {
+                resp.on_hover_text_at_pointer("Right-click: rename or delete this group").context_menu(|ui| {
+                    if menu_item(ui, "Rename this group...") {
                         self.grp_edit = Some(g.clone());
                         self.grp_name = g.clone();
                         self.ed.id = crate::tools::F_GROUP_NAME;
                         ui.close_menu();
                     }
-                    if menu_item(ui, "Delete...") {
+                    if menu_item(ui, "Delete this group...") {
                         self.grp_ask = Some(g.clone());
                         ui.close_menu();
                     }
                 });
             }
+            if self.grp_edit.as_deref() == Some(g) {
+                ui.horizontal_wrapped(|ui| {
+                    label(ui, "NEW NAME", 90.0);
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
+                    let o = field(ui, &mut self.ed, crate::tools::F_GROUP_NAME, &mut self.grp_name, r, "new name", false);
+                    if (o.enter || retro_btn(ui, "SAVE", false).clicked()) && !self.grp_name.trim().is_empty() {
+                        let new = self.grp_name.clone();
+                        self.store.rename_group(g, &new);
+                        self.store_dirty = true;
+                        self.grp_edit = None;
+                        self.ed.id = 0;
+                    }
+                    if retro_btn(ui, "CANCEL", false).clicked() {
+                        self.grp_edit = None;
+                        self.ed.id = 0;
+                    }
+                });
+            }
+            if self.grp_ask.as_deref() == Some(g) {
+                ui.horizontal_wrapped(|ui| {
+                    label(ui, "DELETE THIS GROUP? ITS LOOPS STAY, IN NO GROUP", 360.0);
+                    if retro_btn(ui, "YES, DELETE IT", false).clicked() {
+                        self.store.rename_group(g, "");
+                        self.store_dirty = true;
+                        self.grp_ask = None;
+                    }
+                    if retro_btn(ui, "KEEP IT", false).clicked() {
+                        self.grp_ask = None;
+                    }
+                });
+            }
+            if members.is_empty() {
+                dim_line(ui, "EMPTY - RIGHT-CLICK ANY LOOP AND MOVE IT HERE", 1.0, pal().dim);
+                continue;
+            }
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+                ui.add_space(8.0);
+                for (id, i, s) in &members {
+                    let v = self.store.songs.get(id).cloned();
+                    let song = v.as_ref().map(|v| v.title.clone()).unwrap_or_default();
+                    let text = format!("{}  {}-{}", s.name.to_uppercase(), fmt_time(s.a), fmt_time(s.b));
+                    let tip = format!("{}{}", song, if s.note.is_empty() { String::new() } else { format!("   {}", s.note) });
+                    let b = retro_btn(ui, &text, false).tip(tip);
+                    if b.clicked() {
+                        if let Some(v) = &v {
+                            acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
+                        }
+                    }
+                    b.context_menu(|ui| {
+                        if menu_item(ui, "Rename / add a note...") {
+                            self.clip_edit = Some((*id, *i));
+                            self.clip_name = s.name.clone();
+                            self.clip_note = s.note.clone();
+                            self.clip_group = s.group.clone();
+                            ui.close_menu();
+                        }
+                        for other in groups.iter().filter(|o| **o != s.group) {
+                            if menu_item(ui, &format!("Move to {}", other)) {
+                                acts.push(Action::LoopGroup(*id, *i, other.clone()));
+                                ui.close_menu();
+                            }
+                        }
+                        if !s.group.is_empty() && menu_item(ui, "Out of the group") {
+                            acts.push(Action::LoopGroup(*id, *i, String::new()));
+                            ui.close_menu();
+                        }
+                        if menu_item(ui, "Forget this loop") {
+                            acts.push(Action::ForgetLoop(*id, *i));
+                            ui.close_menu();
+                        }
+                    });
+                }
+            });
+            if let Some((eid, ei)) = self.clip_edit {
+                if members.iter().any(|(id, i, _)| *id == eid && *i == ei) {
+                    self.loop_editor(ui, acts);
+                }
+            }
+        }
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
             if !self.grp_adding {
-                if retro_btn(ui, "+", false).tip("A new group").clicked() {
+                if retro_btn(ui, "+ NEW GROUP", false).clicked() {
                     self.grp_adding = true;
                     self.ed.id = crate::tools::F_GROUP_NAME + 100;
                 }
                 return;
             }
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, bh()), Sense::hover());
-            let o = field(ui, &mut self.ed, crate::tools::F_GROUP_NAME + 100, &mut self.grp_new, rect, "New group...", false);
-            if retro_btn(ui, "CANCEL", false).clicked() {
-                self.grp_adding = false;
-                self.grp_new.clear();
-                self.ed.id = 0;
-            }
+            let (r, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
+            let o =
+                field(ui, &mut self.ed, crate::tools::F_GROUP_NAME + 100, &mut self.grp_new, r, "the new group's name", false);
             if (o.enter || retro_btn(ui, "ADD", false).clicked()) && !self.grp_new.trim().is_empty() {
-                self.grp_adding = false;
                 let mut l = self.store.groups();
                 if !l.iter().any(|g| g == self.grp_new.trim()) {
                     l.push(self.grp_new.trim().to_string());
                 }
                 self.store.loop_groups = Some(l);
                 self.grp_new.clear();
+                self.grp_adding = false;
                 self.ed.id = 0;
                 self.store_dirty = true;
             }
+            if retro_btn(ui, "CANCEL", false).clicked() {
+                self.grp_adding = false;
+                self.grp_new.clear();
+                self.ed.id = 0;
+            }
         });
-        if let Some(old) = self.grp_edit.clone() {
-            ui.horizontal_wrapped(|ui| {
-                label(ui, &format!("RENAME {}", old.to_uppercase()), 160.0);
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
-                let o = field(ui, &mut self.ed, crate::tools::F_GROUP_NAME, &mut self.grp_name, rect, "new name", false);
-                if (o.enter || retro_btn(ui, "SAVE", false).clicked()) && !self.grp_name.trim().is_empty() {
-                    let new = self.grp_name.clone();
-                    self.store.rename_group(&old, &new);
-                    self.store_dirty = true;
-                    self.grp_edit = None;
-                    self.ed.id = 0;
-                }
-                if retro_btn(ui, "CANCEL", false).clicked() {
-                    self.grp_edit = None;
-                    self.ed.id = 0;
-                }
-            });
-        }
-        if let Some(g) = self.grp_ask.clone() {
-            ui.horizontal_wrapped(|ui| {
-                label(ui, &format!("DELETE THE GROUP {}? (ITS LOOPS STAY)", g.to_uppercase()), 330.0);
-                if retro_btn(ui, "YES, DELETE IT", false).clicked() {
-                    self.store.rename_group(&g, "");
-                    self.store_dirty = true;
-                    self.grp_ask = None;
-                }
-                if retro_btn(ui, "KEEP IT", false).clicked() {
-                    self.grp_ask = None;
-                }
-            });
-        }
+        ui.add_space(20.0);
     }
 
     /// The export / import preview, over the dimmed app: what is in the file (songs, loops, playlists) and, for an
@@ -1734,9 +1793,6 @@ impl App {
         title_line(ui, "LOOPS", 3.0, pal().ink);
         para(ui, "The songs you saved loops on or practised, no tune needed. Click a loop to jump straight to it. Click a song to play it. Right-click for more.", pal().ink2);
         self.share_buttons(ui, acts);
-        self.group_manager(ui);
-        let group = self.loops_group.clone().filter(|g| self.store.groups().contains(g));
-        self.loops_group = group.clone();
         self.name_old_loops();
         let today = store::today_days();
         let week_start = store::date_str(today - 6);
@@ -1746,22 +1802,21 @@ impl App {
                 *week.entry(*id).or_default() += s;
             }
         }
+        // how they're shown: each loop, by song, or by group
+        if let Some(v) = crate::tab_row(ui, &["EACH LOOP", "BY SONG", "GROUPS"], self.loops_mode as usize) {
+            self.loops_mode = v as u8;
+        }
+        if self.loops_mode == 2 {
+            self.groups_view(ui, acts);
+            return;
+        }
+        self.loops_by_song = self.loops_mode == 1;
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practised, or looped, in the last 7 days").clicked() {
                 self.loops_all = false;
             }
             if retro_btn(ui, "ALL", self.loops_all).tip("Every saved loop").clicked() {
                 self.loops_all = true;
-            }
-            ui.add_space(16.0);
-            if retro_btn(ui, "EACH LOOP", !self.loops_by_song)
-                .tip("Every loop on its own - a riff, a lick, a groove - newest first")
-                .clicked()
-            {
-                self.loops_by_song = false;
-            }
-            if retro_btn(ui, "BY SONG", self.loops_by_song).tip("Loops under their songs, with your practice time").clicked() {
-                self.loops_by_song = true;
             }
         });
         ui.add_space(4.0);
@@ -1770,10 +1825,6 @@ impl App {
             if (self.loops_all || l.iter().any(|s| s.saved >= week_start)) && !ids.contains(id) {
                 ids.push(*id);
             }
-        }
-        // a group on show: only the songs with loops in it
-        if let Some(g) = &group {
-            ids.retain(|id| self.store.sections.get(id).is_some_and(|l| l.iter().any(|s| s.group == *g)));
         }
         if !self.loops_by_song {
             self.clips_list(ui, acts, &ids, &week_start);
@@ -1829,7 +1880,7 @@ impl App {
                 if loops.is_empty() {
                     dim_line(ui, "NO LOOPS SAVED - PRACTISED ONLY", 1.0, pal().dim);
                 }
-                for (i, s) in loops.iter().enumerate().filter(|(_, s)| group.as_ref().is_none_or(|g| s.group == *g)) {
+                for (i, s) in loops.iter().enumerate() {
                     let label = format!("{}  {}-{}", s.name.to_uppercase(), fmt_time(s.a), fmt_time(s.b));
                     let b = retro_btn(ui, &label, false).tip("Play the song at this loop, looping. Right-click to forget it");
                     if b.clicked() {
@@ -1862,9 +1913,8 @@ impl App {
         let mut clips: Vec<(i64, usize, store::Section)> = Vec::new();
         for id in ids {
             for (i, s) in self.store.sections.get(id).into_iter().flatten().enumerate() {
-                // this week: loops saved this week, or on a song practised this week; and in the group on show
-                let in_group = self.loops_group.as_ref().is_none_or(|g| s.group == *g);
-                if in_group && (self.loops_all || s.saved.as_str() >= week_start || s.saved.is_empty()) {
+                // this week: loops saved this week, or on a song practised this week
+                if self.loops_all || s.saved.as_str() >= week_start || s.saved.is_empty() {
                     clips.push((*id, i, s.clone()));
                 }
             }
