@@ -27,7 +27,7 @@ enum Msg {
     LoggedIn(Result<(), String>),
     Found(Result<Vec<Track>, String>),
     /// the song's audio, and its length when the file had to tell us (0: the track already knows)
-    Audio(u64, Result<(Vec<u8>, f32), String>),
+    Audio(u64, Result<(Vec<u8>, f32, Vec<u8>), String>),
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -65,6 +65,18 @@ struct App {
     lib_tab: u8,
     /// songs on the phone: each track and its file
     files: Vec<(Track, std::path::PathBuf)>,
+    /// the song's waveform: 400 peaks (0-255)
+    wave: Vec<u8>,
+    /// bookmarks on each song (by track id): where, and a name
+    marks: std::collections::HashMap<i64, Vec<(f32, String)>>,
+    /// the MORE sheet is up
+    more: bool,
+    cents: i32,
+    count_in: u32,
+    bpm: f32,
+    taps: Vec<std::time::Instant>,
+    eq: [f32; 10],
+    eq_on: bool,
 }
 
 impl App {
@@ -110,6 +122,15 @@ impl App {
             keyboard: false,
             lib_tab: 0,
             files: Vec::new(),
+            wave: Vec::new(),
+            marks: load_marks(),
+            more: false,
+            cents: 0,
+            count_in: 0,
+            bpm: 120.0,
+            taps: Vec::new(),
+            eq: [0.0; 10],
+            eq_on: false,
         }
     }
 
@@ -138,20 +159,23 @@ impl App {
         self.loop_on = false;
         self.sync_loop();
         self.player.send(Cmd::Stop);
+        self.wave.clear();
         // a song on the phone: read it (and how long it is); a Tidal one: fetched
         if let Some(path) = self.files.iter().find(|f| f.0.id == t.id).map(|f| f.1.clone()) {
             self.spawn(move |_| {
                 Msg::Audio(
                     g,
                     std::fs::read(&path).map_err(|e| e.to_string()).map(|b| {
-                        use rodio::Source;
-                        let d = decode::SymSource::new(b.clone()).ok().and_then(|s| s.total_duration()).map_or(0.0, |d| d.as_secs_f32());
-                        (b, d)
+                        let (d, w) = wave(&b);
+                        (b, d, w)
                     }),
                 )
             });
         } else {
-            self.spawn(move |api| Msg::Audio(g, api.stream_url(t.id, false).and_then(|u| api.fetch(&u)).map(|b| (b, 0.0))));
+            self.spawn(move |api| Msg::Audio(g, api.stream_url(t.id, false).and_then(|u| api.fetch(&u)).map(|b| {
+                let (d, w) = wave(&b);
+                (b, d, w)
+            })));
         }
     }
 
@@ -215,7 +239,8 @@ impl App {
                 Msg::Audio(g, r) if g == self.gen => {
                     self.loading = false;
                     match r {
-                        Ok((b, d)) => {
+                        Ok((b, d, w)) => {
+                            self.wave = w;
                             if d > 0.0 {
                                 if let Some(t) = self.cur.and_then(|i| self.queue.get_mut(i)) {
                                     t.duration = d;
@@ -354,16 +379,33 @@ impl App {
         // where the song is: drag to move
         let pos = self.seek_drag.unwrap_or_else(|| self.player.ctl.pos());
         let dur = t.duration.max(1.0);
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), Sense::click_and_drag());
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 90.0), Sense::click_and_drag());
         let p = ui.painter();
-        p.rect_filled(r.shrink2(Vec2::new(0.0, 18.0)), 4.0, Color32::from_gray(60));
+        p.rect_filled(r, 4.0, Color32::from_gray(32));
         let x_of = |t: f32| r.min.x + r.width() * (t / dur).clamp(0.0, 1.0);
+        // the waveform, the part played brighter
+        if !self.wave.is_empty() {
+            let n = self.wave.len();
+            let w = r.width() / n as f32;
+            for (k, v) in self.wave.iter().enumerate() {
+                let x = r.min.x + k as f32 * w;
+                let h = (*v as f32 / 255.0) * (r.height() * 0.45);
+                let played = x < x_of(pos);
+                let c = if played { Color32::from_gray(210) } else { Color32::from_gray(100) };
+                p.rect_filled(egui::Rect::from_x_y_ranges(x..=x + (w - 0.5).max(0.5), r.center().y - h..=r.center().y + h), 0.0, c);
+            }
+        }
+        // bookmarks: a line and a number
+        for (k, (bt, _)) in self.marks.get(&t.id).into_iter().flatten().enumerate() {
+            let x = x_of(*bt);
+            p.line_segment([egui::pos2(x, r.min.y), egui::pos2(x, r.max.y)], egui::Stroke::new(2.0, Color32::from_rgb(240, 190, 60)));
+            p.text(egui::pos2(x + 3.0, r.min.y + 2.0), egui::Align2::LEFT_TOP, (k + 1).to_string(), egui::FontId::proportional(13.0), Color32::from_rgb(240, 190, 60));
+        }
         if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
             let c = if self.loop_on { Color32::from_rgb(90, 160, 240) } else { Color32::from_gray(110) };
             p.rect_filled(egui::Rect::from_x_y_ranges(x_of(a)..=x_of(b), r.min.y + 8.0..=r.max.y - 8.0), 2.0, c.gamma_multiply(0.5));
         }
-        p.rect_filled(egui::Rect::from_x_y_ranges(r.min.x..=x_of(pos), r.min.y + 18.0..=r.max.y - 18.0), 4.0, Color32::from_gray(220));
-        p.circle_filled(egui::pos2(x_of(pos), r.center().y), 10.0, Color32::WHITE);
+        p.line_segment([egui::pos2(x_of(pos), r.min.y), egui::pos2(x_of(pos), r.max.y)], egui::Stroke::new(2.0, Color32::WHITE));
         if let Some(pp) = resp.interact_pointer_pos() {
             if resp.dragged() || resp.clicked() {
                 self.seek_drag = Some(((pp.x - r.min.x) / r.width()).clamp(0.0, 1.0) * dur);
@@ -405,16 +447,18 @@ impl App {
         // practice: the loop and the speed
         ui.horizontal_wrapped(|ui| {
             let now = self.player.ctl.pos();
-            if ui.selectable_label(self.loop_a.is_some(), format!("A {}", self.loop_a.map(fmt_t).unwrap_or_default())).clicked() {
+            // fixed widths, so nothing moves as the times fill in
+            let fixed = |ui: &mut egui::Ui, on: bool, s: String| ui.add_sized(Vec2::new(78.0, 44.0), egui::SelectableLabel::new(on, s));
+            if fixed(ui, self.loop_a.is_some(), format!("A {}", self.loop_a.map(fmt_t).unwrap_or_default())).clicked() {
                 self.loop_a = Some(now);
                 self.sync_loop();
             }
-            if ui.selectable_label(self.loop_b.is_some(), format!("B {}", self.loop_b.map(fmt_t).unwrap_or_default())).clicked() {
+            if fixed(ui, self.loop_b.is_some(), format!("B {}", self.loop_b.map(fmt_t).unwrap_or_default())).clicked() {
                 self.loop_b = Some(now);
                 self.loop_on = self.loop_a.is_some_and(|a| now > a);
                 self.sync_loop();
             }
-            if ui.selectable_label(self.loop_on, "LOOP").clicked() && self.loop_a.is_some() && self.loop_b.is_some() {
+            if fixed(ui, self.loop_on, "LOOP".into()).clicked() && self.loop_a.is_some() && self.loop_b.is_some() {
                 self.loop_on = !self.loop_on;
                 self.sync_loop();
             }
@@ -438,8 +482,25 @@ impl App {
             }
         });
         ui.add_space(16.0);
-        if ui.button(if self.show_queue { "HIDE QUEUE" } else { "QUEUE" }).clicked() {
-            self.show_queue = !self.show_queue;
+        ui.horizontal(|ui| {
+            if ui.button("+ MARK").clicked() {
+                let at = self.player.ctl.pos();
+                let l = self.marks.entry(t.id).or_default();
+                l.push((at, String::new()));
+                l.sort_by(|a, b| a.0.total_cmp(&b.0));
+                save_marks(&self.marks);
+            }
+            if ui.selectable_label(self.more, "MORE").clicked() {
+                self.more = !self.more;
+                self.show_queue = false;
+            }
+            if ui.selectable_label(self.show_queue, "QUEUE").clicked() {
+                self.show_queue = !self.show_queue;
+                self.more = false;
+            }
+        });
+        if self.more {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.more_ui(ui, &t));
         }
         if self.show_queue {
             let mut play = None;
@@ -455,6 +516,94 @@ impl App {
             }
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    }
+
+    /// MORE: pitch, the count-off, bookmarks and the equalizer.
+    fn more_ui(&mut self, ui: &mut egui::Ui, t: &Track) {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.add_sized(Vec2::new(90.0, 44.0), egui::Label::new("PITCH"));
+            for (s, d) in [("−1", -100), ("−10c", -10), ("+10c", 10), ("+1", 100)] {
+                if ui.button(s).clicked() {
+                    self.cents = (self.cents + d).clamp(-1200, 1200);
+                    self.player.ctl.set_semis(self.cents);
+                }
+            }
+            ui.label(RichText::new(format!("{:+.2}", self.cents as f32 / 100.0)).strong());
+        });
+        ui.horizontal(|ui| {
+            ui.add_sized(Vec2::new(90.0, 44.0), egui::Label::new("COUNT-OFF"));
+            let label = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
+            if ui.add_sized(Vec2::new(100.0, 44.0), egui::SelectableLabel::new(self.count_in > 0, label)).clicked() {
+                self.count_in = match self.count_in {
+                    0 => 2,
+                    2 => 4,
+                    _ => 0,
+                };
+            }
+            ui.label(format!("{:.0} BPM", self.bpm));
+            // tap the tempo in
+            if ui.button("TAP").clicked() {
+                let now = std::time::Instant::now();
+                self.taps.retain(|x| now.duration_since(*x).as_secs_f32() < 3.0);
+                self.taps.push(now);
+                if self.taps.len() >= 2 {
+                    let span = now.duration_since(self.taps[0]).as_secs_f32();
+                    self.bpm = (60.0 * (self.taps.len() - 1) as f32 / span).clamp(30.0, 300.0).round();
+                }
+            }
+        });
+        self.player.ctl.set_count_in(self.count_in, self.bpm);
+        // bookmarks
+        ui.separator();
+        ui.label(RichText::new("BOOKMARKS").strong());
+        let mut drop = None;
+        let mut jump = None;
+        for (k, (at, _)) in self.marks.get(&t.id).into_iter().flatten().enumerate() {
+            ui.horizontal(|ui| {
+                if ui.add_sized(Vec2::new(120.0, 44.0), egui::Button::new(format!("{}   {}", k + 1, fmt_t(*at)))).clicked() {
+                    jump = Some(*at);
+                }
+                if ui.button("✕").clicked() {
+                    drop = Some(k);
+                }
+            });
+        }
+        if self.marks.get(&t.id).map_or(true, |l| l.is_empty()) {
+            ui.label(RichText::new("+ MARK drops one where the song is.").weak());
+        }
+        if let Some(at) = jump {
+            self.player.send(Cmd::Seek(at));
+        }
+        if let Some(k) = drop {
+            if let Some(l) = self.marks.get_mut(&t.id) {
+                l.remove(k);
+            }
+            save_marks(&self.marks);
+        }
+        // the equalizer: ten bands, flat in the middle
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("EQ").strong());
+            if ui.selectable_label(self.eq_on, if self.eq_on { "ON" } else { "OFF" }).clicked() {
+                self.eq_on = !self.eq_on;
+            }
+            if ui.button("FLAT").clicked() {
+                self.eq = [0.0; 10];
+            }
+        });
+        let bands = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
+        ui.horizontal(|ui| {
+            let w = (ui.available_width() / 10.0 - 6.0).max(20.0);
+            for (k, b) in bands.iter().enumerate() {
+                ui.vertical(|ui| {
+                    ui.set_width(w);
+                    ui.add(egui::Slider::new(&mut self.eq[k], -12.0..=12.0).vertical().show_value(false));
+                    ui.label(RichText::new(*b).size(11.0));
+                });
+            }
+        });
+        self.player.eq.set(self.eq, 0.0, self.eq_on);
     }
 
     /// While browsing: the song playing, small, along the bottom; tap it for the player.
@@ -496,6 +645,42 @@ fn big(ui: &mut egui::Ui, s: &str) -> egui::Response {
     ui.add_sized(Vec2::new(ui.available_width(), 64.0), egui::Button::new(RichText::new(s).size(28.0)))
 }
 
+/// A song's length and a 400-peak waveform, from its encoded bytes.
+fn wave(bytes: &[u8]) -> (f32, Vec<u8>) {
+    use rodio::Source;
+    let Ok(src) = decode::SymSource::new(bytes.to_vec()) else { return (0.0, Vec::new()) };
+    let (ch, rate) = (src.channels().max(1) as usize, src.sample_rate().max(1) as f32);
+    let samples: Vec<i16> = src.collect();
+    let frames = samples.len() / ch;
+    let dur = frames as f32 / rate;
+    let n = 400;
+    let per = (frames / n).max(1);
+    let peaks = (0..n)
+        .map(|k| {
+            let s = (k * per * ch).min(samples.len());
+            let e = ((k + 1) * per * ch).min(samples.len());
+            let m = samples[s..e].iter().step_by(ch * 8).map(|v| v.unsigned_abs()).max().unwrap_or(0);
+            (m as u32 * 255 / 32768) as u8
+        })
+        .collect();
+    (dur, peaks)
+}
+
+fn marks_file() -> std::path::PathBuf {
+    api::config_dir().join("bookmarks.json")
+}
+
+fn load_marks() -> std::collections::HashMap<i64, Vec<(f32, String)>> {
+    std::fs::read_to_string(marks_file()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+fn save_marks(m: &std::collections::HashMap<i64, Vec<(f32, String)>>) {
+    let _ = std::fs::create_dir_all(api::config_dir());
+    if let Ok(s) = serde_json::to_string(m) {
+        let _ = std::fs::write(marks_file(), s);
+    }
+}
+
 /// Backline's own Music folder on the phone: songs put here play without any permission.
 fn music_dir() -> std::path::PathBuf {
     let base = std::env::var_os("BACKLINE_FILES").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("."));
@@ -525,6 +710,7 @@ impl eframe::App for App {
             self.keyboard = want;
             show_keyboard(want);
         }
+        egui::TopBottomPanel::top("status_gap").exact_height(28.0).show_separator_line(false).show(ctx, |_| {});
         egui::TopBottomPanel::bottom("nav").show(ctx, |ui| {
             if self.tab != Tab::Player {
                 self.now_bar(ui);
@@ -537,6 +723,7 @@ impl eframe::App for App {
                     }
                 }
             });
+            ui.add_space(22.0);
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             if !self.note.is_empty() {
