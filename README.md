@@ -86,8 +86,7 @@ The library now has five lists: **TIDAL | FILES | YT | TUNES | DIARY**.
 - **FILES**: drag audio files or folders onto the window (or ADD FILES / ADD FOLDER). Nothing is copied.
   Folders are remembered; RESCAN picks up new files. Loops, slow-down and everything else work on them.
 - **YT** (YouTube): press GET YT-DLP once (downloads the free yt-dlp tool from its GitHub page), paste a link, ADD.
-  First play downloads only the audio (AAC) and stores it; after that it starts instantly and loops like anything else.
-  Downloading from YouTube may go against its terms; personal practice use is at your discretion.
+  Using YouTube this way may go against its terms; personal practice use is at your discretion.
 - **TUNES**: your repertoire. Each tune has a comfort level (LEARNING / OK / GOOD / COMFORTABLE, click a pip), key, tempo, notes and the
   *recordings worth studying* (Tidal, files or YouTube) with 1-5 stars and a note each.
   Right-click any song -> "Add to a tune...". LOOK UP (only when you press it) fetches the composer from

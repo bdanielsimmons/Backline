@@ -1838,7 +1838,7 @@ impl App {
                         self.store.yt.insert(0, e);
                         self.store_dirty = true;
                     }
-                    self.set_note("KEPT IN SAVED CLIPS");
+                    self.set_note("KEPT IN MY CLIPS");
                 }
             }
             Action::ScKeep(id) => {

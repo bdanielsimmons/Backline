@@ -662,7 +662,7 @@ impl App {
                             acts.push(Action::ScKeep(e.id));
                             ui.close_menu();
                         }
-                        if which == 7 && menu_item(ui, "Keep in my saved clips") {
+                        if which == 7 && menu_item(ui, "Keep in my clips") {
                             acts.push(Action::YtKeep(e.id));
                             ui.close_menu();
                         }
@@ -777,7 +777,7 @@ impl App {
     pub(crate) fn yt_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "YOUTUBE", 3.0, pal().ink);
-        title_line(ui, "audio only, saved on this computer for looping", 2.0, pal().ink2);
+        title_line(ui, "audio only, for practice", 2.0, pal().ink2);
         ui.add_space(4.0);
         let have = sources::ytdlp_path().is_some();
         ui.horizontal_wrapped(|ui| {
@@ -862,17 +862,17 @@ impl App {
             }
         }
         if self.store.yt.is_empty() {
-            para(ui, "One-time setup: press GET YT-DLP. Then paste a link and press ADD. The first play downloads just the audio (a few MB); after that it is stored and starts instantly, like everything in this player.", pal().ink2);
+            para(ui, "One-time setup: press GET YT-DLP. Then paste a link and press ADD.", pal().ink2);
             if PRACTICE {
                 para(ui, "Play-along videos, lessons, live takes - anything you want to loop and slow down.", pal().ink2);
             }
             para(
                 ui,
-                "Note: downloading from YouTube may go against YouTube's terms. Personal use only, at your own discretion.",
+                "Note: using YouTube this way may go against YouTube's terms. Personal use only, at your own discretion.",
                 pal().dim,
             );
         } else {
-            section_header(ui, "SAVED CLIPS");
+            section_header(ui, "MY CLIPS");
             let tracks: Vec<Track> = self.store.yt.iter().map(|e| e.to_track()).collect();
             ui.add_space(4.0);
             play_buttons(ui, &tracks, acts, false);
@@ -933,8 +933,8 @@ impl App {
             para(ui, &self.sc_msg.clone(), col);
         }
         if self.sc_results.is_empty() && self.store.sc.is_empty() {
-            para(ui, "Your own account: paste your profile's likes link (soundcloud.com/YOU/likes) or a playlist link and press GO - public ones list right here. Click a track to play; the first play stores just its audio so looping and slow-down work like everywhere else.", pal().ink2);
-            para(ui, "Note: no sign-in is used, so private and Go+ tracks may play as previews or not at all. Downloading may go against SoundCloud's terms; personal practice use is at your discretion.", pal().dim);
+            para(ui, "Your own account: paste your profile's likes link (soundcloud.com/YOU/likes) or a playlist link and press GO - public ones list right here. Click a track to play.", pal().ink2);
+            para(ui, "Note: no sign-in is used, so private and Go+ tracks may play as previews or not at all. Using SoundCloud this way may go against its terms; personal practice use is at your discretion.", pal().dim);
         }
         self.saved_lists(ui, acts, "sc");
         if !self.sc_sets.is_empty() {
@@ -3071,6 +3071,20 @@ impl App {
         let tid = self.cur_track().map(|t| t.id);
         match self.mtab {
             0 => {
+                // the count-off is its own thing: clicks before every pass of the loop, with or without the trainer
+                ui.horizontal_wrapped(|ui| {
+                    label(ui, "COUNT-OFF", 92.0);
+                    let ci = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
+                    if retro_btn_w(ui, &ci, 92.0, self.count_in > 0)
+                        .tip(
+                            "Clicks before every pass of the loop, at the song's tempo - with or without the trainer (off, 2, 4)",
+                        )
+                        .clicked()
+                    {
+                        acts.push(Action::CountIn);
+                    }
+                });
+                ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     label(ui, "TRAIN", 56.0);
                     if retro_btn_w(ui, if self.trainer { "ON" } else { "OFF" }, 56.0, self.trainer)
@@ -3106,11 +3120,8 @@ impl App {
                     );
                 });
                 dim_line(ui, "STARTS AT THE SPEED SET ABOVE AND STOPS AT 100%", 1.0, pal().dim);
+                ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    let ci = if self.count_in == 0 { "COUNT OFF".to_string() } else { format!("COUNT {}", self.count_in) };
-                    if retro_btn_w(ui, &ci, 100.0, self.count_in > 0).tip("Clicks before every loop pass").clicked() {
-                        acts.push(Action::CountIn);
-                    }
                     if retro_btn_w(ui, "FOCUS", 76.0, self.focus_mode)
                         .tip("Hide the lists - just the player and these tools")
                         .clicked()

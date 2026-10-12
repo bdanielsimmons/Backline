@@ -390,18 +390,16 @@ impl App {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
         }
+        // (in the full window the middle one is the skin's own button below, which goes fullscreen)
         {
-            let r = at(254.0);
-            let tip = if self.mini {
-                "Back to the full window"
-            } else if self.fullscreen {
-                "Leave fullscreen"
-            } else {
-                "Fullscreen"
-            };
-            if ui.interact(r, tid.with("size"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked()
+            if self.mini
+                && ui
+                    .interact(at(254.0), tid.with("size"), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .tip("Back to the full window")
+                    .clicked()
             {
-                acts.push(if self.mini { Action::ToggleMini } else { Action::ToggleFullscreen });
+                acts.push(Action::ToggleMini);
             }
             if !self.mini
                 && ui
@@ -484,8 +482,10 @@ impl App {
         if tb(ui, "min", 244.0, (9.0, 0.0), "Minimize").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
-        if tb(ui, "shade", 254.0, (0.0, 18.0), "Mini player").clicked() {
-            acts.push(Action::ToggleMini);
+        if !self.mini
+            && tb(ui, "shade", 254.0, (0.0, 18.0), if self.fullscreen { "Leave fullscreen" } else { "Fullscreen" }).clicked()
+        {
+            acts.push(Action::ToggleFullscreen);
         }
         if tb(ui, "close", 264.0, (18.0, 0.0), "Quit Backline").clicked() {
             acts.push(Action::QuitApp);

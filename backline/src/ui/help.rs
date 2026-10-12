@@ -230,7 +230,7 @@ fn about_tab(ui: &mut egui::Ui) {
     section_header(ui, "FINE PRINT");
     para(
         ui,
-        "Unofficial. Not made by or affiliated with Tidal, SoundCloud or YouTube. You need your own Tidal subscription. Downloading from YouTube or SoundCloud may go against their terms; personal use is at your own discretion.",
+        "Unofficial. Not made by or affiliated with Tidal, SoundCloud or YouTube. You need your own Tidal subscription. Using YouTube or SoundCloud through Backline may go against their terms; personal use is at your own discretion.",
         pal().dim,
     );
     section_header(ui, "BUILT WITH");
