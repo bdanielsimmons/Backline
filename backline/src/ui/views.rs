@@ -2797,8 +2797,13 @@ impl App {
                         Rect::from_min_max(Pos2::new(x - 1.0, bar.min.y + 12.0), Pos2::new(x + 1.0, bar.max.y - 2.0)),
                         col,
                     );
-                    let lab = if m.name.is_empty() { (k + 1).to_string() } else { m.name.clone() };
-                    let fw = crate::font::text_w(&lab, 1.0) + 8.0;
+                    // a short flag (the number, or the name cut to fit, never past the next bookmark); the whole
+                    // name is in its tip
+                    let next_x = marks.get(k + 1).map_or(inn.max.x, |n| at(n.t));
+                    let room = (next_x - x - 3.0).clamp(14.0, 70.0);
+                    let full = if m.name.is_empty() { (k + 1).to_string() } else { m.name.clone() };
+                    let lab = crate::font::fit(&full, 1.0, room - 8.0);
+                    let fw = (crate::font::text_w(&lab, 1.0) + 8.0).min(room);
                     let flag = Rect::from_min_size(Pos2::new(x, bar.max.y - 40.0), Vec2::new(fw, 13.0));
                     p.rect_filled(flag, 1.0, col);
                     ptext(&p, flag.center(), Align::Center, &lab, 1.0, egui::Color32::from_gray(12));
@@ -2806,7 +2811,16 @@ impl App {
                         .interact(flag.expand(2.0), ui.id().with(("wv_bm", k)), Sense::click())
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .tip(format!(
-                            "Bookmark {} at {} - click to jump, alt + click to remove, right-click to recolour",
+                            "{}Bookmark {} at {} - click to jump, alt + click to remove, right-click to rename or recolour",
+                            if m.name.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "{}
+",
+                                    m.name
+                                )
+                            },
                             k + 1,
                             fmt_t(m.t)
                         ));
