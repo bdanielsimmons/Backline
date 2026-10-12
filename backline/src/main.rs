@@ -1320,16 +1320,25 @@ fn menu_item(ui: &mut egui::Ui, text: &str) -> bool {
 /// Dropdown button: shows `name: current` with a small arrow; the list opens as an overlay
 /// right under it (no layout change). Returns the index chosen this frame.
 fn dropdown(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str], sel: usize, min_w: f32) -> Option<usize> {
+    dropdown_at(ui, id, title, items, sel, min_w, false)
+}
+
+/// A dropdown of exactly `w` wide whatever it shows (a long choice is cut to fit), so what sits beside it stays put.
+fn dropdown_fixed(ui: &mut egui::Ui, id: &str, items: &[&str], sel: usize, w: f32) -> Option<usize> {
+    dropdown_at(ui, id, "", items, sel, w, true)
+}
+
+fn dropdown_at(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str], sel: usize, min_w: f32, fixed: bool) -> Option<usize> {
     let cur = items.get(sel).copied().unwrap_or("");
     let text = if title.is_empty() { cur.to_string() } else { format!("{}: {}", title, cur) };
-    let w = (text_w(&text, 2.0) + 38.0).max(min_w);
+    let w = if fixed { min_w } else { (text_w(&text, 2.0) + 38.0).max(min_w) };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let key = egui::Id::new(("dd", id));
     let open = ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
     let down = resp.is_pointer_button_down_on() || open;
     raised_h(ui.painter(), rect, down, resp.hovered());
     let dy = if down { 1.0 } else { 0.0 };
-    ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + dy), Align::Min, &text, 2.0, pal().ink);
+    ptext_fit(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + dy), Align::Min, &text, 2.0, w - 38.0, pal().ink);
     pixmap(
         ui.painter(),
         Pos2::new(rect.max.x - 20.0, rect.center().y - 3.0 + dy),
@@ -5385,15 +5394,38 @@ impl eframe::App for App {
                 let right_w = screen.width() - lib_w;
                 let inner_w = right_w - 28.0;
                 // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)
-                let practice_h = if !self.practice { 0.0 } else { self.prac_h.clamp(220.0, (screen.height() * 0.6).max(220.0)) };
+                let mut practice_h =
+                    if !self.practice { 0.0 } else { self.prac_h.clamp(220.0, (screen.height() * 0.6).max(220.0)) };
                 let max_inner_h = ((screen.height() - practice_h) * 0.5 - 44.0).max(120.0);
                 let auto_s = (inner_w / 300.0).min(max_inner_h / 138.0).clamp(0.8, 3.0);
-                let s = if self.stack_frac >= 0.99 {
+                let mut s = if self.stack_frac >= 0.99 {
                     auto_s
                 } else {
                     let want = (self.stack_frac * screen.height() - 44.0).max(0.0);
                     (inner_w / 300.0).min(want / 138.0).clamp(0.6, 3.0)
                 };
+                // the whole column fits in the window: when player, equalizer, playlist and practice panel add up to
+                // more, the practice panel gives first (down to its least), then the player scales down
+                if self.practice {
+                    // the parts of the column that grow with the player's scale, and the ones that don't
+                    let skin_eq = self.show_eq && self.wa_art.is_some();
+                    let per_s = if self.queue_hidden { 0.0 } else { 138.0 } + if skin_eq { 116.0 } else { 0.0 };
+                    let fixed = if self.queue_hidden { 160.0 } else { 44.0 + 80.0 }
+                        + if !self.show_eq {
+                            0.0
+                        } else if skin_eq {
+                            90.0
+                        } else {
+                            340.0
+                        };
+                    let room = screen.height() - fixed - per_s * s;
+                    if practice_h > room {
+                        practice_h = room.max(220.0);
+                    }
+                    if per_s > 0.0 {
+                        s = s.min((screen.height() - fixed - practice_h) / per_s).max(0.4);
+                    }
+                }
                 let player_h = 138.0 * s + 44.0;
 
                 if !self.focus_mode {

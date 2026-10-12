@@ -1619,10 +1619,19 @@ impl App {
             .collect();
         let ch_names: Vec<&str> = ch_names.iter().map(|s| s.as_str()).collect();
         let lesson_names: Vec<&str> = in_ch.iter().map(|i| names[*i].as_str()).collect();
-        ui.horizontal_wrapped(|ui| {
+        // one nav bar, every part a fixed width so nothing moves as you go: < chapter, page >
+        ui.horizontal(|ui| {
+            let room = ui.available_width() - 2.0 * 30.0 - 4.0 * ui.spacing().item_spacing.x;
+            let ch_w = if chapters.len() > 1 { (room * 0.45).clamp(140.0, 380.0) } else { 0.0 };
+            let ls_w = (room - ch_w).clamp(160.0, 520.0);
+            if retro_btn_w(ui, "<", 30.0, false).tip("The page before").clicked() && self.rd_lesson > 0 {
+                self.rd_lesson -= 1;
+                self.rd_piece = 0;
+                self.rd_part = 0;
+            }
             if chapters.len() > 1 {
                 let ci = chapters.iter().position(|c| *c == cur_ch).unwrap_or(0);
-                if let Some(c) = dropdown(ui, "rd_chapter", "", &ch_names, ci, 300.0) {
+                if let Some(c) = crate::dropdown_fixed(ui, "rd_chapter", &ch_names, ci, ch_w) {
                     if let Some(first) = self.rd_book.iter().position(|l| l.chapter == chapters[c]) {
                         self.rd_lesson = first;
                         self.rd_piece = 0;
@@ -1630,23 +1639,19 @@ impl App {
                     }
                 }
             }
-        });
-        ui.horizontal_wrapped(|ui| {
-            if retro_btn_w(ui, "<", 30.0, false).tip("The lesson before").clicked() && self.rd_lesson > 0 {
-                self.rd_lesson -= 1;
-                self.rd_piece = 0;
-            }
             let li = in_ch.iter().position(|i| *i == self.rd_lesson).unwrap_or(0);
-            if let Some(i) = dropdown(ui, "rd_lesson", "", &lesson_names, li, 380.0) {
+            if let Some(i) = crate::dropdown_fixed(ui, "rd_lesson", &lesson_names, li, ls_w) {
                 self.rd_lesson = in_ch[i];
                 self.rd_piece = 0;
                 self.rd_part = 0;
             }
-            if retro_btn_w(ui, ">", 30.0, false).tip("The next lesson").clicked() && self.rd_lesson + 1 < self.rd_book.len() {
+            if retro_btn_w(ui, ">", 30.0, false).tip("The next page").clicked() && self.rd_lesson + 1 < self.rd_book.len() {
                 self.rd_lesson += 1;
                 self.rd_piece = 0;
+                self.rd_part = 0;
             }
-            ui.add_space(10.0);
+        });
+        ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, &format!("{} OF {} DONE", done_n, total), 120.0);
             if retro_btn(ui, "PICK UP WHERE I LEFT OFF", false).tip("The first exercise not done yet").clicked() {
                 'find: for (li, l) in self.rd_book.iter().enumerate() {

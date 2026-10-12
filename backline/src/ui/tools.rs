@@ -887,7 +887,11 @@ impl App {
             let per: usize = if w >= 760.0 { 8 } else { 4 };
             let gap = 6.0;
             let cw = ((w - gap * (per as f32 - 1.0)) / per as f32).floor().max(40.0);
-            let ch = if tonic.is_some() { 64.0 } else { 54.0 };
+            // the bars grow to fill the sheet's height (up to twice their size), the chord names with them
+            let base = if tonic.is_some() { 64.0 } else { 54.0 };
+            let rows = chart.bars.len().div_ceil(per).max(1) as f32;
+            let ch = ((ui.available_height() - 12.0) / rows - 8.0).clamp(base, base * 2.0).floor();
+            let z = ch / base;
             for (ri, row) in chart.bars.chunks(per).enumerate() {
                 let (rr, _) = ui.allocate_exact_size(Vec2::new(w, ch + 8.0), Sense::hover());
                 if !ui.is_rect_visible(rr) {
@@ -1044,22 +1048,22 @@ impl App {
                         let slot = (cell.width() - 24.0) / n as f32;
                         for (k, c) in bar.chords.iter().enumerate() {
                             let shown = chart::transpose(c, tr);
-                            let px = if n == 1 { 3.0 } else { 2.0 };
+                            let px = (if n == 1 { 3.0 } else { 2.0 }) * z;
                             let cx = cell.min.x + 12.0 + slot * (k as f32 + 0.5);
                             if let Some(t) = tonic {
                                 ptext_fit(
                                     p,
-                                    Pos2::new(cx, cy + 19.0),
+                                    Pos2::new(cx, cy + 19.0 * z),
                                     Align::Center,
                                     &chart::roman(c, t),
-                                    1.0,
+                                    z,
                                     slot - 4.0,
                                     pal().ink2,
                                 );
                             }
                             ptext_fit(
                                 p,
-                                Pos2::new(cx, cy - if tonic.is_some() { 5.0 } else { 0.0 }),
+                                Pos2::new(cx, cy - if tonic.is_some() { 5.0 * z } else { 0.0 }),
                                 Align::Center,
                                 &shown,
                                 px,
