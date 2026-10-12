@@ -473,7 +473,72 @@ pub(crate) fn calm() -> bool {
 /// leaked on purpose (a few bytes per skin picked), so `pal()` can hand out a plain reference.
 static CUSTOM: std::sync::atomic::AtomicPtr<Pal> = std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
+/// How light a colour looks (WCAG relative luminance, 0 black to 1 white).
+fn lum(c: Color32) -> f32 {
+    let ch = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.03928 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+}
+
+/// How far apart two colours read (WCAG contrast ratio, 1 to 21).
+pub(crate) fn contrast(a: Color32, b: Color32) -> f32 {
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// `c` moved a step at a time toward black (or white) until it is `min` apart from `against`.
+fn push(c: Color32, against: Color32, min: f32, to_dark: bool) -> Color32 {
+    let target = if to_dark { Color32::BLACK } else { Color32::WHITE };
+    let mut out = c;
+    for k in 1..=10 {
+        if contrast(out, against) >= min {
+            break;
+        }
+        out = c.lerp_to_gamma(target, k as f32 / 10.0);
+    }
+    out
+}
+
+/// A skin's colours made readable: every text colour clear of every background it sits on - the main text at
+/// least 4.5 : 1 (the usual standard), the second text 3 : 1, the faint text 2.2 : 1. Backgrounds behind light text
+/// go darker (rather than the text going grey), dark text gets lighter backgrounds. Skins that are already clear
+/// don't change.
+pub(crate) fn readable(mut p: Pal, app_bg_too: bool) -> Pal {
+    let light_ink = lum(p.ink) > 0.4;
+    if app_bg_too {
+        p.app_bg = push(p.app_bg, p.ink, 4.5, light_ink);
+    }
+    for bg in [
+        &mut p.lcd,
+        &mut p.beige,
+        &mut p.beige_lt,
+        &mut p.beige_dk,
+        &mut p.beige_h,
+        &mut p.btn_face,
+        &mut p.row_alt,
+        &mut p.sel,
+        &mut p.row_sel,
+    ] {
+        *bg = push(*bg, p.ink, 4.5, light_ink);
+    }
+    for (fg, min) in [(&mut p.ink2, 3.0), (&mut p.dim, 2.2)] {
+        for bg in if app_bg_too { vec![p.app_bg, p.lcd, p.beige] } else { vec![p.lcd, p.beige] } {
+            *fg = push(*fg, bg, min, !light_ink);
+        }
+    }
+    p.bar_txt = push(p.bar_txt, p.row_sel, 4.5, lum(p.row_sel) > 0.4);
+    p
+}
+
 pub(crate) fn set_custom(p: Option<Pal>) {
+    // a worn skin's colours, kept readable whatever the skin's own choices
+    let p = p.map(|p| readable(p, true));
     let ptr = p.map_or(std::ptr::null_mut(), |p| Box::into_raw(Box::new(p)));
     CUSTOM.store(ptr, Ordering::Release);
 }
@@ -557,7 +622,10 @@ pub(crate) fn pal() -> &'static Pal {
         // SAFETY: set_custom only stores pointers from Box::into_raw that are never freed
         return unsafe { &*c };
     }
-    &PALS[SKIN.load(Ordering::Relaxed) % PALS.len()]
+    // the built-in skins, kept readable the same way (text where text is drawn; their own looks otherwise)
+    static FIXED: std::sync::OnceLock<Vec<Pal>> = std::sync::OnceLock::new();
+    let fixed = FIXED.get_or_init(|| PALS.iter().map(|p| readable(p.clone(), false)).collect());
+    &fixed[SKIN.load(Ordering::Relaxed) % fixed.len()]
 }
 
 #[cfg(test)]
@@ -585,6 +653,20 @@ mod contrast_tests {
     }
 
     #[test]
+    fn every_builtin_reads_where_text_sits() {
+        for i in 0..PALS.len() {
+            SKIN.store(i, Ordering::Relaxed);
+            let p = pal();
+            for (what, bg) in
+                [("menus", p.beige), ("drop-downs", p.beige_lt), ("buttons", p.btn_face), ("lists", p.lcd), ("selection", p.sel)]
+            {
+                assert!(contrast(p.ink, bg) >= 4.5, "{} {}: {:.1}", SKIN_NAMES[i], what, contrast(p.ink, bg));
+            }
+        }
+        SKIN.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
     fn high_contrast_skins_meet_aaa() {
         for i in [15usize, 16] {
             let p = &PALS[i];
@@ -602,5 +684,43 @@ mod contrast_tests {
                 assert!(c(fg, bg) >= 7.0, "{} {}: {:.1}", SKIN_NAMES[i], what, c(fg, bg));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod readable_tests {
+    use super::*;
+
+    #[test]
+    fn light_text_on_light_menus_becomes_readable() {
+        let grey = c(200, 200, 205);
+        let p = Pal {
+            app_bg: c(20, 20, 24),
+            trim: grey,
+            beige: c(245, 245, 245),
+            beige_lt: c(240, 240, 240),
+            beige_dk: c(220, 220, 220),
+            beige_h: c(230, 230, 230),
+            lcd: c(10, 10, 12),
+            lcd_ghost: grey,
+            groove: grey,
+            sel: c(235, 235, 235),
+            ink: c(190, 195, 215),
+            ink2: c(60, 60, 70),
+            dim: c(40, 40, 45),
+            red: c(220, 60, 60),
+            btn_face: c(225, 225, 225),
+            btn_hi: grey,
+            row_alt: c(25, 25, 30),
+            row_sel: c(60, 60, 80),
+            bar_txt: c(70, 70, 90),
+            edge: grey,
+        };
+        let r = readable(p, true);
+        for bg in [r.app_bg, r.lcd, r.beige, r.beige_lt, r.btn_face, r.sel] {
+            assert!(contrast(r.ink, bg) >= 4.5, "{:?} on {:?}", r.ink, bg);
+        }
+        assert!(contrast(r.ink2, r.app_bg) >= 3.0 && contrast(r.dim, r.lcd) >= 2.2);
+        assert!(contrast(r.bar_txt, r.row_sel) >= 4.5);
     }
 }

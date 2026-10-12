@@ -1469,7 +1469,13 @@ impl App {
             let h = ui
                 .interact(r.intersect(list), id.with(("row", i)), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip("Click to play, drag to move, right-click for more");
+                // the song in full (a long title is cut short in the row)
+                .tip(format!(
+                    "{} - {}{}",
+                    tr.artists_text(),
+                    tr.title,
+                    if tr.album.is_empty() { String::new() } else { format!("   ({})", tr.album) }
+                ));
             rects.push((i, r));
             if h.drag_started() {
                 self.q_drag = Some(i);
