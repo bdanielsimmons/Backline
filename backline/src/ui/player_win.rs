@@ -4,8 +4,12 @@ use super::*;
 
 impl App {
     pub(crate) fn player_window(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        // mini: just the deck, no window around it, with the chips on a strip along the top
-        let inner = if self.mini {
+        // mini: just the deck, no window around it. A Winamp skin's deck fills the window (its own title-bar buttons
+        // go back to full size, minimize, close); Backline's own deck keeps a FULL chip on a strip along the top
+        let skin_mini = self.mini && self.wa_art.is_some();
+        let inner = if skin_mini {
+            ui.max_rect()
+        } else if self.mini {
             let r = ui.max_rect();
             Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.min.y + 26.0), Pos2::new(r.max.x - 4.0, r.max.y - 4.0))
         } else {
@@ -29,8 +33,14 @@ impl App {
         let active = self.cur.is_some() && !self.stopped;
         let next = self.next_track();
 
-        // ---- mode switch and window chips on the title line
-        {
+        // ---- mode switch and window chips on the title line (in mini, only Backline's own deck's FULL)
+        if self.mini && !skin_mini {
+            let w = text_w("FULL", 1.0) + 14.0;
+            let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - w, inner.min.y - 22.0), Vec2::new(w, 16.0));
+            if chip(ui, r, "FULL", true, "c_mini").tip("Back to the full window").clicked() {
+                acts.push(Action::ToggleMini);
+            }
+        } else if !self.mini {
             let chip_h = 16.0;
             let ty = if self.mini { inner.min.y - 22.0 } else { inner.min.y - 18.0 - chip_h / 2.0 };
             let mut right = inner.max.x - 8.0;

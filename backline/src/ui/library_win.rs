@@ -950,6 +950,7 @@ impl App {
                         Sec::Chords => self.chords_view(ui, acts),
                         Sec::Lines => self.lines_view(ui, acts),
                         Sec::Lists => self.playlists_view(ui, acts),
+                        Sec::Mine => self.mine_view(ui, acts),
                     });
                 });
         });

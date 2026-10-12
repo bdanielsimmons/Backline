@@ -225,7 +225,13 @@ enum Sec {
     Chords,
     Lines,
     Lists,
+    /// MY TRACKS: every song you liked, from every source
+    Mine,
 }
+
+/// The sources Backline plays from: (key, name). A song's source is "tidal" for Tidal, otherwise its kind
+/// ("file", "sc", "yt"). Adding a source is one more line here.
+pub(crate) const SOURCES: [(&str, &str); 4] = [("tidal", "TIDAL"), ("file", "FILES"), ("sc", "SOUNDCLOUD"), ("yt", "YOUTUBE")];
 
 /// Which text field has the keyboard (0 = none) and where its caret is.
 #[derive(Default)]
@@ -2413,6 +2419,8 @@ struct App {
     q_next: u64,
     /// a song you queued leaves the queue once playing moves on past it (Preferences)
     q_drop: bool,
+    /// MY TRACKS: the sources turned off (by SOURCES key)
+    mine_off: Vec<String>,
     /// the metronome's own volume (0..1), apart from the main volume
     mt_vol: f32,
     sleep_at: Option<Instant>,
@@ -3025,6 +3033,7 @@ impl App {
             q_drag: None,
             q_manual: 0,
             q_drop: true,
+            mine_off: Vec::new(),
             mt_vol: 0.8,
             q_added: HashSet::new(),
             q_next: 0,
@@ -3415,6 +3424,9 @@ impl App {
             app.mt_vol = v as f32;
         }
         app.player.send(Cmd::MetroVolume(app.mt_vol * app.mt_vol));
+        if let Some(l) = st["mine_off"].as_array() {
+            app.mine_off = l.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        }
         if let Some(b) = st["q_drop"].as_bool() {
             app.q_drop = b;
         }
@@ -3669,6 +3681,7 @@ impl App {
             }
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
+            Ok("mine") => app.sec = Sec::Mine,
             Ok("group") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
@@ -3699,6 +3712,7 @@ impl App {
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
             "q_drop": self.q_drop,
+            "mine_off": self.mine_off,
             "mt_vol": self.mt_vol,
             "seen_build": self.seen_build,
             "wv_h": self.wv_h,
@@ -4951,11 +4965,25 @@ impl App {
                     self.saved_size = self.ctx.screen_rect().size();
                     // the window takes the deck's own shape, at twice its pixels: a Winamp skin's main window is
                     // 275 x 116, Backline's own deck 300 x 138; plus the strip of chips along the top
-                    let deck = if self.wa_art.is_some() { Vec2::new(275.0, 116.0) } else { Vec2::new(300.0, 138.0) };
-                    let size = deck * 2.0 + Vec2::new(8.0, 30.0);
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(deck + Vec2::new(8.0, 30.0)));
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                    let (deck, extra) = if self.wa_art.is_some() {
+                        (Vec2::new(275.0, 116.0), Vec2::ZERO)
+                    } else {
+                        (Vec2::new(300.0, 138.0), Vec2::new(8.0, 30.0))
+                    };
+                    // a whole number of screen pixels for each of the deck's pixels (as the skin is drawn), so at any
+                    // display scaling the deck fills the window exactly - no dark border round it
+                    let ppp = self.ctx.pixels_per_point();
+                    let k = (2.0 * ppp).round().max(1.0) / ppp;
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(deck + extra));
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(deck * k + extra));
+                    // a skin's deck is the whole window: no system title bar (its own one drags the window)
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(self.wa_art.is_none()));
+                    // a little player is for listening
+                    if self.practice {
+                        self.apply(Action::TogglePractice);
+                    }
                 } else {
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(980.0, 640.0)));
                     let sz = if self.saved_size.x > 100.0 { self.saved_size } else { Vec2::new(1280.0, 820.0) };
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(sz));

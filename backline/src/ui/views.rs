@@ -403,7 +403,7 @@ impl App {
                 acts.push(Action::BacklinePage);
             } else if i != cur {
                 let to_practice = PRACTICE && i == 1;
-                let music: Vec<Sec> = [Sec::Tidal, Sec::Sc, Sec::Files, Sec::Yt, Sec::Lists]
+                let music: Vec<Sec> = [Sec::Mine, Sec::Lists, Sec::Tidal, Sec::Files, Sec::Sc, Sec::Yt]
                     .into_iter()
                     .filter(|s| *s != Sec::Tidal || !self.offline)
                     .collect();
@@ -449,24 +449,73 @@ impl App {
             }
             return;
         }
-        // the music sources, with your Tidal library as its own stop
-        let mut items: Vec<(Sec, &str)> = Vec::new();
+        // everything you keep (MY TRACKS, LISTS), then each source on its own
+        let mut items: Vec<(Sec, &str)> = vec![(Sec::Mine, "MY TRACKS"), (Sec::Lists, "LISTS")];
         if !self.offline {
             items.push((Sec::Tidal, "TIDAL"));
-            items.push((Sec::Tidal, "MY LIBRARY"));
         }
-        items.extend([(Sec::Sc, "SOUNDCLOUD"), (Sec::Files, "FILES"), (Sec::Yt, "YT"), (Sec::Lists, "LISTS")]);
-        let on_library = self.sec == Sec::Tidal && self.page.as_ref().is_some_and(|p| p.library);
-        let cur =
-            items.iter().position(|s| s.0 == self.sec && (s.0 != Sec::Tidal || (s.1 == "MY LIBRARY") == on_library)).unwrap_or(0);
+        items.extend([(Sec::Files, "FILES"), (Sec::Sc, "SOUNDCLOUD"), (Sec::Yt, "YT")]);
+        let cur = items.iter().position(|s| s.0 == self.sec).unwrap_or(0);
         if let Some(i) = sub_tabs(ui, &items, cur) {
-            match items[i] {
-                (Sec::Tidal, "MY LIBRARY") => acts.push(Action::Library),
-                // TIDAL goes back to the Tidal page you had (home when that was your library)
-                (Sec::Tidal, _) if on_library || self.page.is_none() => acts.push(Action::Home),
-                (s, _) => acts.push(Action::Section(s)),
+            match items[i].0 {
+                // TIDAL goes back to the Tidal page you had
+                Sec::Tidal if self.page.is_none() => acts.push(Action::Home),
+                s => acts.push(Action::Section(s)),
             }
         }
+        // Tidal's own space: its home and your Tidal library, nothing from other sources mixed in
+        if self.sec == Sec::Tidal {
+            let on_library = self.page.as_ref().is_some_and(|p| p.library);
+            let sub = [(Sec::Tidal, "HOME"), (Sec::Tidal, "MY LIBRARY")];
+            if let Some(i) = sub_tabs(ui, &sub, on_library as usize) {
+                acts.push(if i == 1 { Action::Library } else { Action::Home });
+            }
+        }
+    }
+
+    /// MY TRACKS: every song you liked, from every source (your Tidal likes, and the files, SoundCloud and YouTube
+    /// songs you hearted), with a SOURCES row to leave any of them out.
+    pub(crate) fn mine_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        ui.add_space(6.0);
+        title_line(ui, "MY TRACKS", 3.0, pal().ink);
+        title_line(ui, "every song you liked, from every source", 2.0, pal().ink2);
+        ui.horizontal_wrapped(|ui| {
+            label(ui, "SOURCES", 74.0);
+            for (key, name) in crate::SOURCES {
+                let on = !self.mine_off.iter().any(|k| k == key);
+                if crate::check_box(ui, name, on).clicked() {
+                    if on {
+                        self.mine_off.push(key.to_string());
+                    } else {
+                        self.mine_off.retain(|k| k != key);
+                    }
+                    self.dirty = true;
+                }
+            }
+        });
+        let shows = |key: &str| !self.mine_off.iter().any(|k| k == key);
+        let mut tracks: Vec<Track> = self.store.hearts.iter().filter(|e| shows(&e.kind)).map(|e| e.to_track()).collect();
+        let mut waiting = false;
+        if shows("tidal") && !self.offline {
+            match &self.lib_page {
+                Some(p) => tracks.extend(p.tracks.iter().cloned()),
+                None => waiting = true,
+            }
+        }
+        ui.add_space(4.0);
+        if waiting {
+            dim_line(ui, "YOUR TIDAL LIKES SHOW ONCE TIDAL > MY LIBRARY HAS LOADED", 1.0, pal().dim);
+        }
+        if tracks.is_empty() {
+            para(ui, "Nothing here yet. Click the heart on any song - Tidal, your files, SoundCloud or YouTube - and it shows up here.", pal().ink2);
+            return;
+        }
+        title_line(ui, &format!("{} songs", tracks.len()), 2.0, pal().ink2);
+        crate::play_buttons(ui, &tracks, acts, false);
+        ui.add_space(4.0);
+        let playing = self.cur_track().map(|t| t.id);
+        crate::tracks_list(ui, &tracks, playing, &self.liked, acts);
+        ui.add_space(20.0);
     }
 
     /// "Pick up where you left off" in one press.
