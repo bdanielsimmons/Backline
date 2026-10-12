@@ -485,6 +485,9 @@ impl App {
                 if retro_btn(ui, "PREFERENCES", false).tip("Updates, sound output, the opening sound, size, keys").clicked() {
                     acts.push(Action::TogglePrefs);
                 }
+                if retro_btn(ui, "WHAT'S NEW", false).tip("What changed in this version and the few before it").clicked() {
+                    acts.push(Action::News);
+                }
                 if retro_btn(ui, "HELP AND TOURS", false).tip("Every key and tip, and the guided tours (F1)").clicked() {
                     acts.push(Action::ToggleHelp);
                 }

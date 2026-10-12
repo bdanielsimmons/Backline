@@ -149,6 +149,8 @@ enum Msg {
     Lyrics(i64, Result<(Vec<(f32, String)>, bool), String>),
     Media(u8),
     LikeFailed(i64, bool, String),
+    /// release notes for the WHAT'S NEW panel: (tag, notes), newest first
+    News(Result<Vec<(String, String)>, String>),
     /// Windows' default sound output changed (headphones plugged in or out, a Bluetooth device connected or gone)
     DefaultOutput(String),
     /// a share file written (where), or read (its contents)
@@ -379,6 +381,8 @@ enum Action {
     FindTuning,
     PlaylistPick(Track),
     /// save your loops and playlists to a file / bring in a file from another computer
+    /// open the WHAT'S NEW panel (notes of the latest versions)
+    News,
     ShareExport,
     ShareImport,
     /// the preview's go-ahead: save the export / bring the import in
@@ -2592,6 +2596,9 @@ struct App {
     share_view: Option<(bool, store::Share)>,
     /// what's ticked in that preview: songs (their loops) and playlists (by name); None until the panel opens
     share_pick: Option<(HashSet<i64>, HashSet<String>)>,
+    /// the WHAT'S NEW panel's notes (open while Some), and the last version you saw them for
+    news: Option<Vec<(String, String)>>,
+    seen_build: u64,
     grp_adding: bool,
     /// LOOPS > GROUPS: the group whose page is open ("" for the loops in no group)
     grp_open: Option<String>,
@@ -3169,6 +3176,8 @@ impl App {
             loops_mode: 0,
             share_view: None,
             share_pick: None,
+            news: None,
+            seen_build: 0,
             grp_adding: false,
             grp_open: None,
             sel_anchor: None,
@@ -3390,6 +3399,17 @@ impl App {
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
         if let Some(v) = st["wv_h"].as_f64() {
             app.wv_h = v as f32;
+        }
+        app.seen_build = st["seen_build"].as_u64().unwrap_or(0);
+        // the first start of a new version: what changed (and in the few before it, for anyone who skipped some);
+        // a first install (no settings yet) has nothing to catch up on
+        let installed_before = st.as_object().is_some_and(|o| !o.is_empty());
+        if update::build() > 0 && app.seen_build != update::build() {
+            if installed_before {
+                app.apply(Action::News);
+            } else {
+                app.seen_build = update::build();
+            }
         }
         if let Some(v) = st["mt_vol"].as_f64() {
             app.mt_vol = v as f32;
@@ -3647,6 +3667,8 @@ impl App {
                 app.sec = Sec::Tunes;
                 app.prog_shown = vec![true];
             }
+            Ok("news") => app.apply(Action::News),
+            Ok("mini") => app.apply(Action::ToggleMini),
             Ok("group") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
@@ -3678,6 +3700,7 @@ impl App {
             "neck_zoom": self.neck_zoom,
             "q_drop": self.q_drop,
             "mt_vol": self.mt_vol,
+            "seen_build": self.seen_build,
             "wv_h": self.wv_h,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
@@ -4926,8 +4949,12 @@ impl App {
                 self.mini = !self.mini;
                 if self.mini {
                     self.saved_size = self.ctx.screen_rect().size();
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(600.0, 260.0)));
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(640.0, 316.0)));
+                    // the window takes the deck's own shape, at twice its pixels: a Winamp skin's main window is
+                    // 275 x 116, Backline's own deck 300 x 138; plus the strip of chips along the top
+                    let deck = if self.wa_art.is_some() { Vec2::new(275.0, 116.0) } else { Vec2::new(300.0, 138.0) };
+                    let size = deck * 2.0 + Vec2::new(8.0, 30.0);
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(deck + Vec2::new(8.0, 30.0)));
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
                 } else {
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(980.0, 640.0)));
                     let sz = if self.saved_size.x > 100.0 { self.saved_size } else { Vec2::new(1280.0, 820.0) };
@@ -5445,6 +5472,7 @@ impl eframe::App for App {
         self.skin_loading_panel(ctx);
         self.viz_panel(ctx);
         self.share_panel(ctx, &mut acts);
+        self.news_panel(ctx);
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);

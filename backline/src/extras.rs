@@ -992,6 +992,11 @@ impl App {
 
     pub(crate) fn drain_extra(&mut self, m: Msg) {
         match m {
+            Msg::News(r) => match r {
+                Ok(n) if !n.is_empty() => self.news = Some(n),
+                Ok(_) => self.set_note("NO RELEASE NOTES FOUND"),
+                Err(e) => self.set_err(format!("WHAT'S NEW: {}", e)),
+            },
             Msg::DefaultOutput(name) => {
                 let first = self.sys_output.is_empty();
                 self.sys_output = name.clone();
@@ -1601,6 +1606,13 @@ impl App {
                 self.new_pl.clear();
             }
             Action::ShareExport => self.share_view = Some((false, self.store.share())),
+            Action::News => {
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let _ = tx.send(Msg::News(crate::update::notes(5)));
+                    ctx.request_repaint();
+                });
+            }
             Action::ShareTake => {
                 if let Some((true, s)) = self.share_view.take() {
                     let s = self.share_ticked(s);

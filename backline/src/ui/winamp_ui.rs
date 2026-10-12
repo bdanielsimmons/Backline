@@ -364,15 +364,18 @@ impl App {
         let Some(t) = self.wa_art.take() else { return };
         // the player sits in the middle, in line with the equalizer under it; the album cover is small, in the
         // margin to its right, framed in the skin's colours; a click on it opens the album view
-        let side = (area.height() * 0.55).min(area.width() * 0.14);
-        let skin_area = area.shrink2(Vec2::new(side + 20.0, 0.0));
+        // mini: the window is the player - the deck fills it, no cover beside it
+        let side = if self.mini { 0.0 } else { (area.height() * 0.55).min(area.width() * 0.14) };
+        let skin_area = if self.mini { area } else { area.shrink2(Vec2::new(side + 20.0, 0.0)) };
         let pl = Place::fit(skin_area);
         let right = pl.o.x + 275.0 * pl.s;
         let cover = Rect::from_center_size(Pos2::new((right + area.max.x) / 2.0, area.center().y), Vec2::splat(side));
         // the tour points at the skinned player and its cover too
         crate::tour::note("PLAYER", Rect::from_min_size(pl.o, Vec2::new(275.0 * pl.s, 116.0 * pl.s)));
         crate::tour::mark("COVER", cover);
-        if let Some(tr) = self.cur_track() {
+        if self.mini {
+            // (no cover in mini)
+        } else if let Some(tr) = self.cur_track() {
             let url = cover_url(&tr.cover, 320);
             // framed in the skin's colours
             raised(ui.painter(), cover.expand(4.0), false);

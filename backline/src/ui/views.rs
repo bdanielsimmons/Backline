@@ -1088,6 +1088,67 @@ impl App {
         });
     }
 
+    /// WHAT'S NEW, over the dimmed app: the notes of this version and the few before it, newest first.
+    pub(crate) fn news_panel(&mut self, ctx: &egui::Context) {
+        let Some(notes) = self.news.clone() else { return };
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("news_dim"))).rect_filled(
+            screen,
+            0.0,
+            egui::Color32::from_black_alpha(170),
+        );
+        let me = crate::update::build();
+        let mut close = false;
+        egui::Area::new(egui::Id::new("news_panel"))
+            .order(egui::Order::Tooltip)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                egui::Frame::none().fill(pal().app_bg).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(16.0).show(
+                    ui,
+                    |ui| {
+                        ui.set_width(560.0_f32.min(screen.width() - 40.0));
+                        title_line(ui, "WHAT'S NEW", 3.0, pal().ink);
+                        egui::ScrollArea::vertical().max_height((screen.height() * 0.6).max(160.0)).show(ui, |ui| {
+                            for (tag, body) in &notes {
+                                let this = tag.rsplit('.').next().and_then(|n| n.parse::<u64>().ok()) == Some(me);
+                                section_header(
+                                    ui,
+                                    &format!("{}{}", tag.to_uppercase(), if this { "  - THIS VERSION" } else { "" }),
+                                );
+                                for line in body.lines() {
+                                    // the notes are written for GitHub: headings and bullets become plain lines; the
+                                    // download instructions (the same every time) are left out
+                                    if line.trim().trim_start_matches('#').trim().eq_ignore_ascii_case("downloads") {
+                                        break;
+                                    }
+                                    let l = line.trim().trim_start_matches('#').trim().replace('`', "");
+                                    if l.is_empty() || l.starts_with("**Full Changelog") || l.starts_with("<!--") {
+                                        continue;
+                                    }
+                                    let l = l.replace("**", "");
+                                    let (text, col) = match l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")) {
+                                        Some(b) => (format!("  - {}", b), pal().ink2),
+                                        None => (l.to_string(), pal().ink),
+                                    };
+                                    para(ui, &text, col);
+                                }
+                                ui.add_space(6.0);
+                            }
+                        });
+                        ui.add_space(6.0);
+                        if retro_btn(ui, "GOT IT", false).clicked() {
+                            close = true;
+                        }
+                    },
+                );
+            });
+        if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.news = None;
+            self.seen_build = crate::update::build();
+            self.dirty = true;
+        }
+    }
+
     /// The export / import preview, over the dimmed app: what is in the file (songs, loops, playlists) and, for an
     /// import, what is new to you and what can't play here - then go ahead or cancel.
     pub(crate) fn share_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {

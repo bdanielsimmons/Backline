@@ -89,6 +89,37 @@ pub fn check() -> Result<Option<Info>, String> {
     Ok(Some(Info { build: n, tag, url }))
 }
 
+/// The notes of the latest `n` releases up to this one, newest first: (tag, notes). For the WHAT'S NEW panel.
+pub fn notes(n: usize) -> Result<Vec<(String, String)>, String> {
+    let me = build();
+    let url = format!("https://api.github.com/repos/{}/releases?per_page=30", REPO);
+    let v: serde_json::Value = http()?
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(20))
+        .send()
+        .map_err(es)?
+        .error_for_status()
+        .map_err(es)?
+        .json()
+        .map_err(es)?;
+    let mut out: Vec<(u64, String, String)> = v
+        .as_array()
+        .ok_or("no releases")?
+        .iter()
+        .filter(|r| !r["prerelease"].as_bool().unwrap_or(false))
+        .filter_map(|r| {
+            let tag = r["tag_name"].as_str()?.to_string();
+            let n = tag.rsplit('.').next()?.parse::<u64>().ok()?;
+            Some((n, tag, r["body"].as_str().unwrap_or("").to_string()))
+        })
+        // a local build (0) shows the newest ones
+        .filter(|(n, ..)| me == 0 || *n <= me)
+        .collect();
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    Ok(out.into_iter().take(n).map(|(_, t, b)| (t, b)).collect())
+}
+
 /// Download the new program and leave it next to this one as `<name>.new`.
 pub fn stage(info: &Info) -> Result<(), String> {
     let bytes = http()?.get(&info.url).send().map_err(es)?.error_for_status().map_err(es)?.bytes().map_err(es)?;
