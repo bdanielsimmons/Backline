@@ -19,6 +19,8 @@ base64 = "0.22"
 dirs = "5"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "isomp4", "flac", "mp3", "alac", "pcm", "wav", "ogg", "vorbis"] }
 webbrowser = "1"
+# album covers and YouTube thumbnails
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 # YT: YouTube's own API from Rust (yt-dlp needs Python, which a phone doesn't have)
 rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }

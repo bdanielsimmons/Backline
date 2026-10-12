@@ -35,6 +35,8 @@ enum Msg {
     YtAdded(Result<Vec<YtItem>, String>),
     /// YT: a playlist with this many videos - ask before adding them all (link, name, count)
     YtAsk(String, String, u64),
+    /// a cover picture fetched: its address and pixels
+    Cover(String, Option<egui::ColorImage>),
     /// the song's audio, and its length when the file had to tell us (0: the track already knows)
     Audio(u64, Result<(Vec<u8>, f32, Vec<u8>), String>),
 }
@@ -108,6 +110,15 @@ struct App {
     yt: Vec<YtItem>,
     yt_link: String,
     yt_ask: Option<(String, String, u64)>,
+    /// the cover shown on the player: its address and picture
+    cover: Option<(String, Option<egui::TextureHandle>)>,
+    /// when the note on top was put up (it goes after a few seconds)
+    note_at: Option<(String, std::time::Instant)>,
+    /// PRACTICE on: the waveform and the loop tools; off: the cover and the bars (listening)
+    practice: bool,
+    /// the queue played to its end: play starts the song again
+    at_end: bool,
+    bars: [f32; 24],
 }
 
 /// A YouTube clip in the YT list.
@@ -128,6 +139,8 @@ impl YtItem {
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> App {
         let ctx = cc.egui_ctx.clone();
+        theme(&ctx);
+        ctx.style_mut(|s| s.visuals.selection.bg_fill = pal::ACCENT);
         // phone-sized text and touch targets
         ctx.style_mut(|s| {
             use egui::{FontId, TextStyle};
@@ -193,6 +206,11 @@ impl App {
             yt: load_json("yt.json"),
             yt_link: String::new(),
             yt_ask: None,
+            cover: None,
+            note_at: None,
+            practice: false,
+            at_end: false,
+            bars: [0.0; 24],
         }
     }
 
@@ -211,6 +229,7 @@ impl App {
 
     fn play(&mut self, i: usize) {
         let Some(t) = self.queue.get(i).cloned() else { return };
+        self.at_end = false;
         self.cur = Some(i);
         self.gen += 1;
         let g = self.gen;
@@ -252,6 +271,69 @@ impl App {
                 (b, d, w)
             })));
         }
+    }
+
+    /// The picture for this song: the album cover (Tidal), the video's thumbnail (YT); none for files.
+    fn cover_url(&self, t: &Track) -> Option<String> {
+        if let Some(y) = self.yt.iter().find(|y| yt_id(&y.vid) == t.id) {
+            return Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", y.vid));
+        }
+        (!t.cover.is_empty()).then(|| api::cover_url(&t.cover, 640))
+    }
+
+    /// The player's cover card: the picture with the song's name over a dark fade on its bottom half (or, with no
+    /// picture, Backline's own card).
+    fn cover_card(&mut self, ui: &mut egui::Ui, t: &Track, tall: f32) {
+        let url = self.cover_url(t);
+        if self.cover.as_ref().map(|c| Some(&c.0)) != Some(url.as_ref()) {
+            self.cover = url.clone().map(|u| (u, None));
+            if let Some(u) = url {
+                self.spawn(move |api| {
+                    let img = api.fetch(&u).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| {
+                        let i = i.to_rgba8();
+                        egui::ColorImage::from_rgba_unmultiplied([i.width() as usize, i.height() as usize], i.as_raw())
+                    });
+                    Msg::Cover(u, img)
+                });
+            }
+        }
+        let w = ui.available_width();
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, (w * tall).min(360.0)), Sense::hover());
+        let p = ui.painter_at(r);
+        p.rect_filled(r, 6.0, pal::PANEL);
+        match self.cover.as_ref().and_then(|c| c.1.as_ref()) {
+            Some(tex) => {
+                // fill the card, cropped to its shape
+                let ts = tex.size_vec2();
+                let scale = (r.width() / ts.x).max(r.height() / ts.y);
+                let shown = ts * scale;
+                let img = egui::Rect::from_center_size(r.center(), shown);
+                p.image(tex.id(), img, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+            }
+            None => {
+                // Backline's card: a soft light rectangle with the diamond
+                let inner = r.shrink(r.width() * 0.18);
+                p.rect_filled(inner, 4.0, Color32::from_gray(225));
+                let c = inner.center() - Vec2::new(0.0, inner.height() * 0.08);
+                let d = inner.height() * 0.16;
+                p.add(egui::Shape::convex_polygon(
+                    vec![c + Vec2::new(0.0, -d), c + Vec2::new(d, 0.0), c + Vec2::new(0.0, d), c + Vec2::new(-d, 0.0)],
+                    Color32::from_gray(150),
+                    egui::Stroke::NONE,
+                ));
+            }
+        }
+        // the dark fade over the bottom half, then the song's name on it
+        let half = egui::Rect::from_min_max(egui::pos2(r.min.x, r.center().y), r.max);
+        let steps = 24;
+        for k in 0..steps {
+            let y0 = half.min.y + half.height() * k as f32 / steps as f32;
+            let y1 = half.min.y + half.height() * (k + 1) as f32 / steps as f32;
+            let a = ((k as f32 + 1.0) / steps as f32).powf(1.3) * 235.0;
+            p.rect_filled(egui::Rect::from_x_y_ranges(r.min.x..=r.max.x, y0..=y1), 0.0, Color32::from_rgba_unmultiplied(12, 13, 17, a as u8));
+        }
+        p.text(r.left_bottom() + Vec2::new(14.0, -40.0), egui::Align2::LEFT_BOTTOM, &t.title, egui::FontId::proportional(24.0), pal::INK);
+        p.text(r.left_bottom() + Vec2::new(14.0, -14.0), egui::Align2::LEFT_BOTTOM, t.artists_text().to_uppercase(), egui::FontId::proportional(14.0), pal::INK2);
     }
 
     /// The songs on the phone: Backline's own Music folder (no permission needed), and the phone's Music and
@@ -349,6 +431,12 @@ impl App {
                         Err(e) => self.note = format!("YouTube: {}", e),
                     }
                 }
+                Msg::Cover(url, img) => {
+                    if self.cover.as_ref().is_some_and(|c| c.0 == url) {
+                        let tex = img.map(|i| self.ctx.load_texture(&url, i, egui::TextureOptions::LINEAR));
+                        self.cover = Some((url, tex));
+                    }
+                }
                 Msg::YtAsk(link, name, n) => {
                     self.busy = false;
                     self.yt_ask = Some((link, name, n));
@@ -377,8 +465,12 @@ impl App {
             std::mem::take(&mut s.ended)
         };
         if ended && !self.loading {
-            if let Some(i) = self.cur.filter(|i| i + 1 < self.queue.len()) {
-                self.play(i + 1);
+            match self.cur.filter(|i| i + 1 < self.queue.len()) {
+                Some(i) => self.play(i + 1),
+                None => {
+                    self.paused = true;
+                    self.at_end = true;
+                }
             }
         }
     }
@@ -417,7 +509,7 @@ impl App {
     fn library_ui(&mut self, ui: &mut egui::Ui) {
         ui.columns(3, |c| {
             for (k, name) in ["TIDAL", "FILES", "YT"].into_iter().enumerate() {
-                if c[k].add_sized(Vec2::new(c[k].available_width(), 40.0), egui::SelectableLabel::new(self.lib_tab == k as u8, name)).clicked() {
+                if c[k].add_sized(Vec2::new(c[k].available_width(), 40.0), chip(self.lib_tab == k as u8, name)).clicked() {
                     self.lib_tab = k as u8;
                     if k == 1 {
                         self.scan_files();
@@ -439,7 +531,7 @@ impl App {
         }
         ui.horizontal(|ui| {
             for (k, name) in ["SEARCH", "LIKED", "PLAYLISTS"].into_iter().enumerate() {
-                if ui.selectable_label(self.tidal_page == k as u8, name).clicked() {
+                if ui.add(chip(self.tidal_page == k as u8, name)).clicked() {
                     self.tidal_page = k as u8;
                     self.list_open = None;
                     if k == 1 && self.liked.is_empty() && !self.busy {
@@ -704,18 +796,29 @@ impl App {
             self.metro_ui(ui);
             return;
         };
-        ui.add_space(20.0);
-        ui.vertical_centered(|ui| {
-            ui.label(RichText::new(t.title.as_str()).size(24.0).strong());
-            ui.label(RichText::new(t.artists_text()).weak());
+        // listening or practising: PRACTICE turns the tools on
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add_sized(Vec2::new(110.0, 36.0), chip(self.practice, "PRACTICE")).clicked() {
+                    self.practice = !self.practice;
+                    if !self.practice {
+                        self.more = false;
+                    }
+                }
+            });
         });
-        ui.add_space(20.0);
+        self.cover_card(ui, &t, if self.practice { 0.42 } else { 0.85 });
+        ui.add_space(10.0);
+        if !self.practice {
+            self.listen_ui(ui, &t);
+            return;
+        }
         // where the song is: drag to move
         let pos = self.seek_drag.unwrap_or_else(|| self.player.ctl.pos());
         let dur = t.duration.max(1.0);
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 90.0), Sense::click_and_drag());
         let p = ui.painter();
-        p.rect_filled(r, 4.0, Color32::from_gray(32));
+        p.rect_filled(r, 4.0, pal::LCD);
         let x_of = |t: f32| r.min.x + r.width() * (t / dur).clamp(0.0, 1.0);
         // the waveform, the part played brighter
         if !self.wave.is_empty() {
@@ -725,7 +828,7 @@ impl App {
                 let x = r.min.x + k as f32 * w;
                 let h = (*v as f32 / 255.0) * (r.height() * 0.45);
                 let played = x < x_of(pos);
-                let c = if played { Color32::from_gray(210) } else { Color32::from_gray(100) };
+                let c = if played { pal::ACCENT_HI } else { pal::GROOVE };
                 p.rect_filled(egui::Rect::from_x_y_ranges(x..=x + (w - 0.5).max(0.5), r.center().y - h..=r.center().y + h), 0.0, c);
             }
         }
@@ -755,34 +858,13 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(fmt_t(dur)));
         });
         ui.add_space(10.0);
-        // the transport
-        ui.columns(3, |c| {
-            if big(&mut c[0], "⏮").clicked() {
-                if let Some(i) = self.cur {
-                    if pos > 3.0 || i == 0 {
-                        self.player.send(Cmd::Seek(0.0));
-                    } else {
-                        self.play(i - 1);
-                    }
-                }
-            }
-            let label = if self.loading { "…" } else if self.paused { "▶" } else { "⏸" };
-            if big(&mut c[1], label).clicked() && !self.loading {
-                self.paused = !self.paused;
-                self.player.send(if self.paused { Cmd::Pause } else { Cmd::Resume });
-            }
-            if big(&mut c[2], "⏭").clicked() {
-                if let Some(i) = self.cur.filter(|i| i + 1 < self.queue.len()) {
-                    self.play(i + 1);
-                }
-            }
-        });
+        self.transport(ui, pos);
         ui.add_space(16.0);
         // practice: the loop and the speed
         ui.horizontal_wrapped(|ui| {
             let now = self.player.ctl.pos();
             // fixed widths, so nothing moves as the times fill in
-            let fixed = |ui: &mut egui::Ui, on: bool, s: String| ui.add_sized(Vec2::new(78.0, 44.0), egui::SelectableLabel::new(on, s));
+            let fixed = |ui: &mut egui::Ui, on: bool, s: String| ui.add_sized(Vec2::new(78.0, 44.0), chip(on, s));
             if fixed(ui, self.loop_a.is_some(), format!("A {}", self.loop_a.map(fmt_t).unwrap_or_default())).clicked() {
                 self.loop_a = Some(now);
                 self.sync_loop();
@@ -824,11 +906,11 @@ impl App {
                 l.sort_by(|a, b| a.0.total_cmp(&b.0));
                 save_marks(&self.marks);
             }
-            if ui.selectable_label(self.more, "MORE").clicked() {
+            if ui.add(chip(self.more, "MORE")).clicked() {
                 self.more = !self.more;
                 self.show_queue = false;
             }
-            if ui.selectable_label(self.show_queue, "QUEUE").clicked() {
+            if ui.add(chip(self.show_queue, "QUEUE")).clicked() {
                 self.show_queue = !self.show_queue;
                 self.more = false;
             }
@@ -837,19 +919,134 @@ impl App {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.more_ui(ui, &t));
         }
         if self.show_queue {
-            let mut play = None;
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                for (i, t) in self.queue.iter().enumerate() {
-                    if track_row(ui, t, Some(i) == self.cur).clicked() {
-                        play = Some(i);
-                    }
-                }
-            });
-            if let Some(i) = play {
-                self.play(i);
-            }
+            self.queue_list(ui);
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    }
+
+    /// Listening: the bars, where the song is, the transport and the queue - nothing else.
+    fn listen_ui(&mut self, ui: &mut egui::Ui, t: &Track) {
+        self.bars_ui(ui);
+        let pos = self.seek_drag.unwrap_or_else(|| self.player.ctl.pos());
+        let dur = t.duration.max(1.0);
+        // a thin line for where the song is: drag to move
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click_and_drag());
+        let p = ui.painter();
+        let line = egui::Rect::from_x_y_ranges(r.min.x..=r.max.x, r.center().y - 2.0..=r.center().y + 2.0);
+        p.rect_filled(line, 2.0, pal::GROOVE);
+        let x = r.min.x + r.width() * (pos / dur).clamp(0.0, 1.0);
+        p.rect_filled(egui::Rect::from_x_y_ranges(r.min.x..=x, line.min.y..=line.max.y), 2.0, pal::ACCENT_HI);
+        p.circle_filled(egui::pos2(x, r.center().y), 7.0, pal::INK);
+        if let Some(pp) = resp.interact_pointer_pos() {
+            if resp.dragged() || resp.clicked() {
+                self.seek_drag = Some(((pp.x - r.min.x) / r.width()).clamp(0.0, 1.0) * dur);
+            }
+        }
+        if resp.drag_stopped() || resp.clicked() {
+            if let Some(s) = self.seek_drag.take() {
+                self.player.send(Cmd::Seek(s));
+            }
+        }
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(fmt_t(pos)).color(pal::DIM));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(RichText::new(fmt_t(dur)).color(pal::DIM)));
+        });
+        self.transport(ui, pos);
+        ui.add_space(8.0);
+        if ui.add(chip(self.show_queue, "QUEUE")).clicked() {
+            self.show_queue = !self.show_queue;
+        }
+        if self.show_queue {
+            self.queue_list(ui);
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+    }
+
+    /// The bars: what is sounding, in 24 bands from the bass up (each falls back slowly).
+    fn bars_ui(&mut self, ui: &mut egui::Ui) {
+        let (samples, rate) = {
+            let v = self.player.viz.lock().unwrap();
+            let n = v.samples.len();
+            (v.samples[n.saturating_sub(2048)..].to_vec(), v.rate.max(1) as f32)
+        };
+        let playing = !self.paused && !self.loading && samples.len() >= 512;
+        for (k, b) in self.bars.iter_mut().enumerate() {
+            let mut level = 0.0;
+            if playing {
+                // this band's loudness (Goertzel), on a log scale from 50 Hz to 12 kHz
+                let f = 50.0 * (12000.0f32 / 50.0).powf(k as f32 / 23.0);
+                let w = std::f32::consts::TAU * f / rate;
+                let c = 2.0 * w.cos();
+                let (mut s1, mut s2) = (0.0f32, 0.0f32);
+                for x in &samples {
+                    let s0 = x + c * s1 - s2;
+                    s2 = s1;
+                    s1 = s0;
+                }
+                let mag = (s1 * s1 + s2 * s2 - c * s1 * s2).max(0.0).sqrt() / samples.len() as f32;
+                level = ((20.0 * (mag + 1e-6).log10() + 60.0) / 50.0).clamp(0.0, 1.0);
+            }
+            *b = if level > *b { level } else { *b * 0.88 };
+        }
+        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 64.0), Sense::hover());
+        let p = ui.painter();
+        let n = self.bars.len() as f32;
+        let gap = 3.0;
+        let bw = (r.width() - gap * (n - 1.0)) / n;
+        for (k, b) in self.bars.iter().enumerate() {
+            let h = (b * r.height()).max(3.0);
+            let x = r.min.x + k as f32 * (bw + gap);
+            let bar = egui::Rect::from_min_max(egui::pos2(x, r.max.y - h), egui::pos2(x + bw, r.max.y));
+            // brighter as it rises
+            let col = lerp(pal::ACCENT, pal::ACCENT_HI, *b);
+            p.rect_filled(bar, 2.0, col);
+        }
+    }
+
+    /// Previous, play / pause, next.
+    fn transport(&mut self, ui: &mut egui::Ui, pos: f32) {
+        ui.columns(3, |c| {
+            if big(&mut c[0], "⏮").clicked() {
+                if let Some(i) = self.cur {
+                    if pos > 3.0 || i == 0 {
+                        self.player.send(Cmd::Seek(0.0));
+                    } else {
+                        self.play(i - 1);
+                    }
+                }
+            }
+            let label = if self.loading { "…" } else if self.paused { "▶" } else { "⏸" };
+            if big(&mut c[1], label).clicked() && !self.loading {
+                if self.at_end {
+                    self.at_end = false;
+                    if let Some(i) = self.cur {
+                        self.play(i);
+                    }
+                } else {
+                    self.paused = !self.paused;
+                    self.player.send(if self.paused { Cmd::Pause } else { Cmd::Resume });
+                }
+            }
+            if big(&mut c[2], "⏭").clicked() {
+                if let Some(i) = self.cur.filter(|i| i + 1 < self.queue.len()) {
+                    self.play(i + 1);
+                }
+            }
+        });
+    }
+
+    fn queue_list(&mut self, ui: &mut egui::Ui) {
+        let mut play = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            for (i, t) in self.queue.iter().enumerate() {
+                if track_row(ui, t, Some(i) == self.cur).clicked() {
+                    play = Some(i);
+                }
+            }
+        });
+        if let Some(i) = play {
+            self.play(i);
+        }
     }
 
     /// MORE: pitch, the count-off, bookmarks and the equalizer.
@@ -868,7 +1065,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_sized(Vec2::new(90.0, 44.0), egui::Label::new("COUNT-OFF"));
             let label = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
-            if ui.add_sized(Vec2::new(100.0, 44.0), egui::SelectableLabel::new(self.count_in > 0, label)).clicked() {
+            if ui.add_sized(Vec2::new(100.0, 44.0), chip(self.count_in > 0, label)).clicked() {
                 self.count_in = match self.count_in {
                     0 => 2,
                     2 => 4,
@@ -914,7 +1111,7 @@ impl App {
         ui.separator();
         ui.horizontal(|ui| {
             ui.label(RichText::new("EQ").strong());
-            if ui.selectable_label(self.eq_on, if self.eq_on { "ON" } else { "OFF" }).clicked() {
+            if ui.add(chip(self.eq_on, if self.eq_on { "ON" } else { "OFF" })).clicked() {
                 self.eq_on = !self.eq_on;
             }
             if ui.button("FLAT").clicked() {
@@ -939,7 +1136,7 @@ impl App {
     fn chords_ui(&mut self, ui: &mut egui::Ui) {
         ui.columns(3, |c| {
             for (k, name) in ["FIND", "ANALYZE", "TRIADS"].into_iter().enumerate() {
-                if c[k].add_sized(Vec2::new(c[k].available_width(), 40.0), egui::SelectableLabel::new(self.ch_tab == k as u8, name)).clicked() {
+                if c[k].add_sized(Vec2::new(c[k].available_width(), 40.0), chip(self.ch_tab == k as u8, name)).clicked() {
                     self.ch_tab = k as u8;
                 }
             }
@@ -1010,14 +1207,14 @@ impl App {
         ];
         ui.horizontal_wrapped(|ui| {
             for (k, n) in KEYS.iter().enumerate() {
-                if ui.add_sized(Vec2::new(44.0, 40.0), egui::SelectableLabel::new(self.tr_root == k as i32, *n)).clicked() {
+                if ui.add_sized(Vec2::new(44.0, 40.0), chip(self.tr_root == k as i32, *n)).clicked() {
                     self.tr_root = k as i32;
                 }
             }
         });
         ui.horizontal_wrapped(|ui| {
             for (k, (n, _)) in QUAL.iter().enumerate() {
-                if ui.selectable_label(self.tr_q == k, *n).clicked() {
+                if ui.add(chip(self.tr_q == k, *n)).clicked() {
                     self.tr_q = k;
                 }
             }
@@ -1025,7 +1222,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.label("STRINGS");
             for (k, (n, _)) in SETS.iter().enumerate() {
-                if ui.selectable_label(self.tr_set == k, *n).clicked() {
+                if ui.add(chip(self.tr_set == k, *n)).clicked() {
                     self.tr_set = k;
                 }
             }
@@ -1094,7 +1291,7 @@ impl App {
         let mut changed = false;
         ui.horizontal(|ui| {
             ui.label(RichText::new("METRONOME").strong());
-            if ui.add_sized(Vec2::new(70.0, 44.0), egui::SelectableLabel::new(self.metro.on, if self.metro.on { "ON" } else { "OFF" })).clicked() {
+            if ui.add_sized(Vec2::new(70.0, 44.0), chip(self.metro.on, if self.metro.on { "ON" } else { "OFF" })).clicked() {
                 self.metro.on = !self.metro.on;
                 changed = true;
             }
@@ -1121,15 +1318,15 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.label("BEATS");
             for n in 2..=7u32 {
-                if ui.add_sized(Vec2::new(36.0, 40.0), egui::SelectableLabel::new(self.metro.beats == n, n.to_string())).clicked() {
+                if ui.add_sized(Vec2::new(36.0, 40.0), chip(self.metro.beats == n, n.to_string())).clicked() {
                     self.metro.beats = n;
                     changed = true;
                 }
             }
         });
         ui.horizontal_wrapped(|ui| {
-            for (k, name) in ["BEATS ONLY", "8THS", "TRIPLETS", "16THS"].into_iter().enumerate() {
-                if ui.selectable_label(self.metro.sub == k as u8, name).clicked() {
+            for (k, name) in ["♩", "8THS", "TRIPS", "16THS"].into_iter().enumerate() {
+                if ui.add(chip(self.metro.sub == k as u8, name)).clicked() {
                     self.metro.sub = k as u8;
                     changed = true;
                 }
@@ -1180,12 +1377,18 @@ fn track_row(ui: &mut egui::Ui, t: &Track, now: bool) -> egui::Response {
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 58.0), Sense::click());
     let p = ui.painter();
     if now {
-        p.rect_filled(r, 4.0, Color32::from_gray(45));
+        p.rect_filled(r, 3.0, pal::SEL);
+        p.rect_filled(egui::Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), 0.0, pal::ACCENT);
+    } else if resp.is_pointer_button_down_on() {
+        p.rect_filled(r, 3.0, pal::PANEL);
     }
+    p.line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, pal::PANEL));
     let f = egui::FontId::proportional(17.0);
-    let s = egui::FontId::proportional(14.0);
-    p.text(r.min + Vec2::new(8.0, 8.0), egui::Align2::LEFT_TOP, &t.title, f, Color32::from_gray(235));
-    p.text(r.min + Vec2::new(8.0, 32.0), egui::Align2::LEFT_TOP, format!("{}  ·  {}", t.artist, fmt_t(t.duration)), s, Color32::from_gray(150));
+    let s = egui::FontId::proportional(13.0);
+    let title = clip(ui, &t.title, &f, r.width() - 20.0);
+    p.text(r.min + Vec2::new(12.0, 9.0), egui::Align2::LEFT_TOP, title, f, pal::INK);
+    let sub = if t.duration > 0.0 { format!("{}  ·  {}", t.artist.to_uppercase(), fmt_t(t.duration)) } else { t.artist.to_uppercase() };
+    p.text(r.min + Vec2::new(12.0, 33.0), egui::Align2::LEFT_TOP, sub, s, pal::DIM);
     resp
 }
 
@@ -1263,6 +1466,86 @@ fn neck(ui: &mut egui::Ui, frets: &[Option<u8>; 6]) -> Option<(usize, Option<u8>
     let f = ((pos.x - r.min.x) / cw).floor().clamp(0.0, 12.0) as u8;
     let s = 5 - ((pos.y - r.min.y) / sh).floor().clamp(0.0, 5.0) as usize;
     Some((s, Some(f)))
+}
+
+/// Backline's SLEEK DARK skin: charcoal with one blue accent, in Chakra Petch (the desktop's own smooth font,
+/// carried in the app so it looks the same on any phone).
+mod pal {
+    use eframe::egui::Color32;
+    pub const BG: Color32 = Color32::from_rgb(12, 13, 17);
+    pub const PANEL: Color32 = Color32::from_rgb(28, 30, 37);
+    pub const PANEL_HI: Color32 = Color32::from_rgb(42, 45, 55);
+    pub const LCD: Color32 = Color32::from_rgb(18, 19, 25);
+    pub const GROOVE: Color32 = Color32::from_rgb(44, 47, 58);
+    pub const INK: Color32 = Color32::from_rgb(236, 238, 245);
+    pub const INK2: Color32 = Color32::from_rgb(168, 173, 187);
+    pub const DIM: Color32 = Color32::from_rgb(142, 146, 158);
+    pub const ACCENT: Color32 = Color32::from_rgb(70, 122, 255);
+    pub const ACCENT_HI: Color32 = Color32::from_rgb(120, 160, 255);
+    pub const SEL: Color32 = Color32::from_rgb(40, 52, 84);
+    pub const RED: Color32 = Color32::from_rgb(255, 92, 102);
+    pub const TRIM: Color32 = Color32::from_rgb(140, 148, 168);
+}
+
+fn theme(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts
+        .font_data
+        .insert("chakra".to_string(), egui::FontData::from_static(include_bytes!("../../backline/assets/ChakraPetch-Regular.ttf")));
+    // Chakra Petch first; the built-in fonts after it for the symbols it lacks (play, pause...)
+    for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts.families.entry(fam).or_default().insert(0, "chakra".to_string());
+    }
+    ctx.set_fonts(fonts);
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = pal::BG;
+    v.window_fill = pal::PANEL;
+    v.extreme_bg_color = pal::LCD;
+    v.faint_bg_color = pal::PANEL;
+    v.hyperlink_color = pal::ACCENT_HI;
+    v.selection.bg_fill = pal::SEL;
+    v.selection.stroke = egui::Stroke::new(1.0, Color32::WHITE);
+    let r = egui::Rounding::same(3.0);
+    for (w, fill, line) in [
+        (&mut v.widgets.noninteractive, pal::BG, pal::GROOVE),
+        (&mut v.widgets.inactive, pal::PANEL, pal::GROOVE),
+        (&mut v.widgets.hovered, pal::PANEL_HI, pal::TRIM),
+        (&mut v.widgets.active, pal::ACCENT, pal::ACCENT_HI),
+        (&mut v.widgets.open, pal::PANEL_HI, pal::TRIM),
+    ] {
+        w.bg_fill = fill;
+        w.weak_bg_fill = fill;
+        w.bg_stroke = egui::Stroke::new(1.0, line);
+        w.rounding = r;
+    }
+    v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, pal::INK2);
+    v.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, pal::INK);
+    v.widgets.active.fg_stroke = egui::Stroke::new(1.0, Color32::WHITE);
+    ctx.set_visuals(v);
+}
+
+fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+}
+
+/// A toggle: a real button, lit in the accent when on.
+fn chip(on: bool, text: impl Into<egui::WidgetText>) -> egui::Button<'static> {
+    egui::Button::new(text).selected(on)
+}
+
+/// Text cut with "..." to fit `w`.
+fn clip(ui: &egui::Ui, s: &str, f: &egui::FontId, w: f32) -> String {
+    let width = |t: &str| ui.fonts(|fo| fo.layout_no_wrap(t.to_string(), f.clone(), Color32::WHITE).size().x);
+    if width(s) <= w {
+        return s.to_string();
+    }
+    let mut c: Vec<char> = s.chars().collect();
+    while !c.is_empty() && width(&format!("{}...", c.iter().collect::<String>())) > w {
+        c.pop();
+    }
+    format!("{}...", c.iter().collect::<String>().trim_end())
 }
 
 fn big(ui: &mut egui::Ui, s: &str) -> egui::Response {
@@ -1457,6 +1740,11 @@ impl eframe::App for App {
             show_keyboard(want);
         }
         egui::TopBottomPanel::top("status_gap").exact_height(28.0).show_separator_line(false).show(ctx, |_| {});
+        egui::TopBottomPanel::top("brand").exact_height(30.0).show_separator_line(false).show(ctx, |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.label(RichText::new("◆ BACKLINE").size(15.0).color(pal::TRIM));
+            });
+        });
         egui::TopBottomPanel::bottom("nav").show(ctx, |ui| {
             if self.tab != Tab::Player {
                 self.now_bar(ui);
@@ -1464,16 +1752,31 @@ impl eframe::App for App {
             }
             ui.columns(3, |c| {
                 for (k, (tab, name)) in [(Tab::Player, "PLAYER"), (Tab::Library, "LIBRARY"), (Tab::Chords, "CHORDS")].into_iter().enumerate() {
-                    if c[k].add_sized(Vec2::new(c[k].available_width(), 48.0), egui::SelectableLabel::new(self.tab == tab, name)).clicked() {
+                    if c[k].add_sized(Vec2::new(c[k].available_width(), 48.0), chip(self.tab == tab, name)).clicked() {
                         self.tab = tab;
                     }
                 }
             });
             ui.add_space(22.0);
         });
+        // a note stays a few seconds (trouble a little longer)
+        if self.note_at.as_ref().map(|n| &n.0) != Some(&self.note) {
+            self.note_at = Some((self.note.clone(), std::time::Instant::now()));
+        }
+        if let Some((_, at)) = &self.note_at {
+            let keep = if self.note.starts_with("Added") || self.note.starts_with("Taken") { 3.0 } else { 8.0 };
+            if !self.note.is_empty() && at.elapsed().as_secs_f32() > keep {
+                self.note.clear();
+            } else if !self.note.is_empty() {
+                ctx.request_repaint_after(std::time::Duration::from_millis(500));
+            }
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             if !self.note.is_empty() {
-                if ui.add(egui::Label::new(RichText::new(self.note.as_str()).color(Color32::LIGHT_RED)).sense(Sense::click())).clicked() {
+                // news in grey, trouble in red; tap it away
+                let good = self.note.starts_with("Added") || self.note.starts_with("Taken");
+                let col = if good { Color32::from_gray(190) } else { Color32::LIGHT_RED };
+                if ui.add(egui::Label::new(RichText::new(self.note.as_str()).color(col)).sense(Sense::click())).clicked() {
                     self.note.clear();
                 }
             }
