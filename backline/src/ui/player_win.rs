@@ -37,7 +37,10 @@ impl App {
         if self.mini && !skin_mini {
             let w = text_w("FULL", 1.0) + 14.0;
             let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - w, inner.min.y - 22.0), Vec2::new(w, 16.0));
-            if chip(ui, r, "FULL", true, "c_mini").tip("Back to the full window").clicked() {
+            let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - 26.0, r.min.y), Vec2::new(26.0, 16.0));
+            let fc = chip(ui, r, "", false, "c_mini").tip("Back to the full window");
+            size_icon(ui.painter(), r, true);
+            if fc.clicked() {
                 acts.push(Action::ToggleMini);
             }
         } else if !self.mini {
@@ -52,7 +55,7 @@ impl App {
             // each chip as wide as its word in the font being worn
             let fit = |s: &str| text_w(s, 1.0) + 14.0;
             let r_pin = place(fit("PIN"));
-            let r_mini = place(fit(if self.mini { "FULL" } else { "MINI" }));
+            let r_mini = place(26.0);
             let r_prac = place(if PRACTICE { fit("PRACTICE") } else { 0.0 });
             let r_lis = place(if PRACTICE { fit("LISTEN") } else { 0.0 });
             let r_focus = place(if PRACTICE { fit("FOCUS") } else { 0.0 });
@@ -79,7 +82,9 @@ impl App {
             if chip(ui, r_pin, "PIN", self.pinned, "c_pin").tip("Keep this window on top").clicked() {
                 acts.push(Action::TogglePin);
             }
-            if chip(ui, r_mini, if self.mini { "FULL" } else { "MINI" }, self.mini, "c_mini").clicked() {
+            let mc = chip(ui, r_mini, "", false, "c_mini").tip("The mini player");
+            size_icon(ui.painter(), r_mini, false);
+            if mc.clicked() {
                 acts.push(Action::ToggleMini);
             }
             if PRACTICE {
@@ -751,5 +756,23 @@ impl App {
     /// A song you queued yourself (Play next / Add to queue), waiting to play.
     pub(crate) fn queued(&self, i: usize) -> bool {
         self.cur.is_some_and(|c| i > c && i <= c + self.q_manual)
+    }
+}
+
+/// The window-size switch's picture, in `r`: two overlapping squares (to the mini player), or one square (`full`:
+/// back to the full window) - the same as on a Winamp deck's title bar.
+pub(crate) fn size_icon(p: &egui::Painter, r: Rect, full: bool) {
+    let ink = Stroke::new(1.4_f32, pal().ink);
+    let s = r.height() * 0.62;
+    let c = r.center();
+    if full {
+        p.rect_stroke(Rect::from_center_size(c, Vec2::splat(s)), 0.0, ink);
+    } else {
+        let w = s * 0.72;
+        let back = Rect::from_min_size(Pos2::new(c.x - s / 2.0 + (s - w), c.y - s / 2.0), Vec2::splat(w));
+        let front = Rect::from_min_size(Pos2::new(c.x - s / 2.0, c.y - s / 2.0 + (s - w)), Vec2::splat(w));
+        p.rect_stroke(back, 0.0, ink);
+        p.rect_filled(front, 0.0, pal().btn_face);
+        p.rect_stroke(front, 0.0, ink);
     }
 }

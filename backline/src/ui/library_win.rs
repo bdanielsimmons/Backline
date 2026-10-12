@@ -743,6 +743,9 @@ impl App {
         if menu_item(ui, if self.mini { "Back to the full window" } else { "Mini player" }) {
             acts.push(Action::ToggleMini);
         }
+        if menu_item(ui, if self.fullscreen { "Leave full screen  (F11)" } else { "Full screen  (F11)" }) {
+            acts.push(Action::ToggleFullscreen);
+        }
         if menu_item(ui, "Preferences") {
             acts.push(Action::TogglePrefs);
         }
