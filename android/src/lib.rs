@@ -1,54 +1,481 @@
-//! Backline for Android. Step 1: proves the build, the screen and the sound work on a phone.
+//! Backline for Android: a lean player and practice app. The engine (Tidal, the player, decoding) is the desktop
+//! app's own code, compiled in from backline/src, so a fix there is a fix here.
+#![allow(dead_code, unused_imports, unused_variables, clippy::all)]
 
-use eframe::egui;
+#[path = "../../backline/src/data/api.rs"]
+mod api;
+#[path = "../../backline/src/audio/band.rs"]
+mod band;
+#[path = "../../backline/src/data/chart.rs"]
+mod chart;
+#[path = "../../backline/src/audio/decode.rs"]
+mod decode;
+#[path = "../../backline/src/data/meta.rs"]
+mod meta;
+#[path = "../../backline/src/audio/player.rs"]
+mod player;
+#[path = "../../backline/src/audio/tuning.rs"]
+mod tuning;
 
-#[derive(Default)]
-struct App {
-    note: String,
+use api::{Api, DeviceCode, Track};
+use eframe::egui::{self, Color32, RichText, Sense, Vec2};
+use player::{Cmd, Player};
+use std::sync::mpsc::{channel, Receiver, Sender};
+
+enum Msg {
+    Code(Result<DeviceCode, String>),
+    LoggedIn(Result<(), String>),
+    Found(Result<Vec<Track>, String>),
+    Audio(u64, Result<Vec<u8>, String>),
 }
 
-impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_space(40.0);
-            ui.vertical_centered(|ui| {
-                ui.heading("Backline");
-                ui.add_space(20.0);
-                if ui.add(egui::Button::new("TEST SOUND").min_size(egui::vec2(200.0, 60.0))).clicked() {
-                    self.note = match beep() {
-                        Ok(()) => "Sound works".to_string(),
-                        Err(e) => format!("No sound: {}", e),
-                    };
+#[derive(PartialEq, Clone, Copy)]
+enum Tab {
+    Player,
+    Library,
+}
+
+struct App {
+    api: Api,
+    player: Player,
+    tx: Sender<Msg>,
+    rx: Receiver<Msg>,
+    ctx: egui::Context,
+    tab: Tab,
+    logged_in: bool,
+    code: Option<(String, String)>,
+    query: String,
+    searching: bool,
+    results: Vec<Track>,
+    queue: Vec<Track>,
+    cur: Option<usize>,
+    gen: u64,
+    loading: bool,
+    paused: bool,
+    note: String,
+    loop_a: Option<f32>,
+    loop_b: Option<f32>,
+    loop_on: bool,
+    speed: u32,
+    show_queue: bool,
+    seek_drag: Option<f32>,
+    keyboard: bool,
+}
+
+impl App {
+    fn new(cc: &eframe::CreationContext<'_>) -> App {
+        let ctx = cc.egui_ctx.clone();
+        // phone-sized text and touch targets
+        ctx.style_mut(|s| {
+            use egui::{FontId, TextStyle};
+            s.text_styles.insert(TextStyle::Body, FontId::proportional(18.0));
+            s.text_styles.insert(TextStyle::Button, FontId::proportional(18.0));
+            s.text_styles.insert(TextStyle::Heading, FontId::proportional(26.0));
+            s.text_styles.insert(TextStyle::Small, FontId::proportional(14.0));
+            s.spacing.button_padding = Vec2::new(14.0, 10.0);
+            s.spacing.item_spacing = Vec2::new(10.0, 10.0);
+            s.spacing.interact_size.y = 44.0;
+        });
+        let (tx, rx) = channel();
+        let api = Api::new();
+        App {
+            logged_in: api.has_token(),
+            api,
+            player: Player::new(),
+            tx,
+            rx,
+            ctx,
+            tab: Tab::Library,
+            code: None,
+            query: String::new(),
+            searching: false,
+            results: Vec::new(),
+            queue: Vec::new(),
+            cur: None,
+            gen: 0,
+            loading: false,
+            paused: false,
+            note: String::new(),
+            loop_a: None,
+            loop_b: None,
+            loop_on: false,
+            speed: 100,
+            show_queue: false,
+            seek_drag: None,
+            keyboard: false,
+        }
+    }
+
+    /// Run `f` off the screen's thread and send what it returns back.
+    fn spawn(&self, f: impl FnOnce(Api) -> Msg + Send + 'static) {
+        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(f(api));
+            ctx.request_repaint();
+        });
+    }
+
+    fn cur_track(&self) -> Option<&Track> {
+        self.cur.and_then(|i| self.queue.get(i))
+    }
+
+    fn play(&mut self, i: usize) {
+        let Some(t) = self.queue.get(i).cloned() else { return };
+        self.cur = Some(i);
+        self.gen += 1;
+        let g = self.gen;
+        self.loading = true;
+        self.paused = false;
+        self.loop_a = None;
+        self.loop_b = None;
+        self.loop_on = false;
+        self.sync_loop();
+        self.player.send(Cmd::Stop);
+        self.spawn(move |api| Msg::Audio(g, api.stream_url(t.id, false).and_then(|u| api.fetch(&u))));
+    }
+
+    fn sync_loop(&self) {
+        let (a, b) = (self.loop_a.unwrap_or(0.0), self.loop_b.unwrap_or(0.0));
+        self.player.ctl.set_loop(self.loop_on && b > a, a, b);
+        self.player.ctl.set_speed(self.speed);
+    }
+
+    fn drain(&mut self) {
+        while let Ok(m) = self.rx.try_recv() {
+            match m {
+                Msg::Code(Ok(dc)) => {
+                    self.code = Some((dc.user_code.clone(), dc.url.clone()));
+                    let _ = webbrowser::open(&dc.url);
+                    self.spawn(move |api| Msg::LoggedIn(api.finish_login(&dc)));
                 }
-                ui.add_space(10.0);
-                ui.label(&self.note);
+                Msg::Code(Err(e)) | Msg::LoggedIn(Err(e)) => {
+                    self.code = None;
+                    self.note = format!("Sign-in failed: {}", e);
+                }
+                Msg::LoggedIn(Ok(())) => {
+                    self.code = None;
+                    self.logged_in = true;
+                    self.note.clear();
+                }
+                Msg::Found(r) => {
+                    self.searching = false;
+                    match r {
+                        Ok(t) => self.results = t,
+                        Err(e) => self.note = format!("Search failed: {}", e),
+                    }
+                }
+                Msg::Audio(g, r) if g == self.gen => {
+                    self.loading = false;
+                    match r {
+                        Ok(b) => self.player.send(Cmd::Play(b)),
+                        Err(e) => self.note = format!("Can't play: {}", e),
+                    }
+                }
+                Msg::Audio(..) => {}
+            }
+        }
+        // the song ended: on to the next
+        let ended = {
+            let mut s = self.player.shared.lock().unwrap();
+            std::mem::take(&mut s.ended)
+        };
+        if ended && !self.loading {
+            if let Some(i) = self.cur.filter(|i| i + 1 < self.queue.len()) {
+                self.play(i + 1);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ screens
+    fn login_ui(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(60.0);
+        ui.vertical_centered(|ui| {
+            ui.heading("Backline");
+            ui.add_space(30.0);
+            match &self.code {
+                None => {
+                    if ui.add(egui::Button::new("SIGN IN TO TIDAL").min_size(Vec2::new(240.0, 56.0))).clicked() {
+                        self.code = Some((String::new(), String::new()));
+                        self.spawn(|api| Msg::Code(api.start_login()));
+                    }
+                    ui.add_space(10.0);
+                    ui.label(RichText::new("Your own Tidal subscription is needed.").weak());
+                }
+                Some((code, url)) if !code.is_empty() => {
+                    ui.label("Approve Backline in the page that opened, or go to");
+                    ui.label(RichText::new(url.as_str()).strong());
+                    ui.add_space(10.0);
+                    ui.label("and enter the code");
+                    ui.label(RichText::new(code.as_str()).size(34.0).strong());
+                }
+                Some(_) => {
+                    ui.spinner();
+                }
+            }
+            if !self.note.is_empty() {
+                ui.add_space(16.0);
+                ui.label(RichText::new(self.note.as_str()).color(Color32::LIGHT_RED));
+            }
+        });
+    }
+
+    fn library_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text("Search Tidal").desired_width(ui.available_width() - 90.0));
+            let go = ui.button("GO").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if go && !self.query.trim().is_empty() {
+                let q = self.query.trim().to_string();
+                self.searching = true;
+                self.spawn(move |api| Msg::Found(api.search(&q).map(|p| p.tracks)));
+            }
+        });
+        if self.searching {
+            ui.spinner();
+        }
+        let mut play = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            for (i, t) in self.results.iter().enumerate() {
+                if track_row(ui, t, self.cur_track().map(|c| c.id) == Some(t.id)).clicked() {
+                    play = Some(i);
+                }
+            }
+        });
+        if let Some(i) = play {
+            self.queue = self.results.clone();
+            self.play(i);
+        }
+    }
+
+    fn player_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(t) = self.cur_track().cloned() else {
+            ui.add_space(80.0);
+            ui.vertical_centered(|ui| ui.label(RichText::new("Pick a song in the library").weak()));
+            return;
+        };
+        ui.add_space(20.0);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new(t.title.as_str()).size(24.0).strong());
+            ui.label(RichText::new(t.artists_text()).weak());
+        });
+        ui.add_space(20.0);
+        // where the song is: drag to move
+        let pos = self.seek_drag.unwrap_or_else(|| self.player.ctl.pos());
+        let dur = t.duration.max(1.0);
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), Sense::click_and_drag());
+        let p = ui.painter();
+        p.rect_filled(r.shrink2(Vec2::new(0.0, 18.0)), 4.0, Color32::from_gray(60));
+        let x_of = |t: f32| r.min.x + r.width() * (t / dur).clamp(0.0, 1.0);
+        if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
+            let c = if self.loop_on { Color32::from_rgb(90, 160, 240) } else { Color32::from_gray(110) };
+            p.rect_filled(egui::Rect::from_x_y_ranges(x_of(a)..=x_of(b), r.min.y + 8.0..=r.max.y - 8.0), 2.0, c.gamma_multiply(0.5));
+        }
+        p.rect_filled(egui::Rect::from_x_y_ranges(r.min.x..=x_of(pos), r.min.y + 18.0..=r.max.y - 18.0), 4.0, Color32::from_gray(220));
+        p.circle_filled(egui::pos2(x_of(pos), r.center().y), 10.0, Color32::WHITE);
+        if let Some(pp) = resp.interact_pointer_pos() {
+            if resp.dragged() || resp.clicked() {
+                self.seek_drag = Some(((pp.x - r.min.x) / r.width()).clamp(0.0, 1.0) * dur);
+            }
+        }
+        if resp.drag_stopped() || resp.clicked() {
+            if let Some(s) = self.seek_drag.take() {
+                self.player.send(Cmd::Seek(s));
+            }
+        }
+        ui.horizontal(|ui| {
+            ui.label(fmt_t(pos));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(fmt_t(dur)));
+        });
+        ui.add_space(10.0);
+        // the transport
+        ui.columns(3, |c| {
+            if big(&mut c[0], "⏮").clicked() {
+                if let Some(i) = self.cur {
+                    if pos > 3.0 || i == 0 {
+                        self.player.send(Cmd::Seek(0.0));
+                    } else {
+                        self.play(i - 1);
+                    }
+                }
+            }
+            let label = if self.loading { "…" } else if self.paused { "▶" } else { "⏸" };
+            if big(&mut c[1], label).clicked() && !self.loading {
+                self.paused = !self.paused;
+                self.player.send(if self.paused { Cmd::Pause } else { Cmd::Resume });
+            }
+            if big(&mut c[2], "⏭").clicked() {
+                if let Some(i) = self.cur.filter(|i| i + 1 < self.queue.len()) {
+                    self.play(i + 1);
+                }
+            }
+        });
+        ui.add_space(16.0);
+        // practice: the loop and the speed
+        ui.horizontal_wrapped(|ui| {
+            let now = self.player.ctl.pos();
+            if ui.selectable_label(self.loop_a.is_some(), format!("A {}", self.loop_a.map(fmt_t).unwrap_or_default())).clicked() {
+                self.loop_a = Some(now);
+                self.sync_loop();
+            }
+            if ui.selectable_label(self.loop_b.is_some(), format!("B {}", self.loop_b.map(fmt_t).unwrap_or_default())).clicked() {
+                self.loop_b = Some(now);
+                self.loop_on = self.loop_a.is_some_and(|a| now > a);
+                self.sync_loop();
+            }
+            if ui.selectable_label(self.loop_on, "LOOP").clicked() && self.loop_a.is_some() && self.loop_b.is_some() {
+                self.loop_on = !self.loop_on;
+                self.sync_loop();
+            }
+            if (self.loop_a.is_some() || self.loop_b.is_some()) && ui.button("CLEAR").clicked() {
+                self.loop_a = None;
+                self.loop_b = None;
+                self.loop_on = false;
+                self.sync_loop();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("SPEED");
+            if ui.button("−").clicked() {
+                self.speed = self.speed.saturating_sub(5).max(25);
+                self.sync_loop();
+            }
+            ui.label(RichText::new(format!("{}%", self.speed)).strong());
+            if ui.button("+").clicked() {
+                self.speed = (self.speed + 5).min(200);
+                self.sync_loop();
+            }
+        });
+        ui.add_space(16.0);
+        if ui.button(if self.show_queue { "HIDE QUEUE" } else { "QUEUE" }).clicked() {
+            self.show_queue = !self.show_queue;
+        }
+        if self.show_queue {
+            let mut play = None;
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                for (i, t) in self.queue.iter().enumerate() {
+                    if track_row(ui, t, Some(i) == self.cur).clicked() {
+                        play = Some(i);
+                    }
+                }
+            });
+            if let Some(i) = play {
+                self.play(i);
+            }
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    }
+
+    /// While browsing: the song playing, small, along the bottom; tap it for the player.
+    fn now_bar(&mut self, ui: &mut egui::Ui) {
+        let Some(t) = self.cur_track().cloned() else { return };
+        ui.horizontal(|ui| {
+            let r = ui.add(
+                egui::Label::new(RichText::new(format!("{}  ·  {}", t.title, t.artist)).strong())
+                    .truncate()
+                    .sense(Sense::click()),
+            );
+            if r.clicked() {
+                self.tab = Tab::Player;
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(if self.paused { "▶" } else { "⏸" }).clicked() {
+                    self.paused = !self.paused;
+                    self.player.send(if self.paused { Cmd::Pause } else { Cmd::Resume });
+                }
             });
         });
     }
 }
 
-/// Half a second of A440, only when the button is pressed.
-fn beep() -> Result<(), String> {
-    std::thread::spawn(|| {
-        let Ok((_stream, handle)) = rodio::OutputStream::try_default() else { return };
-        let Ok(sink) = rodio::Sink::try_new(&handle) else { return };
-        let n = 22050;
-        let v: Vec<f32> = (0..n).map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 44100.0).sin() * 0.3).collect();
-        sink.append(rodio::buffer::SamplesBuffer::new(1, 44100, v));
-        sink.sleep_until_end();
-    });
-    Ok(())
+fn track_row(ui: &mut egui::Ui, t: &Track, now: bool) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 58.0), Sense::click());
+    let p = ui.painter();
+    if now {
+        p.rect_filled(r, 4.0, Color32::from_gray(45));
+    }
+    let f = egui::FontId::proportional(17.0);
+    let s = egui::FontId::proportional(14.0);
+    p.text(r.min + Vec2::new(8.0, 8.0), egui::Align2::LEFT_TOP, &t.title, f, Color32::from_gray(235));
+    p.text(r.min + Vec2::new(8.0, 32.0), egui::Align2::LEFT_TOP, format!("{}  ·  {}", t.artist, fmt_t(t.duration)), s, Color32::from_gray(150));
+    resp
+}
+
+fn big(ui: &mut egui::Ui, s: &str) -> egui::Response {
+    ui.add_sized(Vec2::new(ui.available_width(), 64.0), egui::Button::new(RichText::new(s).size(28.0)))
+}
+
+fn fmt_t(t: f32) -> String {
+    let t = t.max(0.0) as u32;
+    format!("{}:{:02}", t / 60, t % 60)
+}
+
+impl eframe::App for App {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.drain();
+        // the phone's keyboard comes up while a text box is being typed in
+        let want = ctx.wants_keyboard_input();
+        if want != self.keyboard {
+            self.keyboard = want;
+            show_keyboard(want);
+        }
+        if !self.logged_in {
+            egui::CentralPanel::default().show(ctx, |ui| self.login_ui(ui));
+            return;
+        }
+        egui::TopBottomPanel::bottom("nav").show(ctx, |ui| {
+            if self.tab != Tab::Player {
+                self.now_bar(ui);
+                ui.separator();
+            }
+            ui.columns(2, |c| {
+                for (k, (tab, name)) in [(Tab::Player, "PLAYER"), (Tab::Library, "LIBRARY")].into_iter().enumerate() {
+                    if c[k].add_sized(Vec2::new(c[k].available_width(), 48.0), egui::SelectableLabel::new(self.tab == tab, name)).clicked() {
+                        self.tab = tab;
+                    }
+                }
+            });
+        });
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if !self.note.is_empty() {
+                if ui.add(egui::Label::new(RichText::new(self.note.as_str()).color(Color32::LIGHT_RED)).sense(Sense::click())).clicked() {
+                    self.note.clear();
+                }
+            }
+            match self.tab {
+                Tab::Player => self.player_ui(ui),
+                Tab::Library => self.library_ui(ui),
+            }
+        });
+    }
+}
+
+#[cfg(target_os = "android")]
+static ANDROID: std::sync::OnceLock<winit::platform::android::activity::AndroidApp> = std::sync::OnceLock::new();
+
+fn show_keyboard(on: bool) {
+    #[cfg(target_os = "android")]
+    if let Some(a) = ANDROID.get() {
+        if on {
+            a.show_soft_input(true);
+        } else {
+            a.hide_soft_input(true);
+        }
+    }
 }
 
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
     use winit::platform::android::EventLoopBuilderExtAndroid;
+    // settings and the Tidal sign-in live in the app's own storage
+    if let Some(p) = app.internal_data_path() {
+        std::env::set_var("BACKLINE_HOME", p);
+    }
+    let _ = ANDROID.set(app.clone());
     let options = eframe::NativeOptions {
         event_loop_builder: Some(Box::new(move |b| {
             b.with_android_app(app);
         })),
         ..Default::default()
     };
-    let _ = eframe::run_native("Backline", options, Box::new(|_cc| Ok(Box::new(App::default()))));
+    let _ = eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc)))));
 }
