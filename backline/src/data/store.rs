@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub const SHARE_VERSION: u32 = 1;
 
 /// Your loops and playlists as one file, to take to another computer (no account: send the file however you like).
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(default)]
 pub struct Share {
     /// "backline-share", so a stray file isn't read as one
@@ -72,6 +72,20 @@ impl Store {
             songs,
             playlists: self.playlists.clone(),
         }
+    }
+
+    /// What bringing in `s` would add, without changing anything (a trial run on copies of the parts it touches).
+    pub fn preview_share(&self, s: &Share) -> Took {
+        let mut trial = Store {
+            sections: self.sections.clone(),
+            songs: self.songs.clone(),
+            playlists: self.playlists.clone(),
+            files: self.files.clone(),
+            yt: self.yt.clone(),
+            sc: self.sc.clone(),
+            ..Default::default()
+        };
+        trial.take_share(s.clone())
     }
 
     /// Bring in a shared file: loops you don't have yet (same song, same start and end) are added, songs you don't

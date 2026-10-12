@@ -355,14 +355,22 @@ impl App {
         let dt = self.acc_at.elapsed().as_secs_f32().min(1.0);
         self.acc_at = Instant::now();
         let playing = self.cur.is_some() && !self.stopped && !self.paused && !self.buffering;
-        // only real loop work counts - not just having practice mode open
-        let looping = self.loop_on && self.loop_a.is_some() && self.loop_b.is_some();
-        if self.practice && playing && looping {
-            self.acc += dt;
-        }
+        // only real loop work counts: a loop that keeps going round - not practice mode left open, nor a loop
+        // switched on that never comes back
         let w = self.player.ctl.wraps();
         if w > self.last_wraps && self.practice && playing {
             self.on_loops(w - self.last_wraps);
+            self.last_wrap_at = Some(Instant::now());
+        }
+        let span = match (self.loop_a, self.loop_b) {
+            (Some(a), Some(b)) if self.loop_on => Some((b - a).abs()),
+            _ => None,
+        };
+        let repeating = span.is_some_and(|s| {
+            self.last_wrap_at.is_some_and(|t| t.elapsed().as_secs_f32() < s * 100.0 / self.speed.max(25) as f32 + 3.0)
+        });
+        if self.practice && playing && repeating {
+            self.acc += dt;
         }
         self.last_wraps = w;
         if self.acc >= 5.0 {
@@ -949,6 +957,39 @@ impl App {
         n
     }
 
+    /// Only the songs' loops and the playlists ticked in the preview.
+    pub(crate) fn share_ticked(&mut self, mut s: crate::store::Share) -> crate::store::Share {
+        if let Some((songs, lists)) = self.share_pick.take() {
+            s.loops.retain(|id, _| songs.contains(id));
+            s.songs.retain(|id, _| songs.contains(id));
+            s.playlists.retain(|p| lists.contains(&p.name));
+        }
+        s
+    }
+
+    /// Bring an import in (from its preview) and say what it added and what it found.
+    fn take_import(&mut self, s: crate::store::Share) {
+        let newer = s.version > crate::store::SHARE_VERSION;
+        let t = self.store.take_share(s);
+        self.store_dirty = true;
+        self.serial += 1;
+        let mut note =
+            format!("IMPORTED: {} NEW LOOPS, {} NEW PLAYLISTS, {} SONGS ADDED TO PLAYLISTS", t.loops, t.playlists, t.items);
+        if t.relinked > 0 {
+            note += &format!(" - {} FILES MATCHED TO YOURS", t.relinked);
+        }
+        if t.missing > 0 {
+            note += &format!(" - {} FILES AREN'T ON THIS COMPUTER (ADD THEM IN FILES, THEN IMPORT AGAIN)", t.missing);
+        }
+        if t.tidal > 0 && !self.api.has_token() {
+            note += &format!(" - {} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal);
+        }
+        if newer {
+            note += " - MADE BY A NEWER BACKLINE: UPDATE TO BRING IN EVERYTHING";
+        }
+        self.set_note(&note);
+    }
+
     pub(crate) fn drain_extra(&mut self, m: Msg) {
         match m {
             Msg::DefaultOutput(name) => {
@@ -968,32 +1009,8 @@ impl App {
                 Ok(p) => self.set_note(&format!("SAVED: {} - OPEN IT IN BACKLINE ON THE OTHER COMPUTER (IMPORT)", p)),
                 Err(e) => self.set_err(format!("EXPORT: {}", e)),
             },
-            Msg::ShareIn(r) => match r {
-                Ok(s) => {
-                    let newer = s.version > crate::store::SHARE_VERSION;
-                    let t = self.store.take_share(s);
-                    self.store_dirty = true;
-                    self.serial += 1;
-                    let mut note = format!(
-                        "IMPORTED: {} NEW LOOPS, {} NEW PLAYLISTS, {} SONGS ADDED TO PLAYLISTS",
-                        t.loops, t.playlists, t.items
-                    );
-                    if t.relinked > 0 {
-                        note += &format!(" - {} FILES MATCHED TO YOURS", t.relinked);
-                    }
-                    if t.missing > 0 {
-                        note += &format!(" - {} FILES AREN'T ON THIS COMPUTER (ADD THEM IN FILES, THEN IMPORT AGAIN)", t.missing);
-                    }
-                    if t.tidal > 0 && !self.api.has_token() {
-                        note += &format!(" - {} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal);
-                    }
-                    if newer {
-                        note += " - MADE BY A NEWER BACKLINE: UPDATE TO BRING IN EVERYTHING";
-                    }
-                    self.set_note(&note);
-                }
-                Err(e) => self.set_err(format!("IMPORT: {}", e)),
-            },
+            Msg::ShareIn(Ok(s)) => self.share_view = Some((true, s)),
+            Msg::ShareIn(Err(e)) => self.set_err(format!("IMPORT: {}", e)),
             Msg::TidalLists(r) => {
                 self.tidal_lists_busy = false;
                 match r {
@@ -1583,8 +1600,17 @@ impl App {
                 self.pl_loop = None;
                 self.new_pl.clear();
             }
-            Action::ShareExport => {
-                let text = match serde_json::to_string_pretty(&self.store.share()) {
+            Action::ShareExport => self.share_view = Some((false, self.store.share())),
+            Action::ShareTake => {
+                if let Some((true, s)) = self.share_view.take() {
+                    let s = self.share_ticked(s);
+                    self.take_import(s);
+                }
+            }
+            Action::ShareSave => {
+                let Some((false, share)) = self.share_view.take() else { return };
+                let share = self.share_ticked(share);
+                let text = match serde_json::to_string_pretty(&share) {
                     Ok(t) => t,
                     Err(e) => return self.set_err(format!("EXPORT: {}", e)),
                 };
@@ -2123,6 +2149,9 @@ impl App {
                 let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
                 list.push(Section { name: name.clone(), a, b, saved: store::today_str(), ..Default::default() });
                 self.remember_song(&t);
+                // saving a loop is practice: the song is in this week's list
+                let date = store::today_str();
+                self.store.day_mut(&date).songs.entry(t.id).or_insert(0);
                 self.sec_name.clear();
                 self.store_dirty = true;
                 self.set_note(&format!("SAVED: {}", name.to_uppercase()));

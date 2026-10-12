@@ -914,10 +914,16 @@ impl App {
         let counts: Vec<usize> =
             groups.iter().map(|g| self.store.sections.values().flatten().filter(|s| s.group == *g).count()).collect();
         ui.horizontal_wrapped(|ui| {
-            label(ui, "GROUPS", 64.0);
+            if retro_btn(ui, "ALL", self.loops_group.is_none()).tip("Every loop").clicked() {
+                self.loops_group = None;
+            }
             for (g, n) in groups.iter().zip(counts.iter().copied()) {
-                let r = retro_btn(ui, &format!("{} ({})", g.to_uppercase(), n), self.grp_edit.as_deref() == Some(g))
-                    .tip("Right-click: rename or delete");
+                let on = self.loops_group.as_deref() == Some(g);
+                let r = retro_btn(ui, &format!("{} {}", g.to_uppercase(), n), on)
+                    .tip("Show this group's loops. Right-click: rename or delete");
+                if r.clicked() {
+                    self.loops_group = if on { None } else { Some(g.clone()) };
+                }
                 r.context_menu(|ui| {
                     if menu_item(ui, "Rename...") {
                         self.grp_edit = Some(g.clone());
@@ -931,9 +937,22 @@ impl App {
                     }
                 });
             }
+            if !self.grp_adding {
+                if retro_btn(ui, "+", false).tip("A new group").clicked() {
+                    self.grp_adding = true;
+                    self.ed.id = crate::tools::F_GROUP_NAME + 100;
+                }
+                return;
+            }
             let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, bh()), Sense::hover());
             let o = field(ui, &mut self.ed, crate::tools::F_GROUP_NAME + 100, &mut self.grp_new, rect, "New group...", false);
-            if (o.enter || retro_btn(ui, "+ ADD", false).clicked()) && !self.grp_new.trim().is_empty() {
+            if retro_btn(ui, "CANCEL", false).clicked() {
+                self.grp_adding = false;
+                self.grp_new.clear();
+                self.ed.id = 0;
+            }
+            if (o.enter || retro_btn(ui, "ADD", false).clicked()) && !self.grp_new.trim().is_empty() {
+                self.grp_adding = false;
                 let mut l = self.store.groups();
                 if !l.iter().any(|g| g == self.grp_new.trim()) {
                     l.push(self.grp_new.trim().to_string());
@@ -974,6 +993,165 @@ impl App {
                     self.grp_ask = None;
                 }
             });
+        }
+    }
+
+    /// The export / import preview, over the dimmed app: what is in the file (songs, loops, playlists) and, for an
+    /// import, what is new to you and what can't play here - then go ahead or cancel.
+    pub(crate) fn share_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let Some((importing, s)) = self.share_view.clone().map(|(i, s)| (i, s)) else {
+            self.share_pick = None;
+            return;
+        };
+        // everything ticked to begin with
+        if self.share_pick.is_none() {
+            let songs = s.loops.iter().filter(|(_, l)| !l.is_empty()).map(|(id, _)| *id).collect();
+            let lists = s.playlists.iter().map(|p| p.name.clone()).collect();
+            self.share_pick = Some((songs, lists));
+        }
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("share_dim"))).rect_filled(
+            screen,
+            0.0,
+            egui::Color32::from_black_alpha(170),
+        );
+        let mut songs: Vec<(i64, String, usize)> = s
+            .loops
+            .iter()
+            .filter(|(_, l)| !l.is_empty())
+            .map(|(id, l)| {
+                let name = s.songs.get(id).map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "a song".into());
+                (*id, name, l.len())
+            })
+            .collect();
+        songs.sort_by(|a, b| a.1.cmp(&b.1));
+        let lists: Vec<(String, usize)> = s.playlists.iter().map(|p| (p.name.clone(), p.items.len())).collect();
+        let (picked_songs, picked_lists) = self.share_pick.clone().unwrap_or_default();
+        let n_loops: usize = songs.iter().filter(|x| picked_songs.contains(&x.0)).map(|x| x.2).sum();
+        let n_songs = songs.iter().filter(|x| picked_songs.contains(&x.0)).count();
+        let n_lists = lists.iter().filter(|x| picked_lists.contains(&x.0)).count();
+        // what an import would add, counting only what's ticked
+        let took = if importing {
+            let mut t = s.clone();
+            t.loops.retain(|id, _| picked_songs.contains(id));
+            t.songs.retain(|id, _| picked_songs.contains(id));
+            t.playlists.retain(|p| picked_lists.contains(&p.name));
+            Some(self.store.preview_share(&t))
+        } else {
+            None
+        };
+        let mut pick = self.share_pick.take().unwrap_or_default();
+        let newer = s.version > store::SHARE_VERSION;
+        let mut close = false;
+        // above the dimming (which is on the foreground layer)
+        egui::Area::new(egui::Id::new("share_panel"))
+            .order(egui::Order::Tooltip)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                egui::Frame::none().fill(pal().app_bg).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(16.0).show(
+                    ui,
+                    |ui| {
+                        ui.set_width(520.0_f32.min(screen.width() - 40.0));
+                        title_line(
+                            ui,
+                            if importing { "IMPORT LOOPS & PLAYLISTS" } else { "EXPORT LOOPS & PLAYLISTS" },
+                            3.0,
+                            pal().ink,
+                        );
+                        para(ui, &format!("TICKED: {} LOOPS ON {} SONGS, {} PLAYLISTS", n_loops, n_songs, n_lists), pal().ink);
+                        ui.horizontal_wrapped(|ui| {
+                            let all_songs: std::collections::HashSet<i64> = songs.iter().map(|x| x.0).collect();
+                            let all_lists: std::collections::HashSet<String> = lists.iter().map(|x| x.0.clone()).collect();
+                            if retro_btn(ui, "EVERYTHING", false).clicked() {
+                                pick = (all_songs.clone(), all_lists.clone());
+                            }
+                            if retro_btn(ui, "ALL LOOPS", false).tip("Every loop, no playlists").clicked() {
+                                pick = (all_songs.clone(), std::collections::HashSet::new());
+                            }
+                            if retro_btn(ui, "ALL PLAYLISTS", false).tip("Every playlist, no loops").clicked() {
+                                pick = (std::collections::HashSet::new(), all_lists.clone());
+                            }
+                            if retro_btn(ui, "NONE", false).clicked() {
+                                pick = Default::default();
+                            }
+                        });
+                        if let Some(t) = &took {
+                            para(
+                                ui,
+                                &format!(
+                                    "NEW TO YOU: {} LOOPS, {} PLAYLISTS, {} SONGS FOR PLAYLISTS YOU HAVE",
+                                    t.loops, t.playlists, t.items
+                                ),
+                                pal().ink,
+                            );
+                            if t.relinked > 0 {
+                                para(ui, &format!("{} FILES WILL BE MATCHED TO YOUR OWN COPIES", t.relinked), pal().ink2);
+                            }
+                            if t.missing > 0 {
+                                para(
+                                    ui,
+                                    &format!("{} FILES AREN'T ON THIS COMPUTER (THEIR LOOPS COME IN, BUT WON'T PLAY)", t.missing),
+                                    pal().ink2,
+                                );
+                            }
+                            if t.tidal > 0 && !self.api.has_token() {
+                                para(ui, &format!("{} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal), pal().ink2);
+                            }
+                        }
+                        if newer {
+                            para(
+                                ui,
+                                "MADE BY A NEWER BACKLINE: SOME OF IT MAY BE LEFT OUT - UPDATE TO BRING IN EVERYTHING",
+                                pal().red,
+                            );
+                        }
+                        ui.add_space(4.0);
+                        egui::ScrollArea::vertical().max_height((screen.height() * 0.45).max(120.0)).show(ui, |ui| {
+                            if !songs.is_empty() {
+                                section_header(ui, "LOOPS");
+                                for (id, name, n) in &songs {
+                                    let on = pick.0.contains(id);
+                                    let label = format!("{}  ({} {})", name, n, if *n == 1 { "LOOP" } else { "LOOPS" });
+                                    if crate::check_box(ui, &label, on).clicked() {
+                                        if on {
+                                            pick.0.remove(id);
+                                        } else {
+                                            pick.0.insert(*id);
+                                        }
+                                    }
+                                }
+                            }
+                            if !lists.is_empty() {
+                                section_header(ui, "PLAYLISTS");
+                                for (name, n) in &lists {
+                                    let on = pick.1.contains(name);
+                                    if crate::check_box(ui, &format!("{}  ({} SONGS)", name, n), on).clicked() {
+                                        if on {
+                                            pick.1.remove(name);
+                                        } else {
+                                            pick.1.insert(name.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            let go = if importing { "IMPORT" } else { "SAVE..." };
+                            if retro_btn(ui, go, false).clicked() {
+                                acts.push(if importing { Action::ShareTake } else { Action::ShareSave });
+                            }
+                            if retro_btn(ui, "CANCEL", false).clicked() {
+                                close = true;
+                            }
+                        });
+                    },
+                );
+            });
+        self.share_pick = Some(pick);
+        if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.share_view = None;
+            self.share_pick = None;
         }
     }
 
@@ -1557,6 +1735,8 @@ impl App {
         para(ui, "The songs you saved loops on or practised, no tune needed. Click a loop to jump straight to it. Click a song to play it. Right-click for more.", pal().ink2);
         self.share_buttons(ui, acts);
         self.group_manager(ui);
+        let group = self.loops_group.clone().filter(|g| self.store.groups().contains(g));
+        self.loops_group = group.clone();
         self.name_old_loops();
         let today = store::today_days();
         let week_start = store::date_str(today - 6);
@@ -1590,6 +1770,10 @@ impl App {
             if (self.loops_all || l.iter().any(|s| s.saved >= week_start)) && !ids.contains(id) {
                 ids.push(*id);
             }
+        }
+        // a group on show: only the songs with loops in it
+        if let Some(g) = &group {
+            ids.retain(|id| self.store.sections.get(id).is_some_and(|l| l.iter().any(|s| s.group == *g)));
         }
         if !self.loops_by_song {
             self.clips_list(ui, acts, &ids, &week_start);
@@ -1645,7 +1829,7 @@ impl App {
                 if loops.is_empty() {
                     dim_line(ui, "NO LOOPS SAVED - PRACTISED ONLY", 1.0, pal().dim);
                 }
-                for (i, s) in loops.iter().enumerate() {
+                for (i, s) in loops.iter().enumerate().filter(|(_, s)| group.as_ref().is_none_or(|g| s.group == *g)) {
                     let label = format!("{}  {}-{}", s.name.to_uppercase(), fmt_time(s.a), fmt_time(s.b));
                     let b = retro_btn(ui, &label, false).tip("Play the song at this loop, looping. Right-click to forget it");
                     if b.clicked() {
@@ -1678,8 +1862,9 @@ impl App {
         let mut clips: Vec<(i64, usize, store::Section)> = Vec::new();
         for id in ids {
             for (i, s) in self.store.sections.get(id).into_iter().flatten().enumerate() {
-                // this week: loops saved this week, or on a song practised this week
-                if self.loops_all || s.saved.as_str() >= week_start || s.saved.is_empty() {
+                // this week: loops saved this week, or on a song practised this week; and in the group on show
+                let in_group = self.loops_group.as_ref().is_none_or(|g| s.group == *g);
+                if in_group && (self.loops_all || s.saved.as_str() >= week_start || s.saved.is_empty()) {
                     clips.push((*id, i, s.clone()));
                 }
             }

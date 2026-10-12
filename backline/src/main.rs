@@ -379,6 +379,9 @@ enum Action {
     /// save your loops and playlists to a file / bring in a file from another computer
     ShareExport,
     ShareImport,
+    /// the preview's go-ahead: save the export / bring the import in
+    ShareSave,
+    ShareTake,
     /// pick one of your Tidal playlists for a song
     PlaylistPickTidal(Track),
     /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
@@ -2551,6 +2554,8 @@ struct App {
     trainer_n: u32,
     passes: u32,
     last_wraps: u32,
+    /// when the loop last went round (practice time counts only while it keeps doing so)
+    last_wrap_at: Option<Instant>,
     /// pitch shift in cents (100 = a semitone)
     semis: i32,
     chan: u32,
@@ -2575,6 +2580,13 @@ struct App {
     grp_name: String,
     grp_ask: Option<String>,
     grp_new: String,
+    /// LOOPS: the group on show (None: all), and the + tab's name box open
+    loops_group: Option<String>,
+    /// export / import waiting in its preview panel: (importing, the file's contents)
+    share_view: Option<(bool, store::Share)>,
+    /// what's ticked in that preview: songs (their loops) and playlists (by name); None until the panel opens
+    share_pick: Option<(HashSet<i64>, HashSet<String>)>,
+    grp_adding: bool,
     sel_anchor: Option<f32>,
     exporting: bool,
 
@@ -3125,6 +3137,7 @@ impl App {
             trainer_n: 4,
             passes: 0,
             last_wraps: 0,
+            last_wrap_at: None,
             semis: 0,
             chan: 0,
             acc: 0.0,
@@ -3143,6 +3156,10 @@ impl App {
             grp_name: String::new(),
             grp_ask: None,
             grp_new: String::new(),
+            loops_group: None,
+            share_view: None,
+            share_pick: None,
+            grp_adding: false,
             sel_anchor: None,
             exporting: false,
             rtab: 0,
@@ -3601,6 +3618,10 @@ impl App {
             }
             Ok("lists") => app.sec = Sec::Lists,
             Ok("loops") => app.sec = Sec::Loops,
+            Ok("export") => {
+                app.sec = Sec::Loops;
+                app.share_view = Some((false, app.store.share()));
+            }
             _ => {}
         }
         app
@@ -5377,6 +5398,7 @@ impl eframe::App for App {
         self.edit_info_panel(ctx);
         self.skin_loading_panel(ctx);
         self.viz_panel(ctx);
+        self.share_panel(ctx, &mut acts);
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
