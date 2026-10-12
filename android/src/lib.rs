@@ -26,7 +26,8 @@ enum Msg {
     Code(Result<DeviceCode, String>),
     LoggedIn(Result<(), String>),
     Found(Result<Vec<Track>, String>),
-    Audio(u64, Result<Vec<u8>, String>),
+    /// the song's audio, and its length when the file had to tell us (0: the track already knows)
+    Audio(u64, Result<(Vec<u8>, f32), String>),
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -60,6 +61,10 @@ struct App {
     show_queue: bool,
     seek_drag: Option<f32>,
     keyboard: bool,
+    /// the library's tab: 0 Tidal, 1 files on the phone
+    lib_tab: u8,
+    /// songs on the phone: each track and its file
+    files: Vec<(Track, std::path::PathBuf)>,
 }
 
 impl App {
@@ -103,6 +108,8 @@ impl App {
             show_queue: false,
             seek_drag: None,
             keyboard: false,
+            lib_tab: 0,
+            files: Vec::new(),
         }
     }
 
@@ -131,7 +138,48 @@ impl App {
         self.loop_on = false;
         self.sync_loop();
         self.player.send(Cmd::Stop);
-        self.spawn(move |api| Msg::Audio(g, api.stream_url(t.id, false).and_then(|u| api.fetch(&u))));
+        // a song on the phone: read it (and how long it is); a Tidal one: fetched
+        if let Some(path) = self.files.iter().find(|f| f.0.id == t.id).map(|f| f.1.clone()) {
+            self.spawn(move |_| {
+                Msg::Audio(
+                    g,
+                    std::fs::read(&path).map_err(|e| e.to_string()).map(|b| {
+                        use rodio::Source;
+                        let d = decode::SymSource::new(b.clone()).ok().and_then(|s| s.total_duration()).map_or(0.0, |d| d.as_secs_f32());
+                        (b, d)
+                    }),
+                )
+            });
+        } else {
+            self.spawn(move |api| Msg::Audio(g, api.stream_url(t.id, false).and_then(|u| api.fetch(&u)).map(|b| (b, 0.0))));
+        }
+    }
+
+    /// The songs on the phone: Backline's own Music folder (no permission needed), and the phone's Music and
+    /// Download folders where Android lets us read them.
+    fn scan_files(&mut self) {
+        let mut dirs = vec![music_dir()];
+        dirs.extend(["/sdcard/Music", "/sdcard/Download"].iter().map(std::path::PathBuf::from));
+        self.files.clear();
+        for d in dirs {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for e in rd.flatten() {
+                let p = e.path();
+                let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
+                if !["mp3", "m4a", "flac", "wav", "ogg", "aac"].contains(&ext.as_str()) {
+                    continue;
+                }
+                let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+                let id = -(1 + (hash(&p.to_string_lossy()) & 0x7fff_ffff_ffff) as i64);
+                let (artist, title) = match name.split_once(" - ") {
+                    Some((a, b)) => (a.to_string(), b.to_string()),
+                    None => (String::new(), name.clone()),
+                };
+                let t = Track { id, title, artist, ..Default::default() };
+                self.files.push((t, p));
+            }
+        }
+        self.files.sort_by(|a, b| a.0.title.to_lowercase().cmp(&b.0.title.to_lowercase()));
     }
 
     fn sync_loop(&self) {
@@ -167,7 +215,14 @@ impl App {
                 Msg::Audio(g, r) if g == self.gen => {
                     self.loading = false;
                     match r {
-                        Ok(b) => self.player.send(Cmd::Play(b)),
+                        Ok((b, d)) => {
+                            if d > 0.0 {
+                                if let Some(t) = self.cur.and_then(|i| self.queue.get_mut(i)) {
+                                    t.duration = d;
+                                }
+                            }
+                            self.player.send(Cmd::Play(b));
+                        }
                         Err(e) => self.note = format!("Can't play: {}", e),
                     }
                 }
@@ -188,10 +243,8 @@ impl App {
 
     // ------------------------------------------------------------------ screens
     fn login_ui(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(60.0);
+        ui.add_space(30.0);
         ui.vertical_centered(|ui| {
-            ui.heading("Backline");
-            ui.add_space(30.0);
             match &self.code {
                 None => {
                     if ui.add(egui::Button::new("SIGN IN TO TIDAL").min_size(Vec2::new(240.0, 56.0))).clicked() {
@@ -220,6 +273,24 @@ impl App {
     }
 
     fn library_ui(&mut self, ui: &mut egui::Ui) {
+        ui.columns(2, |c| {
+            for (k, name) in ["TIDAL", "FILES"].into_iter().enumerate() {
+                if c[k].add_sized(Vec2::new(c[k].available_width(), 40.0), egui::SelectableLabel::new(self.lib_tab == k as u8, name)).clicked() {
+                    self.lib_tab = k as u8;
+                    if k == 1 {
+                        self.scan_files();
+                    }
+                }
+            }
+        });
+        if self.lib_tab == 1 {
+            self.files_ui(ui);
+            return;
+        }
+        if !self.logged_in {
+            self.login_ui(ui);
+            return;
+        }
         ui.horizontal(|ui| {
             let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text("Search Tidal").desired_width(ui.available_width() - 90.0));
             let go = ui.button("GO").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
@@ -242,6 +313,28 @@ impl App {
         });
         if let Some(i) = play {
             self.queue = self.results.clone();
+            self.play(i);
+        }
+    }
+
+    fn files_ui(&mut self, ui: &mut egui::Ui) {
+        if ui.button("LOOK AGAIN").clicked() {
+            self.scan_files();
+        }
+        if self.files.is_empty() {
+            ui.label(RichText::new(format!("No songs found. Put audio files in your Music or Download folder, or in {}", music_dir().display())).weak());
+            return;
+        }
+        let mut play = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            for (i, (t, _)) in self.files.iter().enumerate() {
+                if track_row(ui, t, self.cur_track().map(|c| c.id) == Some(t.id)).clicked() {
+                    play = Some(i);
+                }
+            }
+        });
+        if let Some(i) = play {
+            self.queue = self.files.iter().map(|f| f.0.clone()).collect();
             self.play(i);
         }
     }
@@ -403,6 +496,21 @@ fn big(ui: &mut egui::Ui, s: &str) -> egui::Response {
     ui.add_sized(Vec2::new(ui.available_width(), 64.0), egui::Button::new(RichText::new(s).size(28.0)))
 }
 
+/// Backline's own Music folder on the phone: songs put here play without any permission.
+fn music_dir() -> std::path::PathBuf {
+    let base = std::env::var_os("BACKLINE_FILES").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("."));
+    let d = base.join("Music");
+    let _ = std::fs::create_dir_all(&d);
+    d
+}
+
+fn hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
 fn fmt_t(t: f32) -> String {
     let t = t.max(0.0) as u32;
     format!("{}:{:02}", t / 60, t % 60)
@@ -416,10 +524,6 @@ impl eframe::App for App {
         if want != self.keyboard {
             self.keyboard = want;
             show_keyboard(want);
-        }
-        if !self.logged_in {
-            egui::CentralPanel::default().show(ctx, |ui| self.login_ui(ui));
-            return;
         }
         egui::TopBottomPanel::bottom("nav").show(ctx, |ui| {
             if self.tab != Tab::Player {
@@ -469,6 +573,10 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // settings and the Tidal sign-in live in the app's own storage
     if let Some(p) = app.internal_data_path() {
         std::env::set_var("BACKLINE_HOME", p);
+    }
+    // the folder songs can be copied to (reachable over USB, no permission needed)
+    if let Some(p) = app.external_data_path() {
+        std::env::set_var("BACKLINE_FILES", p);
     }
     let _ = ANDROID.set(app.clone());
     let options = eframe::NativeOptions {
