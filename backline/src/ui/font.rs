@@ -542,7 +542,13 @@ pub fn ptext_fit(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32,
         return;
     }
     if skinned() {
-        crate::winamp_ui::sans_text(p, anchor, h, text, skin_size(px), max_w, color);
+        // smaller first, so a chord name reads whole (cut with "..." only past half its size)
+        let mut s = skin_size(px);
+        let least = s * 0.5;
+        while s > least && crate::winamp_ui::sans_width(text, s) > max_w {
+            s -= 0.25;
+        }
+        crate::winamp_ui::sans_text(p, anchor, h, text, s, max_w, color);
         return;
     }
     if smooth(text) {

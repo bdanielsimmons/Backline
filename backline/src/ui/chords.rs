@@ -600,6 +600,26 @@ impl App {
                 self.an_frets = [None; 6];
                 self.an_pick = None;
             }
+            // the whole shape a fret down or up the neck (open strings move too, as with a capo), heard as it lands
+            let frets: Vec<u8> = self.an_frets.iter().flatten().copied().collect();
+            let lo = frets.iter().min().copied();
+            let hi = frets.iter().max().copied();
+            for (label, d, tip) in
+                [("< MOVE", -1i32, "The whole shape a fret down the neck"), ("MOVE >", 1, "The whole shape a fret up the neck")]
+            {
+                let can = match (lo, hi) {
+                    (Some(l), Some(h)) => (d < 0 && l > 0) || (d > 0 && h < 15),
+                    _ => false,
+                };
+                if retro_btn(ui, label, false).tip(tip).clicked() && can {
+                    for f in self.an_frets.iter_mut().flatten() {
+                        *f = (*f as i32 + d) as u8;
+                    }
+                    let moved: Vec<i32> =
+                        (0..6).filter_map(|s| self.an_frets[s].map(|f| theory::STANDARD[s] + f as i32)).collect();
+                    acts.push(Action::PlayNotes(moved));
+                }
+            }
             if retro_btn(ui, "SAVE GRIP AS...", self.gs_open)
                 .tip("Keep this grip under a chord name you choose (typed, or picked: root, kind, type)")
                 .clicked()

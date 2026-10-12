@@ -376,8 +376,26 @@ pub(crate) fn parse_chord(c: &str) -> Option<Chord> {
     let main = it.next()?;
     let (root_s, rest) = chart::split_root(main);
     let root = chart::note_index(root_s)?;
-    let bass = it.next().and_then(|b| chart::note_index(chart::split_root(b).0)).unwrap_or(root);
-    let r = rest;
+    // after a slash, a note is the bass (C/E); anything else is more of the chord's name: Fm/maj7 is Fm(maj7),
+    // F Ab C E, and 6/9 is 69
+    let after = it.next();
+    let bass_pc = after.and_then(|b| {
+        let (n, more) = chart::split_root(b);
+        if more.is_empty() {
+            chart::note_index(n)
+        } else {
+            None
+        }
+    });
+    let bass = bass_pc.unwrap_or(root);
+    let joined;
+    let r = match after {
+        Some(a) if bass_pc.is_none() => {
+            joined = format!("{}{}", rest, a);
+            joined.as_str()
+        }
+        _ => rest,
+    };
     let minor = (r.starts_with('m') && !r.starts_with("maj")) || r.starts_with("dim");
     let digits = r.chars().any(|c| c.is_ascii_digit());
     let third = if r.contains("sus2") {
@@ -1014,6 +1032,10 @@ mod tests {
         assert_eq!(notes("F7#11"), (5, 4, 7, Some(10), Some(18), 5));
         assert_eq!(notes("Cm6"), (0, 3, 7, Some(9), None, 0));
         assert_eq!(notes("C/E"), (0, 4, 7, None, None, 4));
+        // a slash before a quality, not a note: part of the name (the line cliche's Fm, Fm/maj7, Fm7)
+        assert_eq!(notes("Fm/maj7"), (5, 3, 7, Some(11), None, 5));
+        assert_eq!(notes("C6/9"), (0, 4, 7, Some(9), Some(14), 0));
+        assert_eq!(notes("Ab/Bb"), (8, 4, 7, None, None, 10));
         assert!(parse_chord("N.C.").is_none());
     }
 

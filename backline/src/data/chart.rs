@@ -1047,8 +1047,15 @@ pub fn tonic(key: &str, chart: &Chart) -> Option<i32> {
 
 /// "Dm7" in C -> "ii7", "G7" -> "V7", "Bbmaj7" -> "bVIImaj7".
 pub fn roman(chord: &str, tonic: i32) -> String {
-    let main = chord.split('/').next().unwrap_or("");
+    let mut parts = chord.split('/');
+    let main = parts.next().unwrap_or("");
     let (root, rest) = split_root(main);
+    // a slash before a quality is part of the name (Fm/maj7); before a note it is the bass, left off
+    let rest = match parts.next() {
+        Some(a) if note_index(split_root(a).0).is_none() || !split_root(a).1.is_empty() => format!("{}{}", rest, a),
+        _ => rest.to_string(),
+    };
+    let rest = rest.as_str();
     let Some(ix) = note_index(root) else { return String::new() };
     const DEG: [&str; 12] = ["I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII"];
     let deg = DEG[(ix - tonic).rem_euclid(12) as usize];
@@ -1061,8 +1068,11 @@ pub fn roman(chord: &str, tonic: i32) -> String {
         rest.to_string()
     };
     let tail = tail.strip_prefix("in").map(str::to_string).unwrap_or(tail);
-    if minor {
-        format!("{}{}", deg.to_lowercase(), tail)
+    // minor written out (VIm7), not as a lowercase numeral: the chart's capitals would hide it (vi7 = VI7)
+    if minor && tail.to_lowercase().starts_with("maj") {
+        format!("{}m({})", deg, tail)
+    } else if minor {
+        format!("{}m{}", deg, tail)
     } else {
         format!("{}{}", deg, tail)
     }
@@ -1087,6 +1097,16 @@ pub fn clean_title(t: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn roman_numerals() {
+        // in Ab: the vi chords of the line cliche, and a slash chord
+        assert_eq!(roman("Fm", 8), "VIm");
+        assert_eq!(roman("Fm/maj7", 8), "VIm(maj7)");
+        assert_eq!(roman("Fm7", 8), "VIm7");
+        assert_eq!(roman("F7", 8), "VI7");
+        assert_eq!(roman("Db/Eb", 8), "IV");
+    }
 
     #[test]
     fn meters_can_change_bar_by_bar() {
