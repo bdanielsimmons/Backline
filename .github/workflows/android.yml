@@ -23,7 +23,9 @@ jobs:
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
           export ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
           # the JavaScript engine's bindings are generated against the phone's own headers
-          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          sysroot="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=aarch64-linux-android26 --sysroot=$sysroot"
+          export BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android="--target=x86_64-linux-android26 --sysroot=$sysroot"
           cargo install cargo-apk --locked
           # a throwaway signing key for test builds (a lasting one comes before the APK is handed out)
           keytool -genkeypair -keystore "$RUNNER_TEMP/test.jks" -alias test -storepass testpass -keypass testpass             -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Backline test"
