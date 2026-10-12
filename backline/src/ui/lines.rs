@@ -777,21 +777,25 @@ impl App {
             if !open {
                 continue;
             }
-            ui.indent(("prog_group", g), |ui| {
-                crate::views::dim_line(ui, &about.to_uppercase(), 1.0, pal().ink2);
-                if mine {
-                    ui.horizontal_wrapped(|ui| {
-                        let w = (ui.available_width() - 80.0).max(120.0);
-                        let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-                        let o = field(ui, &mut self.ed, crate::tools::F_PROG_NEW, &mut self.prog_new, r, "I VI II V I", false);
-                        if (o.enter || retro_btn_w(ui, "ADD", 70.0, false).clicked()) && !self.prog_new.trim().is_empty() {
-                            self.store.my_progs.push(self.prog_new.trim().to_string());
-                            self.prog_new.clear();
-                            self.store_dirty = true;
-                        }
-                    });
-                }
-                self.progression_rows(ui, acts, g, &progs, mine);
+            // in a box of its own, so a long family (diatonic) doesn't push the page away
+            crate::views::contained(ui, ("prog_box", g), |ui| {
+                ui.indent(("prog_group", g), |ui| {
+                    crate::views::dim_line(ui, &about.to_uppercase(), 1.0, pal().ink2);
+                    if mine {
+                        ui.horizontal_wrapped(|ui| {
+                            let w = (ui.available_width() - 80.0).max(120.0);
+                            let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                            let o =
+                                field(ui, &mut self.ed, crate::tools::F_PROG_NEW, &mut self.prog_new, r, "I VI II V I", false);
+                            if (o.enter || retro_btn_w(ui, "ADD", 70.0, false).clicked()) && !self.prog_new.trim().is_empty() {
+                                self.store.my_progs.push(self.prog_new.trim().to_string());
+                                self.prog_new.clear();
+                                self.store_dirty = true;
+                            }
+                        });
+                    }
+                    self.progression_rows(ui, acts, g, &progs, mine);
+                });
             });
             ui.add_space(4.0);
         }

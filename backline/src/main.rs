@@ -2593,6 +2593,8 @@ struct App {
     /// what's ticked in that preview: songs (their loops) and playlists (by name); None until the panel opens
     share_pick: Option<(HashSet<i64>, HashSet<String>)>,
     grp_adding: bool,
+    /// LOOPS > GROUPS: the group whose page is open ("" for the loops in no group)
+    grp_open: Option<String>,
     sel_anchor: Option<f32>,
     exporting: bool,
 
@@ -3168,6 +3170,7 @@ impl App {
             share_view: None,
             share_pick: None,
             grp_adding: false,
+            grp_open: None,
             sel_anchor: None,
             exporting: false,
             rtab: 0,
@@ -3639,6 +3642,11 @@ impl App {
             Ok("groups") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
+            }
+            Ok("group") => {
+                app.sec = Sec::Loops;
+                app.loops_mode = 2;
+                app.grp_open = Some(String::new());
             }
             Ok("export") => {
                 app.sec = Sec::Loops;
