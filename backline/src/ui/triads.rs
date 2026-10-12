@@ -54,66 +54,7 @@ pub(crate) struct Step {
     pub beats: f32,
 }
 
-/// Every way to play these pitch classes one to a string on `strings` (low to high) with the notes climbing:
-/// `ordered` keeps them in the order given (a stack), else any order (inversions). Fretted notes within `reach`
-/// frets of each other; open strings are free. Lowest on the neck first.
-pub(crate) fn grips_on(pcs: &[i32], strings: &[usize], ordered: bool, reach: u8) -> Vec<[Option<u8>; 6]> {
-    fn search(
-        k: usize,
-        pcs: &[i32],
-        strings: &[usize],
-        ordered: bool,
-        reach: u8,
-        cur: &mut Vec<u8>,
-        out: &mut Vec<[Option<u8>; 6]>,
-    ) {
-        if k == strings.len() {
-            let fretted: Vec<u8> = cur.iter().copied().filter(|f| *f > 0).collect();
-            let span = fretted.iter().max().unwrap_or(&0) - fretted.iter().min().unwrap_or(&0);
-            if span <= reach {
-                let mut g = [None; 6];
-                for (j, s) in strings.iter().enumerate() {
-                    g[*s] = Some(cur[j]);
-                }
-                out.push(g);
-            }
-            return;
-        }
-        let s = strings[k];
-        for f in 0..=15u8 {
-            let m = theory::STANDARD[s] + f as i32;
-            let pc = m.rem_euclid(12);
-            let ok = if ordered {
-                pc == pcs[k].rem_euclid(12)
-            } else {
-                pcs.iter().any(|p| p.rem_euclid(12) == pc)
-                    && !cur.iter().enumerate().any(|(j, cf)| (theory::STANDARD[strings[j]] + *cf as i32).rem_euclid(12) == pc)
-            };
-            let climbs = k == 0 || m > theory::STANDARD[strings[k - 1]] + cur[k - 1] as i32;
-            if ok && climbs {
-                cur.push(f);
-                search(k + 1, pcs, strings, ordered, reach, cur, out);
-                cur.pop();
-            }
-        }
-    }
-    let mut out = Vec::new();
-    if pcs.len() == strings.len() {
-        search(0, pcs, strings, ordered, reach, &mut Vec::new(), &mut out);
-    }
-    out.sort_by(|a, b| centre(a).partial_cmp(&centre(b)).unwrap_or(std::cmp::Ordering::Equal));
-    out
-}
-
-/// Where a grip sits on the neck (the middle of its fretted notes; open strings count as fret 0).
-fn centre(g: &[Option<u8>; 6]) -> f32 {
-    let f: Vec<f32> = g.iter().flatten().map(|f| *f as f32).collect();
-    if f.is_empty() {
-        0.0
-    } else {
-        f.iter().sum::<f32>() / f.len() as f32
-    }
-}
+pub(crate) use crate::theory::{centre, grips_on};
 
 /// The grip of these notes closest to `prev` (the fewest frets moved), or to fret `near` when there is none before.
 fn closest(options: &[[Option<u8>; 6]], prev: Option<&[Option<u8>; 6]>, near: f32) -> Option<[Option<u8>; 6]> {
