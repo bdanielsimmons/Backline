@@ -156,8 +156,9 @@ enum Msg {
     LikeFailed(i64, bool, String),
     /// release notes for the WHAT'S NEW panel: (tag, notes), newest first
     News(Result<Vec<(String, String)>, String>),
-    /// Windows' default sound output changed (headphones plugged in or out, a Bluetooth device connected or gone)
-    DefaultOutput(String),
+    /// the sound outputs changed (something plugged in or out, a Bluetooth device connected or gone): the default
+    /// one, all of them, and the Bluetooth ones
+    Outputs(String, Vec<String>, Vec<String>),
     /// a share file written (where), or read (its contents)
     ShareSaved(Result<String, String>),
     ShareIn(Result<store::Share, String>),
@@ -1798,6 +1799,8 @@ struct App {
     /// the system's default output when last looked at (Backline follows it unless you picked one)
     sys_output: String,
     out_list: Vec<String>,
+    /// the outputs that are Bluetooth (one of these going away pauses the music)
+    out_bt: Vec<String>,
     /// the queue panel open over the album view
     art_queue: bool,
     /// visualizer settings: [0] the small one in the player, [1] the one in the album view
@@ -2444,6 +2447,7 @@ impl App {
             out_device: None,
             sys_output: String::new(),
             out_list: Vec::new(),
+            out_bt: Vec::new(),
             art_queue: false,
             viz: [viz::VizCfg::player(), viz::VizCfg::art()],
             viz_wave: vec![0.0; WAVE_N],
@@ -2903,20 +2907,26 @@ impl App {
         if let Some(b) = st["tour_seen"].as_bool() {
             app.tour_seen = b;
         }
-        // watch Windows' default output: a change (plugged in, unplugged, Bluetooth on or off) moves Backline to it
+        // watch the sound outputs: something plugged in or out, or a Bluetooth device coming or going, and Backline
+        // moves with it (the list is always up to date)
         {
             let (tx, ctx) = (app.tx.clone(), app.ctx.clone());
             std::thread::spawn(move || {
                 use rodio::cpal::traits::{DeviceTrait, HostTrait};
-                let mut last = String::new();
+                let mut last = (String::new(), Vec::new());
+                let mut first = true;
                 loop {
                     let now = rodio::cpal::default_host().default_output_device().and_then(|d| d.name().ok()).unwrap_or_default();
-                    if now != last {
-                        if tx.send(Msg::DefaultOutput(now.clone())).is_err() {
+                    let outs = crate::player::outputs();
+                    let list: Vec<String> = outs.iter().map(|o| o.0.clone()).collect();
+                    if first || now != last.0 || list != last.1 {
+                        let bt = outs.iter().filter(|o| o.1).map(|o| o.0.clone()).collect();
+                        if tx.send(Msg::Outputs(now.clone(), list.clone(), bt)).is_err() {
                             break;
                         }
                         ctx.request_repaint();
-                        last = now;
+                        last = (now, list);
+                        first = false;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(1200));
                 }

@@ -319,7 +319,7 @@ impl App {
                         section_header(ui, "SOUND OUTPUT");
                         para(
                             ui,
-                            "Where the sound plays. Bluetooth headphones and speakers show up here once they are paired in your computer's Bluetooth settings. If the chosen one is off or unplugged, the default plays instead.",
+                            "Where the sound plays. Bluetooth headphones and speakers show up here once they are paired in your computer's Bluetooth settings. If the chosen one is off or unplugged, the default plays instead; if Bluetooth headphones or a speaker drop out, the music pauses.",
                             pal().ink2,
                         );
                         ui.horizontal_wrapped(|ui| {
@@ -331,9 +331,6 @@ impl App {
                                 if retro_btn(ui, &name.to_uppercase(), on).clicked() && !on {
                                     acts.push(Action::SetDevice(Some(name)));
                                 }
-                            }
-                            if retro_btn(ui, "REFRESH", false).tip("Look again (after pairing or plugging something in)").clicked() {
-                                self.out_list = crate::player::output_devices();
                             }
                         });
 

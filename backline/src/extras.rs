@@ -1027,17 +1027,36 @@ impl App {
                 Ok(_) => self.set_note("NO RELEASE NOTES FOUND"),
                 Err(e) => self.set_err(format!("WHAT'S NEW: {}", e)),
             },
-            Msg::DefaultOutput(name) => {
-                let first = self.sys_output.is_empty();
-                self.sys_output = name.clone();
-                // the first look is where things already play; after that, follow Windows unless you picked an
-                // output that is still there
-                let picked_here = self.out_device.as_ref().is_some_and(|d| crate::player::output_devices().contains(d));
-                if !first && !name.is_empty() && !picked_here {
-                    let keep = self.out_device.clone();
-                    self.apply(Action::SetDevice(None));
-                    self.out_device = keep;
-                    self.set_note(&format!("NOW PLAYING THROUGH {}", name.to_uppercase()));
+            Msg::Outputs(default, list, bt) => {
+                let first = self.sys_output.is_empty() && self.out_list.is_empty();
+                let old_list = std::mem::replace(&mut self.out_list, list);
+                let old_bt = std::mem::replace(&mut self.out_bt, bt);
+                let old_default = std::mem::replace(&mut self.sys_output, default.clone());
+                // the first look is where things already play
+                if first || default.is_empty() {
+                    return;
+                }
+                // where it was playing, and where it plays now: the output you picked while it is there, else the
+                // system's default
+                let was = self.out_device.clone().filter(|d| old_list.contains(d)).unwrap_or(old_default);
+                let picked = self.out_device.clone().filter(|d| self.out_list.contains(d));
+                let now = picked.clone().unwrap_or_else(|| default.clone());
+                if now == was {
+                    return;
+                }
+                // Bluetooth headphones or a speaker gone (out of range, switched off): the music pauses rather than
+                // carry on out loud; anything else, it keeps playing on the new output
+                let bt_gone = !self.out_list.contains(&was) && old_bt.contains(&was);
+                if bt_gone && self.cur.is_some() && !self.stopped && !self.paused {
+                    self.apply(Action::PauseBtn);
+                }
+                let keep = self.out_device.clone();
+                self.apply(Action::SetDevice(picked));
+                self.out_device = keep;
+                if bt_gone {
+                    self.set_note(&format!("{} DISCONNECTED - PAUSED", was.to_uppercase()));
+                } else {
+                    self.set_note(&format!("NOW PLAYING THROUGH {}", now.to_uppercase()));
                 }
             }
             Msg::ShareSaved(r) => match r {
@@ -1867,7 +1886,6 @@ impl App {
                 self.rebinding = None;
                 if self.show_prefs {
                     self.show_help = false;
-                    self.out_list = crate::player::output_devices();
                 }
             }
             Action::ApplyUpdate => {

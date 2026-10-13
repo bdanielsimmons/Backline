@@ -598,7 +598,6 @@ impl App {
     pub(crate) fn output_popup(&mut self, ui: &mut egui::Ui, r: &egui::Response, acts: &mut Vec<Action>) {
         let id = r.id.with("outputs");
         if r.clicked() {
-            self.out_list = crate::player::output_devices();
             ui.memory_mut(|m| m.toggle_popup(id));
         }
         egui::popup::popup_below_widget(ui, id, r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
@@ -609,9 +608,6 @@ impl App {
 
     /// The sound outputs as a menu.
     pub(crate) fn output_menu(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        if self.out_list.is_empty() {
-            self.out_list = crate::player::output_devices();
-        }
         para(ui, "SOUND OUTPUT", pal().ink2);
         let mark = |on: bool| if on { "> " } else { "   " };
         if menu_item(ui, &format!("{}System default", mark(self.out_device.is_none()))) {
@@ -624,9 +620,6 @@ impl App {
                 acts.push(Action::SetDevice(Some(name)));
                 ui.close_menu();
             }
-        }
-        if menu_item(ui, "   Look again (after plugging in or pairing)") {
-            self.out_list = crate::player::output_devices();
         }
     }
 }

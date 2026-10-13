@@ -1087,7 +1087,8 @@ fn play_clicks(handle: &OutputStreamHandle, beats: u32, interval: f32, vol: f32)
 
 /// Open the default output device; if that fails, try every device the system lists.
 /// The sound outputs this computer has (speakers, headphones, paired Bluetooth devices...), by name.
-pub fn output_devices() -> Vec<String> {
+#[cfg(not(windows))]
+fn output_devices() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     if let Ok(devs) = rodio::cpal::default_host().output_devices() {
         for d in devs {
@@ -1099,6 +1100,62 @@ pub fn output_devices() -> Vec<String> {
         }
     }
     out
+}
+
+/// The sound outputs, by name, and whether each is Bluetooth (Windows says which ones hang off the Bluetooth bus).
+/// Asked of Windows directly: quick enough to look every second or so.
+#[cfg(windows)]
+pub fn outputs() -> Vec<(String, bool)> {
+    use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+    use windows::Win32::Media::Audio::{eRender, IDeviceTopology, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
+    let mut out = Vec::new();
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return out;
+        };
+        let Ok(devs) = en.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else {
+            return out;
+        };
+        for i in 0..devs.GetCount().unwrap_or(0) {
+            let Ok(dev) = devs.Item(i) else { continue };
+            let Some(name) = dev.OpenPropertyStore(STGM_READ).ok().and_then(|ps| ps.GetValue(&PKEY_Device_FriendlyName).ok()).and_then(|v| {
+                let p = v.Anonymous.Anonymous.Anonymous.pwszVal;
+                (!p.is_null()).then(|| p.to_string().unwrap_or_default())
+            }) else {
+                continue;
+            };
+            // what the output is wired to: a Bluetooth one's path names the Bluetooth bus
+            let wired = dev
+                .Activate::<IDeviceTopology>(CLSCTX_ALL, None)
+                .and_then(|t| t.GetConnector(0))
+                .and_then(|c| c.GetDeviceIdConnectedTo())
+                .map(|p| {
+                    let s = p.to_string().unwrap_or_default();
+                    CoTaskMemFree(Some(p.0 as *const _));
+                    s.to_ascii_lowercase()
+                })
+                .unwrap_or_default();
+            let bt = wired.contains("bthenum") || wired.contains("bthhfenum") || wired.contains("bthledevice") || looks_bluetooth(&name);
+            if !out.iter().any(|o: &(String, bool)| o.0 == name) {
+                out.push((name, bt));
+            }
+        }
+    }
+    out
+}
+
+/// The sound outputs, by name, and whether each is Bluetooth (guessed from the name here).
+#[cfg(not(windows))]
+pub fn outputs() -> Vec<(String, bool)> {
+    output_devices().into_iter().map(|n| (n.clone(), looks_bluetooth(&n))).collect()
+}
+
+/// A name only a Bluetooth output has?
+fn looks_bluetooth(name: &str) -> bool {
+    let n = name.to_lowercase();
+    ["bluetooth", "hands-free", "handsfree", "airpods", "a2dp"].iter().any(|w| n.contains(w))
 }
 
 /// Open the output with this name; if it is gone (unplugged, Bluetooth off), the default one.
