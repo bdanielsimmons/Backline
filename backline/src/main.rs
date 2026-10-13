@@ -50,6 +50,8 @@ mod winamp;
 mod fretboard;
 #[path = "ui/widgets.rs"]
 mod widgets;
+#[path = "ui/winamp_draw.rs"]
+mod winamp_draw;
 #[allow(unused_imports)]
 pub(crate) use widgets::*;
 #[path = "ui/album_view.rs"]
