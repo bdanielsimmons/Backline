@@ -19,6 +19,9 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Sound output keeps up with plugging and unplugging by itself; Bluetooth dropping out pauses the music
+- YouTube and SoundCloud playlists in their own PLAYLISTS section, each on its own page
+- Playlist files (.m3u, .m3u8, .pls) come in as Backline playlists
 - Zoom the library on its own - ctrl + mouse wheel or ctrl +/- (ctrl 0 resets) with the mouse over it
 - WHAT'S NEW: after an update, the changes in this version and the few before it (any time from the BACKLINE page)
 - Favourite Winamp skins: + FAVOURITE for the one you're wearing, or right-click any skin; a FAVOURITES list wears one again (X takes it off)
@@ -26,9 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Zoom the practice waveform like Audacity: the mouse wheel over it zooms where the mouse is, + and - zoom where it's playing, FIT shows the whole song
 - EXPORT LOOPS & PLAYLISTS saves one file; IMPORT on another computer adds what it doesn't have (in LOOPS and LISTS)
 - The metronome has its own volume slider, apart from the main volume
-- Made-up reading lines show the fingering for the position (finger and string over each note), with its own FINGERING switch
-- Your own grips for any chord: SAVE GRIP AS in the analyzer (type the name or pick root, kind, type), or ADD MY OWN GRIP in the finder; marked MINE, right-click to delete
-- Right-click any song: Add to a Backline playlist, Add to a Tidal playlist, or New playlist with this song
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
