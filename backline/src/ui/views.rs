@@ -697,11 +697,8 @@ impl App {
                 }
                 let liked = self.liked.contains(&e.id);
                 r.context_menu(|ui| {
+                    // (Edit info... comes with the song's own items)
                     crate::song_items(ui, acts, &e.to_track(), liked, false);
-                    if menu_item(ui, "Edit info...") {
-                        acts.push(Action::EditInfo(e.id, e.title.clone(), e.artist.clone()));
-                        ui.close_menu();
-                    }
                     if e.kind == "file"
                         && menu_item(ui, if cfg!(target_os = "macos") { "Show in Finder" } else { "Show in Explorer" })
                     {
