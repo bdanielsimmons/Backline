@@ -919,7 +919,7 @@ impl App {
                                     });
                                     ui.add_space(4.0);
                                 }
-                                // your library: a box that filters it down as you type
+                                // your library: a box that filters it down as you type (every word must match)
                                 if pg.library {
                                     ui.add_space(6.0);
                                     ui.horizontal(|ui| {
