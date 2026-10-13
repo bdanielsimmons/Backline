@@ -757,7 +757,7 @@ impl App {
         }
     }
 
-    /// A YouTube or SoundCloud playlist on its own page: a way back, its name and length, PLAY and SHUFFLE, its
+    /// A YouTube or SoundCloud playlist on its own page: a way back, its name and length, PLAY and SHUFFLE, all its
     /// songs, and taking it off your playlists (asked first).
     fn list_page(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, kind: &str) {
         let yt = kind == "yt";
