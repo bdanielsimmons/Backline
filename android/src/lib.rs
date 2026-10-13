@@ -29,6 +29,10 @@ mod skin;
 mod widgets;
 #[path = "../../backline/src/ui/vicon.rs"]
 mod vicon;
+#[path = "../../backline/src/ui/fretboard.rs"]
+mod fretboard;
+#[path = "../../backline/src/ui/viz.rs"]
+mod viz;
 #[allow(unused_imports)]
 use eframe::egui::{Align, Pos2, Rect, Rounding, Stroke};
 #[allow(unused_imports)]

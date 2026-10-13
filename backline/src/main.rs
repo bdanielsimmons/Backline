@@ -46,6 +46,8 @@ mod update;
 #[path = "data/winamp.rs"]
 mod winamp;
 
+#[path = "ui/fretboard.rs"]
+mod fretboard;
 #[path = "ui/widgets.rs"]
 mod widgets;
 #[allow(unused_imports)]

@@ -8,6 +8,7 @@ use crate::sources;
 use crate::stems;
 use crate::store::{self, Ext};
 use crate::tools::{F_LOOK, F_LOOP_A, F_LOOP_B, F_SPEED, F_TR_LOOPS, F_TR_STEP, F_TUNE_IREAL};
+pub(crate) use crate::widgets::{dim_line, label};
 use crate::{
     bh, cache, chip, col_header, col_on, fill_rect, fmt_t, fmt_time, inset, lcd_box, list_row, menu_item, outline, pal, para,
     play_buttons, retro_btn, retro_btn_w, section_header, tab_row, table_header, title_line, track_cells, window_deco, Action,
@@ -316,17 +317,6 @@ pub(crate) fn field_row(
     ptext(ui.painter(), Pos2::new(rect.min.x + 4.0, ly), Align::Min, label, 2.0, pal().ink2);
     let fr = Rect::from_min_max(Pos2::new(rect.min.x + 76.0, rect.min.y), rect.max);
     field(ui, ed, id, text, fr, hint, tall.is_some())
-}
-
-pub(crate) fn label(ui: &mut egui::Ui, text: &str, w: f32) {
-    let w = (w * crate::font::ui_scale()).max(crate::text_w(text, 2.0) + 6.0);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-    ptext(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, text, 2.0, pal().ink2);
-}
-
-pub(crate) fn dim_line(ui: &mut egui::Ui, text: &str, px: f32, col: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 6.0), Sense::hover());
-    ptext_fit(ui.painter(), Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, text, px, rect.width() - 12.0, col);
 }
 
 // little 7x7 pictures for the stems: drums, bass (a woofer), other (keys), vocals (a mic)

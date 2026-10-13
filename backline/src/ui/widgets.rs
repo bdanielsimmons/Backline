@@ -826,3 +826,14 @@ pub(crate) fn goertzel(x: &[f32], f: f32, rate: f32) -> f32 {
     let p = s1 * s1 + s2 * s2 - c * s1 * s2;
     p.max(0.0).sqrt() * 2.0 / x.len() as f32
 }
+
+pub(crate) fn label(ui: &mut egui::Ui, text: &str, w: f32) {
+    let w = (w * crate::font::ui_scale()).max(crate::text_w(text, 2.0) + 6.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+    ptext(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, text, 2.0, pal().ink2);
+}
+
+pub(crate) fn dim_line(ui: &mut egui::Ui, text: &str, px: f32, col: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 6.0), Sense::hover());
+    ptext_fit(ui.painter(), Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, text, px, rect.width() - 12.0, col);
+}
