@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Zoom the library on its own - ctrl + mouse wheel or ctrl +/- (ctrl 0 resets) with the mouse over it
 - WHAT'S NEW: after an update, the changes in this version and the few before it (any time from the BACKLINE page)
 - Favourite Winamp skins: + FAVOURITE for the one you're wearing, or right-click any skin; a FAVOURITES list wears one again (X takes it off)
 - Loop groups: keep a song's licks in groups (Head, Solo licks... or your own); make, rename and delete groups in LOOPS
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Made-up reading lines show the fingering for the position (finger and string over each note), with its own FINGERING switch
 - Your own grips for any chord: SAVE GRIP AS in the analyzer (type the name or pick root, kind, type), or ADD MY OWN GRIP in the finder; marked MINE, right-click to delete
 - Right-click any song: Add to a Backline playlist, Add to a Tidal playlist, or New playlist with this song
-- MY LIBRARY > LISTS: make a new playlist on your Tidal account
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
