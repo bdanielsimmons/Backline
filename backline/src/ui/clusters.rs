@@ -593,10 +593,7 @@ impl App {
                     }
                 }
             }
-            if retro_btn(ui, "PLAY THROUGH THE MODES", false).tip("One grip from each mode in turn").clicked() && !seq.is_empty()
-            {
-                acts.push(Action::PlaySequence(seq));
-            }
+            self.seq_button(ui, acts, "PLAY THROUGH THE MODES", "One grip from each mode in turn", "modes", || seq, 0.9);
         });
         let root = root_of(m);
         let steps = theory::mode_steps(&scale, m);
@@ -1011,9 +1008,7 @@ impl App {
         }
         let seq: Vec<Vec<i32>> = self.store.my_chords.iter().map(|c| grip_notes(&c.grip)).collect();
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "PLAY THEM ALL", false).tip("Each one in turn").clicked() {
-                acts.push(Action::PlaySequence(seq.clone()));
-            }
+            self.seq_button(ui, acts, "PLAY THEM ALL", "Each one in turn", "mine", || seq.clone(), 0.9);
             ui.add_space(10.0);
             crate::views::label(ui, &format!("{} SAVED", self.store.my_chords.len()), 100.0);
         });

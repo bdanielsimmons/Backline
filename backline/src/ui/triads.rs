@@ -513,9 +513,16 @@ impl App {
             acts.push(Action::PlayNotes(grip_notes(&grips[i])));
         }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "HEAR THEM UP THE NECK", false).clicked() {
-                acts.push(Action::PlaySequence(grips.iter().map(grip_notes).collect()));
-            }
+            // (STOP while it plays)
+            self.seq_button(
+                ui,
+                acts,
+                "HEAR THEM UP THE NECK",
+                "Every shape in turn, up the neck",
+                "triads",
+                || grips.iter().map(grip_notes).collect(),
+                0.9,
+            );
             if retro_btn(ui, "WHOLE NECK", self.tr_whole)
                 .tip("Light every root, 3rd and 5th on every string, so you see how the shapes sit in the whole neck")
                 .clicked()

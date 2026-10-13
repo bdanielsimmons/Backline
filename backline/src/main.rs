@@ -139,6 +139,8 @@ const HEAD_H: f32 = 18.0;
 
 // ------------------------------------------------------------------ messages
 enum Msg {
+    /// an album's or playlist's songs, fetched to queue them: (its name, the songs, next or at the end)
+    CardTracks(String, Result<Vec<Track>, String>, bool),
     Code(String, String),
     LoggedIn,
     NeedLogin(String),
@@ -296,6 +298,8 @@ enum Action {
     PlayShuffled(Vec<Track>),
     PlayIndex(usize),
     PlayNext(Track),
+    /// every song of an album or playlist, played next (true) or added to the end of the queue
+    QueueCard(Card, bool),
     Enqueue(Track),
     Remove(usize),
     ClearQueue,
@@ -348,8 +352,6 @@ enum Action {
     EditLoop(i64, usize, String, String, String),
     /// put a loop in a group (empty: no group)
     LoopGroup(i64, usize, String),
-    /// sound these chords one after another
-    PlaySequence(Vec<Vec<i32>>),
     /// chords one after another, this many seconds apart
     PlaySequenceAt(Vec<Vec<i32>>, f32, String),
     /// stop a sequence started with PlaySequenceAt
@@ -1374,9 +1376,19 @@ fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, acts: &mut Vec<Acti
             if r.clicked() {
                 acts.push(Action::Open(c.clone()));
             }
-            if !c.image.is_empty() {
+            // an album, playlist or mix: all its songs into the queue, next or at the end
+            let songs = c.kind != Kind::Artist;
+            if songs || !c.image.is_empty() {
                 r.context_menu(|ui| {
-                    if menu_item(ui, "View art") {
+                    if songs && menu_item(ui, "Play next") {
+                        acts.push(Action::QueueCard(c.clone(), true));
+                        ui.close_menu();
+                    }
+                    if songs && menu_item(ui, "Add to queue") {
+                        acts.push(Action::QueueCard(c.clone(), false));
+                        ui.close_menu();
+                    }
+                    if !c.image.is_empty() && menu_item(ui, "View art") {
                         acts.push(Action::ArtPreview(c.image.clone(), c.title.clone(), c.kind == Kind::Artist));
                         ui.close_menu();
                     }
@@ -3394,6 +3406,29 @@ impl App {
                     self.images.trim();
                     self.images.map.insert(url, (tex, Instant::now()));
                 }
+                Msg::CardTracks(name, r, next) => match r {
+                    Ok(tracks) if !tracks.is_empty() => {
+                        let n = tracks.len();
+                        if next {
+                            // each goes in right after the song playing: last first keeps them in order
+                            for t in tracks.into_iter().rev() {
+                                self.apply(Action::PlayNext(t));
+                            }
+                        } else {
+                            for t in tracks {
+                                self.apply(Action::Enqueue(t));
+                            }
+                        }
+                        self.set_note(&format!(
+                            "{} {} SONGS FROM {}",
+                            if next { "PLAYING NEXT:" } else { "QUEUED" },
+                            n,
+                            name.to_uppercase()
+                        ));
+                    }
+                    Ok(_) => self.set_note("NO SONGS IN IT"),
+                    Err(e) => self.set_err(format!("COULDN'T OPEN {}: {}", name.to_uppercase(), e)),
+                },
                 other => self.drain_extra(other),
             }
         }
@@ -3778,11 +3813,6 @@ impl App {
                 self.ed.id = 0;
             }
             Action::SaveInfo(id, title, artist) => self.save_info(id, title, artist),
-            Action::PlaySequence(chords) => {
-                if !chords.is_empty() {
-                    self.player.send(Cmd::Once(band::sequence_sound(&chords, 0.9), 0.9));
-                }
-            }
             Action::PlaySequenceAt(chords, gap, tag) => {
                 if !chords.is_empty() {
                     self.player.send(Cmd::StopOnce);
@@ -4015,6 +4045,14 @@ impl App {
                     self.q_manual += 1;
                     self.refresh_prefetch();
                 }
+            }
+            Action::QueueCard(c, next) => {
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = api.open(&c).map(|p| p.tracks);
+                    let _ = tx.send(Msg::CardTracks(c.title.clone(), r, next));
+                    ctx.request_repaint();
+                });
             }
             Action::Enqueue(mut t) => {
                 self.q_next += 1;

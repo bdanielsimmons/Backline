@@ -260,6 +260,8 @@ pub(crate) struct App {
     pub kbps: u32,
     /// a song held down: its menu (the song, and where it sits in the queue when it is one of the queue's)
     pub song_menu: Option<(Track, Option<usize>)>,
+    /// a run of chords sounding (HEAR THEM UP THE NECK) until then: its button says STOP meanwhile
+    pub seq_end: Option<Instant>,
 }
 
 impl App {
@@ -378,6 +380,7 @@ impl App {
             balance: 0,
             kbps: 0,
             song_menu: None,
+            seq_end: None,
         }
     }
 

@@ -353,20 +353,19 @@ impl App {
             self.hear(&grip_notes(&grips[i]));
         }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "HEAR THEM UP THE NECK", false).clicked() {
-                let mut all = Vec::new();
-                for g in &grips {
-                    all.extend(grip_notes(g));
+            // every shape in turn (the desktop's own sequence sound); STOP while it plays
+            let playing = self.seq_end.is_some_and(|e| Instant::now() < e);
+            if playing {
+                ui.ctx().request_repaint_after(Duration::from_millis(200));
+                if retro_btn(ui, "STOP", true).clicked() {
+                    self.player.send(Cmd::StopOnce);
+                    self.seq_end = None;
                 }
-                // one after another, a beat apart
+            } else if retro_btn(ui, "HEAR THEM UP THE NECK", false).clicked() {
                 let seq: Vec<Vec<i32>> = grips.iter().map(grip_notes).collect();
-                let mut pcm: Vec<i16> = Vec::new();
-                for n in &seq {
-                    let mut c = band::chord_sound(n);
-                    c.resize((band::RATE * 0.7) as usize, 0);
-                    pcm.extend(c);
-                }
-                self.player.send(Cmd::Once(pcm, 0.9));
+                self.player.send(Cmd::StopOnce);
+                self.player.send(Cmd::Once(band::sequence_sound(&seq, 0.9), 0.9));
+                self.seq_end = Some(Instant::now() + Duration::from_secs_f32(seq.len() as f32 * 0.9 + 1.5));
             }
             label(ui, "R ROOT   3 THIRD   5 FIFTH", 200.0);
         });
