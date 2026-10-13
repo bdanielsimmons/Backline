@@ -391,6 +391,42 @@ pub fn sc_list(url: &str) -> Result<Vec<Ext>, String> {
 }
 
 /// A YouTube playlist link (not a single video that happens to sit in one).
+/// A playlist file (.m3u, .m3u8, .pls)?
+pub fn is_playlist_file(p: &Path) -> bool {
+    p.extension().and_then(|e| e.to_str()).is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "m3u" | "m3u8" | "pls"))
+}
+
+/// The songs a playlist file lists, in order (paths beside it work as well as full ones), and its name.
+pub fn read_playlist_file(p: &Path) -> Option<(String, Vec<PathBuf>)> {
+    let bytes = std::fs::read(p).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let dir = p.parent().map(Path::to_path_buf).unwrap_or_default();
+    let pls = p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pls"));
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim().trim_start_matches('\u{feff}');
+        let entry = if pls {
+            match line.split_once('=') {
+                Some((k, v)) if k.to_ascii_lowercase().starts_with("file") => v.trim(),
+                _ => continue,
+            }
+        } else if line.is_empty() || line.starts_with('#') {
+            continue;
+        } else {
+            line
+        };
+        let entry = entry.strip_prefix("file:///").or_else(|| entry.strip_prefix("file://")).unwrap_or(entry);
+        let entry = entry.replace("%20", " ");
+        let path = PathBuf::from(&entry);
+        let path = if path.is_absolute() { path } else { dir.join(path) };
+        if path.exists() && is_audio(&path) {
+            out.push(path);
+        }
+    }
+    let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("Playlist").to_string();
+    Some((name, out))
+}
+
 pub fn is_yt_list(s: &str) -> bool {
     s.contains("youtu") && s.contains("playlist?list=")
 }
@@ -912,5 +948,47 @@ mod tests {
         assert!(is_audio(Path::new("x.m4a")));
         assert!(!is_audio(Path::new("cover.jpg")));
         assert!(!is_audio(Path::new("noext")));
+    }
+}
+
+#[cfg(test)]
+mod playlist_file_tests {
+    use super::*;
+
+    #[test]
+    fn reads_m3u_and_pls() {
+        let dir = std::env::temp_dir().join("backline_pl_test");
+        let _ = std::fs::create_dir_all(dir.join("sub"));
+        std::fs::write(dir.join("one.mp3"), b"x").unwrap();
+        std::fs::write(dir.join("sub").join("two song.flac"), b"x").unwrap();
+        let abs = dir.join("one.mp3");
+        let m3u = format!(
+            "#EXTM3U
+#EXTINF:123,One
+one.mp3
+sub/two%20song.flac
+file:///{}
+missing.mp3
+notes.txt
+",
+            abs.to_string_lossy().replace('\\', "/")
+        );
+        std::fs::write(dir.join("set.m3u"), m3u).unwrap();
+        let (name, songs) = read_playlist_file(&dir.join("set.m3u")).unwrap();
+        assert_eq!(name, "set");
+        assert_eq!(songs.len(), 3, "{:?}", songs);
+        assert!(songs[1].ends_with("two song.flac"));
+        std::fs::write(
+            dir.join("gig.pls"),
+            "[playlist]
+File1=one.mp3
+Title1=One
+NumberOfEntries=1
+",
+        )
+        .unwrap();
+        let (name, songs) = read_playlist_file(&dir.join("gig.pls")).unwrap();
+        assert_eq!((name.as_str(), songs.len()), ("gig", 1));
+        assert!(is_playlist_file(Path::new("a.M3U8")) && !is_playlist_file(Path::new("a.mp3")));
     }
 }

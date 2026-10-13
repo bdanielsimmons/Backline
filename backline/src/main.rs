@@ -168,7 +168,8 @@ enum Msg {
     /// a new playlist made on your Tidal account (its name), shown once the library is loaded again
     TidalListMade(Result<String, String>),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
-    Added(Vec<store::Ext>, Vec<String>),
+    /// files added: the songs, the folders, and playlist files read (their name and songs)
+    Added(Vec<store::Ext>, Vec<String>, Vec<(String, Vec<i64>)>),
     /// a rescan of the watched folders
     Scanned(Vec<store::Ext>),
     YtAdded(Result<store::Ext, String>),
@@ -384,7 +385,6 @@ enum Action {
     ScSets,
     ScOpenSet(String),
     CopyLink(String),
-    SaveList(u8, String),
     ApplyUpdate,
     ToggleHelp,
     SetMode(u8),
@@ -1467,26 +1467,22 @@ fn edits(a: &[char], b: &[char], max: usize) -> usize {
 }
 
 /// Does every word of the filter match one of these? Forgiving: accents and punctuation aside, any order, a word
-/// may be the start of one (while typing), one off a word by a typo or two (thelonius finds Thelonious), or the
-/// initials of words in a row (mj finds Michael Jackson).
+/// may be the start of one (while typing), or one off a word by a typo or two (thelonius finds Thelonious).
 #[cfg(test)]
 fn matches_filter(filter: &str, fields: &[&str]) -> bool {
     filter_score(filter, fields).is_some()
 }
 
-/// How well these match the filter (None: not at all). Lower is better: 0 for every word found as typed, then
-/// initials, then typos - so the closest come first.
+/// How well these match the filter (None: not at all). Lower is better: 0 for every word found as typed, more for
+/// each typo - so the closest come first.
 fn filter_score(filter: &str, fields: &[&str]) -> Option<u32> {
     let hay = fold(&fields.join(" "));
     let words: Vec<Vec<char>> = hay.split_whitespace().map(|w| w.chars().collect()).collect();
-    let initials: String = words.iter().filter_map(|w| w.first()).collect();
     let mut score = 0;
     for q in fold(filter).split_whitespace() {
         let qc: Vec<char> = q.chars().collect();
         score += if hay.contains(q) {
             0
-        } else if q.len() >= 2 && initials.contains(q) {
-            2
         } else {
             // short words must be right; longer ones may be a letter (or two) off
             let max = match qc.len() {
@@ -1888,6 +1884,8 @@ struct App {
     sc_results: Vec<store::Ext>,
     sc_sets: Vec<(String, String)>,
     sc_cur: Option<String>,
+    /// a playlist (by its link) asked about before it is taken off your playlists
+    list_ask: Option<String>,
     upd: Option<update::Info>,
     upd_note: String,
     upd_state: u8,
@@ -2513,6 +2511,7 @@ impl App {
             sc_results: Vec::new(),
             sc_sets: Vec::new(),
             sc_cur: None,
+            list_ask: None,
             upd: None,
             upd_note: String::new(),
             upd_state: 0,
@@ -5302,7 +5301,6 @@ mod tests {
         assert!(matches_filter("shoga", &["Shōga", "Pat Metheny", "Moondial"]), "accents aside");
         assert!(!matches_filter("coltrane", &monk));
         assert!(!matches_filter("dog", &monk), "short words must be right");
-        assert!(matches_filter("mj", &["Thriller", "Michael Jackson", "Thriller"]), "initials");
         // the closest first: as typed, before a typo
         assert!(filter_score("monk", &monk) < filter_score("monc", &monk));
     }

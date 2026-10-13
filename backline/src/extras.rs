@@ -92,20 +92,29 @@ fn wave_path(id: i64) -> PathBuf {
 pub(crate) static FILES_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// Find the files below the given paths (folders are searched, and remembered for RESCAN).
-fn scan_paths(paths: Vec<PathBuf>) -> (Vec<Ext>, Vec<String>) {
+/// The songs in these paths (folders searched), the folders, and the playlist files among them: each one's name
+/// and its songs' ids (the songs come in with the rest).
+fn scan_paths(paths: Vec<PathBuf>) -> (Vec<Ext>, Vec<String>, Vec<(String, Vec<i64>)>) {
     let mut files: Vec<PathBuf> = Vec::new();
     let mut folders: Vec<String> = Vec::new();
+    let mut lists: Vec<(String, Vec<i64>)> = Vec::new();
     for p in paths {
         if p.is_dir() {
             folders.push(p.to_string_lossy().to_string());
             sources::scan_folder(&p, 0, &mut files);
+        } else if sources::is_playlist_file(&p) {
+            if let Some((name, songs)) = sources::read_playlist_file(&p) {
+                let ids = songs.iter().map(|s| sources::ext_for_file(s).id).collect();
+                files.extend(songs);
+                lists.push((name, ids));
+            }
         } else if sources::is_audio(&p) {
             files.push(p);
         }
     }
     let mut seen: HashSet<PathBuf> = HashSet::new();
     files.retain(|f| seen.insert(f.clone()));
-    (files.iter().map(|f| sources::ext_for_file(f)).collect(), folders)
+    (files.iter().map(|f| sources::ext_for_file(f)).collect(), folders, lists)
 }
 
 /// Tune name from a track title: "Cherokee (Remastered 2005)" -> "Cherokee".
@@ -880,6 +889,25 @@ impl App {
     }
 
     // ------------------------------------------------------------ sources
+    /// With keeping songs on: a playlist's songs are kept one by one in the background, so it plays at once and
+    /// with no internet (the ones kept already are skipped).
+    pub(crate) fn keep_all(&self, ids: Vec<i64>) {
+        if !self.keep_cache {
+            return;
+        }
+        let todo: Vec<(i64, Option<Src>)> =
+            ids.into_iter().filter(|id| !cache::has(*id)).map(|id| (id, self.srcmap.get(&id).cloned())).collect();
+        if todo.is_empty() {
+            return;
+        }
+        let api = self.api.clone();
+        std::thread::spawn(move || {
+            for (id, src) in todo {
+                let _ = crate::fetch_audio(&api, id, false, true, src);
+            }
+        });
+    }
+
     pub(crate) fn handle_paths(&mut self, paths: Vec<PathBuf>) {
         if paths.is_empty() {
             return;
@@ -890,9 +918,9 @@ impl App {
         std::thread::spawn(move || {
             FILES_STAGE.store(2, std::sync::atomic::Ordering::Relaxed);
             ctx.request_repaint();
-            let (files, folders) = scan_paths(paths);
+            let (files, folders, lists) = scan_paths(paths);
             FILES_STAGE.store(0, std::sync::atomic::Ordering::Relaxed);
-            let _ = tx.send(Msg::Added(files, folders));
+            let _ = tx.send(Msg::Added(files, folders, lists));
             ctx.request_repaint();
         });
     }
@@ -908,14 +936,16 @@ impl App {
             let paths: Vec<PathBuf> = if folder {
                 rfd::FileDialog::new().set_title("Add a folder of music").pick_folder().into_iter().collect()
             } else {
+                let mut kinds: Vec<&str> = sources::AUDIO_EXT.to_vec();
+                kinds.extend(["m3u", "m3u8", "pls"]);
                 rfd::FileDialog::new()
-                    .set_title("Add audio files")
-                    .add_filter("Audio", &sources::AUDIO_EXT)
+                    .set_title("Add audio files (or playlist files)")
+                    .add_filter("Audio and playlists", &kinds)
                     .pick_files()
                     .unwrap_or_default()
             };
-            let (files, folders) = scan_paths(paths);
-            let _ = tx.send(Msg::Added(files, folders));
+            let (files, folders, lists) = scan_paths(paths);
+            let _ = tx.send(Msg::Added(files, folders, lists));
             ctx.request_repaint();
         });
     }
@@ -1038,7 +1068,7 @@ impl App {
                 Ok(note) => self.set_note(&note),
                 Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
             },
-            Msg::Added(files, folders) => {
+            Msg::Added(files, folders, lists) => {
                 self.files_busy = false;
                 let (found, picked_folder) = (files.len(), !folders.is_empty());
                 for f in folders {
@@ -1048,6 +1078,26 @@ impl App {
                 }
                 let n = self.add_exts(files);
                 self.store_dirty = true;
+                // playlist files: each a Backline playlist (in LISTS) of its songs, in order
+                if !lists.is_empty() {
+                    let mut names = Vec::new();
+                    for (name, ids) in lists {
+                        let items: Vec<Version> = ids
+                            .iter()
+                            .filter_map(|id| self.store.files.iter().find(|e| e.id == *id))
+                            .map(|e| e.to_version())
+                            .collect();
+                        if items.is_empty() {
+                            continue;
+                        }
+                        names.push(format!("{} ({} SONGS)", name.to_uppercase(), items.len()));
+                        self.store.playlists.push(store::Playlist { name, items });
+                    }
+                    if !names.is_empty() {
+                        self.set_note(&format!("PLAYLIST ADDED TO LISTS: {}", names.join(", ")));
+                        return;
+                    }
+                }
                 // say what happened: songs added, nothing there, already here, or nothing picked
                 let note = if n > 0 {
                     format!("ADDED {} SONG{}", n, if n == 1 { "" } else { "S" })
@@ -1093,9 +1143,19 @@ impl App {
                         for e in &list {
                             self.register(&e.to_version());
                         }
+                        // imported: kept with your playlists, and open on its own page
+                        if !self.store.lists.iter().any(|l| l.url == url) {
+                            self.store.lists.push(store::SavedList {
+                                kind: "yt".to_string(),
+                                name: name.clone(),
+                                url: url.clone(),
+                            });
+                            self.store_dirty = true;
+                        }
+                        self.keep_all(list.iter().map(|e| e.id).collect());
                         self.yt_results = list;
                         self.yt_title = name;
-                        self.yt_open = false;
+                        self.yt_open = true;
                         self.yt_cur = Some(url);
                     }
                     Err(e) => {
@@ -1138,6 +1198,20 @@ impl App {
                                     }
                                 }
                             });
+                        }
+                        // a playlist (a link with several songs): kept with your playlists, on its own page
+                        if let Some(u) = self.sc_cur.clone().filter(|_| list.len() > 1) {
+                            if !self.store.lists.iter().any(|l| l.url == u) {
+                                let name = self
+                                    .sc_sets
+                                    .iter()
+                                    .find(|(_, x)| *x == u)
+                                    .map(|(t, _)| t.clone())
+                                    .unwrap_or_else(|| sources::list_name(&u));
+                                self.store.lists.push(store::SavedList { kind: "sc".to_string(), name, url: u });
+                                self.store_dirty = true;
+                            }
+                            self.keep_all(list.iter().map(|e| e.id).collect());
                         }
                         self.sc_results = list;
                     }
@@ -1810,26 +1884,6 @@ impl App {
                         self.upd_state = 3;
                     }
                 }
-            }
-            Action::SaveList(kind, url) => {
-                if !self.store.lists.iter().any(|l| l.url == url) {
-                    let name = self
-                        .sc_sets
-                        .iter()
-                        .find(|(_, u)| *u == url)
-                        .map(|(t, _)| t.clone())
-                        .or_else(|| {
-                            (self.yt_cur.as_ref() == Some(&url) && !self.yt_title.is_empty()).then(|| self.yt_title.clone())
-                        })
-                        .unwrap_or_else(|| sources::list_name(&url));
-                    self.store.lists.push(store::SavedList {
-                        kind: (if kind == 0 { "sc" } else { "yt" }).to_string(),
-                        name,
-                        url,
-                    });
-                    self.store_dirty = true;
-                }
-                self.set_note("PLAYLIST SAVED");
             }
             Action::RemoveList(i) => {
                 if i < self.store.lists.len() {

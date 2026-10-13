@@ -733,7 +733,7 @@ impl App {
         if mine.is_empty() {
             return;
         }
-        section_header(ui, "MY PLAYLISTS (CLICK TO OPEN, RIGHT-CLICK TO REMOVE)");
+        section_header(ui, "PLAYLISTS");
         for (k, (i, l)) in mine.iter().enumerate() {
             if let Some(r) =
                 list_row(ui, k, Some(k + 1), || l.name.clone(), || "OPEN".to_string(), RowState::Normal, false, false)
@@ -755,6 +755,76 @@ impl App {
                 });
             }
         }
+    }
+
+    /// A YouTube or SoundCloud playlist on its own page: a way back, its name and length, PLAY and SHUFFLE, its
+    /// songs, and taking it off your playlists (asked first).
+    fn list_page(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, kind: &str) {
+        let yt = kind == "yt";
+        let url = if yt { self.yt_cur.clone() } else { self.sc_cur.clone() }.unwrap_or_default();
+        let list: Vec<store::Ext> = if yt { self.yt_results.clone() } else { self.sc_results.clone() };
+        let name =
+            self.store.lists.iter().find(|l| l.url == url).map(|l| l.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(
+                || if yt && !self.yt_title.is_empty() { self.yt_title.clone() } else { sources::list_name(&url) },
+            );
+        let back = |me: &mut Self| {
+            if yt {
+                me.yt_results.clear();
+                me.yt_title.clear();
+                me.yt_cur = None;
+            } else {
+                me.sc_results.clear();
+                me.sc_cur = None;
+            }
+            me.list_ask = None;
+        };
+        ui.add_space(6.0);
+        if crate::ibtn(ui, &crate::IC_BACK, "PLAYLISTS", false).tip("Back to your playlists").clicked() {
+            back(self);
+            return;
+        }
+        ui.add_space(4.0);
+        title_line(ui, &name, 3.0, pal().ink);
+        let tracks: Vec<Track> = list.iter().map(|e| e.to_track()).collect();
+        let total: f32 = list.iter().map(|e| e.dur).sum();
+        title_line(
+            ui,
+            &format!(
+                "{} songs{}",
+                tracks.len(),
+                if total > 0.0 { format!(", {}", crate::fmt_long(total)) } else { String::new() }
+            ),
+            2.0,
+            pal().ink2,
+        );
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            play_buttons(ui, &tracks, acts, false);
+            if self.list_ask.as_deref() != Some(url.as_str())
+                && retro_btn(ui, "REMOVE PLAYLIST...", false)
+                    .tip("Take it off your playlists (the songs you kept stay)")
+                    .clicked()
+            {
+                self.list_ask = Some(url.clone());
+            }
+        });
+        if self.list_ask.as_deref() == Some(url.as_str()) {
+            ui.horizontal_wrapped(|ui| {
+                label(ui, "TAKE IT OFF YOUR PLAYLISTS?", 240.0);
+                if retro_btn(ui, "YES, REMOVE IT", false).clicked() {
+                    if let Some(i) = self.store.lists.iter().position(|l| l.url == url) {
+                        acts.push(Action::RemoveList(i));
+                    }
+                    back(self);
+                }
+                if retro_btn(ui, "KEEP IT", false).clicked() {
+                    self.list_ask = None;
+                }
+            });
+        }
+        ui.add_space(4.0);
+        dim_line(ui, "RIGHT-CLICK A SONG TO KEEP IT, QUEUE IT OR PUT IT IN A PLAYLIST", 1.0, pal().dim);
+        self.ext_list(ui, acts, if yt { 7 } else { 3 });
     }
 
     /// The hearts you gave to this kind of source (0 files, 1 YouTube, 2 SoundCloud); stored on this PC only.
@@ -864,54 +934,13 @@ impl App {
             };
             para(ui, &self.yt_msg.clone(), col);
         }
-        self.saved_lists(ui, acts, "yt");
-        if !self.yt_results.is_empty() {
-            section_header(ui, "PLAYLIST");
-            let tracks: Vec<Track> = self.yt_results.iter().map(|e| e.to_track()).collect();
-            let total: f32 = self.yt_results.iter().map(|e| e.dur).sum();
-            ui.add_space(4.0);
-            let name = if self.yt_title.is_empty() { "YouTube playlist".to_string() } else { self.yt_title.clone() };
-            title_line(ui, &name, 2.5, pal().ink);
-            title_line(
-                ui,
-                &format!(
-                    "{} songs{}",
-                    tracks.len(),
-                    if total > 0.0 { format!(", {}", crate::fmt_long(total)) } else { String::new() }
-                ),
-                2.0,
-                pal().ink2,
-            );
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                if crate::ibtn(ui, &crate::IC_PLAY, "PLAY", false).clicked() {
-                    acts.push(Action::Play(tracks.clone(), 0));
-                }
-                if crate::ibtn(ui, &crate::IC_SHUF, "SHUFFLE", false).clicked() {
-                    acts.push(Action::PlayShuffled(tracks.clone()));
-                }
-                if retro_btn(ui, if self.yt_open { "HIDE SONGS" } else { "SHOW SONGS" }, self.yt_open).clicked() {
-                    self.yt_open = !self.yt_open;
-                }
-                let saved = self.yt_cur.as_ref().map_or(true, |u| self.store.lists.iter().any(|l| &l.url == u));
-                if !saved && retro_btn(ui, "SAVE", false).tip("Keep it in MY PLAYLISTS, to open it again later").clicked() {
-                    if let Some(u) = self.yt_cur.clone() {
-                        acts.push(Action::SaveList(1, u));
-                    }
-                }
-                if retro_btn_w(ui, "X", 30.0, false).tip("Put this playlist away").clicked() {
-                    self.yt_results.clear();
-                    self.yt_title.clear();
-                    self.yt_cur = None;
-                    self.yt_open = false;
-                }
-            });
-            if self.yt_open && !self.yt_results.is_empty() {
-                ui.add_space(4.0);
-                dim_line(ui, "RIGHT-CLICK A SONG TO KEEP IT", 1.0, pal().dim);
-                self.ext_list(ui, acts, 7);
-            }
+        // a playlist open: its own page (back to the rest with the arrow)
+        if self.yt_cur.is_some() && !self.yt_results.is_empty() {
+            self.list_page(ui, acts, "yt");
+            ui.add_space(20.0);
+            return;
         }
+        self.saved_lists(ui, acts, "yt");
         if self.store.yt.is_empty() {
             para(ui, "One-time setup: press GET YT-DLP. Then paste a link and press ADD.", pal().ink2);
             if PRACTICE {
@@ -987,6 +1016,13 @@ impl App {
             para(ui, "Your own account: paste your profile's likes link (soundcloud.com/YOU/likes) or a playlist link and press GO - public ones list right here. Click a track to play.", pal().ink2);
             para(ui, "Note: no sign-in is used, so private and Go+ tracks may play as previews or not at all. Using SoundCloud this way may go against its terms; personal practice use is at your discretion.", pal().dim);
         }
+        // a playlist open: its own page
+        let sc_list = self.sc_cur.as_ref().is_some_and(|u| self.store.lists.iter().any(|l| &l.url == u));
+        if sc_list && !self.sc_results.is_empty() {
+            self.list_page(ui, acts, "sc");
+            ui.add_space(20.0);
+            return;
+        }
         self.saved_lists(ui, acts, "sc");
         if !self.sc_sets.is_empty() {
             section_header(ui, "PLAYLISTS (CLICK TO OPEN)");
@@ -1004,13 +1040,6 @@ impl App {
             section_header(ui, "RESULTS (RIGHT-CLICK TO KEEP)");
             let tracks: Vec<Track> = self.sc_results.iter().map(|e| e.to_track()).collect();
             ui.add_space(4.0);
-            if let Some(u) = self.sc_cur.clone().filter(|u| tracks.len() > 1 && !self.store.lists.iter().any(|l| l.url == *u)) {
-                ui.horizontal_wrapped(|ui| {
-                    if retro_btn(ui, "SAVE THIS PLAYLIST", false).tip("Keep the link so you can open it again later").clicked() {
-                        acts.push(Action::SaveList(0, u.clone()));
-                    }
-                });
-            }
             play_buttons(ui, &tracks, acts, false);
             ui.add_space(4.0);
             self.ext_list(ui, acts, 3);
