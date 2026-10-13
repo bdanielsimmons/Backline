@@ -363,3 +363,92 @@ pub(crate) fn neck_alpha(
 pub(crate) fn grip_notes(g: &[Option<u8>; 6]) -> Vec<i32> {
     g.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect()
 }
+
+/// A neck lying down (high string on top) with several grips on it: the picked one bold, its notes named by
+/// `label`, the others faint, each grip's notes joined by a line. A click on a dot picks that grip.
+/// With `whole`, every note of those pitch classes on every string and fret is lit too, under the shapes, so you
+/// see how they sit in the whole neck.
+pub(crate) fn fret_map(
+    ui: &mut egui::Ui,
+    grips: &[[Option<u8>; 6]],
+    sel: usize,
+    label: &dyn Fn(i32) -> (String, Color32),
+    whole: Option<&[i32]>,
+) -> Option<usize> {
+    let w = ui.available_width().min(940.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 170.0), Sense::click());
+    let neck = Rect::from_min_max(rect.min + Vec2::new(30.0, 10.0), rect.max - Vec2::new(8.0, 26.0));
+    let p = ui.painter();
+    p.rect_filled(neck, 2.0, pal().lcd);
+    let frets = 15.0_f32;
+    let fw = neck.width() / frets;
+    let sh = neck.height() / 6.0;
+    let x_of = |f: u8| if f == 0 { neck.min.x - 14.0 } else { neck.min.x + (f as f32 - 0.5) * fw };
+    let y_of = |s: usize| neck.min.y + (5 - s) as f32 * sh + sh / 2.0;
+    for f in 0..=15 {
+        let x = neck.min.x + f as f32 * fw;
+        p.line_segment(
+            [Pos2::new(x, neck.min.y), Pos2::new(x, neck.max.y)],
+            Stroke::new(if f == 0 { 4.0_f32 } else { 1.2 }, pal().ink2),
+        );
+    }
+    for f in [3u8, 5, 7, 9, 12, 15] {
+        ptext(p, Pos2::new(x_of(f), neck.max.y + 12.0), Align::Center, &f.to_string(), 1.0, pal().dim);
+    }
+    for s in 0..6 {
+        p.line_segment(
+            [Pos2::new(neck.min.x, y_of(s)), Pos2::new(neck.max.x, y_of(s))],
+            Stroke::new(1.0_f32, pal().ink.gamma_multiply(0.5)),
+        );
+    }
+    // the whole neck: each note of the chord wherever it falls, ringed in its colour
+    if let Some(pcs) = whole {
+        for s in 0..6 {
+            for f in 0..=15u8 {
+                let m = theory::STANDARD[s] + f as i32;
+                if !pcs.contains(&m.rem_euclid(12)) {
+                    continue;
+                }
+                let c = Pos2::new(x_of(f), y_of(s));
+                let (txt, col) = label(m);
+                p.circle_filled(c, sh * 0.36, pal().lcd);
+                p.circle_stroke(c, sh * 0.36, Stroke::new(1.5_f32, col));
+                ptext(p, c, Align::Center, &txt, 1.0, col);
+            }
+        }
+    }
+    let mut dots: Vec<(Pos2, usize)> = Vec::new();
+    // the faint ones first, the picked one on top
+    let order: Vec<usize> =
+        (0..grips.len()).filter(|i| *i != sel).chain(std::iter::once(sel).filter(|s| *s < grips.len())).collect();
+    for gi in order {
+        let g = &grips[gi];
+        let on = gi == sel;
+        let pts: Vec<Pos2> = (0..6).filter_map(|s| g[s].map(|f| Pos2::new(x_of(f), y_of(s)))).collect();
+        p.add(egui::Shape::line(
+            pts.clone(),
+            Stroke::new(if on { 2.5_f32 } else { 1.0 }, pal().ink2.gamma_multiply(if on { 0.9 } else { 0.35 })),
+        ));
+        for s in 0..6 {
+            let Some(f) = g[s] else { continue };
+            let c = Pos2::new(x_of(f), y_of(s));
+            let (txt, col) = label(theory::STANDARD[s] + f as i32);
+            if on {
+                p.circle_filled(c, sh * 0.42, col);
+                p.circle_stroke(c, sh * 0.42, Stroke::new(1.0_f32, Color32::from_gray(40)));
+                ptext(p, c, Align::Center, &txt, 1.0, Color32::from_gray(10));
+            } else {
+                p.circle_filled(c, sh * 0.3, col.gamma_multiply(0.45));
+            }
+            dots.push((c, gi));
+        }
+    }
+    let clicked = resp.clicked();
+    let hit = resp.on_hover_cursor(egui::CursorIcon::PointingHand).interact_pointer_pos().filter(|_| clicked);
+    hit.and_then(|pos| {
+        dots.iter()
+            .filter(|d| d.0.distance(pos) < sh * 0.6)
+            .min_by(|a, b| a.0.distance(pos).partial_cmp(&b.0.distance(pos)).unwrap())
+            .map(|d| d.1)
+    })
+}
