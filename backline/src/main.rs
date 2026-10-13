@@ -537,9 +537,8 @@ fn gen_look(worn: Option<&(String, String)>) -> usize {
     worn.and_then(|w| w.0.strip_prefix("gen:")?.parse::<usize>().ok()).unwrap_or(0)
 }
 
-/// The skins, in three sections side by side: ORIGINAL (Backline's palettes as sleek Winamp-style skins, in
-/// Silkscreen), RETRO ORIGINAL (Backline's own pixel panels, as it always was) and WINAMP (skins from the Skin
-/// Museum: the one worn, and browsing for more). The one worn is marked.
+/// The skins, side by side: ORIGINAL (Backline's palettes as sleek Winamp-style skins, in Silkscreen) and WINAMP
+/// (skins from the Skin Museum: the one worn, and browsing for more). The one worn is marked.
 fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, String)>, recent: &[(String, String)]) {
     let look = gen_look(worn);
     let museum = worn.filter(|_| look == 0).map(|w| w.1.as_str());
@@ -585,8 +584,6 @@ fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, S
                 ui.close_menu();
             }
         });
-        // the old pixel look, last
-        column(ui, acts, "RETRO ORIGINAL", 0);
     });
 }
 
@@ -2745,8 +2742,7 @@ impl App {
         // opens already wearing it, with no glimpse of the plain look
         let gen = match st["winamp"][0].as_str() {
             Some(m) => m.strip_prefix("gen:").and_then(|g| g.parse::<usize>().ok()),
-            None if st["plain"].as_bool() != Some(true) => Some(2),
-            None => None,
+            None => Some(2),
         };
         if let Some(g) = gen.filter(|g| *g > 0) {
             let n = SKIN.load(Ordering::Relaxed) % PALS.len();
@@ -2755,8 +2751,14 @@ impl App {
             app.wear_skin(genskin::wear(&PALS[n], look).map(|(p, art)| (s, p, art)), false);
         } else if let (Some(md5), Some(name)) = (st["winamp"][0].as_str(), st["winamp"][1].as_str()) {
             let s = winamp::WaSkin { md5: md5.to_string(), name: name.to_string(), shot: String::new(), download: String::new() };
-            if let Some(b) = winamp::load_saved(&s.md5) {
-                app.wear_skin(winamp::load(&b).map(|(p, art)| (s, p, art)), false);
+            match winamp::load_saved(&s.md5) {
+                Some(b) => app.wear_skin(winamp::load(&b).map(|(p, art)| (s, p, art)), false),
+                // that skin is gone from the disk: the ORIGINAL look instead
+                None => {
+                    let n = SKIN.load(Ordering::Relaxed) % PALS.len();
+                    let s = app.gen_skin(n, 1);
+                    app.wear_skin(genskin::wear(&PALS[n], 1).map(|(p, art)| (s, p, art)), false);
+                }
             }
         }
         if let Some(m) = st["eq_songs"].as_object() {
@@ -3876,7 +3878,6 @@ impl App {
             },
             Action::Theme(n, g) => {
                 if g == 0 {
-                    self.wa_worn = None;
                     self.apply(Action::SkinSet(n));
                 } else {
                     SKIN.store(n % PALS.len(), Ordering::Relaxed);
@@ -4211,30 +4212,18 @@ impl App {
                 self.dirty = true;
                 self.apply(Action::WaGen(g));
             }
+            // (a palette is always worn in the ORIGINAL look now, the plain pixel panels are gone)
             Action::SkinSet(n) => {
-                skin::set_custom(None);
-                self.wa_worn = None;
-                self.wa_art = None;
-                winamp_ui::set_chrome(None);
-                let n = n % PALS.len();
-                SKIN.store(n, Ordering::Relaxed);
-                setup_style(&self.ctx);
+                SKIN.store(n % PALS.len(), Ordering::Relaxed);
                 self.dirty = true;
-                self.set_note(&format!("SKIN: {}", SKIN_NAMES[n]));
+                self.apply(Action::WaGen(2));
+                self.set_note(&format!("SKIN: {}", SKIN_NAMES[n % PALS.len()]));
             }
             Action::Skin if gen_look(self.wa_worn.as_ref()) > 0 => {
                 self.apply(Action::SkinSet(SKIN.load(Ordering::Relaxed) + 1));
             }
             Action::Skin => {
-                skin::set_custom(None);
-                self.wa_worn = None;
-                self.wa_art = None;
-                winamp_ui::set_chrome(None);
-                let n = (SKIN.load(Ordering::Relaxed) + 1) % PALS.len();
-                SKIN.store(n, Ordering::Relaxed);
-                setup_style(&self.ctx);
-                self.dirty = true;
-                self.set_note(&format!("SKIN: {}", SKIN_NAMES[n]));
+                self.apply(Action::SkinSet(SKIN.load(Ordering::Relaxed) + 1));
             }
             Action::Sleep => {
                 const STEPS: [u32; 6] = [0, 15, 30, 45, 60, 90];

@@ -371,9 +371,8 @@ impl App {
         }
     }
 
-    /// The skins, one section under another: ORIGINAL (Backline's palettes as sleek Winamp-style skins),
-    /// RETRO ORIGINAL (Backline's own pixel panels) and WINAMP (the one you wear, the ones worn lately, and the
-    /// way to the browser). The one worn is marked.
+    /// The skins, one section under another: ORIGINAL (Backline's palettes as sleek Winamp-style skins) and
+    /// WINAMP (the one you wear, the ones worn lately, and the way to the browser). The one worn is marked.
     fn skin_lists(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let look = crate::gen_look(self.wa_worn.as_ref());
         let museum = self.wa_worn.clone().filter(|_| look == 0);
@@ -444,33 +443,6 @@ impl App {
             if menu_item(ui, "  BROWSE WINAMP SKINS...") {
                 acts.push(Action::WaOpen);
             }
-        }
-        // the old pixel look, last
-        for (gi, (title, g)) in [(1usize, ("RETRO ORIGINAL", 0usize))] {
-            ui.add_space(6.0);
-            // folded up: its name and the one worn from it; open to pick another
-            let worn_here = (if g == 0 { self.wa_worn.is_none() } else { look == g }).then(|| SKIN_NAMES[cur]);
-            let head = format!(
-                "{} {}{}",
-                if self.skins_open[gi] { "-" } else { "+" },
-                title,
-                worn_here.map(|n| format!(":  {}", n)).unwrap_or_default()
-            );
-            if menu_item(ui, &head) {
-                self.skins_open[gi] = !self.skins_open[gi];
-            }
-            if !self.skins_open[gi] {
-                continue;
-            }
-            // in a box of its own, so opening it doesn't push the page away
-            crate::views::contained(ui, ("skin_list", 1), |ui| {
-                for (n, name) in SKIN_NAMES.iter().enumerate() {
-                    let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
-                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
-                        acts.push(Action::Theme(n, g));
-                    }
-                }
-            });
         }
     }
 
