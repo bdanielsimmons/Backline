@@ -3424,7 +3424,7 @@ impl App {
     }
 
     /// On to song `i` because the one playing finished or was skipped (NEXT): a queued copy that was playing leaves
-    /// the queue. Any other way of picking a song (clicking one in the playlist) leaves the queue as it is.
+    /// the queue. Any other way of picking a song (clicking around in the playlist) leaves the queue as it is.
     fn advance_to(&mut self, i: usize) {
         self.advancing = true;
         self.play_index(i);
