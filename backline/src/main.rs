@@ -1164,15 +1164,39 @@ fn col_widths(avail: f32) -> [f32; 3] {
 }
 
 /// Header row over a track list; right-click it to choose the columns.
+/// A list's header row that stays at the top of the list while it scrolls: where it would go, and the painter to
+/// draw it with (over the rows).
+fn sticky_head(ui: &egui::Ui, rect: Rect, key: &str) -> (Rect, egui::Painter) {
+    let clip = ui.clip_rect();
+    let rect = if rect.min.y < clip.min.y { rect.translate(Vec2::new(0.0, clip.min.y - rect.min.y)) } else { rect };
+    let p = ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, ui.id().with(key))).with_clip_rect(clip);
+    (rect, p)
+}
+
+/// The header of a list of albums, playlists or artists: NAME, and what the right-hand column holds. It stays at
+/// the top while the list scrolls.
+fn cards_header(ui: &mut egui::Ui, right: &str) {
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::hover());
+    let (rect, p) = sticky_head(ui, rect, "cards_head");
+    fill_rect(&p, rect, pal().edge);
+    let cy = rect.center().y;
+    ui_text(&p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, "NAME", 2.0, 400.0, pal().trim);
+    ui_text(&p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, right, 2.0, 400.0, pal().trim);
+}
+
 fn col_header(ui: &mut egui::Ui, numbered: bool) {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::click());
-    fill_rect(ui.painter(), rect, pal().edge);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::hover());
+    // it stays at the top while the list scrolls (and is clicked where it shows)
+    let (rect, painter) = sticky_head(ui, rect, "col_head");
+    let resp = ui.interact(rect, ui.id().with("col_head_hit"), Sense::click());
+    fill_rect(&painter, rect, pal().edge);
     let cy = rect.center().y;
     let tx = rect.min.x + 8.0 + if numbered { 44.0 } else { 0.0 };
     let avail = (rect.max.x - 10.0 - right_w() - tx).max(40.0);
     let cw = col_widths(avail);
-    let p = ui.painter();
+    let p = &painter;
     ui_text(p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, if numbered { "#" } else { "" }, 2.0, 400.0, pal().trim);
     if col_on(3) {
         let kx = rect.max.x - 10.0 - 80.0 - KB_W;
@@ -1199,7 +1223,7 @@ fn col_header(ui: &mut egui::Ui, numbered: bool) {
         let r =
             ui.interact(hit, ui.id().with(("col_split", k)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
         if r.hovered() || r.dragged() {
-            fill_rect(ui.painter(), Rect::from_center_size(hit.center(), Vec2::new(2.0, rect.height() - 4.0)), pal().trim);
+            fill_rect(&painter, Rect::from_center_size(hit.center(), Vec2::new(2.0, rect.height() - 4.0)), pal().trim);
         }
         if r.dragged() {
             let mut w = COL_W.lock().unwrap();
@@ -1426,6 +1450,14 @@ fn page_view(
                         any = true;
                         title_line(ui, &format!("{} items", cards.len()), 2.0, pal().ink2);
                         ui.add_space(4.0);
+                        cards_header(
+                            ui,
+                            match t {
+                                Tab::Lists => "TRACKS",
+                                Tab::Albums => "ARTIST",
+                                _ => "",
+                            },
+                        );
                         cards_list(ui, cards, false, acts);
                     }
                 }
