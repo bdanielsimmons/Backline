@@ -171,11 +171,13 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "backline-android"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "base64 0.22.1",
  "dirs",
  "eframe",
  "image",
  "jni 0.21.1",
+ "memmap2",
  "ndk-context",
  "reqwest",
  "rodio",

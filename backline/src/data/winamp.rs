@@ -154,23 +154,7 @@ pub(crate) fn lum(c: Color32) -> f32 {
     (0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) / 255.0
 }
 
-/// How far apart two colours read (the WCAG contrast ratio: 1 = the same, 21 = black on white; 4.5 is the
-/// usual bar for body text).
-pub fn contrast(a: Color32, b: Color32) -> f32 {
-    let rel = |c: Color32| {
-        let ch = |v: u8| {
-            let v = v as f32 / 255.0;
-            if v <= 0.03928 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
-    };
-    let (x, y) = (rel(a), rel(b));
-    (x.max(y) + 0.05) / (x.min(y) + 0.05)
-}
+pub use crate::skin::contrast;
 
 /// `c` moved toward white or black (whichever ends up further from `other`) until the two read at `min`
 /// contrast, changing it as little as possible.

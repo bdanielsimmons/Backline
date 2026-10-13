@@ -18,6 +18,64 @@ mod player;
 mod theory;
 #[path = "../../backline/src/audio/tuning.rs"]
 mod tuning;
+// Backline's look: the pixel font, the skins, the icons and the drawing kit (buttons, LCDs, tabs...)
+#[path = "../../backline/src/ui/font.rs"]
+mod font;
+#[path = "../../backline/src/ui/icons.rs"]
+mod icons;
+#[path = "../../backline/src/ui/skin.rs"]
+mod skin;
+#[path = "../../backline/src/ui/widgets.rs"]
+mod widgets;
+#[path = "../../backline/src/ui/vicon.rs"]
+mod vicon;
+#[allow(unused_imports)]
+use eframe::egui::{Align, Pos2, Rect, Rounding, Stroke};
+#[allow(unused_imports)]
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+#[allow(unused_imports)]
+use font::{fit, ptext, ptext_fit, snap, spx, text_w, thick, wrap};
+#[allow(unused_imports)]
+use skin::*;
+
+// the desktop's names the drawing kit asks for
+const HEAD_H: f32 = 18.0;
+const ROW_H: f32 = 24.0;
+const PRACTICE: bool = true;
+const VERSION: &str = "v9";
+mod tour {
+    pub fn note(_name: &str, _r: eframe::egui::Rect) {}
+    pub fn mark(_name: &str, _r: eframe::egui::Rect) {}
+}
+mod update {
+    pub fn build() -> u64 {
+        option_env!("BACKLINE_BUILD").and_then(|b| b.parse().ok()).unwrap_or(0)
+    }
+}
+#[allow(unused_imports)]
+use icons::*;
+#[allow(unused_imports)]
+use widgets::*;
+
+/// Winamp skins are a desktop thing: the phone never wears one, so the skin font is never asked for.
+mod winamp_ui {
+    use eframe::egui::{self, Align, Color32, Pos2};
+    pub(crate) fn text_override() -> bool {
+        false
+    }
+    pub(crate) fn sans_width(_text: &str, _size: f32) -> f32 {
+        0.0
+    }
+    pub(crate) fn sans_text(_p: &egui::Painter, _pos: Pos2, _align: Align, _text: &str, _size: f32, _max_w: f32, _col: Color32) -> f32 {
+        0.0
+    }
+    pub(crate) fn chrome_on() -> bool {
+        false
+    }
+    pub(crate) fn draw_frame(_p: &egui::Painter, _outer: eframe::egui::Rect, _inner: eframe::egui::Rect, _title: &str) -> bool {
+        false
+    }
+}
 
 use api::{Api, Card, DeviceCode, Track};
 use eframe::egui::{self, Color32, RichText, Sense, Vec2};

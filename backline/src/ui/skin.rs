@@ -487,7 +487,7 @@ fn lum(c: Color32) -> f32 {
 }
 
 /// How far apart two colours read (WCAG contrast ratio, 1 to 21).
-pub(crate) fn contrast(a: Color32, b: Color32) -> f32 {
+pub fn contrast(a: Color32, b: Color32) -> f32 {
     let (x, y) = (lum(a), lum(b));
     (x.max(y) + 0.05) / (x.min(y) + 0.05)
 }
@@ -634,7 +634,7 @@ mod contrast_tests {
 
     #[test]
     fn colourful_skins_read_well() {
-        let c = crate::winamp::contrast;
+        let c = contrast;
         for i in 11..15usize {
             let p = &PALS[i];
             for (what, fg, bg, min) in [
@@ -670,7 +670,7 @@ mod contrast_tests {
     fn high_contrast_skins_meet_aaa() {
         for i in [15usize, 16] {
             let p = &PALS[i];
-            let c = crate::winamp::contrast;
+            let c = contrast;
             for (what, fg, bg) in [
                 ("text on panels", p.ink, p.beige),
                 ("text on lists", p.ink, p.lcd),
