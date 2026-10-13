@@ -22,8 +22,11 @@ webbrowser = "1"
 # the pixel font's helpers (system fallback fonts, glyph metrics)
 memmap2 = "0.9"
 ab_glyph = "0.2"
+# the Winamp-style skins: skin files are zips, the skin fonts are drawn with swash
+zip = { version = "2", default-features = false, features = ["deflate"] }
+swash = "0.1"
 # album covers and YouTube thumbnails
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
 # YT: YouTube's own API from Rust (yt-dlp needs Python, which a phone doesn't have)
 rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }

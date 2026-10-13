@@ -4927,52 +4927,6 @@ fn splitter(ctx: &egui::Context, id: &str, rect: Rect, vertical: bool) -> Option
     });
     out
 }
-
-fn setup_style(ctx: &egui::Context) {
-    let mut v = egui::Visuals::light();
-    v.panel_fill = pal().app_bg;
-    v.window_fill = pal().beige;
-    v.window_stroke = Stroke::new(1.0_f32, pal().edge);
-    let rad = if style() != 0 { 7.0 } else { 0.0 };
-    v.window_rounding = Rounding::same(rad);
-    v.menu_rounding = Rounding::same(rad);
-    v.extreme_bg_color = pal().lcd;
-    v.faint_bg_color = pal().beige_dk;
-    v.hyperlink_color = pal().ink;
-    v.selection.bg_fill = pal().sel;
-    v.selection.stroke = Stroke::new(1.0_f32, pal().edge);
-    v.widgets.noninteractive.bg_stroke = Stroke::NONE;
-    v.widgets.noninteractive.bg_fill = pal().beige;
-    v.widgets.noninteractive.weak_bg_fill = pal().beige;
-    v.widgets.inactive.bg_fill = pal().beige_dk;
-    v.widgets.inactive.weak_bg_fill = pal().beige_dk;
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, pal().edge);
-    v.widgets.hovered.bg_fill = pal().groove;
-    v.widgets.hovered.weak_bg_fill = pal().groove;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, pal().edge);
-    v.widgets.active.bg_fill = pal().ink2;
-    v.widgets.active.weak_bg_fill = pal().ink2;
-    v.widgets.active.bg_stroke = Stroke::new(1.0_f32, pal().edge);
-    for w in [
-        &mut v.widgets.noninteractive,
-        &mut v.widgets.inactive,
-        &mut v.widgets.hovered,
-        &mut v.widgets.active,
-        &mut v.widgets.open,
-    ] {
-        w.fg_stroke = Stroke::new(1.0_f32, pal().ink);
-        w.rounding = Rounding::same(rad * 0.7);
-    }
-    ctx.set_visuals(v);
-
-    let mut s = (*ctx.style()).clone();
-    s.spacing.item_spacing = Vec2::new(6.0, 4.0);
-    s.spacing.button_padding = Vec2::new(8.0, 3.0);
-    s.spacing.scroll = egui::style::ScrollStyle::solid();
-    s.spacing.scroll.bar_width = 12.0;
-    ctx.set_style(s);
-}
-
 fn main() -> eframe::Result<()> {
     std::panic::set_hook(Box::new(|info| {
         let loc = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();

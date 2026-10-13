@@ -7,7 +7,8 @@ impl App {
     pub(crate) fn player_screen(&mut self, ui: &mut egui::Ui, r: Rect) {
         // the deck keeps its shape (300 x 138, as on the desktop); the rest of the screen is the window under it
         let inner_w = r.width() - 28.0;
-        let deck_h = 138.0 * inner_w / 300.0 + 44.0;
+        // a worn skin's deck is Winamp's shape (275 x 116); Backline's own is 300 x 138
+        let deck_h = if self.wa_art.is_some() { 116.0 * inner_w / 275.0 } else { 138.0 * inner_w / 300.0 } + 44.0;
         let top = Rect::from_min_size(r.min, Vec2::new(r.width(), deck_h));
         let rest = Rect::from_min_max(Pos2::new(r.min.x, top.max.y + 4.0), r.max);
         self.window(ui, top, "PLAYER", |me, ui| me.deck(ui));
@@ -37,6 +38,11 @@ impl App {
     /// volume, speed, the sleep timer, the seek bar (with the loop on it in practice), the transport, shuffle and
     /// repeat - the desktop's, piece for piece.
     fn deck(&mut self, ui: &mut egui::Ui) {
+        // a worn skin draws the whole deck from its own pictures, as on the desktop
+        if self.wa_art.is_some() {
+            self.winamp_deck(ui);
+            return;
+        }
         let inner = ui.max_rect().expand(4.0);
         let s = (inner.width() / 300.0).min(inner.height() / 138.0).max(0.5);
         let ox = inner.min.x + (inner.width() - 300.0 * s) / 2.0;
@@ -316,6 +322,225 @@ impl App {
         };
         ptext_fit(p, strip.center(), Align::Center, src, px_sm, strip.width() - 6.0, pal().ink2);
         let _ = (px_big, rc(0.0, 0.0, 0.0, 0.0));
+    }
+
+    /// The deck drawn from the worn skin, the desktop's winamp_main at the phone's width: the play light, the time in
+    /// the skin's digits, the scrolling title (with key and tempo), kbps and kHz, mono / stereo, the skin's own
+    /// visualizer, volume and balance, EQ and PL, the seek bar, the transport, eject, shuffle and repeat.
+    fn winamp_deck(&mut self, ui: &mut egui::Ui) {
+        let Some(t) = self.wa_art.take() else { return };
+        let area = ui.max_rect().expand(4.0);
+        let s = area.width() / 275.0;
+        let pl = winamp_ui::Place { o: Pos2::new(area.min.x, area.center().y - 58.0 * s), s };
+        let p = ui.painter().clone();
+        let track = self.cur_track().cloned();
+        let pos = self.seek_drag.unwrap_or_else(|| self.pos());
+        let dur = track.as_ref().map(|t| t.duration).unwrap_or(0.0);
+        let active = self.cur.is_some() && !self.stopped;
+        let playing = active && !self.paused;
+        let rate = self.player.shared.lock().unwrap().rate;
+        let id = ui.id().with("winamp_main");
+        let hit = |ui: &mut egui::Ui, name: &str, r: Rect, drag: bool| {
+            ui.interact(r, id.with(name), if drag { Sense::click_and_drag() } else { Sense::click() })
+        };
+        t.spr(&p, "main", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
+        t.spr(&p, "titlebar", (27.0, 0.0, 275.0, 14.0), pl.r(0.0, 0.0, 275.0, 14.0));
+        // playing / paused / stopped
+        let st = if playing {
+            0.0
+        } else if active {
+            9.0
+        } else {
+            18.0
+        };
+        t.spr(&p, "playpaus", (st, 0.0, 9.0, 9.0), pl.r(26.0, 28.0, 9.0, 9.0));
+        // the time, in the skin's big digits
+        let digits = if t.size("nums_ex").is_some() { "nums_ex" } else { "numbers" };
+        let secs = pos.max(0.0) as u32;
+        let (m, sc) = ((secs / 60) % 100, secs % 60);
+        if active {
+            for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, sc / 10), (90.0, sc % 10)] {
+                t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
+            }
+        }
+        // the scrolling title (the key and tempo ride along once known); a slider being moved says where it is
+        let title = match (&self.wa_hint, &track) {
+            (Some(h), _) => h.clone(),
+            (None, Some(tr)) => {
+                let info = meta::get(tr.id).unwrap_or_default();
+                let mut extra = String::new();
+                if info.key.is_some() {
+                    extra += &format!("  *  KEY {}", meta::key_text(&info));
+                }
+                if let Some(b) = info.bpm {
+                    extra += &format!("  *  {} BPM", b);
+                }
+                format!("{} - {} ({}){}", tr.artists_text(), tr.title, fmt_time(tr.duration), extra)
+            }
+            (None, None) => "BACKLINE - A RETRO PLAYER FOR TIDAL".to_string(),
+        };
+        let marquee_r = pl.r(111.0, 24.0, 154.0, 6.0);
+        let w = title.chars().count() as f32 * 5.0;
+        let shift = if w > 154.0 && self.wa_hint.is_none() { ((ui.input(|i| i.time) as f32 * 22.0) % (w + 25.0)).floor() } else { 0.0 };
+        let clip = p.with_clip_rect(marquee_r);
+        winamp_ui::wa_text(&t, &clip, pl, 111.0 - shift, 24.0, &title);
+        if w > 154.0 && shift > 0.0 {
+            winamp_ui::wa_text(&t, &clip, pl, 111.0 - shift + w + 25.0, 24.0, &title);
+        }
+        self.wa_hint = None;
+        if active {
+            winamp_ui::wa_text(&t, &p, pl, 111.0, 43.0, &format!("{:>3}", self.kbps.min(999)));
+            winamp_ui::wa_text(&t, &p, pl, 156.0, 43.0, &format!("{:>2}", (rate / 1000).min(99)));
+        }
+        t.spr(&p, "monoster", (29.0, 12.0, 27.0, 12.0), pl.r(212.0, 41.0, 27.0, 12.0));
+        t.spr(&p, "monoster", (0.0, if active { 0.0 } else { 12.0 }, 29.0, 12.0), pl.r(239.0, 41.0, 29.0, 12.0));
+        // the visualizer in the skin's own colours (tap: bars / wave / both)
+        if hit(ui, "viz", pl.r(24.0, 43.0, 76.0, 16.0), false).clicked() {
+            self.viz_mode = (self.viz_mode + 1) % 3;
+        }
+        if active {
+            winamp_ui::skin_viz(&p, pl.o + Vec2::new(24.0, 43.0) * pl.s, pl.s, &t.vis, &self.bands, &self.peaks, &self.viz_wave, self.viz_mode);
+        }
+        // volume
+        let vr = pl.r(107.0, 57.0, 68.0, 13.0);
+        let frames = |sheet: &str| t.size(sheet).map_or(28.0, |s| ((s.y + 2.0) / 15.0).floor().clamp(1.0, 28.0));
+        let frame = (self.volume * (frames("volume") - 1.0)).round();
+        t.spr(&p, "volume", (0.0, frame * 15.0, 68.0, 13.0), vr);
+        let vh = hit(ui, "volume", vr.expand2(Vec2::new(0.0, 6.0)), true);
+        if t.size("volume").map_or(false, |s| s.y >= 433.0) {
+            let src = if vh.dragged() { (0.0, 422.0, 14.0, 11.0) } else { (15.0, 422.0, 14.0, 11.0) };
+            t.spr(&p, "volume", src, pl.r(107.0 + self.volume * 54.0, 58.0, 14.0, 11.0));
+        }
+        if vh.dragged() || vh.clicked() {
+            if let Some(pp) = vh.interact_pointer_pos() {
+                self.set_volume(((pp.x - vr.min.x - pl.s * 7.0) / (pl.s * 54.0)).clamp(0.0, 1.0));
+            }
+            self.wa_hint = Some(format!("VOLUME: {}%", (self.volume * 100.0).round()));
+        }
+        // balance (double-tap: centre)
+        let br = pl.r(177.0, 57.0, 38.0, 13.0);
+        let bal = if t.size("balance").is_some() { "balance" } else { "volume" };
+        let bframe = (self.balance.unsigned_abs() as f32 / 100.0 * (frames(bal) - 1.0)).round();
+        t.spr(&p, bal, (9.0, bframe * 15.0, 38.0, 13.0), br);
+        let bh = hit(ui, "balance", br.expand2(Vec2::new(0.0, 6.0)), true);
+        if t.size(bal).map_or(false, |s| s.y >= 433.0) {
+            let src = if bh.dragged() { (0.0, 422.0, 14.0, 11.0) } else { (15.0, 422.0, 14.0, 11.0) };
+            t.spr(&p, bal, src, pl.r(177.0 + (self.balance + 100) as f32 / 200.0 * 24.0, 58.0, 14.0, 11.0));
+        }
+        if bh.double_clicked() {
+            self.balance = 0;
+            self.player.ctl.set_balance(0);
+        } else if bh.dragged() || bh.clicked() {
+            if let Some(pp) = bh.interact_pointer_pos() {
+                let f = ((pp.x - br.min.x - pl.s * 7.0) / (pl.s * 24.0)).clamp(0.0, 1.0);
+                let b = (f * 200.0 - 100.0).round() as i32;
+                self.balance = if b.abs() < 10 { 0 } else { b };
+                self.player.ctl.set_balance(self.balance);
+            }
+            self.wa_hint = Some(match self.balance {
+                0 => "BALANCE: CENTER".to_string(),
+                b if b < 0 => format!("BALANCE: {}% LEFT", -b),
+                b => format!("BALANCE: {}% RIGHT", b),
+            });
+        }
+        // EQ (the equalizer, in PRACTICE > PITCH & EAR) and PL (the queue)
+        let eq = pl.r(219.0, 58.0, 23.0, 12.0);
+        let eqh = hit(ui, "eq", eq, false);
+        let eq_on = self.practice && self.mtab == 2;
+        let eq_src = match (eq_on, eqh.is_pointer_button_down_on()) {
+            (false, false) => (0.0, 61.0),
+            (true, false) => (0.0, 73.0),
+            (false, true) => (46.0, 61.0),
+            (true, true) => (46.0, 73.0),
+        };
+        t.spr(&p, "shufrep", (eq_src.0, eq_src.1, 23.0, 12.0), eq);
+        if eqh.clicked() {
+            self.practice = true;
+            self.mtab = 2;
+            self.sync_player();
+        }
+        let plr = pl.r(242.0, 58.0, 23.0, 12.0);
+        let plh = hit(ui, "pl", plr, false);
+        let pl_src = match (!self.practice, plh.is_pointer_button_down_on()) {
+            (false, false) => (23.0, 61.0),
+            (true, false) => (23.0, 73.0),
+            (false, true) => (69.0, 61.0),
+            (true, true) => (69.0, 73.0),
+        };
+        t.spr(&p, "shufrep", (pl_src.0, pl_src.1, 23.0, 12.0), plr);
+        if plh.clicked() {
+            self.practice = false;
+            self.sync_player();
+        }
+        // the seek bar
+        let pr = pl.r(16.0, 72.0, 248.0, 10.0);
+        t.spr(&p, "posbar", (0.0, 0.0, 248.0, 10.0), pr);
+        let ph = hit(ui, "seek", pr.expand2(Vec2::new(0.0, 5.0)), true);
+        if active && dur > 0.0 {
+            let f = (pos / dur).clamp(0.0, 1.0);
+            let src = if ph.dragged() { (278.0, 0.0, 29.0, 10.0) } else { (248.0, 0.0, 29.0, 10.0) };
+            t.spr(&p, "posbar", src, pl.r(16.0 + f * 219.0, 72.0, 29.0, 10.0));
+            if ph.dragged() || ph.clicked() {
+                if let Some(pp) = ph.interact_pointer_pos() {
+                    self.seek_drag = Some(((pp.x - pr.min.x - 14.5 * pl.s) / (219.0 * pl.s)).clamp(0.0, 1.0) * dur);
+                }
+                let at = self.seek_drag.unwrap_or(pos);
+                self.wa_hint = Some(format!("SEEK TO: {}/{} ({}%)", fmt_time(at), fmt_time(dur), (at / dur * 100.0).round()));
+            }
+            if ph.drag_stopped() || ph.clicked() {
+                if let Some(sk) = self.seek_drag.take() {
+                    self.player.send(Cmd::Seek(sk));
+                }
+            }
+        }
+        // transport
+        for (name, x, sx, w) in [("prev", 16.0, 0.0, 23.0), ("play", 39.0, 23.0, 23.0), ("pause", 62.0, 46.0, 23.0), ("stop", 85.0, 69.0, 23.0), ("next", 108.0, 92.0, 22.0)] {
+            let r = pl.r(x, 88.0, w, 18.0);
+            let h = hit(ui, name, r, false);
+            let down = if h.is_pointer_button_down_on() { 18.0 } else { 0.0 };
+            t.spr(&p, "cbuttons", (sx, down, w, 18.0), r);
+            if h.clicked() {
+                match name {
+                    "prev" => self.prev(),
+                    "play" if self.paused || self.stopped || self.at_end => self.play_pause(),
+                    "pause" if !self.paused && !self.stopped => self.play_pause(),
+                    "stop" => self.stop(),
+                    "next" => self.next(),
+                    _ => {}
+                }
+            }
+        }
+        // eject: the library
+        let ej = pl.r(136.0, 89.0, 22.0, 16.0);
+        let ejh = hit(ui, "eject", ej, false);
+        t.spr(&p, "cbuttons", (114.0, if ejh.is_pointer_button_down_on() { 16.0 } else { 0.0 }, 22.0, 16.0), ej);
+        if ejh.clicked() {
+            self.tab = Tab::Library;
+        }
+        // shuffle and repeat
+        let sh = pl.r(164.0, 89.0, 47.0, 15.0);
+        let shh = hit(ui, "shuffle", sh, false);
+        let sy = if self.shuffle { 30.0 } else { 0.0 } + if shh.is_pointer_button_down_on() { 15.0 } else { 0.0 };
+        t.spr(&p, "shufrep", (28.0, sy, 47.0, 15.0), sh);
+        if shh.clicked() {
+            self.shuffle = !self.shuffle;
+        }
+        let rp = pl.r(210.0, 89.0, 28.0, 15.0);
+        let rph = hit(ui, "repeat", rp, false);
+        let ry = if self.repeat != Repeat::Off { 30.0 } else { 0.0 } + if rph.is_pointer_button_down_on() { 15.0 } else { 0.0 };
+        t.spr(&p, "shufrep", (0.0, ry, 28.0, 15.0), rp);
+        if self.repeat == Repeat::One {
+            p.rect_filled(pl.r(231.0, 90.0, 6.0, 7.0), 0.0, t.vis.first().copied().unwrap_or(Color32::BLACK));
+            winamp_ui::wa_text(&t, &p, pl, 232.0, 90.5, "1");
+        }
+        if rph.clicked() {
+            self.repeat = match self.repeat {
+                Repeat::Off => Repeat::All,
+                Repeat::All => Repeat::One,
+                Repeat::One => Repeat::Off,
+            };
+        }
+        self.wa_art = Some(t);
     }
 
     /// Fetch the song's cover once (Tidal's album art, or the clip's thumbnail).

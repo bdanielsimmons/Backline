@@ -72,25 +72,14 @@ mod update {
         option_env!("BACKLINE_BUILD").and_then(|b| b.parse().ok()).unwrap_or(0)
     }
 }
-/// Winamp skins are a desktop thing: the phone never wears one.
-mod winamp_ui {
-    use eframe::egui::{self, Align, Color32, Pos2, Rect};
-    pub(crate) fn text_override() -> bool {
-        false
-    }
-    pub(crate) fn sans_width(_text: &str, _size: f32) -> f32 {
-        0.0
-    }
-    pub(crate) fn sans_text(_p: &egui::Painter, _pos: Pos2, _align: Align, _text: &str, _size: f32, _max_w: f32, _col: Color32) -> f32 {
-        0.0
-    }
-    pub(crate) fn chrome_on() -> bool {
-        false
-    }
-    pub(crate) fn draw_frame(_p: &egui::Painter, _outer: Rect, _inner: Rect, _title: &str) -> bool {
-        false
-    }
-}
+// the Winamp-style skins (Backline's ORIGINAL look): the skin pictures, generated from Backline's palettes, and
+// their drawing
+#[path = "../../backline/src/data/genskin.rs"]
+mod genskin;
+#[path = "../../backline/src/data/winamp.rs"]
+mod winamp;
+#[path = "../../backline/src/ui/winamp_draw.rs"]
+mod winamp_ui;
 
 /// The ear modes (the player's own): which part of the stereo picture you hear.
 pub(crate) const CHAN_NAMES: [&str; 6] = ["STEREO", "LEFT CHANNEL", "RIGHT CHANNEL", "MONO", "NO CENTER", "BASS ONLY"];
@@ -116,6 +105,8 @@ pub(crate) enum Msg {
     /// the song's audio, its length (0: the track knows) and its waveform (0-255 peaks)
     Audio(u64, Result<(Vec<u8>, f32, Vec<u8>), String>),
     Meta(i64, meta::Info),
+    /// the skin's font fetched (which one, its bytes)
+    Font(usize, Result<Vec<u8>, String>),
 }
 
 /// The phone's screens, along the bottom.
@@ -159,7 +150,7 @@ pub(crate) struct Settings {
 impl Default for Settings {
     fn default() -> Settings {
         Settings {
-            skin: 0,
+            skin: 9,
             volume: 0.8,
             practice: false,
             eq: [0.0; 10],
@@ -261,6 +252,12 @@ pub(crate) struct App {
     pub mt_vis: Option<(Instant, f32, usize)>,
     pub mt_group: usize,
     pub taps: Vec<Instant>,
+    /// the skin worn: Backline's palette in the ORIGINAL look (its pictures, as on the desktop)
+    pub wa_art: Option<winamp_ui::WaTex>,
+    /// what the skin's title line says while a slider is moved
+    pub wa_hint: Option<String>,
+    pub balance: i32,
+    pub kbps: u32,
 }
 
 impl App {
@@ -374,6 +371,40 @@ impl App {
             mt_vis: None,
             mt_group: 0,
             taps: Vec::new(),
+            wa_art: None,
+            wa_hint: None,
+            balance: 0,
+            kbps: 0,
+        }
+    }
+
+    /// Wear the palette picked in the ORIGINAL look: the skin drawn from it (the desktop's own generator), its
+    /// window frames, its font (Silkscreen, fetched once).
+    pub(crate) fn wear(&mut self) {
+        let n = SKIN.load(Ordering::Relaxed) % PALS.len();
+        match genskin::wear(&PALS[n], 1) {
+            Ok((p, art)) => {
+                skin::set_custom(Some(p));
+                self.wa_art = Some(winamp_ui::WaTex::new(&self.ctx, art));
+                winamp_ui::set_chrome(self.wa_art.as_ref());
+                setup_style(&self.ctx);
+                let skin_font = self.wa_art.as_ref().and_then(|t| t.font.clone());
+                let choice = skin_font
+                    .as_deref()
+                    .and_then(|f| winamp_ui::PL_FONTS.iter().position(|x| x.0.eq_ignore_ascii_case(f)))
+                    .unwrap_or(8);
+                match winamp_ui::font_now(choice, skin_font.as_deref()) {
+                    Some(b) => winamp_ui::set_playlist_font(&self.ctx, Some(b), choice),
+                    None => {
+                        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                        std::thread::spawn(move || {
+                            let _ = tx.send(Msg::Font(choice, winamp_ui::fetch_font(choice)));
+                            ctx.request_repaint();
+                        });
+                    }
+                }
+            }
+            Err(e) => self.note = format!("SKIN: {}", e),
         }
     }
 
@@ -626,6 +657,7 @@ impl App {
                             if let Some(bpm) = meta::get(id).and_then(|i| i.bpm) {
                                 self.song_bpm = bpm as f32;
                             }
+                            self.kbps = if d > 1.0 { (b.len() as f32 * 8.0 / 1000.0 / d) as u32 } else { 0 };
                             self.wraps = self.player.ctl.wraps();
                             self.sync_player();
                             self.player.send(Cmd::Play(b));
@@ -634,6 +666,11 @@ impl App {
                             self.stopped = true;
                             self.note = format!("CAN'T PLAY: {}", e);
                         }
+                    }
+                }
+                Msg::Font(choice, r) => {
+                    if let Ok(b) = r {
+                        winamp_ui::set_playlist_font(&self.ctx, Some(b), choice);
                     }
                 }
                 Msg::Audio(..) => {}
@@ -747,6 +784,7 @@ impl App {
                 let k = SKIN.load(Ordering::Relaxed);
                 if retro_btn(ui, &format!("SKIN: {}", SKIN_NAMES[k]), false).clicked() {
                     SKIN.store((k + 1) % PALS.len(), Ordering::Relaxed);
+                    self.wear();
                     self.save_settings();
                 }
             });
@@ -899,6 +937,10 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     if let Some(p) = app.external_data_path() {
         std::env::set_var("BACKLINE_FILES", p);
     }
+    // a test phone (a file named MUTE in Backline's folder) plays silently, like the desktop's test copies
+    if std::env::var_os("BACKLINE_FILES").is_some_and(|d| std::path::Path::new(&d).join("MUTE").exists()) {
+        player::MUTED.store(true, Ordering::Relaxed);
+    }
     let _ = ANDROID.set(app.clone());
     let options = eframe::NativeOptions {
         event_loop_builder: Some(Box::new(move |b| {
@@ -906,5 +948,13 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
         })),
         ..Default::default()
     };
-    let _ = eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc)))));
+    let _ = eframe::run_native(
+        "Backline",
+        options,
+        Box::new(|cc| {
+            let mut app = App::new(cc);
+            app.wear();
+            Ok(Box::new(app))
+        }),
+    );
 }
