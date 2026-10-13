@@ -278,7 +278,8 @@ enum Action {
     WaApply(winamp::WaSkin),
     /// wear the palette as a Winamp skin drawn by Backline: 0 off, then one per look (genskin::LOOKS)
     WaGen(usize),
-    /// a Backline palette in a look: 0 its own pixel panels (RETRO ORIGINAL), 2 the sleek Winamp style (ORIGINAL)
+    /// a Backline palette in a look: 2 the sleek Winamp style (ORIGINAL); the plain pixel panels are gone, so 0 wears it
+    /// as ORIGINAL too
     Theme(usize, usize),
     /// the opening sound: 0 off, 1 Backline's chime, 2 your file; 3 pick a file; 4 play it now
     Intro(u8),
