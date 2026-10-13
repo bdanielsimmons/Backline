@@ -188,6 +188,7 @@ impl App {
                 self.hear(&[theory::STANDARD[s] + f as i32]);
             }
         }
+        ui.add_space(8.0);
         let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 64.0), Sense::hover());
         piano_span(ui, pr, &notes, false, "an_piano", root, 36, 4);
         ui.horizontal_wrapped(|ui| {

@@ -27,17 +27,17 @@ impl App {
             let mut changed = false;
             let on = self.mt.on;
             ui.horizontal_wrapped(|ui| {
-                if retro_btn_w(ui, if on { "STOP" } else { "START" }, 80.0, on).clicked() {
+                if retro_btn_w(ui, if on { "STOP" } else { "START" }, 66.0, on).clicked() {
                     self.mt.on = !self.mt.on;
                     changed = true;
                 }
-                label(ui, "BPM", 36.0);
-                let d = stepper(ui, &self.mt_bpm.to_string(), 50.0);
+                label(ui, "BPM", 30.0);
+                let d = stepper(ui, &self.mt_bpm.to_string(), 42.0);
                 if d != 0 {
                     self.mt_bpm = (self.mt_bpm as i32 + d).clamp(20, 400) as u32;
                     changed = true;
                 }
-                if retro_btn_w(ui, "TAP", 48.0, false).clicked() {
+                if retro_btn_w(ui, "TAP", 42.0, false).clicked() {
                     if let Some(b) = self.tap() {
                         self.mt_bpm = b as u32;
                         changed = true;
@@ -62,16 +62,16 @@ impl App {
             // the pendulum and the beats
             self.metro_vis(ui, &mut changed);
             ui.horizontal_wrapped(|ui| {
-                label(ui, "METER", 56.0);
-                let d = stepper(ui, &self.mt.beats.to_string(), 36.0);
+                label(ui, "METER", 44.0);
+                let d = stepper(ui, &self.mt.beats.to_string(), 26.0);
                 if d != 0 {
                     self.mt.beats = (self.mt.beats as i32 + d).clamp(1, 32) as u32;
                     self.mt_group = 0;
                     changed = true;
                 }
-                label(ui, "/", 14.0);
+                label(ui, "/", 8.0);
                 for n in [4u8, 8, 16] {
-                    if retro_btn_w(ui, &n.to_string(), 34.0, self.mt.unit == n).clicked() {
+                    if retro_btn_w(ui, &n.to_string(), 28.0, self.mt.unit == n).clicked() {
                         self.mt.unit = n;
                         changed = true;
                     }
@@ -121,7 +121,9 @@ impl App {
                     self.mt.gap_play = (self.mt.gap_play as i32 + d).clamp(0, 16) as u32;
                     changed = true;
                 }
-                label(ui, "MUTE", 44.0);
+            });
+            ui.horizontal_wrapped(|ui| {
+                label(ui, "THEN MUTE", 90.0);
                 let d = stepper(ui, &self.mt.gap_mute.to_string(), 30.0);
                 if d != 0 {
                     self.mt.gap_mute = (self.mt.gap_mute as i32 + d).clamp(1, 16) as u32;
@@ -137,13 +139,16 @@ impl App {
                     self.mt.ramp_bars = (self.mt.ramp_bars as i32 + d).clamp(0, 64) as u32;
                     changed = true;
                 }
-                label(ui, "BARS +", 52.0);
-                let d = stepper(ui, &self.mt.ramp_bpm.to_string(), 30.0);
+            });
+            ui.horizontal_wrapped(|ui| {
+                label(ui, "BY BPM", 90.0);
+                let d = stepper(ui, &format!("+{}", self.mt.ramp_bpm), 36.0);
                 if d != 0 {
                     self.mt.ramp_bpm = (self.mt.ramp_bpm as i32 + d).clamp(1, 20) as u32;
                     changed = true;
                 }
             });
+            dim_line(ui, "EVERY SO MANY BARS THE TEMPO GOES UP", 1.0, pal().dim);
             if changed {
                 self.metro_apply();
                 self.save_settings();

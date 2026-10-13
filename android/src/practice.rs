@@ -214,8 +214,10 @@ impl App {
         ui.add_space(4.0);
         // saved loops of this song
         ui.horizontal(|ui| {
-            let w = ui.available_width() - 120.0;
-            let r = text_box(ui, &mut self.sec_name, w.max(100.0), "Name this loop (bridge, head, lick...)");
+            // the save button's own width (its icon and text), the name box the rest
+            let bw = 10.0 + 18.0 + 8.0 + text_w("SAVE LOOP", 2.0) + 10.0 + 8.0;
+            let w = ui.available_width() - bw;
+            let r = text_box(ui, &mut self.sec_name, w.max(80.0), "Name this loop (bridge, head, lick...)");
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if ibtn(ui, &IC_BOOK, "SAVE LOOP", false).clicked() || enter {
                 match (self.loop_a, self.loop_b) {
