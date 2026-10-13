@@ -1427,10 +1427,117 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
     });
 }
 
-/// Does every word of the filter appear in one of these (case aside)?
+/// Text for matching: lower case, accents off (o for ō), punctuation dropped (Monk's is monks).
+fn fold(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| c.to_lowercase())
+        .map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' => 'a',
+            'ç' => 'c',
+            'è' | 'é' | 'ê' | 'ë' | 'ē' => 'e',
+            'ì' | 'í' | 'î' | 'ï' | 'ī' => 'i',
+            'ñ' => 'n',
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' => 'o',
+            'ù' | 'ú' | 'û' | 'ü' | 'ū' => 'u',
+            'ý' | 'ÿ' => 'y',
+            c => c,
+        })
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect()
+}
+
+/// Letters to change, add or drop to turn `a` into `b` (stops counting past `max`).
+fn edits(a: &[char], b: &[char], max: usize) -> usize {
+    if a.len().abs_diff(b.len()) > max {
+        return max + 1;
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut row = vec![i; b.len() + 1];
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            row[j] = (prev[j] + 1).min(row[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        if row.iter().min().copied().unwrap_or(0) > max {
+            return max + 1;
+        }
+        prev = row;
+    }
+    prev[b.len()]
+}
+
+/// Does every word of the filter match one of these? Forgiving: accents and punctuation aside, any order, a word
+/// may be the start of one (while typing), one off a word by a typo or two (thelonius finds Thelonious), or the
+/// initials of words in a row (mj finds Michael Jackson).
+#[cfg(test)]
 fn matches_filter(filter: &str, fields: &[&str]) -> bool {
-    let hay: String = fields.iter().map(|f| f.to_lowercase()).collect::<Vec<_>>().join(" ");
-    filter.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+    filter_score(filter, fields).is_some()
+}
+
+/// How well these match the filter (None: not at all). Lower is better: 0 for every word found as typed, then
+/// initials, then typos - so the closest come first.
+fn filter_score(filter: &str, fields: &[&str]) -> Option<u32> {
+    let hay = fold(&fields.join(" "));
+    let words: Vec<Vec<char>> = hay.split_whitespace().map(|w| w.chars().collect()).collect();
+    let initials: String = words.iter().filter_map(|w| w.first()).collect();
+    let mut score = 0;
+    for q in fold(filter).split_whitespace() {
+        let qc: Vec<char> = q.chars().collect();
+        score += if hay.contains(q) {
+            0
+        } else if q.len() >= 2 && initials.contains(q) {
+            2
+        } else {
+            // short words must be right; longer ones may be a letter (or two) off
+            let max = match qc.len() {
+                0..=3 => return None,
+                4..=6 => 1,
+                _ => 2,
+            };
+            let best = words
+                .iter()
+                .map(|w| {
+                    let whole = edits(&qc, w, max);
+                    // or the start of a longer word, typo and all
+                    let start = if w.len() > qc.len() { edits(&qc, &w[..qc.len()], max) } else { max + 1 };
+                    whole.min(start)
+                })
+                .min()
+                .unwrap_or(max + 1);
+            if best > max {
+                return None;
+            }
+            3 + best as u32
+        };
+    }
+    Some(score)
+}
+
+thread_local! {
+    /// The last filtered list: (filter, how many there were, which list, the order of the ones that match), so a
+    /// long library is matched once per change, not every frame.
+    static FILTERED: std::cell::RefCell<(String, usize, u64, Vec<usize>)> = const { std::cell::RefCell::new((String::new(), 0, 0, Vec::new())) };
+}
+
+/// The items that match the filter, the closest first (worked out once per filter and list).
+fn filtered<T>(filter: &str, items: &[T], fields: impl Fn(&T) -> Vec<String>, key: u64) -> Vec<usize> {
+    FILTERED.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.0 != filter || c.1 != items.len() || c.2 != key {
+            let mut hits: Vec<(u32, usize)> = items
+                .iter()
+                .enumerate()
+                .filter_map(|(i, it)| {
+                    let f = fields(it);
+                    let refs: Vec<&str> = f.iter().map(String::as_str).collect();
+                    filter_score(filter, &refs).map(|s| (s, i))
+                })
+                .collect();
+            hits.sort_by_key(|h| h.0);
+            *c = (filter.to_string(), items.len(), key, hits.into_iter().map(|h| h.1).collect());
+        }
+        c.3.clone()
+    })
 }
 
 fn page_view(
@@ -1455,11 +1562,9 @@ fn page_view(
                 let tracks: &[Track] = if filter.trim().is_empty() {
                     &page.tracks
                 } else {
-                    shown = page
-                        .tracks
-                        .iter()
-                        .filter(|t| matches_filter(filter, &[&t.title, &t.artists_text(), &t.album]))
-                        .cloned()
+                    shown = filtered(filter, &page.tracks, |t| vec![t.title.clone(), t.artists_text(), t.album.clone()], 1)
+                        .into_iter()
+                        .map(|i| page.tracks[i].clone())
                         .collect();
                     &shown
                 };
@@ -1502,7 +1607,10 @@ fn page_view(
                         let cards: &[Card] = if filter.trim().is_empty() {
                             cards
                         } else {
-                            shown = cards.iter().filter(|c| matches_filter(filter, &[&c.title, &c.subtitle])).cloned().collect();
+                            shown = filtered(filter, cards, |c| vec![c.title.clone(), c.subtitle.clone()], 2)
+                                .into_iter()
+                                .map(|i| cards[i].clone())
+                                .collect();
                             &shown
                         };
                         title_line(ui, &format!("{} items", cards.len()), 2.0, pal().ink2);
@@ -5182,6 +5290,22 @@ fn main() -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_filter_forgives() {
+        let monk = ["Monk's Dream (Take 8)", "Thelonious Monk", "Monk's Dream"];
+        assert!(matches_filter("monk dream", &monk));
+        assert!(matches_filter("monks", &monk));
+        assert!(matches_filter("thelonius", &monk), "a missing letter");
+        assert!(matches_filter("dreem", &monk), "a typo");
+        assert!(matches_filter("theloni", &monk), "the start of a word");
+        assert!(matches_filter("shoga", &["Shōga", "Pat Metheny", "Moondial"]), "accents aside");
+        assert!(!matches_filter("coltrane", &monk));
+        assert!(!matches_filter("dog", &monk), "short words must be right");
+        assert!(matches_filter("mj", &["Thriller", "Michael Jackson", "Thriller"]), "initials");
+        // the closest first: as typed, before a typo
+        assert!(filter_score("monk", &monk) < filter_score("monc", &monk));
+    }
 
     fn track(id: i64) -> Track {
         Track { id, title: format!("t{}", id), ..Default::default() }
