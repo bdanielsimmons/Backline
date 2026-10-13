@@ -568,14 +568,17 @@ impl App {
     /// The QUEUE window: the songs in line, numbered, the one playing marked (tap one to play it).
     fn queue_ui(&mut self, ui: &mut egui::Ui) {
         if self.queue.is_empty() {
-            para(ui, "Nothing in line yet. Pick songs in the LIBRARY: the list you play from becomes the queue.", pal().ink2);
+            para(ui, "Nothing in line yet. Pick songs in MUSIC: the list you play from becomes the queue. Tap a song's three dots for PLAY NEXT and ADD TO QUEUE.", pal().ink2);
             return;
         }
         let mut play = None;
         let queue = self.queue.clone();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             for (i, t) in queue.iter().enumerate() {
-                if song_row(ui, i, t, Some(i) == self.cur).clicked() {
+                let (r, dots) = song_row(ui, i, t, Some(i) == self.cur);
+                if dots {
+                    self.song_menu = Some((t.clone(), Some(i)));
+                } else if r.clicked() {
                     play = Some(i);
                 }
             }
@@ -586,15 +589,21 @@ impl App {
     }
 }
 
-/// A list row in Backline's way: number, title and artist in the pixel font, the length at the right; the
-/// alternate rows a shade apart, the one playing in the selection colour.
-pub(crate) fn song_row(ui: &mut egui::Ui, i: usize, t: &Track, now: bool) -> egui::Response {
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 14.0), Sense::click());
+/// A list row in Backline's way: number, title and artist in the pixel font, the length, and a three-dot button at
+/// the right for the song's menu; the alternate rows a shade apart, the one playing in the selection colour.
+/// Returns the row's response and whether the dots were tapped.
+pub(crate) fn song_row(ui: &mut egui::Ui, i: usize, t: &Track, now: bool) -> (egui::Response, bool) {
+    let (full, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 14.0), Sense::hover());
+    let dots_w = 34.0;
+    let r = Rect::from_min_max(full.min, Pos2::new(full.max.x - dots_w, full.max.y));
+    let dr = Rect::from_min_max(Pos2::new(r.max.x, full.min.y), full.max);
+    let resp = ui.interact(r, ui.id().with(("row", i, t.id)), Sense::click());
+    let dots = ui.interact(dr, ui.id().with(("dots", i, t.id)), Sense::click());
     let p = ui.painter();
     if now {
-        fill_rect(p, r, pal().row_sel);
+        fill_rect(p, full, pal().row_sel);
     } else if i % 2 == 1 {
-        fill_rect(p, r, pal().row_alt);
+        fill_rect(p, full, pal().row_alt);
     }
     let (ink, ink2) = if now { (pal().bar_txt, pal().bar_txt) } else { (pal().ink, pal().ink2) };
     let num = format!("{}", i + 1);
@@ -606,5 +615,12 @@ pub(crate) fn song_row(ui: &mut egui::Ui, i: usize, t: &Track, now: bool) -> egu
     ptext_fit(p, Pos2::new(r.min.x + 30.0, r.min.y + 11.0), Align::Min, &fit(&t.title.to_uppercase(), 2.0, w), 2.0, w, ink);
     let artist = t.artists_text().to_uppercase();
     ptext_fit(p, Pos2::new(r.min.x + 30.0, r.min.y + 27.0), Align::Min, &fit(&artist, 1.0, w), 1.0, w, ink2);
-    resp
+    // the menu's three dots, stacked
+    let c = dr.center();
+    let col = if dots.is_pointer_button_down_on() { pal().red } else { ink2 };
+    for k in [-1.0f32, 0.0, 1.0] {
+        fill_rect(p, Rect::from_center_size(c + Vec2::new(0.0, k * 6.0), Vec2::splat(3.5)), col);
+    }
+    let tapped = dots.clicked();
+    (resp, tapped)
 }

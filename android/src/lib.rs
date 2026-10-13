@@ -258,6 +258,8 @@ pub(crate) struct App {
     pub wa_hint: Option<String>,
     pub balance: i32,
     pub kbps: u32,
+    /// a song held down: its menu (the song, and where it sits in the queue when it is one of the queue's)
+    pub song_menu: Option<(Track, Option<usize>)>,
 }
 
 impl App {
@@ -375,6 +377,7 @@ impl App {
             wa_hint: None,
             balance: 0,
             kbps: 0,
+            song_menu: None,
         }
     }
 
@@ -828,6 +831,109 @@ impl App {
         });
     }
 
+    /// The menu of a song held down (the desktop's right-click): play it next, add it to the queue, and in the
+    /// queue move it or take it out.
+    fn song_menu_ui(&mut self, ctx: &egui::Context) {
+        let Some((t, qi)) = self.song_menu.clone() else { return };
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("menu_dim")))
+            .rect_filled(screen, 0.0, Color32::from_black_alpha(150));
+        let mut close = false;
+        // it slides up from the bottom
+        let k = ctx.animate_bool_with_time(egui::Id::new("song_menu_in"), true, 0.18);
+        let drop_px = (1.0 - k) * 320.0;
+        // a tap on the dimmed screen closes it
+        if ctx.input(|i| i.pointer.any_click()) && !ctx.is_pointer_over_area() {
+            close = true;
+        }
+        egui::Area::new(egui::Id::new("song_menu")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_BOTTOM, Vec2::new(0.0, drop_px)).show(ctx, |ui| {
+            egui::Frame::none().fill(pal().beige).stroke(Stroke::new(2.0, pal().edge)).inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 34.0 }).show(ui, |ui| {
+                ui.set_width(screen.width() - 24.0);
+                ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+                title_line(ui, &fit(&t.title.to_uppercase(), 2.0, screen.width() - 80.0), 2.0, pal().ink);
+                dim_line(ui, &t.artists_text().to_uppercase(), 1.0, pal().ink2);
+                let w = ui.available_width();
+                let cur = self.cur;
+                if retro_btn_w(ui, "PLAY NEXT", w, false).clicked() {
+                    let at = cur.map_or(0, |c| c + 1).min(self.queue.len());
+                    if let Some(i) = qi {
+                        // a queue song moved to just after the one playing
+                        let s = self.queue.remove(i);
+                        let at = if i < at { at - 1 } else { at };
+                        self.queue.insert(at, s);
+                        self.fix_cur(i, at);
+                    } else {
+                        self.queue.insert(at, t.clone());
+                    }
+                    self.set_note("PLAYS NEXT");
+                    close = true;
+                }
+                if qi.is_none() && retro_btn_w(ui, "ADD TO QUEUE", w, false).clicked() {
+                    self.queue.push(t.clone());
+                    self.set_note("ADDED TO THE QUEUE");
+                    close = true;
+                }
+                if let Some(i) = qi {
+                    ui.horizontal(|ui| {
+                        let hw = (w - 6.0) / 2.0;
+                        if retro_btn_w(ui, "MOVE UP", hw, false).clicked() && i > 0 {
+                            self.queue.swap(i, i - 1);
+                            self.fix_cur(i, i - 1);
+                            self.song_menu = Some((t.clone(), Some(i - 1)));
+                        }
+                        if retro_btn_w(ui, "MOVE DOWN", hw, false).clicked() && i + 1 < self.queue.len() {
+                            self.queue.swap(i, i + 1);
+                            self.fix_cur(i, i + 1);
+                            self.song_menu = Some((t.clone(), Some(i + 1)));
+                        }
+                    });
+                    if retro_btn_w(ui, "TAKE OUT OF THE QUEUE", w, false).clicked() {
+                        self.queue.remove(i);
+                        match self.cur {
+                            Some(c) if c == i => {
+                                self.stop();
+                                self.cur = None;
+                            }
+                            Some(c) if c > i => self.cur = Some(c - 1),
+                            _ => {}
+                        }
+                        close = true;
+                    }
+                }
+                // a YouTube clip: off the YT list too
+                if let Some(k) = self.yt.iter().position(|y| yt_id(&y.vid) == t.id) {
+                    if retro_btn_w(ui, "TAKE OFF THE YT LIST", w, false).clicked() {
+                        self.yt.remove(k);
+                        save_json("yt.json", &self.yt);
+                        close = true;
+                    }
+                }
+                if retro_btn_w(ui, "CANCEL", w, false).clicked() {
+                    close = true;
+                }
+            });
+        });
+        if close {
+            self.song_menu = None;
+            ctx.animate_bool_with_time(egui::Id::new("song_menu_in"), false, 0.0);
+        }
+    }
+
+    /// The song playing keeps its place when the queue moves under it (a song moved from `from` to `to`).
+    fn fix_cur(&mut self, from: usize, to: usize) {
+        if let Some(c) = self.cur {
+            self.cur = Some(if c == from {
+                to
+            } else if from < c && to >= c {
+                c - 1
+            } else if from > c && to <= c {
+                c + 1
+            } else {
+                c
+            });
+        }
+    }
+
     /// A window as the desktop draws them (its title on a tab), filling `outer`; the contents go inside.
     pub(crate) fn window(&mut self, ui: &mut egui::Ui, outer: Rect, title: &str, body: impl FnOnce(&mut Self, &mut egui::Ui)) {
         let inner = Rect::from_min_max(outer.min + Vec2::new(14.0, 30.0), outer.max - Vec2::new(14.0, 14.0));
@@ -894,6 +1000,7 @@ impl eframe::App for App {
                 }
                 self.bottom_bar(ui);
             });
+        self.song_menu_ui(ctx);
         egui::CentralPanel::default().frame(fill).show(ctx, |ui| {
             let r = ui.max_rect();
             match self.tab {

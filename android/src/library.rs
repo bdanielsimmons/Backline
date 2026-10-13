@@ -27,7 +27,10 @@ impl App {
         let mut play = None;
         egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, |ui| {
             for (i, t) in tracks.iter().enumerate() {
-                if song_row(ui, i, t, playing == Some(t.id)).clicked() {
+                let (r, dots) = song_row(ui, i, t, playing == Some(t.id));
+                if dots {
+                    self.song_menu = Some((t.clone(), None));
+                } else if r.clicked() {
                     play = Some(i);
                 }
             }
@@ -239,18 +242,13 @@ impl App {
         let mut drop = None;
         egui::ScrollArea::vertical().id_salt("yt").auto_shrink([false, false]).show(ui, |ui| {
             for (i, y) in items.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let t = y.track();
-                    let w = ui.available_width() - 44.0;
-                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(ui.cursor().min, Vec2::new(w, ROW_H + 14.0))));
-                    if song_row(&mut child, i, &t, playing == Some(t.id)).clicked() {
-                        play = Some(i);
-                    }
-                    ui.allocate_exact_size(Vec2::new(w, ROW_H + 14.0), Sense::hover());
-                    if icon_btn_w(ui, &IC_X, false, pal().ink, 36.0).clicked() {
-                        drop = Some(i);
-                    }
-                });
+                let t = y.track();
+                let (r, dots) = song_row(ui, i, &t, playing == Some(t.id));
+                if dots {
+                    self.song_menu = Some((t.clone(), None));
+                } else if r.clicked() {
+                    play = Some(i);
+                }
             }
         });
         if let Some(i) = drop {
