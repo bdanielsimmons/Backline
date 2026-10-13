@@ -82,7 +82,7 @@ impl App {
             match credits {
                 None => para(ui, "Asking Tidal...", pal().ink2),
                 Some(Err(e)) => para(ui, &format!("Could not get the credits: {}", e), pal().red),
-                Some(Ok(list)) if list.is_empty() => para(ui, "Tidal has no credits for this track.", pal().ink2),
+                Some(Ok(list)) if list.is_empty() => para(ui, "Tidal has nothing on this track.", pal().ink2),
                 Some(Ok(list)) => {
                     egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
                         for (role, names) in list {

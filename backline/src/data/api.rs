@@ -1206,9 +1206,33 @@ impl Api {
     }
 
     /// Who made a track: (role, names), e.g. ("Producer", "Kaytranada"). Empty when Tidal has none.
+    /// Who made a track (producer, writers, players, engineers), led by the record itself: its album, the year
+    /// it came out (the album's release date, else when it first streamed) and the copyright line.
     pub fn credits(&self, id: i64) -> Res<Vec<(String, String)>> {
         let v = self.get(&format!("/tracks/{}/credits", id), &[("limit", "100")])?;
-        Ok(parse_credits(&v))
+        let mut out: Vec<(String, String)> = Vec::new();
+        if let Ok(tr) = self.get(&format!("/tracks/{}", id), &[]) {
+            let album = tr["album"]["title"].as_str().unwrap_or("").to_string();
+            let released = tr["album"]["id"]
+                .as_i64()
+                .and_then(|a| self.get(&format!("/albums/{}", a), &[]).ok())
+                .and_then(|al| al["releaseDate"].as_str().map(str::to_string))
+                .or_else(|| tr["streamStartDate"].as_str().map(str::to_string))
+                .unwrap_or_default();
+            if !album.is_empty() {
+                out.push(("Album".to_string(), album));
+            }
+            if released.len() >= 4 {
+                // the year first, then the full date
+                let day = released.get(..10).unwrap_or(&released).to_string();
+                out.push(("Released".to_string(), format!("{}  ({})", &released[..4], day)));
+            }
+            if let Some(c) = tr["copyright"].as_str().filter(|c| !c.is_empty()) {
+                out.push(("Copyright".to_string(), c.to_string()));
+            }
+        }
+        out.extend(parse_credits(&v));
+        Ok(out)
     }
 
     // -------------------------------------------------------------- playback

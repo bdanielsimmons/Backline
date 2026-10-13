@@ -596,7 +596,7 @@ pub(crate) fn mini_header(ui: &mut egui::Ui, text: &str) {
 /// otherwise; cut to fit `max_w`. Returns how wide it came out.
 pub(crate) fn row_text(p: &egui::Painter, pos: Pos2, align: Align, text: &str, max_w: f32, col: Color32) -> f32 {
     if winamp_ui::chrome_on() {
-        winamp_ui::sans_text(p, pos, align, text, ROW_H * 0.7, max_w, col)
+        winamp_ui::sans_text(p, pos, align, text, ROW_H * 0.7 * font::ui_scale(), max_w, col)
     } else {
         ptext(p, pos, align, &fit(text, 2.0, max_w), 2.0, col)
     }

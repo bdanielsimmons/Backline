@@ -606,13 +606,15 @@ fn list_row(
     // taken even when the row is off screen, so it never lands on the next one
     let heart = ROW_HEART.with(|h| h.take());
     let w = ui.available_width();
-    let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, ROW_H));
+    // (taller with the library's zoom)
+    let row_h = ROW_H * font::ui_scale();
+    let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, row_h));
     if !ui.is_rect_visible(probe) {
-        ui.allocate_space(Vec2::new(w, ROW_H));
+        ui.allocate_space(Vec2::new(w, row_h));
         return None;
     }
     let sense = if drag { Sense::click_and_drag() } else { Sense::click() };
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), sense);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, row_h), sense);
     let p = ui.painter();
     let bg = if state == RowState::Playing {
         Some(pal().row_sel)
@@ -654,13 +656,14 @@ fn list_row(
     let lraw = left();
     let left_has_cells = lraw.contains('\t');
     if let Some(liked) = heart {
-        let slot = if left_has_cells { rect.max.x - 10.0 - right_w() } else { rect.max.x - 10.0 - rw - HEART_W };
-        let hr = Rect::from_min_size(Pos2::new(slot, rect.min.y), Vec2::new(HEART_W, rect.height()));
+        let heart_w = HEART_W * font::ui_scale();
+        let slot = if left_has_cells { rect.max.x - 10.0 - right_w() } else { rect.max.x - 10.0 - rw - heart_w };
+        let hr = Rect::from_min_size(Pos2::new(slot, rect.min.y), Vec2::new(heart_w, rect.height()));
         if draw_heart(ui, hr, liked, resp.hovered(), ui.id().with(("heart", idx, rect.min.y as i32))) {
             HEART_HIT.with(|h| h.set(true));
         }
         if !left_has_cells {
-            rw += HEART_W;
+            rw += heart_w;
         }
     }
     let x0 = rect.min.x + 8.0;
@@ -671,7 +674,7 @@ fn list_row(
         } else {
             row_text(p, Pos2::new(x0 + 34.0, cy), Align::Max, &n.to_string(), 34.0, fg2);
         }
-        tx = x0 + 44.0;
+        tx = x0 + 44.0 * font::ui_scale();
     }
     if left_has_cells {
         // cell layout shared with the column header
@@ -686,9 +689,10 @@ fn list_row(
             }
         }
         if let (true, Some((key, bpm))) = (col_on(3), cells.get(3).and_then(|c| c.split_once('|'))) {
-            let kx = rect.max.x - 10.0 - 80.0 - KB_W;
-            row_text(p, Pos2::new(kx, cy), Align::Min, key, KB_GAP - 6.0, fg2);
-            row_text(p, Pos2::new(kx + KB_GAP, cy), Align::Min, bpm, 50.0, fg2);
+            let sc = font::ui_scale();
+            let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
+            row_text(p, Pos2::new(kx, cy), Align::Min, key, (KB_GAP - 6.0) * sc, fg2);
+            row_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, bpm, 50.0 * sc, fg2);
         }
     } else {
         let avail = (rect.max.x - 10.0 - rw - 16.0) - tx;
@@ -1104,7 +1108,7 @@ static COLS_CHANGED: AtomicBool = AtomicBool::new(false);
 
 /// Room kept on the right of a row for LENGTH (and KEY / BPM when shown).
 fn right_w() -> f32 {
-    80.0 + HEART_W + if col_on(3) { KB_W } else { 0.0 }
+    (80.0 + HEART_W + if col_on(3) { KB_W } else { 0.0 }) * font::ui_scale()
 }
 
 /// the heart's slot in a track row, left of KEY / BPM and LENGTH
@@ -1156,7 +1160,16 @@ fn col_on(i: usize) -> bool {
 /// Widths of the NAME, ARTIST and ALBUM cells inside `avail` (0 for hidden ones).
 fn col_widths(avail: f32) -> [f32; 3] {
     let w = *COL_W.lock().unwrap();
-    let on = [true, col_on(0), col_on(1)];
+    let mut on = [true, col_on(0), col_on(1)];
+    // too little room for every column (a narrow library, or zoomed in): ALBUM goes, then ARTIST, before the names
+    // get squeezed past reading
+    let min = 110.0 * font::ui_scale();
+    for drop in [2usize, 1] {
+        let shown = on.iter().filter(|o| **o).count() as f32;
+        if avail / shown < min && on[drop] {
+            on[drop] = false;
+        }
+    }
     let sum: f32 = (0..3).filter(|&i| on[i]).map(|i| w[i]).sum();
     let mut out = [0.0; 3];
     for i in (0..3).filter(|&i| on[i]) {
@@ -1165,7 +1178,6 @@ fn col_widths(avail: f32) -> [f32; 3] {
     out
 }
 
-/// Header row over a track list; right-click it to choose the columns.
 /// A list's header row that stays at the top of the list while it scrolls: where it would go, and the painter to
 /// draw it with (over the rows).
 fn sticky_head(ui: &egui::Ui, rect: Rect, key: &str) -> (Rect, egui::Painter) {
@@ -1179,7 +1191,7 @@ fn sticky_head(ui: &egui::Ui, rect: Rect, key: &str) -> (Rect, egui::Painter) {
 /// the top while the list scrolls.
 fn cards_header(ui: &mut egui::Ui, right: &str) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0 * font::ui_scale()), Sense::hover());
     let (rect, p) = sticky_head(ui, rect, "cards_head");
     fill_rect(&p, rect, pal().edge);
     let cy = rect.center().y;
@@ -1187,23 +1199,25 @@ fn cards_header(ui: &mut egui::Ui, right: &str) {
     ui_text(&p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, right, 2.0, 400.0, pal().trim);
 }
 
+/// Header row over a track list; right-click it to choose the columns.
 fn col_header(ui: &mut egui::Ui, numbered: bool) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0 * font::ui_scale()), Sense::hover());
     // it stays at the top while the list scrolls (and is clicked where it shows)
     let (rect, painter) = sticky_head(ui, rect, "col_head");
     let resp = ui.interact(rect, ui.id().with("col_head_hit"), Sense::click());
     fill_rect(&painter, rect, pal().edge);
     let cy = rect.center().y;
-    let tx = rect.min.x + 8.0 + if numbered { 44.0 } else { 0.0 };
+    let tx = rect.min.x + 8.0 + if numbered { 44.0 * font::ui_scale() } else { 0.0 };
     let avail = (rect.max.x - 10.0 - right_w() - tx).max(40.0);
     let cw = col_widths(avail);
     let p = &painter;
     ui_text(p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, if numbered { "#" } else { "" }, 2.0, 400.0, pal().trim);
     if col_on(3) {
-        let kx = rect.max.x - 10.0 - 80.0 - KB_W;
+        let sc = font::ui_scale();
+        let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
         ui_text(p, Pos2::new(kx, cy), Align::Min, "KEY", 2.0, 400.0, pal().trim);
-        ui_text(p, Pos2::new(kx + KB_GAP, cy), Align::Min, "BPM", 2.0, 400.0, pal().trim);
+        ui_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 2.0, 400.0, pal().trim);
     }
     ui_text(p, Pos2::new(tx, cy), Align::Min, "NAME", 2.0, 400.0, pal().trim);
     let mut x = tx + cw[0];
@@ -1773,6 +1787,10 @@ struct App {
     tour_seen: bool,
     /// the very first run: Backline's sleek look goes on once the window is up
     first_look: bool,
+    /// the library's own zoom (ctrl + wheel or ctrl +/- over it)
+    lib_zoom: f32,
+    /// where the library is (ctrl +/- over it zoom it, not the app)
+    lib_rect: Rect,
     help_tab: usize,
     /// (track id, cents from A440, confidence) from the tuning check
     tuning: Option<(i64, i32, f32)>,
@@ -2383,6 +2401,8 @@ impl App {
             thumb_tried: false,
             tour_seen: false,
             first_look: false,
+            lib_zoom: 1.0,
+            lib_rect: Rect::NOTHING,
             help_tab: 0,
             tuning: None,
             tuning_busy: false,
@@ -2676,6 +2696,7 @@ impl App {
         if let Some(z) = st["zoom"].as_f64() {
             app.ctx.set_zoom_factor((z as f32).clamp(0.8, 2.0));
         }
+        app.lib_zoom = st["lib_zoom"].as_f64().map_or(1.0, |z| (z as f32).clamp(0.8, 2.5));
         if let Some(f) = st["art_op"].as_f64() {
             app.art_op = (f as f32).clamp(0.5, 1.0);
         }
@@ -3028,6 +3049,7 @@ impl App {
             "intro_file": self.intro_file,
             "art_op": self.art_op,
             "zoom": self.ctx.zoom_factor(),
+            "lib_zoom": self.lib_zoom,
             "binds": prefs::binds_to_json(&self.binds),
             "spec_op": self.spec_op,
             "spec_h": self.spec_h,
@@ -4521,6 +4543,36 @@ fn panel_frame() -> egui::Frame {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         TOUR_ON.store(self.tour.is_some(), std::sync::atomic::Ordering::Relaxed);
+        // ctrl + / - / 0 size the whole app - except over the library, where they zoom the library (done there)
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        let over_lib = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| self.lib_rect.contains(p));
+        if !over_lib {
+            let (plus, minus, zero) = ctx.input_mut(|i| {
+                let m = i.modifiers;
+                if !m.command {
+                    return (false, false, false);
+                }
+                (
+                    i.consume_key(m, egui::Key::Plus) | i.consume_key(m, egui::Key::Equals),
+                    i.consume_key(m, egui::Key::Minus),
+                    i.consume_key(m, egui::Key::Num0),
+                )
+            });
+            let z = ctx.zoom_factor();
+            let nz = if zero {
+                1.0
+            } else if plus {
+                z + 0.1
+            } else if minus {
+                z - 0.1
+            } else {
+                z
+            };
+            if nz != z {
+                ctx.set_zoom_factor(nz.clamp(0.8, 2.0));
+                self.dirty = true;
+            }
+        }
         // This app draws and handles its own buttons and text boxes. egui's own keyboard focus would make Enter / Space
         // "press" whichever button was clicked last (typing a loop time and pressing Enter also hit the + next to it), so drop it.
         if let Some(id) = ctx.memory(|mem| mem.focused()) {
@@ -4781,8 +4833,39 @@ impl eframe::App for App {
                             // drawn in a child that does not stretch the panel: something too wide for the column
                             // (long words in a wide font) is cut off at the edge instead of pushing the player away
                             let r = ui.max_rect();
+                            self.lib_rect = r;
+                            // its own zoom: ctrl + the mouse wheel, or ctrl + / - / 0, with the mouse over it
+                            if ui.rect_contains_pointer(r) {
+                                let (zd, plus, minus, zero) = ui.input_mut(|i| {
+                                    let ctrl = i.modifiers.command;
+                                    let plus = ctrl
+                                        && (i.consume_key(i.modifiers, egui::Key::Plus)
+                                            | i.consume_key(i.modifiers, egui::Key::Equals));
+                                    let minus = ctrl && i.consume_key(i.modifiers, egui::Key::Minus);
+                                    let zero = ctrl && i.consume_key(i.modifiers, egui::Key::Num0);
+                                    (i.zoom_delta(), plus, minus, zero)
+                                });
+                                let before = self.lib_zoom;
+                                if zd != 1.0 {
+                                    self.lib_zoom *= zd;
+                                }
+                                if plus {
+                                    self.lib_zoom += 0.1;
+                                }
+                                if minus {
+                                    self.lib_zoom -= 0.1;
+                                }
+                                if zero {
+                                    self.lib_zoom = 1.0;
+                                }
+                                self.lib_zoom = self.lib_zoom.clamp(0.8, 2.5);
+                                if self.lib_zoom != before {
+                                    self.dirty = true;
+                                }
+                            }
                             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r));
-                            self.library_ui(&mut inner, &mut acts);
+                            let z = self.lib_zoom;
+                            font::with_scale(font::ui_scale() * z, || self.library_ui(&mut inner, &mut acts));
                             ui.allocate_rect(r, Sense::hover());
                         });
                 }
