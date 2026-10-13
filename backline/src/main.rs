@@ -1675,6 +1675,8 @@ struct App {
     saved_size: Vec2,
     /// the window was maximized when the mini player came on
     saved_max: bool,
+    /// the song is changing because the last one finished or was skipped (a queued copy then leaves the queue)
+    advancing: bool,
     show_eq: bool,
     eq_gains: [f32; 10],
     /// the equalizer's preamp, in dB (-12 to +12)
@@ -2298,6 +2300,7 @@ impl App {
             pinned: false,
             saved_size: Vec2::ZERO,
             saved_max: false,
+            advancing: false,
             show_eq: false,
             eq_gains: [0.0; 10],
             eq_pre: 0.0,
@@ -3345,7 +3348,7 @@ impl App {
                         match next.filter(|_| tidal) {
                             Some(k) => {
                                 let name = self.queue[k].title.to_uppercase();
-                                self.play_index(k);
+                                self.advance_to(k);
                                 self.set_err(format!("TIDAL CAN'T BE REACHED - ON TO {}, WHICH IS ON THIS COMPUTER", name));
                             }
                             None if tidal => self.set_err(format!(
@@ -3420,10 +3423,18 @@ impl App {
         });
     }
 
+    /// On to song `i` because the one playing finished or was skipped (NEXT): a queued copy that was playing leaves
+    /// the queue. Any other way of picking a song (clicking one in the playlist) leaves the queue as it is.
+    fn advance_to(&mut self, i: usize) {
+        self.advancing = true;
+        self.play_index(i);
+        self.advancing = false;
+    }
+
     fn play_index(&mut self, mut i: usize) {
         // the next song in line (not a jump): one fewer of your queued songs ahead
         let next_in_line = self.cur.is_some_and(|c| i == c + 1);
-        if let Some(c) = self.cur.filter(|c| i > *c && self.q_drop) {
+        if let Some(c) = self.cur.filter(|c| i > *c && self.q_drop && self.advancing) {
             if let Some(q) = self.queue.get(c).map(|t| t.qid).filter(|q| *q != 0 && self.q_added.remove(q)) {
                 Arc::make_mut(&mut self.queue).remove(c);
                 if let Some(o) = self.orig_queue.as_mut() {
@@ -4096,7 +4107,7 @@ impl App {
             }
             Action::Next => {
                 if let Some(j) = self.next_index() {
-                    self.play_index(j);
+                    self.advance_to(j);
                 }
             }
             Action::Prev => {
@@ -4547,7 +4558,7 @@ impl eframe::App for App {
                         self.play_index(c);
                     }
                 } else if let Some(j) = self.next_index() {
-                    self.play_index(j);
+                    self.advance_to(j);
                 } else {
                     self.stopped = true;
                 }
