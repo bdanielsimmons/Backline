@@ -1427,6 +1427,12 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
     });
 }
 
+/// Does every word of the filter appear in one of these (case aside)?
+fn matches_filter(filter: &str, fields: &[&str]) -> bool {
+    let hay: String = fields.iter().map(|f| f.to_lowercase()).collect::<Vec<_>>().join(" ");
+    filter.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+}
+
 fn page_view(
     ui: &mut egui::Ui,
     images: &mut Images,
@@ -1434,6 +1440,7 @@ fn page_view(
     playing_id: Option<i64>,
     tab: Tab,
     liked: &HashSet<i64>,
+    filter: &str,
     acts: &mut Vec<Action>,
 ) {
     ui.add_space(6.0);
@@ -1443,19 +1450,36 @@ fn page_view(
         match tab {
             Tab::Tracks => {
                 title_line(ui, "MY TRACKS", 3.0, pal().ink);
-                let sub = if page.total > page.tracks.len() {
+                // filtered by the words typed above (title, artist or album)
+                let shown: Vec<Track>;
+                let tracks: &[Track] = if filter.trim().is_empty() {
+                    &page.tracks
+                } else {
+                    shown = page
+                        .tracks
+                        .iter()
+                        .filter(|t| matches_filter(filter, &[&t.title, &t.artists_text(), &t.album]))
+                        .cloned()
+                        .collect();
+                    &shown
+                };
+                let sub = if !filter.trim().is_empty() {
+                    format!("{} of {} songs match", tracks.len(), page.tracks.len())
+                } else if page.total > page.tracks.len() {
                     format!("{} of {} songs loaded...", page.tracks.len(), page.total)
                 } else {
                     format!("{} songs", page.tracks.len())
                 };
                 title_line(ui, &sub, 2.0, pal().ink2);
                 ui.add_space(4.0);
-                play_buttons(ui, &page.tracks, acts, true);
+                play_buttons(ui, tracks, acts, true);
                 ui.add_space(8.0);
                 if page.tracks.is_empty() {
                     title_line(ui, "No liked songs found.", 2.0, pal().ink2);
+                } else if tracks.is_empty() {
+                    title_line(ui, "No songs match.", 2.0, pal().ink2);
                 }
-                tracks_list(ui, &page.tracks, playing_id, liked, acts);
+                tracks_list(ui, tracks, playing_id, liked, acts);
             }
             t => {
                 let (key, name) = match t {
@@ -1474,6 +1498,13 @@ fn page_view(
                 for (title, cards) in &page.rows {
                     if title == key {
                         any = true;
+                        let shown: Vec<Card>;
+                        let cards: &[Card] = if filter.trim().is_empty() {
+                            cards
+                        } else {
+                            shown = cards.iter().filter(|c| matches_filter(filter, &[&c.title, &c.subtitle])).cloned().collect();
+                            &shown
+                        };
                         title_line(ui, &format!("{} items", cards.len()), 2.0, pal().ink2);
                         ui.add_space(4.0);
                         cards_header(
@@ -1806,6 +1837,8 @@ struct App {
     tidal_lists_busy: bool,
     /// the name typed for a new Tidal playlist (MY LIBRARY > LISTS)
     tidal_new_name: String,
+    /// the words your Tidal library is filtered by (empty: all of it)
+    lib_filter: String,
     /// the playlist picker shows only your Tidal playlists
     pl_tidal: bool,
     yt_results: Vec<store::Ext>,
@@ -2414,6 +2447,7 @@ impl App {
             tidal_lists: None,
             tidal_lists_busy: false,
             tidal_new_name: String::new(),
+            lib_filter: String::new(),
             pl_tidal: false,
             yt_results: Vec::new(),
             yt_title: String::new(),
@@ -2985,6 +3019,11 @@ impl App {
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
             Ok("mine") => app.sec = Sec::Mine,
+            Ok("libfilter") => {
+                app.sec = Sec::Tidal;
+                app.apply(Action::Library);
+                app.lib_filter = "monk dream".to_string();
+            }
             Ok("scales") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 1;

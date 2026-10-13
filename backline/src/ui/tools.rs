@@ -68,6 +68,8 @@ pub const F_TIDAL_PL: u32 = 73;
 pub const F_GRIP_NAME: u32 = 74;
 pub const F_CLIP_GROUP: u32 = 75;
 pub const F_GROUP_NAME: u32 = 76;
+/// the filter over your Tidal library (MY TRACKS, PLAYLISTS, ALBUMS, ARTISTS)
+pub const F_LIB_FILTER: u32 = 77;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 

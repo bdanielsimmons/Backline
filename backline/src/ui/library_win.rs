@@ -919,7 +919,37 @@ impl App {
                                     });
                                     ui.add_space(4.0);
                                 }
-                                page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, acts);
+                                // your library: a box that filters it down as you type
+                                if pg.library {
+                                    ui.add_space(6.0);
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(6.0);
+                                        let w = (ui.available_width() - 60.0).max(80.0);
+                                        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                                        let hint = match tab {
+                                            Tab::Tracks => "Filter your songs: title, artist or album...",
+                                            Tab::Lists => "Filter your playlists...",
+                                            Tab::Albums => "Filter your albums...",
+                                            _ => "Filter your artists...",
+                                        };
+                                        let _ = crate::views::field(
+                                            ui,
+                                            &mut self.ed,
+                                            crate::tools::F_LIB_FILTER,
+                                            &mut self.lib_filter,
+                                            rect,
+                                            hint,
+                                            false,
+                                        );
+                                        if !self.lib_filter.is_empty()
+                                            && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter").clicked()
+                                        {
+                                            self.lib_filter.clear();
+                                        }
+                                    });
+                                }
+                                let filter = if pg.library { self.lib_filter.clone() } else { String::new() };
+                                page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, &filter, acts);
                             }
                         }
                         Sec::Files => self.files_view(ui, acts),
