@@ -1910,6 +1910,10 @@ struct App {
     palette_all: bool,
     /// the diary's song opened (the day, the song): the loops worked on, how long
     diary_song: Option<(String, i64)>,
+    /// the diary's summary under the day: 0 the week, 1 the month, 2 the year
+    diary_span: u8,
+    /// reading time counts in the diary's charts and totals
+    diary_reading: bool,
     palette_sel: usize,
     palette_frame: u32,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -2135,6 +2139,10 @@ struct App {
     rd_map: bool,
     rd_line: Option<crate::reading::Reading>,
     rd_play: Option<(Instant, Vec<(f32, usize)>, bool, f32)>,
+    /// reading time: when you last started or finished a line (pauses up to two minutes between lines count), and
+    /// the part of a second not yet written to the diary
+    rd_active: Option<Instant>,
+    rd_acc: f32,
     /// READING > THE BOOK: which tab, the book (read once), what could not be read, the lesson, piece and part on
     /// show, and which piece the tempo was set for
     rd_mode: u8,
@@ -2558,6 +2566,8 @@ impl App {
             palette_q: String::new(),
             palette_all: false,
             diary_song: None,
+            diary_span: 0,
+            diary_reading: true,
             palette_sel: 0,
             palette_frame: 0,
             menu_keep: None,
@@ -2728,6 +2738,8 @@ impl App {
             rd_map: false,
             rd_line: None,
             rd_play: None,
+            rd_active: None,
+            rd_acc: 0.0,
             rd_mode: 0,
             rd_book_loaded: false,
             rd_book: Vec::new(),
@@ -3094,6 +3106,8 @@ impl App {
         }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
+        app.diary_span = st["diary_span"].as_u64().unwrap_or(0).min(2) as u8;
+        app.diary_reading = st["diary_reading"].as_bool().unwrap_or(true);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         if let Some(h) = st["prac_h"].as_f64() {
@@ -3163,6 +3177,11 @@ impl App {
             app.cur = Some(l.index.min(l.queue.len() - 1));
         }
         crate::api::log(&format!("backline {} started (token saved: {})", VERSION, app.api.has_token()));
+        // a test copy (a test profile, BACKLINE_OPEN or BACKLINE_MUTE) makes no sound - not even the opening chime:
+        // it plays, but nothing reaches the speakers
+        if ["BACKLINE_HOME", "BACKLINE_OPEN", "BACKLINE_MUTE"].iter().any(|v| std::env::var_os(v).is_some()) {
+            crate::player::MUTED.store(true, Ordering::Relaxed);
+        }
         app.play_intro();
         if app.api.has_token() {
             // the app opens straight away; the saved session is checked behind it (the library shows LOADING
@@ -3181,10 +3200,6 @@ impl App {
                 }
                 ctx.request_repaint();
             });
-        }
-        // a test copy (BACKLINE_OPEN, or BACKLINE_MUTE) makes no sound: it plays, but nothing reaches the speakers
-        if std::env::var_os("BACKLINE_OPEN").is_some() || std::env::var_os("BACKLINE_MUTE").is_some() {
-            crate::player::MUTED.store(true, Ordering::Relaxed);
         }
         // BACKLINE_OPEN=practice / lists: start with that open (for checking layouts and recording demos)
         match std::env::var("BACKLINE_OPEN").as_deref() {
@@ -3213,6 +3228,7 @@ impl App {
             Ok("mini") => app.apply(Action::ToggleMini),
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
+            Ok("diary") => app.sec = Sec::Diary,
             Ok("diarysong") => {
                 app.sec = Sec::Diary;
                 if let Some((id, _)) = app.store.days.iter().find(|d| d.date == store::today_str()).and_then(|d| d.songs.iter().next()) {
@@ -3340,6 +3356,8 @@ impl App {
             "deck_zoom": self.deck_zoom,
             "eq_zoom": self.eq_zoom,
             "wa_guide": self.wa_guide,
+            "diary_span": self.diary_span,
+            "diary_reading": self.diary_reading,
             "pomo_sound": self.pomo_sound,
             "pomo_focus": self.pomo_focus,
             "pomo_break": self.pomo_break,

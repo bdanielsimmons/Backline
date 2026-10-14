@@ -507,18 +507,6 @@ impl Store {
         self.days.iter().find(|d| d.date == date).map(|d| d.secs.values().sum()).unwrap_or(0)
     }
 
-    /// Consecutive practice days up to today (a day you haven't practiced *yet* doesn't break it).
-    pub fn streak(&self, today: i64) -> u32 {
-        let has = |day: i64| self.days.iter().any(|d| parse_date(&d.date) == Some(day) && d.secs.values().sum::<u32>() >= 60);
-        let mut n = 0;
-        let mut day = if has(today) { today } else { today - 1 };
-        while has(day) {
-            n += 1;
-            day -= 1;
-        }
-        n
-    }
-
     pub fn tune_of(&self, id: i64) -> Option<usize> {
         self.tunes.iter().position(|t| t.versions.iter().any(|v| v.id == id))
     }
@@ -628,6 +616,7 @@ pub fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (yy as i32, m, d)
 }
 
+#[cfg(test)]
 pub fn parse_date(s: &str) -> Option<i64> {
     let mut it = s.split('-');
     let y = it.next()?.parse::<i32>().ok()?;
@@ -770,29 +759,6 @@ mod tests {
             assert_eq!(hash_id(s), hash_id(s), "stable");
         }
         assert_ne!(hash_id("a"), hash_id("b"));
-    }
-
-    fn day(date: &str, secs: u32) -> Day {
-        let mut d = Day { date: date.to_string(), ..Default::default() };
-        d.secs.insert("tune".to_string(), secs);
-        d
-    }
-
-    #[test]
-    fn practice_streak() {
-        let today = parse_date("2026-10-09").unwrap();
-        let mut s = Store::default();
-        assert_eq!(s.streak(today), 0);
-        s.days = vec![day("2026-10-06", 300), day("2026-10-07", 120), day("2026-10-08", 600)];
-        // not practiced yet today: yesterday's streak still counts
-        assert_eq!(s.streak(today), 3);
-        s.days.push(day("2026-10-09", 90));
-        assert_eq!(s.streak(today), 4);
-        // under a minute is not a practice day, and it breaks the chain
-        s.days[1].secs.insert("tune".to_string(), 30);
-        assert_eq!(s.streak(today), 2);
-        assert_eq!(s.secs_on("2026-10-08"), 600);
-        assert_eq!(s.secs_on("2001-01-01"), 0);
     }
 
     #[test]

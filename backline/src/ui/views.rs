@@ -5,6 +5,8 @@ use crate::api::Track;
 use crate::extras::{Knob, CHAN_NAMES};
 use crate::font::{ptext, ptext_fit, spx, text_w};
 use crate::sources;
+use crate::{check_box, dropdown};
+use egui::Color32;
 use crate::stems;
 use crate::store::{self, Ext};
 use crate::tools::{F_LOOK, F_LOOP_A, F_LOOP_B, F_SPEED, F_TR_LOOPS, F_TR_STEP, F_TUNE_IREAL};
@@ -927,6 +929,104 @@ impl App {
         }
     }
 
+    /// The summary under the day: where the time went over the week (month, year) - a column a day (a month)
+    /// stacked by song, the split between tunes, free practice and reading, the top songs and the top loops. The
+    /// top five songs get colours; the rest is OTHER, so a lot of practice never makes it busier.
+    fn diary_summary(&mut self, ui: &mut egui::Ui, period: &Period, sum: &Summary) {
+        ui.horizontal_wrapped(|ui| {
+            const SPANS: [&str; 3] = ["THIS WEEK", "THIS MONTH", "THIS YEAR"];
+            if let Some(i) = dropdown(ui, "diary_span", "SUMMARY", &SPANS, self.diary_span as usize, 130.0) {
+                self.diary_span = i as u8;
+                self.dirty = true;
+            }
+            ui.add_space(10.0);
+            if check_box(ui, "COUNT READING", self.diary_reading)
+                .tip("Sight-reading time in these charts and totals (or leave it out)")
+                .clicked()
+            {
+                self.diary_reading = !self.diary_reading;
+                self.dirty = true;
+            }
+        });
+        ui.add_space(4.0);
+        title_line(ui, &format!("{}  -  {}", period.name, mins_text(sum.total)), 1.5, pal().ink2);
+        dim_line(ui, &format!("PRACTISED ON {} OF {} DAYS", sum.days_practised, sum.days_so_far), 1.0, pal().dim);
+        if sum.total == 0 {
+            dim_line(ui, "NO PRACTICE IN THIS STRETCH YET", 1.0, pal().dim);
+            return;
+        }
+        // a column a day (a month), stacked by song
+        ui.add_space(4.0);
+        let w = seen_w(ui);
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, 96.0), Sense::hover());
+        let p = ui.painter();
+        let n = sum.cols.len().max(1) as f32;
+        let gap = if n > 14.0 { 2.0 } else { 6.0 };
+        let cw = ((r.width() - gap * (n - 1.0)) / n).max(2.0);
+        let chart_h = r.height() - 16.0;
+        let top = sum.cols.iter().map(|c| c.total).max().unwrap_or(1).max(1) as f32;
+        for (k, c) in sum.cols.iter().enumerate() {
+            let x = r.min.x + k as f32 * (cw + gap);
+            let base = r.min.y + chart_h;
+            p.rect_filled(Rect::from_min_size(Pos2::new(x, base - 1.0), Vec2::new(cw, 1.0)), 0.0, pal().dim.gamma_multiply(0.5));
+            let mut y = base;
+            for (_, secs, col) in sum.segments_for(self, &c.days) {
+                let h = secs as f32 / top * chart_h;
+                p.rect_filled(Rect::from_min_max(Pos2::new(x, y - h), Pos2::new(x + cw, y)), 0.0, col);
+                y -= h;
+            }
+            if !c.label.is_empty() {
+                ptext(p, Pos2::new(x + cw / 2.0, r.max.y - 6.0), Align::Center, &c.label, 1.0, pal().dim);
+            }
+        }
+        // the split: tunes, free practice, reading
+        ui.add_space(12.0);
+        let split: Vec<(String, u32, Color32)> = [
+            ("TUNES", sum.tunes, Color32::from_rgb(217, 164, 65)),
+            ("FREE PRACTICE", sum.free, Color32::from_rgb(95, 168, 211)),
+            ("READING", sum.reading, READING_COL),
+        ]
+        .into_iter()
+        .filter(|s| s.1 > 0)
+        .map(|(n, s, c)| (n.to_string(), s, c))
+        .collect();
+        dim_line(ui, "WHAT KIND OF PRACTICE", 1.0, pal().dim);
+        stacked_bar(ui, &split, 10.0);
+        legend(ui, &split);
+        // the top songs, and the top loops
+        ui.add_space(6.0);
+        dim_line(ui, "TOP SONGS", 1.0, pal().dim);
+        let most = sum.songs.first().map_or(1, |s| s.1).max(1);
+        for (id, secs) in sum.songs.iter().take(5) {
+            let name = self.song_name(*id);
+            bar_row(ui, &name, *secs, most, sum.colour(*id), &mins_text(*secs));
+        }
+        if !sum.loops.is_empty() {
+            ui.add_space(4.0);
+            dim_line(ui, "TOP LOOPS", 1.0, pal().dim);
+            let most = sum.loops.first().map_or(1, |l| l.3).max(1);
+            for (id, a, b, secs, passes) in sum.loops.iter().take(5) {
+                let loop_name = self
+                    .store
+                    .sections
+                    .get(id)
+                    .and_then(|s| s.iter().find(|s| (s.a - a).abs() < 0.06 && (s.b - b).abs() < 0.06))
+                    .map(|s| s.name.clone())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| format!("{}-{}", fmt_time(*a), fmt_time(*b)));
+                let song = self.store.songs.get(id).map(|v| v.title.clone()).unwrap_or_default();
+                let _ = passes;
+                let right = mins_text(*secs);
+                bar_row(ui, &format!("{}  ({})", loop_name, song), *secs, most, sum.colour(*id), &right);
+            }
+        }
+    }
+
+    /// "Artist - Title" of a song in the diary.
+    fn song_name(&self, id: i64) -> String {
+        self.store.songs.get(&id).map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "A SONG".to_string())
+    }
+
     /// One song of a diary day: back to the day's songs, its name and time, a small PLAY, and each loop worked on
     /// that day - its name, where it is, the time on it and the passes through it (click one to play that loop).
     fn diary_song_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, date: &str, id: i64, secs: u32) {
@@ -980,11 +1080,8 @@ impl App {
         }
         for (k, (a, b, s, n)) in loops.iter().enumerate() {
             let label = format!("{}   {}-{}", name_of(*a, *b), fmt_time(*a), fmt_time(*b));
-            let right = if *s == 0 && *n == 0 {
-                String::new()
-            } else {
-                format!("{}  {} PASS{}", mins_text(*s), n, if *n == 1 { "" } else { "ES" })
-            };
+            let _ = n;
+            let right = if *s == 0 { String::new() } else { mins_text(*s) };
             if let Some(r) = list_row(ui, k, None, || label.clone(), || right.clone(), RowState::Normal, false, false) {
                 if let Some(v) = v.clone() {
                     if r.tip("Play this loop").clicked() {
@@ -2558,12 +2655,12 @@ impl App {
             .sum::<u32>()
             + live;
         let total: u32 = self.store.days.iter().map(|d| d.secs.values().sum::<u32>()).sum::<u32>() + live;
-        let streak = self.store.streak(today);
+        let practised = (0..7).filter(|k| day_secs(self, today - k) > 0).count();
         let tiles = [
             ("TODAY", mins_text(day_secs(self, today))),
             ("7 DAYS", mins_text(week)),
             ("THIS MONTH", mins_text(month)),
-            ("STREAK", format!("{} DAY{}", streak, if streak == 1 { "" } else { "S" })),
+            ("PRACTISED", format!("{} OF 7 DAYS", practised)),
             ("ALL TIME", mins_text(total)),
         ];
         let w = ui.available_width();
@@ -2687,8 +2784,28 @@ impl App {
                 false,
             );
         }
-        if loops + pomos > 0 {
-            dim_line(ui, &format!("LOOPS {}   FOCUS BLOCKS {}", loops, pomos), 2.0, pal().ink2);
+        // time spent looping (how many times round says little), and focus blocks when there were some
+        let looped: u32 = self.store.days.iter().find(|d| d.date == date).map_or(0, |d| d.loop_time.values().map(|v| v.0).sum());
+        let _ = loops;
+        let mut bits = Vec::new();
+        if looped > 0 {
+            bits.push(format!("TIME LOOPED {}", mins_text(looped)));
+        }
+        if pomos > 0 {
+            bits.push(format!("FOCUS BLOCKS {}", pomos));
+        }
+        if !bits.is_empty() {
+            dim_line(ui, &bits.join("   "), 2.0, pal().ink2);
+        }
+        // the day in one bar, in the summary's colours
+        let span = self.diary_span;
+        let period = Period::around(sel, span);
+        let sum = Summary::of(self, &period, self.diary_reading);
+        let segs = sum.segments_for(self, &[sel]);
+        if !segs.is_empty() {
+            ui.add_space(4.0);
+            stacked_bar(ui, &segs, 12.0);
+            legend(ui, &segs);
         }
         // the songs worked on that day (tunes or free practice); click one to play it
         let mut songs: Vec<(i64, u32)> = self
@@ -2708,15 +2825,18 @@ impl App {
             for (k, (id, s)) in songs.iter().enumerate() {
                 let v = self.store.songs.get(id).cloned();
                 let name = v.as_ref().map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "A SONG".to_string());
-                let n_loops = self.store.sections.get(id).map_or(0, |l| l.len());
+                // its time, and how much of it was looping
+                let looped: u32 = self.store.days.iter().find(|d| d.date == date).map_or(0, |d| {
+                    d.loop_time.iter().filter(|(k, _)| store::parse_loop_key(k).is_some_and(|x| x.0 == *id)).map(|(_, v)| v.0).sum()
+                });
                 let r = list_row(
                     ui,
                     k,
                     None,
                     || name.clone(),
                     || {
-                        if n_loops > 0 {
-                            format!("{}  {} LOOP{}", mins_text(*s), n_loops, if n_loops == 1 { "" } else { "S" })
+                        if looped > 0 {
+                            format!("{}  ({} LOOPED)", mins_text(*s), mins_text(looped))
                         } else {
                             mins_text(*s)
                         }
@@ -2733,6 +2853,10 @@ impl App {
                 let _ = v;
             }
         }
+
+        // ---- the week (or month, or year) around the day
+        ui.add_space(8.0);
+        self.diary_summary(ui, &period, &sum);
 
         let mins_hint = format!("{}", day_secs(self, sel) / 60);
         // ---- journal for that day
@@ -3884,4 +4008,287 @@ fn comfort_meter(ui: &mut egui::Ui, level: u8) -> Option<u8> {
 pub(crate) fn contained<R>(ui: &mut egui::Ui, id: impl std::hash::Hash, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let max = (ui.ctx().screen_rect().height() * 0.35).clamp(160.0, 380.0);
     egui::ScrollArea::vertical().id_salt(id).max_height(max).auto_shrink([false, true]).show(ui, add).inner
+}
+
+// ------------------------------------------------------------ the diary's summaries
+
+/// The colours of the top five songs in a summary (the rest is OTHER, in the dim ink), and of reading.
+const SONG_COLS: [Color32; 5] = [
+    Color32::from_rgb(217, 164, 65),
+    Color32::from_rgb(95, 168, 211),
+    Color32::from_rgb(214, 104, 83),
+    Color32::from_rgb(111, 191, 115),
+    Color32::from_rgb(167, 125, 194),
+];
+const READING_COL: Color32 = Color32::from_rgb(80, 190, 180);
+
+/// A stretch of days for a summary: its name and its columns (a day each, or a month each for a year).
+struct Period {
+    name: String,
+    cols: Vec<(String, Vec<i64>)>,
+}
+
+impl Period {
+    /// The week (Monday to Sunday), month or year around a day.
+    fn around(day: i64, span: u8) -> Period {
+        match span {
+            0 => {
+                let mon = day - (day + 3).rem_euclid(7);
+                const D: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
+                Period {
+                    name: format!("WEEK OF {}", store::date_str(mon)),
+                    cols: (0..7).map(|k| (D[k as usize].to_string(), vec![mon + k])).collect(),
+                }
+            }
+            1 => {
+                let (y, m, _) = store::civil_from_days(day);
+                let first = store::days_from_civil(y, m, 1);
+                let next = if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
+                Period {
+                    name: format!("{:04}-{:02}", y, m),
+                    cols: (first..next)
+                        .map(|d| {
+                            let n = d - first + 1;
+                            (if n == 1 || n % 5 == 0 { n.to_string() } else { String::new() }, vec![d])
+                        })
+                        .collect(),
+                }
+            }
+            _ => {
+                let (y, _, _) = store::civil_from_days(day);
+                const M: [&str; 12] = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+                Period {
+                    name: format!("{}", y),
+                    cols: (1..=12u32)
+                        .map(|m| {
+                            let first = store::days_from_civil(y, m, 1);
+                            let next = if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
+                            (M[m as usize - 1].to_string(), (first..next).collect())
+                        })
+                        .collect(),
+                }
+            }
+        }
+    }
+}
+
+/// One column of a summary: its label, its days, its time.
+struct Col {
+    label: String,
+    days: Vec<i64>,
+    total: u32,
+}
+
+/// What a stretch of days adds up to.
+struct Summary {
+    cols: Vec<Col>,
+    total: u32,
+    tunes: u32,
+    free: u32,
+    reading: u32,
+    /// the songs, most time first
+    songs: Vec<(i64, u32)>,
+    /// the loops (song, start, end, seconds, passes), most time first
+    loops: Vec<(i64, f32, f32, u32, u32)>,
+    days_practised: usize,
+    days_so_far: usize,
+    with_reading: bool,
+}
+
+impl Summary {
+    fn of(app: &App, period: &Period, with_reading: bool) -> Summary {
+        let today = store::today_days();
+        let day_of = |d: i64| app.store.days.iter().find(|x| x.date == store::date_str(d));
+        let read_secs = |d: &store::Day| d.secs.get("Sight reading").copied().unwrap_or(0);
+        let day_total = |d: &store::Day| {
+            let all: u32 = d.secs.values().sum();
+            if with_reading { all } else { all - read_secs(d) }
+        };
+        let (mut tunes, mut free, mut reading) = (0, 0, 0);
+        let mut songs: std::collections::HashMap<i64, u32> = Default::default();
+        let mut loops: std::collections::HashMap<String, (u32, u32)> = Default::default();
+        let (mut practised, mut so_far) = (0, 0);
+        let mut cols = Vec::new();
+        for (label, days) in &period.cols {
+            let mut total = 0;
+            for &d in days {
+                if d <= today {
+                    so_far += 1;
+                }
+                let Some(day) = day_of(d) else { continue };
+                let t = day_total(day);
+                total += t;
+                if t > 0 {
+                    practised += 1;
+                }
+                for (k, s) in &day.secs {
+                    match k.as_str() {
+                        "Sight reading" => reading += s,
+                        "Free practice" => free += s,
+                        _ => tunes += s,
+                    }
+                }
+                for (id, s) in &day.songs {
+                    *songs.entry(*id).or_insert(0) += s;
+                }
+                for (k, (s, n)) in &day.loop_time {
+                    let e = loops.entry(k.clone()).or_insert((0, 0));
+                    e.0 += s;
+                    e.1 += n;
+                }
+            }
+            cols.push(Col { label: label.clone(), days: days.clone(), total });
+        }
+        if !with_reading {
+            reading = 0;
+        }
+        let mut songs: Vec<(i64, u32)> = songs.into_iter().filter(|s| s.1 > 0).collect();
+        // (ties in a fixed order, so the lists never swap places between frames)
+        songs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let mut loops: Vec<(i64, f32, f32, u32, u32)> = loops
+            .into_iter()
+            .filter_map(|(k, (s, n))| store::parse_loop_key(&k).map(|(id, a, b)| (id, a, b, s, n)))
+            .filter(|l| l.3 > 0)
+            .collect();
+        loops.sort_by(|a, b| b.3.cmp(&a.3).then(a.0.cmp(&b.0)).then(a.1.total_cmp(&b.1)).then(a.2.total_cmp(&b.2)));
+        let total = cols.iter().map(|c| c.total).sum();
+        Summary { cols, total, tunes, free, reading, songs, loops, days_practised: practised, days_so_far: so_far.max(1), with_reading }
+    }
+
+    /// A song's colour here: one of five for the top songs, the dim ink for the rest.
+    fn colour(&self, id: i64) -> Color32 {
+        self.songs.iter().take(5).position(|s| s.0 == id).map_or(pal().dim, |i| SONG_COLS[i])
+    }
+
+    /// Some days as (name, seconds, colour) pieces: the top songs, OTHER (the rest, and time with no song), and
+    /// reading.
+    fn segments_for(&self, app: &App, days: &[i64]) -> Vec<(String, u32, Color32)> {
+        let mut top: Vec<(String, u32, Color32)> = Vec::new();
+        let (mut other, mut reading) = (0u32, 0u32);
+        let mut per: std::collections::HashMap<i64, u32> = Default::default();
+        for &d in days {
+            let Some(day) = app.store.days.iter().find(|x| x.date == store::date_str(d)) else { continue };
+            let read = day.secs.get("Sight reading").copied().unwrap_or(0);
+            let practice: u32 = day.secs.values().sum::<u32>() - read;
+            let with_song: u32 = day.songs.values().sum();
+            other += practice.saturating_sub(with_song);
+            if self.with_reading {
+                reading += read;
+            }
+            for (id, s) in &day.songs {
+                *per.entry(*id).or_insert(0) += s;
+            }
+        }
+        for (i, (id, _)) in self.songs.iter().take(5).enumerate() {
+            if let Some(s) = per.remove(id).filter(|s| *s > 0) {
+                top.push((app.song_name(*id), s, SONG_COLS[i]));
+            }
+        }
+        other += per.values().sum::<u32>();
+        if other > 0 {
+            top.push(("OTHER".to_string(), other, pal().dim));
+        }
+        if reading > 0 {
+            top.push(("READING".to_string(), reading, READING_COL));
+        }
+        top
+    }
+}
+
+/// The width there is to see from here (a list wider than the page never pushes these past its edge).
+fn seen_w(ui: &egui::Ui) -> f32 {
+    ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 4.0).max(60.0)
+}
+
+/// A bar the width of the page, split into its pieces by time.
+fn stacked_bar(ui: &mut egui::Ui, segs: &[(String, u32, Color32)], h: f32) {
+    let w = seen_w(ui);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+    let total: u32 = segs.iter().map(|s| s.1).sum::<u32>().max(1);
+    let mut x = r.min.x;
+    for (_, s, c) in segs {
+        let sw = *s as f32 / total as f32 * r.width();
+        ui.painter().rect_filled(Rect::from_min_max(Pos2::new(x, r.min.y), Pos2::new(x + sw, r.max.y)), 0.0, *c);
+        x += sw;
+    }
+}
+
+/// The pieces of a bar named under it: a swatch, the name, the time.
+fn legend(ui: &mut egui::Ui, segs: &[(String, u32, Color32)]) {
+    // laid out by hand, a line at a time, so nothing runs past the page's edge
+    let w = seen_w(ui);
+    let items: Vec<(String, Color32)> =
+        segs.iter().map(|(n, s, c)| (format!("{}  {}", clip_text(n, 1.0, 220.0), mins_text(*s)), *c)).collect();
+    let mut lines: Vec<Vec<(String, Color32)>> = vec![Vec::new()];
+    let mut x = 0.0;
+    for (t, c) in items {
+        let iw = 16.0 + text_w(&t, 1.0) + 14.0;
+        if x + iw > w && !lines.last().is_some_and(|l| l.is_empty()) {
+            lines.push(Vec::new());
+            x = 0.0;
+        }
+        x += iw;
+        if let Some(l) = lines.last_mut() {
+            l.push((t, c));
+        }
+    }
+    for line in lines {
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, 18.0), Sense::hover());
+        let p = ui.painter();
+        let mut x = r.min.x;
+        for (t, c) in line {
+            p.rect_filled(Rect::from_center_size(Pos2::new(x + 5.0, r.center().y), Vec2::splat(10.0)), 1.0, c);
+            ptext(p, Pos2::new(x + 16.0, r.center().y), Align::Min, &t, 1.0, pal().ink2);
+            x += 16.0 + text_w(&t, 1.0) + 14.0;
+        }
+    }
+}
+
+/// The text cut to fit `max_w` (with ... at the end), at one size - not shrunk.
+fn clip_text(text: &str, px: f32, max_w: f32) -> String {
+    if text_w(text, px) <= max_w {
+        return text.to_string();
+    }
+    let mut chars: Vec<char> = text.chars().collect();
+    while !chars.is_empty() {
+        chars.pop();
+        let t: String = chars.iter().collect::<String>().trim_end().to_string() + "...";
+        if text_w(&t, px) <= max_w {
+            return t;
+        }
+    }
+    String::new()
+}
+
+/// A row with a name, a bar as long as its share of the longest, and the time on the right.
+fn bar_row(ui: &mut egui::Ui, name: &str, secs: u32, most: u32, col: Color32, right: &str) {
+    let w = seen_w(ui);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::hover());
+    let p = ui.painter();
+    let name_w = (r.width() * 0.45).min(320.0);
+    let right_w = text_w(right, 1.0) + 8.0;
+    ptext(p, Pos2::new(r.min.x, r.center().y), Align::Min, &clip_text(name, 1.0, name_w - 8.0), 1.0, pal().ink);
+    let bar = Rect::from_min_max(Pos2::new(r.min.x + name_w, r.center().y - 4.0), Pos2::new(r.max.x - right_w, r.center().y + 4.0));
+    p.rect_filled(bar, 0.0, pal().dim.gamma_multiply(0.25));
+    let f = secs as f32 / most.max(1) as f32;
+    p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 0.0, col);
+    ptext(p, Pos2::new(r.max.x, r.center().y), Align::Max, right, 1.0, pal().ink2);
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn periods_cover_the_right_days() {
+        let wed = store::parse_date("2026-10-14").unwrap();
+        let week = Period::around(wed, 0);
+        assert_eq!(week.cols.len(), 7);
+        assert_eq!(store::date_str(week.cols[0].1[0]), "2026-10-12", "weeks start on Monday");
+        assert_eq!(store::date_str(week.cols[6].1[0]), "2026-10-18");
+        assert_eq!(Period::around(wed, 1).cols.len(), 31);
+        let year = Period::around(wed, 2);
+        assert_eq!(year.cols.len(), 12);
+        assert_eq!(year.cols.iter().map(|c| c.1.len()).sum::<usize>(), 365);
+    }
 }

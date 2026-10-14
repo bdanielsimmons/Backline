@@ -1851,7 +1851,29 @@ impl App {
     }
 
     /// Start a play-through from beat `from` (in the order played), counted in or not.
+    /// Reading time: the time since you last started or finished a line goes in the diary, so a session counts
+    /// whole - the lines and the short breaks between them. A break of more than two minutes (the page left open,
+    /// you walked away) ends the session and is not counted.
+    fn rd_count(&mut self) {
+        let now = Instant::now();
+        if let Some(last) = self.rd_active {
+            let gap = now.duration_since(last).as_secs_f32();
+            if gap <= 120.0 {
+                self.rd_acc += gap;
+                let whole = self.rd_acc.floor();
+                if whole >= 1.0 {
+                    self.rd_acc -= whole;
+                    let date = crate::store::today_str();
+                    *self.store.day_mut(&date).secs.entry("Sight reading".to_string()).or_insert(0) += whole as u32;
+                    self.store_dirty = true;
+                }
+            }
+        }
+        self.rd_active = Some(now);
+    }
+
     fn rd_start_at(&mut self, mine: &Reading, other: Option<&Reading>, along: bool, from: f32, count_in: bool) {
+        self.rd_count();
         let spb = 60.0 / self.rd_bpm.max(30) as f32;
         let order: Vec<(usize, f32, f32, Vec<i32>)> = play_order(mine).into_iter().filter(|n| n.1 >= from - 1e-3).collect();
         let shift = |v: &[(usize, f32, f32, Vec<i32>)]| -> Vec<(Vec<i32>, f32, f32)> {
@@ -1894,11 +1916,10 @@ impl App {
         let el = t0.elapsed().as_secs_f32();
         if el > total + 0.3 {
             self.rd_play = None;
+            self.rd_count();
             if along {
                 let date = crate::store::today_str();
-                let d = self.store.day_mut(&date);
-                d.reads += 1;
-                *d.secs.entry("Sight reading".to_string()).or_insert(0) += total as u32;
+                self.store.day_mut(&date).reads += 1;
                 self.store_dirty = true;
             }
             return None;

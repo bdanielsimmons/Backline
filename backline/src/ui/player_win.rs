@@ -44,107 +44,7 @@ impl App {
                 acts.push(Action::ToggleMini);
             }
         } else if !self.mini {
-            let chip_h = 16.0;
-            let ty = if self.mini { inner.min.y - 22.0 } else { inner.min.y - 18.0 - chip_h / 2.0 };
-            let mut right = inner.max.x - 8.0;
-            let mut place = |w: f32| {
-                let r = Rect::from_min_size(Pos2::new(right - w, ty), Vec2::new(w, chip_h));
-                right -= w + 6.0;
-                r
-            };
-            // each chip as wide as its word in the font being worn
-            let fit = |s: &str| text_w(s, 1.0) + 14.0;
-            let r_pin = place(fit("PIN"));
-            let r_mini = place(fit(if self.mini { "FULL" } else { "MINI" }));
-            let r_prac = place(if PRACTICE { fit("PRACTICE") } else { 0.0 });
-            let r_lis = place(if PRACTICE { fit("LISTEN") } else { 0.0 });
-            let r_focus = place(if PRACTICE { fit("FOCUS") } else { 0.0 });
-            // stream quality: on the title bar, so it is there with every skin (Winamp ones too)
-            let q_txt = if self.prefer_lossless { "HIFI" } else { "320K" };
-            let r_q = place(fit(q_txt));
-            // the album view, one click away (the cover beside the player is gone when the player fills the window)
-            // a worn skin: the guide - each of its buttons outlined and named - on or off (it stays as you leave it)
-            let edge = if self.wa_art.is_some() {
-                let r_map = place(26.0);
-                let gc = chip(ui, r_map, "", self.wa_guide, "c_map")
-                    .tip(if self.wa_guide { "Guide on: each button outlined and named. Click to hide it" } else { "Guide: outline and name each of this skin's buttons" });
-                // its picture: a dotted frame with a pointer in it
-                {
-                    let p = ui.painter();
-                    let ink = if self.wa_guide { pal().lcd } else { pal().ink };
-                    let b = Rect::from_center_size(r_map.center(), Vec2::new(14.0, 9.0));
-                    for k in 0..4 {
-                        let x = b.min.x + k as f32 * 4.0;
-                        p.line_segment([Pos2::new(x, b.min.y), Pos2::new((x + 2.0).min(b.max.x), b.min.y)], Stroke::new(1.0_f32, ink));
-                        p.line_segment([Pos2::new(x, b.max.y), Pos2::new((x + 2.0).min(b.max.x), b.max.y)], Stroke::new(1.0_f32, ink));
-                    }
-                    for y in [b.min.y + 2.0, b.min.y + 6.0] {
-                        p.line_segment([Pos2::new(b.min.x, y), Pos2::new(b.min.x, y + 2.0)], Stroke::new(1.0_f32, ink));
-                        p.line_segment([Pos2::new(b.max.x, y), Pos2::new(b.max.x, y + 2.0)], Stroke::new(1.0_f32, ink));
-                    }
-                    p.rect_filled(Rect::from_center_size(b.center(), Vec2::splat(3.0)), 0.0, ink);
-                }
-                if gc.clicked() {
-                    self.wa_guide = !self.wa_guide;
-                    self.dirty = true;
-                }
-                r_map.min.x
-            } else {
-                r_q.min.x
-            };
-            // (short when the row would reach the window's name)
-            // (it may not reach the window's name: short, or left out - the cover and A open it too)
-            let title_end = inner.min.x + 40.0 + text_w("PLAYER", 1.0) + 24.0;
-            let np = [Some("NOW PLAYING"), Some("SONG"), None]
-                .into_iter()
-                .find(|w| w.map_or(true, |w| edge - 6.0 - fit(w) > title_end))
-                .flatten();
-            if let Some(np) = np {
-                let r_art = place(fit(np));
-                if chip(ui, r_art, np, false, "c_art").tip("Now Playing: the song big - cover, lyrics, visualizer  (A)").clicked() {
-                    acts.push(Action::ToggleArt);
-                }
-            }
-            if chip(ui, r_q, q_txt, self.prefer_lossless, "c_quality")
-                .tip(if self.prefer_lossless {
-                    "Stream quality: HiFi (lossless when Tidal has it). Click for 320 kbps"
-                } else {
-                    "Stream quality: 320 kbps. Click for HiFi (lossless)"
-                })
-                .clicked()
-            {
-                acts.push(Action::ToggleLossless);
-            }
-            if PRACTICE
-                && chip(ui, r_focus, "FOCUS", self.focus_mode, "c_focus")
-                    .tip("Hide the lists: just the player, your tools and the chart")
-                    .clicked()
-            {
-                acts.push(Action::ToggleFocus);
-            }
-            if chip(ui, r_pin, "PIN", self.pinned, "c_pin").tip("Keep this window on top").clicked() {
-                acts.push(Action::TogglePin);
-            }
-            if chip(ui, r_mini, "MINI", false, "c_mini").tip("The mini player").clicked() {
-                acts.push(Action::ToggleMini);
-            }
-            if PRACTICE {
-                tour::mark("CHIP", r_prac.union(r_lis));
-            }
-            if PRACTICE
-                && chip(ui, r_prac, "PRACTICE", self.practice, "c_prac")
-                    .tip("Transcribing: loop a section, slow it down")
-                    .clicked()
-                && !self.practice
-            {
-                acts.push(Action::TogglePractice);
-            }
-            if PRACTICE
-                && chip(ui, r_lis, "LISTEN", !self.practice, "c_lis").tip("Just listening: no loop, no pitch change").clicked()
-                && self.practice
-            {
-                acts.push(Action::TogglePractice);
-            }
+            self.title_chips(ui, inner, acts);
         }
         // a worn Winamp skin draws the whole player from its own pictures
         if self.wa_art.is_some() {
@@ -798,6 +698,190 @@ impl App {
     pub(crate) fn queued(&self, i: usize) -> bool {
         self.cur.is_some_and(|c| i > c && i <= c + self.q_manual)
     }
+}
+
+impl App {
+    /// The buttons on the player's title line. The window's name always shows whole: the buttons take the room
+    /// after it, most-used first, and any that don't fit go into a ... menu at their left.
+    fn title_chips(&mut self, ui: &mut egui::Ui, inner: Rect, acts: &mut Vec<Action>) {
+        let chip_h = 16.0;
+        let ty = inner.min.y - 18.0 - chip_h / 2.0;
+        let fit = |s: &str| text_w(s, 1.0) + 14.0;
+        // where the window's name (and its little picture) ends - as the frame draws it
+        let title_end = inner.min.x + 8.0 + text_w("PLAYER", 2.0) + 28.0 + 26.0 + 10.0;
+        let room = inner.max.x - 8.0 - title_end;
+        let q_txt = if self.prefer_lossless { "HIFI" } else { "320K" };
+        // (name, width, how much it matters: lower stays longer); in the order they sit, right to left
+        let mut items: Vec<(&str, f32, u8)> = vec![("PIN", fit("PIN"), 4), ("MINI", fit("MINI"), 1)];
+        if PRACTICE {
+            items.extend([("PRACTICE", fit("PRACTICE"), 0), ("LISTEN", fit("LISTEN"), 0), ("FOCUS", fit("FOCUS"), 3)]);
+        }
+        items.push(("QUALITY", fit(q_txt), 5));
+        if self.wa_art.is_some() {
+            items.push(("GUIDE", 26.0, 6));
+        }
+        items.push(("NOW PLAYING", fit("NOW PLAYING"), 2));
+        // the ones that fit, most-used first (with room kept for ... if some don't)
+        let more_w = fit("...");
+        let mut order: Vec<usize> = (0..items.len()).collect();
+        order.sort_by_key(|&i| items[i].2);
+        let total = |set: &[usize]| set.iter().map(|&i| items[i].1 + 6.0).sum::<f32>();
+        let mut keep: Vec<usize> = Vec::new();
+        for &i in &order {
+            let mut try_set = keep.clone();
+            try_set.push(i);
+            let extra = if try_set.len() < items.len() { more_w + 6.0 } else { 0.0 };
+            if total(&try_set) + extra > room {
+                // strictly in order: the rest goes in the menu, however small
+                break;
+            }
+            keep = try_set;
+        }
+        let hidden: Vec<&str> = (0..items.len()).filter(|i| !keep.contains(i)).map(|i| items[i].0).collect();
+        let mut right = inner.max.x - 8.0;
+        let mut at: Vec<(&str, Rect)> = Vec::new();
+        for (i, (name, w, _)) in items.iter().enumerate() {
+            if keep.contains(&i) {
+                at.push((name, Rect::from_min_size(Pos2::new(right - w, ty), Vec2::new(*w, chip_h))));
+                right -= w + 6.0;
+            }
+        }
+        for (name, r) in at.iter().copied() {
+            match name {
+                "PIN" => {
+                    if chip(ui, r, "PIN", self.pinned, "c_pin").tip("Keep this window on top").clicked() {
+                        acts.push(Action::TogglePin);
+                    }
+                }
+                "MINI" => {
+                    if chip(ui, r, "MINI", false, "c_mini").tip("The mini player").clicked() {
+                        acts.push(Action::ToggleMini);
+                    }
+                }
+                "PRACTICE" => {
+                    tour::mark("CHIP", r);
+                    if chip(ui, r, "PRACTICE", self.practice, "c_prac").tip("Transcribing: loop a section, slow it down").clicked()
+                        && !self.practice
+                    {
+                        acts.push(Action::TogglePractice);
+                    }
+                }
+                "LISTEN" => {
+                    if chip(ui, r, "LISTEN", !self.practice, "c_lis").tip("Just listening: no loop, no pitch change").clicked()
+                        && self.practice
+                    {
+                        acts.push(Action::TogglePractice);
+                    }
+                }
+                "FOCUS" => {
+                    if chip(ui, r, "FOCUS", self.focus_mode, "c_focus")
+                        .tip("Hide the lists: just the player, your tools and the chart")
+                        .clicked()
+                    {
+                        acts.push(Action::ToggleFocus);
+                    }
+                }
+                "QUALITY" => {
+                    if chip(ui, r, q_txt, self.prefer_lossless, "c_quality")
+                        .tip(if self.prefer_lossless {
+                            "Stream quality: HiFi (lossless when Tidal has it). Click for 320 kbps"
+                        } else {
+                            "Stream quality: 320 kbps. Click for HiFi (lossless)"
+                        })
+                        .clicked()
+                    {
+                        acts.push(Action::ToggleLossless);
+                    }
+                }
+                "GUIDE" => {
+                    let gc = chip(ui, r, "", self.wa_guide, "c_map").tip(if self.wa_guide {
+                        "Guide on: each button outlined and named. Click to hide it"
+                    } else {
+                        "Guide: outline and name each of this skin's buttons"
+                    });
+                    guide_icon(ui.painter(), r, if self.wa_guide { pal().lcd } else { pal().ink });
+                    if gc.clicked() {
+                        self.wa_guide = !self.wa_guide;
+                        self.dirty = true;
+                    }
+                }
+                _ => {
+                    if chip(ui, r, "NOW PLAYING", false, "c_art").tip("Now Playing: the song big - cover, lyrics, visualizer  (A)").clicked() {
+                        acts.push(Action::ToggleArt);
+                    }
+                }
+            }
+        }
+        // the rest, in a menu
+        if !hidden.is_empty() {
+            let r = Rect::from_min_size(Pos2::new(right - more_w, ty), Vec2::new(more_w, chip_h));
+            let mr = chip(ui, r, "...", false, "c_more").tip("More: the buttons there is no room for");
+            let id = ui.id().with("title_more");
+            if mr.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(id));
+            }
+            egui::popup::popup_below_widget(ui, id, &mr, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(200.0);
+                for name in &hidden {
+                    let on = |b: bool| if b { "  (on)" } else { "" };
+                    match *name {
+                        "PIN" => {
+                            if menu_item(ui, &format!("Keep on top{}", on(self.pinned))) {
+                                acts.push(Action::TogglePin);
+                            }
+                        }
+                        "MINI" => {
+                            if menu_item(ui, "Mini player") {
+                                acts.push(Action::ToggleMini);
+                            }
+                        }
+                        "PRACTICE" | "LISTEN" => {
+                            if *name == "PRACTICE" && menu_item(ui, if self.practice { "Listen (leave practice)" } else { "Practice" }) {
+                                acts.push(Action::TogglePractice);
+                            }
+                        }
+                        "FOCUS" => {
+                            if menu_item(ui, &format!("Focus{}", on(self.focus_mode))) {
+                                acts.push(Action::ToggleFocus);
+                            }
+                        }
+                        "QUALITY" => {
+                            if menu_item(ui, if self.prefer_lossless { "Quality: HiFi (click for 320 kbps)" } else { "Quality: 320 kbps (click for HiFi)" }) {
+                                acts.push(Action::ToggleLossless);
+                            }
+                        }
+                        "GUIDE" => {
+                            if menu_item(ui, &format!("Skin button guide{}", on(self.wa_guide))) {
+                                self.wa_guide = !self.wa_guide;
+                                self.dirty = true;
+                            }
+                        }
+                        _ => {
+                            if menu_item(ui, "Now Playing  (A)") {
+                                acts.push(Action::ToggleArt);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
+
+/// The guide button's picture: a dotted frame with a dot in it.
+fn guide_icon(p: &egui::Painter, r: Rect, ink: Color32) {
+    let b = Rect::from_center_size(r.center(), Vec2::new(14.0, 9.0));
+    let s = Stroke::new(1.0_f32, ink);
+    for k in 0..4 {
+        let x = b.min.x + k as f32 * 4.0;
+        p.line_segment([Pos2::new(x, b.min.y), Pos2::new((x + 2.0).min(b.max.x), b.min.y)], s);
+        p.line_segment([Pos2::new(x, b.max.y), Pos2::new((x + 2.0).min(b.max.x), b.max.y)], s);
+    }
+    for y in [b.min.y + 2.0, b.min.y + 6.0] {
+        p.line_segment([Pos2::new(b.min.x, y), Pos2::new(b.min.x, y + 2.0)], s);
+        p.line_segment([Pos2::new(b.max.x, y), Pos2::new(b.max.x, y + 2.0)], s);
+    }
+    p.rect_filled(Rect::from_center_size(b.center(), Vec2::splat(3.0)), 0.0, ink);
 }
 
 /// The window-size switch's picture, in `r`: two overlapping squares (to the mini player), or one square (`full`:
