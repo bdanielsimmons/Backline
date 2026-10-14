@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Text boxes select: Ctrl+A, Shift+arrows, drag or double-click, with copy, cut and paste
+- MY TRACKS and LISTS get the library filter box
 - Sound output keeps up with plugging and unplugging by itself; Bluetooth dropping out pauses the music
 - YouTube and SoundCloud playlists in their own PLAYLISTS section, each on its own page
 - Playlist files (.m3u, .m3u8, .pls) come in as Backline playlists
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Favourite Winamp skins: + FAVOURITE for the one you're wearing, or right-click any skin; a FAVOURITES list wears one again (X takes it off)
 - Loop groups: keep a song's licks in groups (Head, Solo licks... or your own); make, rename and delete groups in LOOPS
 - Zoom the practice waveform like Audacity: the mouse wheel over it zooms where the mouse is, + and - zoom where it's playing, FIT shows the whole song
-- EXPORT LOOPS & PLAYLISTS saves one file; IMPORT on another computer adds what it doesn't have (in LOOPS and LISTS)
-- The metronome has its own volume slider, apart from the main volume
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
