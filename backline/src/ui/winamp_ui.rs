@@ -603,9 +603,13 @@ impl App {
     /// The equalizer, drawn from the worn skin: ON, PRESETS, the curve and the ten sliders.
     pub(crate) fn winamp_eq(&mut self, ui: &mut egui::Ui, area: Rect) {
         let Some(t) = self.wa_art.take() else { return };
-        let pl = Place::fit(area);
-        let p = ui.painter().clone();
         let id = ui.id().with("winamp_eq");
+        let (pl, z) = sized_place(ui, area, self.eq_zoom, id.with("size"), "the equalizer");
+        if let Some(z) = z {
+            self.eq_zoom = z;
+            self.dirty = true;
+        }
+        let p = ui.painter().clone();
         let mut changed = false;
         t.spr(&p, "eqmain", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
         t.spr(&p, "eqmain", (0.0, 134.0, 275.0, 14.0), pl.r(0.0, 0.0, 275.0, 14.0));
@@ -783,6 +787,60 @@ impl App {
             }
         }
     }
+}
+
+/// A skinned window (275 x 116) placed in `area` at the size you gave it - `zoom`, up to what shows; None: as large
+/// as fits in whole pixels - with its corner to drag and ctrl + the mouse wheel over it to size it (double-click the
+/// corner: as large as fits). Returns the place, and the new size when you changed it.
+pub(crate) fn sized_place(
+    ui: &mut egui::Ui,
+    area: Rect,
+    zoom: Option<f32>,
+    id: egui::Id,
+    what: &str,
+) -> (Place, Option<Option<f32>>) {
+    let shown = area.intersect(ui.clip_rect());
+    let pl = match zoom {
+        Some(z) => {
+            let s = z.min((shown.width() / 275.0).min(shown.height() / 116.0)).max(0.5);
+            let snap = |v: f32| (v * font::ppp()).round() / font::ppp();
+            Place { o: Pos2::new(snap(shown.center().x - 137.5 * s), snap(shown.center().y - 58.0 * s)), s }
+        }
+        None => Place::fit(area),
+    };
+    let win = Rect::from_min_size(pl.o, Vec2::new(275.0, 116.0) * pl.s);
+    let mut out = None;
+    if ui.rect_contains_pointer(win) {
+        let zd = ui.input(|i| if i.modifiers.command { i.zoom_delta() } else { 1.0 });
+        if zd != 1.0 {
+            out = Some(Some((pl.s * zd).clamp(0.5, 8.0)));
+        }
+    }
+    let grip = Rect::from_min_size(win.max - Vec2::splat(12.0), Vec2::splat(12.0));
+    let gh = ui
+        .interact(grip, id, Sense::click_and_drag())
+        .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
+        .tip(format!("Drag to size {} (ctrl + mouse wheel too); double-click: as large as fits", what));
+    if gh.double_clicked() {
+        out = Some(None);
+    } else if gh.dragged() {
+        if let Some(pp) = gh.interact_pointer_pos() {
+            let c = win.center();
+            let s = ((pp.x - c.x) * 2.0 / 275.0).max((pp.y - c.y) * 2.0 / 116.0);
+            out = Some(Some(s.clamp(0.5, 8.0)));
+        }
+    }
+    if gh.hovered() || gh.dragged() {
+        let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with("mark")));
+        for k in 0..3 {
+            let d = 3.0 + k as f32 * 3.0;
+            p.line_segment(
+                [Pos2::new(grip.max.x - d, grip.max.y - 1.0), Pos2::new(grip.max.x - 1.0, grip.max.y - d)],
+                Stroke::new(1.5_f32, pal().ink),
+            );
+        }
+    }
+    (pl, out)
 }
 
 impl App {

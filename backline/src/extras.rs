@@ -183,8 +183,9 @@ impl App {
             Ok((s, p, art)) => {
                 crate::skin::set_custom(Some(p));
                 self.wa_art = Some(crate::winamp_ui::WaTex::new(&self.ctx, art));
-                // a skin you just put on shows where its buttons are for a moment (some hide them in the picture)
-                if announce {
+                // a Winamp skin you just put on shows where its buttons are for a moment (some hide them in the
+                // picture); Backline's own looks are plain, so not those
+                if announce && !s.md5.starts_with("gen:") {
                     self.wa_map_until = self.ctx.input(|i| i.time) + 3.0;
                 }
                 crate::winamp_ui::set_chrome(self.wa_art.as_ref());

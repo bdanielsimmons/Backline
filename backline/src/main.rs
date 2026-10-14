@@ -2278,6 +2278,10 @@ struct App {
     eq_h_user: Option<f32>,
     /// the skinned deck's size in the player window (skin pixels to screen points; None: as large as fits)
     deck_zoom: Option<f32>,
+    /// the skinned equalizer's size in its window (None: as large as fits)
+    eq_zoom: Option<f32>,
+    /// the box for naming a new equalizer curve is open
+    eq_naming: bool,
     /// until when the skinned deck shows where its buttons are (just after a skin is put on)
     wa_map_until: f64,
     /// the skinned deck's guide (each button outlined and named) stays on
@@ -2830,6 +2834,8 @@ impl App {
             prac_h: 300.0,
             eq_h_user: None,
             deck_zoom: None,
+            eq_zoom: None,
+            eq_naming: false,
             wa_map_until: 0.0,
             wa_guide: false,
             queue_hidden: false,
@@ -3085,6 +3091,7 @@ impl App {
         }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
+        app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         if let Some(h) = st["prac_h"].as_f64() {
             app.prac_h = (h as f32).clamp(220.0, 900.0);
@@ -3322,6 +3329,7 @@ impl App {
             "prac_h": self.prac_h,
             "eq_h": self.eq_h_user,
             "deck_zoom": self.deck_zoom,
+            "eq_zoom": self.eq_zoom,
             "wa_guide": self.wa_guide,
             "pomo_sound": self.pomo_sound,
             "pomo_focus": self.pomo_focus,

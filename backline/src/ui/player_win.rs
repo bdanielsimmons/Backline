@@ -93,10 +93,17 @@ impl App {
                 r_q.min.x
             };
             // (short when the row would reach the window's name)
-            let np = if edge - 6.0 - fit("NOW PLAYING") > inner.min.x + 110.0 { "NOW PLAYING" } else { "SONG" };
-            let r_art = place(fit(np));
-            if chip(ui, r_art, np, false, "c_art").tip("Now Playing: the song big - cover, lyrics, visualizer  (A)").clicked() {
-                acts.push(Action::ToggleArt);
+            // (it may not reach the window's name: short, or left out - the cover and A open it too)
+            let title_end = inner.min.x + 40.0 + text_w("PLAYER", 1.0) + 24.0;
+            let np = [Some("NOW PLAYING"), Some("SONG"), None]
+                .into_iter()
+                .find(|w| w.map_or(true, |w| edge - 6.0 - fit(w) > title_end))
+                .flatten();
+            if let Some(np) = np {
+                let r_art = place(fit(np));
+                if chip(ui, r_art, np, false, "c_art").tip("Now Playing: the song big - cover, lyrics, visualizer  (A)").clicked() {
+                    acts.push(Action::ToggleArt);
+                }
             }
             if chip(ui, r_q, q_txt, self.prefer_lossless, "c_quality")
                 .tip(if self.prefer_lossless {

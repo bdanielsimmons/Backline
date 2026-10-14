@@ -119,19 +119,22 @@ impl App {
     }
 
     /// The presets as little cards, each with a preview of its curve - Backline's, then yours (right-click one of
-    /// yours to delete it) - in a row that scrolls when there are more than fit; then a name box and SAVE to keep
-    /// the curve you have as your own. True when one was picked.
-    pub(crate) fn eq_presets(&mut self, ui: &mut egui::Ui) -> bool {
+    /// yours to delete it), then a + card to keep the curve you have as your own (it asks for a name). The cards
+    /// narrow to fit, and the row scrolls past that. True when one was picked.
+    pub(crate) fn eq_presets(&mut self, ui: &mut egui::Ui, card_h: f32) -> bool {
         let mut changed = false;
-        let row_w = (ui.available_width() - 214.0).max(110.0);
         let all: Vec<(String, [f32; 10])> =
             EQ_PRESETS.iter().map(|(n, g)| (n.to_string(), *g)).chain(self.eq_mine.iter().cloned()).collect();
+        let row_w = ui.available_width().max(120.0);
+        // as wide as fits, from 96 down to 60, then the row scrolls
+        let card_w = ((row_w - 8.0) / (all.len() + 1) as f32 - 6.0).clamp(60.0, 96.0);
         let mut drop: Option<usize> = None;
-        ui.allocate_ui(Vec2::new(row_w, 54.0), |ui| {
+        let mut plus: Option<egui::Response> = None;
+        ui.allocate_ui(Vec2::new(row_w, card_h + 14.0), |ui| {
             egui::ScrollArea::horizontal().id_salt("eq_presets").max_width(row_w).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     for (k, (name, g)) in all.iter().enumerate() {
-                        let r = self.eq_card(ui, name, g);
+                        let r = self.eq_card(ui, name, g, card_w, card_h);
                         if r.clicked() {
                             self.eq_gains = *g;
                             self.eq_on = true;
@@ -146,6 +149,15 @@ impl App {
                             });
                         }
                     }
+                    // + : save the curve you have
+                    let (card, r) = ui.allocate_exact_size(Vec2::new(card_h, card_h), Sense::click());
+                    let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Save this curve as a preset of your own");
+                    inset(ui.painter(), card, if r.hovered() || self.eq_naming { pal().sel } else { pal().lcd });
+                    let c = card.center();
+                    let st = Stroke::new(2.0_f32, pal().ink);
+                    ui.painter().line_segment([c - Vec2::new(7.0, 0.0), c + Vec2::new(7.0, 0.0)], st);
+                    ui.painter().line_segment([c - Vec2::new(0.0, 7.0), c + Vec2::new(0.0, 7.0)], st);
+                    plus = Some(r);
                 });
             });
         });
@@ -154,10 +166,41 @@ impl App {
             self.set_note(&format!("EQUALIZER CURVE {} DELETED", name));
             self.dirty = true;
         }
-        // keep the curve you have, by name
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(130.0, bh()), Sense::hover());
-        let o = crate::views::field(ui, &mut self.ed, crate::tools::F_EQ_NAME, &mut self.eq_name, rect, "Name this curve...", false);
-        if o.enter || retro_btn_w(ui, "SAVE", 70.0, false).tip("Keep the curve you have now as your own preset").clicked() {
+        let Some(plus) = plus else { return changed };
+        let pop = ui.id().with("eq_name_pop");
+        if plus.clicked() {
+            self.eq_naming = !self.eq_naming;
+            if self.eq_naming {
+                ui.memory_mut(|m| m.open_popup(pop));
+                // the name box takes the keyboard at once
+                self.ed.id = crate::tools::F_EQ_NAME;
+                self.ed.anchor = None;
+                self.ed.cur = self.eq_name.chars().count();
+            } else {
+                ui.memory_mut(|m| m.close_popup());
+            }
+        }
+        if !ui.memory(|m| m.is_popup_open(pop)) {
+            self.eq_naming = false;
+        }
+        let mut save = false;
+        egui::popup::popup_above_or_below_widget(
+            ui,
+            pop,
+            &plus,
+            egui::AboveOrBelow::Above,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(260.0);
+                crate::para(ui, "NAME THIS CURVE", pal().ink2);
+                ui.horizontal(|ui| {
+                    let (rect, _) = ui.allocate_exact_size(Vec2::new(170.0, bh()), Sense::hover());
+                    let o = crate::views::field(ui, &mut self.ed, crate::tools::F_EQ_NAME, &mut self.eq_name, rect, "My curve...", false);
+                    save = o.enter || retro_btn_w(ui, "SAVE", 70.0, false).clicked();
+                });
+            },
+        );
+        if save {
             let name = if self.eq_name.trim().is_empty() {
                 format!("MY EQ {}", self.eq_mine.len() + 1)
             } else {
@@ -169,24 +212,30 @@ impl App {
                 None => self.eq_mine.push((name.clone(), self.eq_gains)),
             }
             self.eq_name.clear();
+            self.eq_naming = false;
+            self.ed.id = 0;
+            ui.memory_mut(|m| m.close_popup());
             self.dirty = true;
             self.set_note(&format!("EQUALIZER CURVE {} SAVED", name));
         }
         changed
     }
 
-    /// One preset card: its name and a preview of its curve, lit when it is the curve on.
-    fn eq_card(&self, ui: &mut egui::Ui, name: &str, g: &[f32; 10]) -> egui::Response {
-        let (card, r) = ui.allocate_exact_size(Vec2::new(96.0, 40.0), Sense::click());
+    /// One preset card, `w` wide: its name and a preview of its curve, lit when it is the curve on.
+    fn eq_card(&self, ui: &mut egui::Ui, name: &str, g: &[f32; 10], w: f32, h: f32) -> egui::Response {
+        let (card, r) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
         let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{} preset", name));
         let on = self.eq_on && self.eq_gains == *g;
         inset(ui.painter(), card, if on || r.hovered() { pal().sel } else { pal().lcd });
-        crate::ui_text(ui.painter(), Pos2::new(card.min.x + 6.0, card.min.y + 8.0), Align::Min, name, 1.0, 84.0, pal().ink);
+        crate::ui_text(ui.painter(), Pos2::new(card.min.x + 6.0, card.min.y + 8.0), Align::Min, name, 1.0, w - 12.0, pal().ink);
         let gr = Rect::from_min_max(Pos2::new(card.min.x + 6.0, card.min.y + 15.0), card.max - Vec2::new(6.0, 5.0));
         let pts: Vec<Pos2> = (0..10)
             .map(|i| Pos2::new(gr.min.x + gr.width() * i as f32 / 9.0, gr.center().y - g[i] / 12.0 * gr.height() * 0.5))
             .collect();
-        ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, pal().red)));
+        // (a low card: just its name)
+        if gr.height() >= 6.0 {
+            ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, pal().red)));
+        }
         r
     }
 
@@ -204,15 +253,24 @@ impl App {
         });
         if self.wa_art.is_some() {
             let full = ui.available_rect_before_wrap();
-            let eq_area = Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - 60.0));
+            // the preset cards under it give way as you size the equalizer up (as the cover beside the player
+            // does): lower, then gone; they come back as it gets smaller
+            let strip_h = match self.eq_zoom {
+                Some(z) => (full.height() - 116.0 * z - 6.0).clamp(0.0, 56.0),
+                None => 56.0,
+            };
+            let strip_h = if strip_h < 30.0 { 0.0 } else { strip_h };
+            let eq_area = Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - strip_h - if strip_h > 0.0 { 4.0 } else { 0.0 }));
             self.winamp_eq(ui, eq_area);
-            let strip = Rect::from_min_max(Pos2::new(full.min.x, full.max.y - 56.0), full.max);
             let mut changed = false;
-            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(strip), |ui| {
-                ui.horizontal(|ui| {
-                    changed = self.eq_presets(ui);
+            if strip_h > 0.0 {
+                let strip = Rect::from_min_max(Pos2::new(full.min.x, full.max.y - strip_h), full.max);
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(strip), |ui| {
+                    ui.horizontal(|ui| {
+                        changed = self.eq_presets(ui, strip_h - 14.0);
+                    });
                 });
-            });
+            }
             if changed {
                 self.apply_eq();
                 self.eq_remember();
@@ -241,7 +299,7 @@ impl App {
                 self.dirty = true;
             }
             ui.add_space(8.0);
-            changed |= self.eq_presets(ui);
+            changed |= self.eq_presets(ui, 40.0);
         });
         ui.add_space(8.0);
         // Winamp-style: the response curve on a little screen, then the sliders, each filled green to red
