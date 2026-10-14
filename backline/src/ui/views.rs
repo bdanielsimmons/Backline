@@ -659,6 +659,8 @@ impl App {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.add_space(6.0);
+            let (ic, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
+            crate::icon_in(ui.painter(), ic.shrink(4.0), &crate::IC_FILTER, pal().ink2);
             let w = (ui.available_width() - 60.0).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let _ = field(ui, &mut self.ed, crate::tools::F_LIB_FILTER, &mut self.lib_filter, rect, hint, false);
@@ -2516,8 +2518,59 @@ impl App {
                 }
             }
         }
-        // newest first; loops saved the same day in a fixed order (the songs come from a map, in no set order)
-        clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved).then(a.0.cmp(&b.0)).then(a.1.cmp(&b.1)));
+        // a filter box, the order, and the starred ones only
+        ui.horizontal_wrapped(|ui| {
+            let (ic, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
+            crate::icon_in(ui.painter(), ic.shrink(4.0), &crate::IC_FILTER, pal().ink2);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
+            let _ = field(ui, &mut self.ed, crate::tools::F_LOOPS_FILTER, &mut self.loops_filter, rect, "Filter: name, song, group, note...", false);
+            if !self.loops_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter").clicked() {
+                self.loops_filter.clear();
+            }
+            ui.add_space(6.0);
+            const SORTS: [&str; 4] = ["NEWEST", "NAME", "TIME SPENT", "SONG"];
+            if let Some(i) = dropdown(ui, "loops_sort", "SORT", &SORTS, self.loops_sort as usize, 120.0) {
+                self.loops_sort = i as u8;
+                self.dirty = true;
+            }
+            let star = retro_btn(ui, "   ONLY", self.loops_fav).tip("Only the loops you starred");
+            crate::icon_in(ui.painter(), Rect::from_center_size(star.rect.left_center() + Vec2::new(14.0, 0.0), Vec2::splat(12.0)), &crate::IC_STAR, STAR_COL);
+            if star.clicked() {
+                self.loops_fav = !self.loops_fav;
+                self.dirty = true;
+            }
+        });
+        ui.add_space(4.0);
+        if self.loops_fav {
+            clips.retain(|c| c.2.fav);
+        }
+        let song_of = |id: i64| self.store.songs.get(&id).map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_default();
+        let filter = self.loops_filter.trim().to_string();
+        if !filter.is_empty() {
+            clips.retain(|c| crate::filter_score(&filter, &[&c.2.name, &song_of(c.0), &c.2.group, &c.2.note]).is_some());
+        }
+        // time spent on each, from the diary
+        let spent = |id: i64, s: &store::Section| -> u32 {
+            self.store
+                .days
+                .iter()
+                .flat_map(|d| d.loop_time.iter())
+                .filter_map(|(k, v)| store::parse_loop_key(k).filter(|x| x.0 == id && (x.1 - s.a).abs() < 0.06 && (x.2 - s.b).abs() < 0.06).map(|_| v.0))
+                .sum()
+        };
+        // (the songs come from a map, in no set order: ties always fall the same way)
+        let tie = |a: &(i64, usize, store::Section), b: &(i64, usize, store::Section)| a.0.cmp(&b.0).then(a.1.cmp(&b.1));
+        match self.loops_sort {
+            1 => clips.sort_by(|a, b| a.2.name.to_lowercase().cmp(&b.2.name.to_lowercase()).then(tie(a, b))),
+            2 => clips.sort_by(|a, b| spent(b.0, &b.2).cmp(&spent(a.0, &a.2)).then(tie(a, b))),
+            3 => clips.sort_by(|a, b| song_of(a.0).to_lowercase().cmp(&song_of(b.0).to_lowercase()).then(a.2.a.total_cmp(&b.2.a)).then(tie(a, b))),
+            _ => clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved).then(tie(a, b))),
+        }
+        let spent_on: Vec<u32> = clips.iter().map(|c| spent(c.0, &c.2)).collect();
+        if clips.is_empty() && (self.loops_fav || !filter.is_empty()) {
+            para(ui, if self.loops_fav { "No starred loops here. Click the star on a loop to keep it close." } else { "No loops match." }, pal().ink2);
+            return;
+        }
         if clips.is_empty() {
             para(
                 ui,
@@ -2550,16 +2603,29 @@ impl App {
             let col = if on { pal().bar_txt } else { pal().ink };
             ptext(p, Pos2::new(x, r.min.y + 13.0), Align::Min, &s.name.to_uppercase(), 2.0, col);
             let when = if s.saved.is_empty() { String::new() } else { format!("   SAVED {}", s.saved) };
+            let when = if spent_on[k] >= 60 { format!("   WORKED {}{}", mins_text(spent_on[k]), when) } else { when };
             let when = if s.group.is_empty() { when } else { format!("   IN {}{}", s.group.to_uppercase(), when) };
             let sub = format!("FROM {}   {}-{}{}", from.to_uppercase(), fmt_time(s.a), fmt_time(s.b), when);
             ptext_fit(p, Pos2::new(x, r.min.y + 31.0), Align::Min, &sub, 1.0, r.width() - 24.0, pal().ink2);
             if !s.note.is_empty() {
                 ptext_fit(p, Pos2::new(x, r.min.y + 48.0), Align::Min, &s.note, 2.0, r.width() - 24.0, pal().dim);
             }
+            // the star: click to keep it close (it sits over the row, so it takes the click)
+            let sr = Rect::from_center_size(Pos2::new(r.max.x - 22.0, r.min.y + 18.0), Vec2::splat(26.0));
+            let sh = ui.interact(sr, ui.id().with(("loop_star", *id, *i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let sh = sh.tip(if s.fav { "Starred: one that matters. Click to unstar" } else { "Star it: one that matters (a gig coming up, a part not to forget)" });
+            let star_col = if s.fav { STAR_COL } else if sh.hovered() || resp.hovered() { pal().dim } else { pal().dim.gamma_multiply(0.35) };
+            crate::icon_in(ui.painter(), sr.shrink(6.0), &crate::IC_STAR, star_col);
+            if sh.clicked() {
+                if let Some(x) = self.store.sections.get_mut(id).and_then(|l| l.get_mut(*i)) {
+                    x.fav = !x.fav;
+                    self.store_dirty = true;
+                }
+            }
             let resp = resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .tip("Play it, looping. Right-click to rename it or add a note");
-            if resp.clicked() {
+            if resp.clicked() && !sh.clicked() {
                 if let Some(v) = &v {
                     acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
                 }
@@ -2583,6 +2649,13 @@ impl App {
                         ui.close_menu();
                     }
                     crate::song_items(ui, acts, &v.to_track(), liked, v.kind == "tidal");
+                }
+                if menu_item(ui, if s.fav { "Unstar it" } else { "Star it (one that matters)" }) {
+                    if let Some(x) = self.store.sections.get_mut(id).and_then(|l| l.get_mut(*i)) {
+                        x.fav = !x.fav;
+                        self.store_dirty = true;
+                    }
+                    ui.close_menu();
                 }
                 if menu_item(ui, "Forget this loop") {
                     acts.push(Action::ForgetLoop(*id, *i));
@@ -4011,6 +4084,9 @@ pub(crate) fn contained<R>(ui: &mut egui::Ui, id: impl std::hash::Hash, add: imp
 }
 
 // ------------------------------------------------------------ the diary's summaries
+
+/// A starred loop's star.
+const STAR_COL: Color32 = Color32::from_rgb(232, 190, 70);
 
 /// The colours of the top five songs in a summary (the rest is OTHER, in the dim ink), and of reading.
 const SONG_COLS: [Color32; 5] = [

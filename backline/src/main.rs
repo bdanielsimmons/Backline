@@ -1485,7 +1485,7 @@ fn matches_filter(filter: &str, fields: &[&str]) -> bool {
 
 /// How well these match the filter (None: not at all). Lower is better: 0 for every word found as typed, more for
 /// each typo - so the closest come first.
-fn filter_score(filter: &str, fields: &[&str]) -> Option<u32> {
+pub(crate) fn filter_score(filter: &str, fields: &[&str]) -> Option<u32> {
     let hay = fold(&fields.join(" "));
     let words: Vec<Vec<char>> = hay.split_whitespace().map(|w| w.chars().collect()).collect();
     let mut score = 0;
@@ -1914,6 +1914,11 @@ struct App {
     diary_span: u8,
     /// reading time counts in the diary's charts and totals
     diary_reading: bool,
+    /// the saved loops: the words they're filtered by, how they're sorted (0 newest, 1 name, 2 time spent, 3 song),
+    /// and only the starred ones
+    loops_filter: String,
+    loops_sort: u8,
+    loops_fav: bool,
     palette_sel: usize,
     palette_frame: u32,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -2568,6 +2573,9 @@ impl App {
             diary_song: None,
             diary_span: 0,
             diary_reading: true,
+            loops_filter: String::new(),
+            loops_sort: 0,
+            loops_fav: false,
             palette_sel: 0,
             palette_frame: 0,
             menu_keep: None,
@@ -3108,6 +3116,8 @@ impl App {
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
         app.diary_span = st["diary_span"].as_u64().unwrap_or(0).min(2) as u8;
         app.diary_reading = st["diary_reading"].as_bool().unwrap_or(true);
+        app.loops_sort = st["loops_sort"].as_u64().unwrap_or(0).min(3) as u8;
+        app.loops_fav = st["loops_fav"].as_bool().unwrap_or(false);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         if let Some(h) = st["prac_h"].as_f64() {
@@ -3358,6 +3368,8 @@ impl App {
             "wa_guide": self.wa_guide,
             "diary_span": self.diary_span,
             "diary_reading": self.diary_reading,
+            "loops_sort": self.loops_sort,
+            "loops_fav": self.loops_fav,
             "pomo_sound": self.pomo_sound,
             "pomo_focus": self.pomo_focus,
             "pomo_break": self.pomo_break,

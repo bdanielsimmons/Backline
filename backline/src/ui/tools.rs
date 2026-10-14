@@ -76,6 +76,8 @@ pub const F_PR_BPM: u32 = 78;
 pub const F_EQ_NAME: u32 = 79;
 /// the Tidal search box
 pub const F_SEARCH: u32 = 80;
+/// the filter over your saved loops
+pub const F_LOOPS_FILTER: u32 = 81;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 

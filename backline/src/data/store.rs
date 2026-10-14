@@ -317,6 +317,8 @@ pub struct Section {
     pub note: String,
     /// the group it's kept in within the song ("solo licks", "head"...), empty for none
     pub group: String,
+    /// starred: one that matters to you (a gig coming up, a part not to forget)
+    pub fav: bool,
 }
 
 /// A bookmark on a song's waveform: where, its colour, and a name if you gave it one.
