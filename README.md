@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Size the equalizer like the player; its preset cards give way and come back
+- A + card saves the curve you have, by name
 - Winamp skins with missing or hidden parts get clean stand-ins and a guide to their buttons
 - Resize the player in its window, and the equalizer's height; save and name your own EQ curves
 - Now Playing button; the focus timer survives restarts with CONTINUE; playlists open at once
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - With saving on, YouTube and SoundCloud playlists download as soon as you open them
 - Text boxes select: Ctrl+A, Shift+arrows, drag or double-click, with copy, cut and paste
 - MY TRACKS and LISTS get the library filter box
-- Sound output keeps up with plugging and unplugging by itself; Bluetooth dropping out pauses the music
-- YouTube and SoundCloud playlists in their own PLAYLISTS section, each on its own page
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
