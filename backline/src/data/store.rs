@@ -339,6 +339,22 @@ pub struct Day {
     pub reads: u32,
     /// practice time on each song that day (by track id), tune or not
     pub songs: BTreeMap<i64, u32>,
+    /// each loop worked on that day ("track id:start ms:end ms"): seconds on it and passes through it
+    pub loop_time: BTreeMap<String, (u32, u32)>,
+}
+
+/// The key a loop's practice is kept under in a day: the song and where the loop starts and ends.
+pub fn loop_key(id: i64, a: f32, b: f32) -> String {
+    format!("{}:{}:{}", id, (a * 1000.0).round() as i64, (b * 1000.0).round() as i64)
+}
+
+/// A loop key back as (song, start, end).
+pub fn parse_loop_key(k: &str) -> Option<(i64, f32, f32)> {
+    let mut it = k.split(':');
+    let id = it.next()?.parse().ok()?;
+    let a: i64 = it.next()?.parse().ok()?;
+    let b: i64 = it.next()?.parse().ok()?;
+    Some((id, a as f32 / 1000.0, b as f32 / 1000.0))
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -703,6 +719,15 @@ mod share_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loop_keys_round_trip() {
+        let k = loop_key(-123, 12.345, 67.8);
+        let (id, a, b) = parse_loop_key(&k).unwrap();
+        assert_eq!(id, -123);
+        assert!((a - 12.345).abs() < 0.001 && (b - 67.8).abs() < 0.001);
+        assert!(parse_loop_key("nonsense").is_none());
+    }
 
     #[test]
     fn old_writer_lines_move_over() {

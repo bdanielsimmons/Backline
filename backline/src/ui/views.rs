@@ -927,6 +927,74 @@ impl App {
         }
     }
 
+    /// One song of a diary day: back to the day's songs, its name and time, a small PLAY, and each loop worked on
+    /// that day - its name, where it is, the time on it and the passes through it (click one to play that loop).
+    fn diary_song_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, date: &str, id: i64, secs: u32) {
+        let v = self.store.songs.get(&id).cloned();
+        let name = v.as_ref().map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "A SONG".to_string());
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            if crate::ibtn(ui, &crate::IC_BACK, "SONGS", false).tip("Back to the songs of the day").clicked() {
+                self.diary_song = None;
+            }
+            if let Some(v) = v.clone() {
+                if retro_btn(ui, "PLAY", false).tip("Play the song").clicked() {
+                    acts.push(Action::PlaySaved(v, None));
+                }
+            }
+        });
+        title_line(ui, &name, 2.5, pal().ink);
+        title_line(ui, &format!("{} practised on {}", mins_text(secs), date), 1.5, pal().ink2);
+        ui.add_space(4.0);
+        let saved = self.store.sections.get(&id).cloned().unwrap_or_default();
+        let name_of = |a: f32, b: f32| {
+            saved
+                .iter()
+                .find(|s| (s.a - a).abs() < 0.06 && (s.b - b).abs() < 0.06)
+                .map(|s| s.name.clone())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| "LOOP".to_string())
+        };
+        let mut loops: Vec<(f32, f32, u32, u32)> = self
+            .store
+            .days
+            .iter()
+            .find(|d| d.date == date)
+            .map(|d| {
+                d.loop_time
+                    .iter()
+                    .filter_map(|(k, (s, n))| store::parse_loop_key(k).filter(|x| x.0 == id).map(|x| (x.1, x.2, *s, *n)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        loops.sort_by(|a, b| b.2.cmp(&a.2).then(b.3.cmp(&a.3)));
+        if loops.is_empty() {
+            dim_line(ui, "NO LOOP TIMES FOR THIS DAY (KEPT FROM 2026-10-14 ON)", 1.0, pal().dim);
+            if !saved.is_empty() {
+                ui.add_space(4.0);
+                dim_line(ui, "THE SONG'S SAVED LOOPS", 1.0, pal().dim);
+                loops = saved.iter().map(|s| (s.a, s.b, 0, 0)).collect();
+            }
+        } else {
+            dim_line(ui, "LOOPS WORKED ON (CLICK ONE TO PLAY IT)", 1.0, pal().dim);
+        }
+        for (k, (a, b, s, n)) in loops.iter().enumerate() {
+            let label = format!("{}   {}-{}", name_of(*a, *b), fmt_time(*a), fmt_time(*b));
+            let right = if *s == 0 && *n == 0 {
+                String::new()
+            } else {
+                format!("{}  {} PASS{}", mins_text(*s), n, if *n == 1 { "" } else { "ES" })
+            };
+            if let Some(r) = list_row(ui, k, None, || label.clone(), || right.clone(), RowState::Normal, false, false) {
+                if let Some(v) = v.clone() {
+                    if r.tip("Play this loop").clicked() {
+                        acts.push(Action::PlaySaved(v, Some((*a, *b))));
+                    }
+                }
+            }
+        }
+    }
+
     /// A YouTube or SoundCloud playlist on its own page: a way back, its name and length, PLAY and SHUFFLE, all its
     /// songs, and taking it off your playlists (asked first).
     fn list_page(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, kind: &str) {
@@ -2631,7 +2699,10 @@ impl App {
             .map(|d| d.songs.iter().map(|(k, v)| (*k, *v)).collect())
             .unwrap_or_default();
         songs.sort_by(|a, b| b.1.cmp(&a.1));
-        if !songs.is_empty() {
+        // a song opened: the loops worked on that day and for how long, and PLAY if you want to hear it
+        if let Some(id) = self.diary_song.as_ref().filter(|(d, _)| *d == date).map(|(_, id)| *id) {
+            self.diary_song_view(ui, acts, &date, id, songs.iter().find(|s| s.0 == id).map_or(0, |s| s.1));
+        } else if !songs.is_empty() {
             ui.add_space(4.0);
             dim_line(ui, "SONGS PRACTISED", 1.0, pal().dim);
             for (k, (id, s)) in songs.iter().enumerate() {
@@ -2654,11 +2725,12 @@ impl App {
                     false,
                     false,
                 );
-                if let (Some(r), Some(v)) = (r, v) {
-                    if r.tip("Play it").clicked() {
-                        acts.push(Action::PlaySaved(v, None));
+                if let Some(r) = r {
+                    if r.tip("The loops you worked on, and for how long").clicked() {
+                        self.diary_song = Some((date.clone(), *id));
                     }
                 }
+                let _ = v;
             }
         }
 

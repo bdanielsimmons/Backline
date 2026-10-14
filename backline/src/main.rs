@@ -1908,6 +1908,8 @@ struct App {
     palette_q: String,
     /// the palette's text selected whole (Ctrl+A): typing replaces it
     palette_all: bool,
+    /// the diary's song opened (the day, the song): the loops worked on, how long
+    diary_song: Option<(String, i64)>,
     palette_sel: usize,
     palette_frame: u32,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -2555,6 +2557,7 @@ impl App {
             palette_open: false,
             palette_q: String::new(),
             palette_all: false,
+            diary_song: None,
             palette_sel: 0,
             palette_frame: 0,
             menu_keep: None,
@@ -3210,6 +3213,12 @@ impl App {
             Ok("mini") => app.apply(Action::ToggleMini),
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
+            Ok("diarysong") => {
+                app.sec = Sec::Diary;
+                if let Some((id, _)) = app.store.days.iter().find(|d| d.date == store::today_str()).and_then(|d| d.songs.iter().next()) {
+                    app.diary_song = Some((store::today_str(), *id));
+                }
+            }
             Ok("libfilter") => {
                 app.sec = Sec::Tidal;
                 app.apply(Action::Library);

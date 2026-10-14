@@ -424,14 +424,30 @@ impl App {
         let label = self.practice_label();
         let date = store::today_str();
         let song = self.cur_track();
+        let lp = self.loop_now();
         let d = self.store.day_mut(&date);
         *d.secs.entry(label).or_insert(0) += secs;
         // and on which song, so free practice still says what you worked on
-        if let Some(t) = song {
+        if let Some(t) = song.as_ref() {
             *d.songs.entry(t.id).or_insert(0) += secs;
+        }
+        // and on which loop of it
+        if let Some(k) = lp {
+            d.loop_time.entry(k).or_insert((0, 0)).0 += secs;
+        }
+        if let Some(t) = song {
             self.remember_song(&t);
         }
         self.store_dirty = true;
+    }
+
+    /// The loop being practised now (the song and its A-B), as a day keeps it; None when no loop is on.
+    fn loop_now(&self) -> Option<String> {
+        if !(self.practice && self.loop_on) {
+            return None;
+        }
+        let (a, b) = self.loop_a.zip(self.loop_b)?;
+        Some(store::loop_key(self.cur_track()?.id, a, b))
     }
 
     fn on_loops(&mut self, n: u32) {
@@ -439,7 +455,12 @@ impl App {
             return;
         }
         let date = store::today_str();
-        self.store.day_mut(&date).loops += n;
+        let key = self.loop_now();
+        let d = self.store.day_mut(&date);
+        d.loops += n;
+        if let Some(k) = key {
+            d.loop_time.entry(k).or_insert((0, 0)).1 += n;
+        }
         self.store_dirty = true;
         if self.trainer {
             self.passes += n;
