@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- No internet? Backline opens as usual with your Tidal likes and plays what's on this computer
+- Tidal reconnects by itself when the internet is back
 - Star your loops - a gig coming up, a part not to forget - and show only the starred ones
 - Filter and sort your saved loops: newest, name, time spent or song
 - The diary sums up the week, month or year: time a day by song, the kind of practice, top songs and loops
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Size the equalizer like the player; its preset cards give way and come back
 - A + card saves the curve you have, by name
 - Winamp skins with missing or hidden parts get clean stand-ins and a guide to their buttons
-- Resize the player in its window, and the equalizer's height; save and name your own EQ curves
-- Now Playing button; the focus timer survives restarts with CONTINUE; playlists open at once
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
