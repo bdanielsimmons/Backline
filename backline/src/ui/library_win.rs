@@ -61,91 +61,17 @@ impl App {
         }
     }
 
-    /// Single-line text field drawn in the pixel font.
+    /// The Tidal search box: the same text box as everywhere (select, Ctrl+A, copy and paste), Enter searches.
     pub(crate) fn search_input(&mut self, ui: &mut egui::Ui, rect: Rect, acts: &mut Vec<Action>) {
-        let resp = ui.interact(rect, ui.id().with("search_box"), Sense::click());
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+        const F_SEARCH: u32 = crate::tools::F_SEARCH;
+        // something else took the keyboard away (the command palette opening)
+        if !self.search_focus && self.ed.id == F_SEARCH {
+            self.ed.id = 0;
         }
-        if resp.clicked() {
-            self.search_focus = true;
-            self.search_cur = self.search.chars().count();
-        } else if self.search_focus && ui.input(|i| i.pointer.primary_pressed()) && !resp.hovered() {
-            self.search_focus = false;
-        }
-
-        if self.search_focus {
-            let events = ui.input(|i| i.events.clone());
-            let mut chars: Vec<char> = self.search.chars().collect();
-            let mut cur = self.search_cur.min(chars.len());
-            let mut go = false;
-            for ev in events {
-                match ev {
-                    egui::Event::Text(t) | egui::Event::Paste(t) => {
-                        for c in t.chars() {
-                            if !c.is_control() {
-                                chars.insert(cur, c);
-                                cur += 1;
-                            }
-                        }
-                    }
-                    egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
-                        egui::Key::Backspace => {
-                            if modifiers.ctrl {
-                                while cur > 0 && chars[cur - 1] == ' ' {
-                                    chars.remove(cur - 1);
-                                    cur -= 1;
-                                }
-                                while cur > 0 && chars[cur - 1] != ' ' {
-                                    chars.remove(cur - 1);
-                                    cur -= 1;
-                                }
-                            } else if cur > 0 {
-                                chars.remove(cur - 1);
-                                cur -= 1;
-                            }
-                        }
-                        egui::Key::Delete => {
-                            if cur < chars.len() {
-                                chars.remove(cur);
-                            }
-                        }
-                        egui::Key::ArrowLeft => cur = cur.saturating_sub(1),
-                        egui::Key::ArrowRight => cur = (cur + 1).min(chars.len()),
-                        egui::Key::Home => cur = 0,
-                        egui::Key::End => cur = chars.len(),
-                        egui::Key::Enter => go = true,
-                        egui::Key::Escape => self.search_focus = false,
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-            self.search = chars.into_iter().collect();
-            self.search_cur = cur;
-            if go {
-                acts.push(Action::Search(self.search.clone()));
-            }
-        }
-
-        let px = 2.0;
-        let p = ui.painter();
-        inset(p, rect, pal().lcd);
-        let inner = rect.shrink2(Vec2::new(8.0, 2.0));
-        let cp = p.with_clip_rect(inner);
-        let cy = rect.center().y;
-        let prefix: String = self.search.chars().take(self.search_cur).collect();
-        let caret_x = if prefix.is_empty() { 0.0 } else { text_w(&prefix, px) + spx(px) };
-        let off = (caret_x - (inner.width() - 6.0)).max(0.0);
-        if self.search.is_empty() {
-            ptext(&cp, Pos2::new(inner.min.x, cy), Align::Min, "Search Tidal...", px, pal().dim);
-        } else {
-            ptext(&cp, Pos2::new(inner.min.x - off, cy), Align::Min, &self.search, px, pal().ink);
-        }
-        let t = ui.input(|i| i.time);
-        if self.search_focus && (t * 2.0) as i64 % 2 == 0 {
-            let r = Rect::from_min_size(Pos2::new(inner.min.x - off + caret_x, cy - 8.0), Vec2::new(spx(2.0), 16.0));
-            fill_rect(&cp, r, pal().ink);
+        let o = crate::views::field(ui, &mut self.ed, F_SEARCH, &mut self.search, rect, "Search Tidal...", false);
+        self.search_focus = self.ed.id == F_SEARCH;
+        if o.enter {
+            acts.push(Action::Search(self.search.clone()));
         }
     }
 
@@ -192,27 +118,76 @@ impl App {
         );
     }
 
-    /// The presets as little cards, each with a preview of its curve. True when one was picked.
+    /// The presets as little cards, each with a preview of its curve - Backline's, then yours (right-click one of
+    /// yours to delete it) - in a row that scrolls when there are more than fit; then a name box and SAVE to keep
+    /// the curve you have as your own. True when one was picked.
     pub(crate) fn eq_presets(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
-        for (name, g) in EQ_PRESETS.iter() {
-            let (card, r) = ui.allocate_exact_size(Vec2::new(96.0, 40.0), Sense::click());
-            let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{} preset", name));
-            let on = self.eq_on && self.eq_gains == *g;
-            inset(ui.painter(), card, if on || r.hovered() { pal().sel } else { pal().lcd });
-            crate::ui_text(ui.painter(), Pos2::new(card.min.x + 6.0, card.min.y + 8.0), Align::Min, name, 1.0, 84.0, pal().ink);
-            let gr = Rect::from_min_max(Pos2::new(card.min.x + 6.0, card.min.y + 15.0), card.max - Vec2::new(6.0, 5.0));
-            let pts: Vec<Pos2> = (0..10)
-                .map(|i| Pos2::new(gr.min.x + gr.width() * i as f32 / 9.0, gr.center().y - g[i] / 12.0 * gr.height() * 0.5))
-                .collect();
-            ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, pal().red)));
-            if r.clicked() {
-                self.eq_gains = *g;
-                self.eq_on = true;
-                changed = true;
+        let row_w = (ui.available_width() - 214.0).max(110.0);
+        let all: Vec<(String, [f32; 10])> =
+            EQ_PRESETS.iter().map(|(n, g)| (n.to_string(), *g)).chain(self.eq_mine.iter().cloned()).collect();
+        let mut drop: Option<usize> = None;
+        ui.allocate_ui(Vec2::new(row_w, 54.0), |ui| {
+            egui::ScrollArea::horizontal().id_salt("eq_presets").max_width(row_w).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for (k, (name, g)) in all.iter().enumerate() {
+                        let r = self.eq_card(ui, name, g);
+                        if r.clicked() {
+                            self.eq_gains = *g;
+                            self.eq_on = true;
+                            changed = true;
+                        }
+                        if let Some(i) = k.checked_sub(EQ_PRESETS.len()) {
+                            r.context_menu(|ui| {
+                                if menu_item(ui, "Delete this curve") {
+                                    drop = Some(i);
+                                    ui.close_menu();
+                                }
+                            });
+                        }
+                    }
+                });
+            });
+        });
+        if let Some(i) = drop {
+            let name = self.eq_mine.remove(i).0;
+            self.set_note(&format!("EQUALIZER CURVE {} DELETED", name));
+            self.dirty = true;
+        }
+        // keep the curve you have, by name
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(130.0, bh()), Sense::hover());
+        let o = crate::views::field(ui, &mut self.ed, crate::tools::F_EQ_NAME, &mut self.eq_name, rect, "Name this curve...", false);
+        if o.enter || retro_btn_w(ui, "SAVE", 70.0, false).tip("Keep the curve you have now as your own preset").clicked() {
+            let name = if self.eq_name.trim().is_empty() {
+                format!("MY EQ {}", self.eq_mine.len() + 1)
+            } else {
+                self.eq_name.trim().to_uppercase()
+            };
+            // the same name again: that curve is replaced
+            match self.eq_mine.iter_mut().find(|m| m.0 == name) {
+                Some(m) => m.1 = self.eq_gains,
+                None => self.eq_mine.push((name.clone(), self.eq_gains)),
             }
+            self.eq_name.clear();
+            self.dirty = true;
+            self.set_note(&format!("EQUALIZER CURVE {} SAVED", name));
         }
         changed
+    }
+
+    /// One preset card: its name and a preview of its curve, lit when it is the curve on.
+    fn eq_card(&self, ui: &mut egui::Ui, name: &str, g: &[f32; 10]) -> egui::Response {
+        let (card, r) = ui.allocate_exact_size(Vec2::new(96.0, 40.0), Sense::click());
+        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{} preset", name));
+        let on = self.eq_on && self.eq_gains == *g;
+        inset(ui.painter(), card, if on || r.hovered() { pal().sel } else { pal().lcd });
+        crate::ui_text(ui.painter(), Pos2::new(card.min.x + 6.0, card.min.y + 8.0), Align::Min, name, 1.0, 84.0, pal().ink);
+        let gr = Rect::from_min_max(Pos2::new(card.min.x + 6.0, card.min.y + 15.0), card.max - Vec2::new(6.0, 5.0));
+        let pts: Vec<Pos2> = (0..10)
+            .map(|i| Pos2::new(gr.min.x + gr.width() * i as f32 / 9.0, gr.center().y - g[i] / 12.0 * gr.height() * 0.5))
+            .collect();
+        ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, pal().red)));
+        r
     }
 
     /// The equalizer, docked under the player (as Winamp stacks it): the skin's own with a skin on, the
@@ -229,9 +204,9 @@ impl App {
         });
         if self.wa_art.is_some() {
             let full = ui.available_rect_before_wrap();
-            let eq_area = Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - 46.0));
+            let eq_area = Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - 60.0));
             self.winamp_eq(ui, eq_area);
-            let strip = Rect::from_min_max(Pos2::new(full.min.x, full.max.y - 42.0), full.max);
+            let strip = Rect::from_min_max(Pos2::new(full.min.x, full.max.y - 56.0), full.max);
             let mut changed = false;
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(strip), |ui| {
                 ui.horizontal(|ui| {

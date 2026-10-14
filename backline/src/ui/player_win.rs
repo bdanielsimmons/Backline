@@ -62,6 +62,42 @@ impl App {
             // stream quality: on the title bar, so it is there with every skin (Winamp ones too)
             let q_txt = if self.prefer_lossless { "HIFI" } else { "320K" };
             let r_q = place(fit(q_txt));
+            // the album view, one click away (the cover beside the player is gone when the player fills the window)
+            // a worn skin: the guide - each of its buttons outlined and named - on or off (it stays as you leave it)
+            let edge = if self.wa_art.is_some() {
+                let r_map = place(26.0);
+                let gc = chip(ui, r_map, "", self.wa_guide, "c_map")
+                    .tip(if self.wa_guide { "Guide on: each button outlined and named. Click to hide it" } else { "Guide: outline and name each of this skin's buttons" });
+                // its picture: a dotted frame with a pointer in it
+                {
+                    let p = ui.painter();
+                    let ink = if self.wa_guide { pal().lcd } else { pal().ink };
+                    let b = Rect::from_center_size(r_map.center(), Vec2::new(14.0, 9.0));
+                    for k in 0..4 {
+                        let x = b.min.x + k as f32 * 4.0;
+                        p.line_segment([Pos2::new(x, b.min.y), Pos2::new((x + 2.0).min(b.max.x), b.min.y)], Stroke::new(1.0_f32, ink));
+                        p.line_segment([Pos2::new(x, b.max.y), Pos2::new((x + 2.0).min(b.max.x), b.max.y)], Stroke::new(1.0_f32, ink));
+                    }
+                    for y in [b.min.y + 2.0, b.min.y + 6.0] {
+                        p.line_segment([Pos2::new(b.min.x, y), Pos2::new(b.min.x, y + 2.0)], Stroke::new(1.0_f32, ink));
+                        p.line_segment([Pos2::new(b.max.x, y), Pos2::new(b.max.x, y + 2.0)], Stroke::new(1.0_f32, ink));
+                    }
+                    p.rect_filled(Rect::from_center_size(b.center(), Vec2::splat(3.0)), 0.0, ink);
+                }
+                if gc.clicked() {
+                    self.wa_guide = !self.wa_guide;
+                    self.dirty = true;
+                }
+                r_map.min.x
+            } else {
+                r_q.min.x
+            };
+            // (short when the row would reach the window's name)
+            let np = if edge - 6.0 - fit("NOW PLAYING") > inner.min.x + 110.0 { "NOW PLAYING" } else { "SONG" };
+            let r_art = place(fit(np));
+            if chip(ui, r_art, np, false, "c_art").tip("Now Playing: the song big - cover, lyrics, visualizer  (A)").clicked() {
+                acts.push(Action::ToggleArt);
+            }
             if chip(ui, r_q, q_txt, self.prefer_lossless, "c_quality")
                 .tip(if self.prefer_lossless {
                     "Stream quality: HiFi (lossless when Tidal has it). Click for 320 kbps"
@@ -239,7 +275,7 @@ impl App {
         let cvr = ui
             .interact(cv, ui.id().with("cover"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Album view  (A)");
+            .tip("Now Playing  (A)");
         if cvr.clicked() {
             acts.push(Action::ToggleArt);
         }

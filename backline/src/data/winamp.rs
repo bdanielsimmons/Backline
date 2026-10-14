@@ -219,6 +219,118 @@ pub struct Art {
     pub graph: Vec<Color32>,
     /// the playlist font the skin asks for (pledit.txt Font=), e.g. "Tahoma"
     pub font: Option<String>,
+    /// the EQ and PL buttons are blank or melt into the window behind them: drawn with a plain outline and
+    /// letters in this colour so they can be found (None: the skin's own are fine)
+    pub eqpl_ink: Option<Color32>,
+    /// the balance picture is the volume one (copied in, or none at all): a strip filled from the left
+    pub bal_is_vol: bool,
+    /// the balance pictures that make a smooth run from the middle out (empty: all of them)
+    pub bal_frames: Vec<usize>,
+}
+
+/// The balance pictures to show, from the middle out: a few stray ones that look nothing like the run around them
+/// (a flash between the steps, drawn for Winamp's coarse slider, which never lands on them) are left out, so moving
+/// it is a smooth run. Empty when every picture belongs (most skins), or when most would be left out (then the
+/// pictures are an animation in their own right).
+fn balance_frames(sheets: &[(String, [usize; 2], Vec<u8>)]) -> Vec<usize> {
+    let Some(b) = sheets.iter().find(|s| s.0 == "balance") else { return Vec::new() };
+    let n = ((b.1[1] + 2) / 15).min(28);
+    if b.1[0] < 47 || n < 3 {
+        return Vec::new();
+    }
+    // the share of the picture (x 9..47, 13 high) that differs between two frames
+    let changed = |f: usize, g: usize| -> f32 {
+        let mut d = 0;
+        for y in 0..13 {
+            for x in 9..47 {
+                let (i, j) = (((f * 15 + y) * b.1[0] + x) * 4, ((g * 15 + y) * b.1[0] + x) * 4);
+                let diff: i32 = (0..3).map(|k| (b.2[i + k] as i32 - b.2[j + k] as i32).abs()).sum();
+                if diff > 60 {
+                    d += 1;
+                }
+            }
+        }
+        d as f32 / (13.0 * 38.0)
+    };
+    let mut keep = vec![0];
+    for f in 1..n {
+        if changed(*keep.last().unwrap_or(&0), f) <= 0.35 {
+            keep.push(f);
+        }
+    }
+    // only strays scattered through the run (at least three, each with kept pictures either side) - a different
+    // last picture or a single odd one is the artist's choice
+    let last = *keep.last().unwrap_or(&0);
+    let strays = (1..last).filter(|f| !keep.contains(f)).count();
+    if strays < 3 || keep.len() * 2 < n {
+        Vec::new()
+    } else {
+        keep
+    }
+}
+
+/// Is the balance picture really the volume one - missing, or copied in (most of its level pictures the same)?
+fn balance_is_volume(sheets: &[(String, [usize; 2], Vec<u8>)]) -> bool {
+    let get = |name: &str| sheets.iter().find(|s| s.0 == name);
+    let (Some(b), Some(v)) = (get("balance"), get("volume")) else { return true };
+    // the part both draw from (x 9..47 of the level pictures)
+    let h = b.1[1].min(v.1[1]).min(420);
+    if b.1[0] < 47 || v.1[0] < 47 || h < 30 {
+        return false;
+    }
+    let (mut same, mut all) = (0u32, 0u32);
+    for y in (0..h).step_by(3) {
+        for x in 9..47 {
+            let (i, j) = ((y * b.1[0] + x) * 4, (y * v.1[0] + x) * 4);
+            all += 1;
+            if b.2[i..i + 3] == v.2[j..j + 3] {
+                same += 1;
+            }
+        }
+    }
+    same * 10 >= all * 9
+}
+
+/// Can the EQ and PL buttons be seen? None if so; if not, a colour that stands out on the window behind them.
+fn faint_eqpl(sheets: &[(String, [usize; 2], Vec<u8>)]) -> Option<Color32> {
+    let get = |name: &str| sheets.iter().find(|s| s.0 == name);
+    let main = get("main")?;
+    let px = |s: &(String, [usize; 2], Vec<u8>), x: usize, y: usize| -> Option<[u8; 4]> {
+        if x >= s.1[0] || y >= s.1[1] {
+            return None;
+        }
+        let i = (y * s.1[0] + x) * 4;
+        Some([s.2[i], s.2[i + 1], s.2[i + 2], s.2[i + 3]])
+    };
+    // the window behind the two buttons: light or dark
+    let mut sum = 0.0;
+    let mut n = 0.0;
+    for y in 58..70 {
+        for x in 219..265 {
+            if let Some(c) = px(main, x, y) {
+                sum += lum(Color32::from_rgb(c[0], c[1], c[2]));
+                n += 1.0;
+            }
+        }
+    }
+    let ink = if n > 0.0 && sum / n > 0.5 { Color32::BLACK } else { Color32::WHITE };
+    let Some(shuf) = get("shufrep") else { return Some(ink) };
+    // each button (off): with next to no light and dark in it (a flat or near-flat patch) it is lost
+    for sx in [0usize, 23] {
+        let (mut lo, mut hi) = (1.0f32, 0.0f32);
+        for y in 0..12 {
+            for x in 0..23 {
+                let Some(c) = px(shuf, sx + x, 61 + y) else { return Some(ink) };
+                let l = lum(Color32::from_rgb(c[0], c[1], c[2]));
+                lo = lo.min(l);
+                hi = hi.max(l);
+            }
+        }
+        if hi - lo < 0.08 {
+            return Some(ink);
+        }
+    }
+    None
 }
 
 /// The sheets the main window and the equalizer are drawn from.
@@ -296,7 +408,10 @@ pub fn load(wsz: &[u8]) -> Result<(Pal, Art), String> {
             (k.trim().eq_ignore_ascii_case("font") && !v.trim().is_empty()).then(|| v.trim().to_string())
         })
     });
-    Ok((pal, Art { sheets, vis, graph, font }))
+    let eqpl_ink = faint_eqpl(&sheets);
+    let bal_is_vol = balance_is_volume(&sheets);
+    let bal_frames = balance_frames(&sheets);
+    Ok((pal, Art { sheets, vis, graph, font, eqpl_ink, bal_is_vol, bal_frames }))
 }
 
 /// A Backline palette from a skin file.

@@ -45,7 +45,7 @@ pub struct CmdDef {
 pub const CMDS: &[CmdDef] = &[
     CmdDef { cmd: Cmd::ModeLibrary, id: "mode1", label: "Mode: library", def: Key::Num1, group: 0 },
     CmdDef { cmd: Cmd::ModePlayer, id: "mode2", label: "Mode: player only", def: Key::Num2, group: 0 },
-    CmdDef { cmd: Cmd::ModeAlbum, id: "mode3", label: "Mode: album view", def: Key::Num3, group: 0 },
+    CmdDef { cmd: Cmd::ModeAlbum, id: "mode3", label: "Mode: now playing", def: Key::Num3, group: 0 },
     CmdDef { cmd: Cmd::ModeMini, id: "mode4", label: "Mode: mini player", def: Key::Num4, group: 0 },
     CmdDef { cmd: Cmd::PlayPause, id: "toggle", label: "Play / pause", def: Key::Space, group: 0 },
     CmdDef { cmd: Cmd::SeekBack, id: "back5", label: "Back 5 seconds", def: Key::ArrowLeft, group: 0 },
@@ -57,7 +57,7 @@ pub const CMDS: &[CmdDef] = &[
     CmdDef { cmd: Cmd::Next, id: "next", label: "Next song", def: Key::B, group: 0 },
     CmdDef { cmd: Cmd::Like, id: "like", label: "Like the current song", def: Key::H, group: 0 },
     CmdDef { cmd: Cmd::Mini, id: "mini", label: "Mini player", def: Key::M, group: 0 },
-    CmdDef { cmd: Cmd::Art, id: "art", label: "Album view on / off", def: Key::A, group: 1 },
+    CmdDef { cmd: Cmd::Art, id: "art", label: "Now Playing on / off", def: Key::A, group: 1 },
     CmdDef { cmd: Cmd::Lyrics, id: "lyrics", label: "Lyrics", def: Key::L, group: 1 },
     CmdDef { cmd: Cmd::Fullscreen, id: "full", label: "Fullscreen", def: Key::F, group: 0 },
     CmdDef { cmd: Cmd::Practice, id: "practice", label: "Practice mode on / off", def: Key::P, group: 2 },
@@ -416,7 +416,7 @@ impl App {
                         if !self.bind_note.is_empty() {
                             para(ui, &self.bind_note.clone(), pal().ink);
                         }
-                        let groups = ["PLAYING", "ALBUM VIEW", "PRACTICE"];
+                        let groups = ["PLAYING", "NOW PLAYING", "PRACTICE"];
                         for (g, gname) in groups.iter().enumerate() {
                             if g == 2 && !PRACTICE {
                                 continue;

@@ -14,7 +14,7 @@ const ITEMS: &[(&str, &str, bool)] = &[
     ("Like the current song", "like", false),
     ("Mode: library (all three windows)", "mode1", false),
     ("Mode: player (just the player and queue)", "mode2", false),
-    ("Mode: album view (big cover, lyrics, visualizer)", "mode3", false),
+    ("Mode: now playing (big cover / album art, lyrics, visualizer)", "mode3", false),
     ("Mode: mini player", "mode4", false),
     ("Full screen on / off", "full", false),
     ("Lyrics on / off", "lyrics", false),
@@ -133,6 +133,7 @@ impl App {
     pub(crate) fn open_palette(&mut self) {
         self.palette_open = true;
         self.palette_q.clear();
+        self.palette_all = false;
         self.palette_sel = 0;
         self.palette_frame = self.frames;
         self.search_focus = false;
@@ -141,8 +142,13 @@ impl App {
     /// Run an action by name: the keyboard actions (by their key-binding name) and the extras above.
     /// Put on an equalizer preset by name (and the equalizer with it).
     fn eq_preset(&mut self, want: &str) {
-        if let Some((name, g)) = crate::EQ_PRESETS.iter().find(|p| p.0 == want) {
-            self.eq_gains = *g;
+        let found = crate::EQ_PRESETS
+            .iter()
+            .map(|(n, g)| (n.to_string(), *g))
+            .chain(self.eq_mine.iter().cloned())
+            .find(|p| p.0.eq_ignore_ascii_case(want));
+        if let Some((name, g)) = found {
+            self.eq_gains = g;
             self.eq_on = true;
             self.apply_eq();
             self.eq_remember();
@@ -219,9 +225,23 @@ impl App {
         for e in events {
             match e {
                 // (not in the frame it opened, so the K of Ctrl+K stays out of the box)
-                egui::Event::Text(s) if self.palette_frame != self.frames => {
+                egui::Event::Key { key: egui::Key::A, pressed: true, modifiers, .. } if modifiers.command => {
+                    self.palette_all = !self.palette_q.is_empty();
+                }
+                egui::Event::Copy | egui::Event::Cut if self.palette_all => {
+                    ctx.copy_text(self.palette_q.clone());
+                    if matches!(e, egui::Event::Cut) {
+                        self.palette_q.clear();
+                        self.palette_all = false;
+                    }
+                }
+                egui::Event::Text(s) | egui::Event::Paste(s) if self.palette_frame != self.frames => {
                     let s: String = s.chars().filter(|c| !c.is_control()).collect();
                     if !s.is_empty() {
+                        // typing over the whole of it replaces it
+                        if std::mem::take(&mut self.palette_all) {
+                            self.palette_q.clear();
+                        }
                         self.palette_q.push_str(&s);
                         self.palette_sel = 0;
                     }
@@ -229,6 +249,9 @@ impl App {
                 egui::Event::Key { key, pressed: true, .. } => match key {
                     egui::Key::Escape => self.palette_open = false,
                     egui::Key::Backspace => {
+                        if std::mem::take(&mut self.palette_all) {
+                            self.palette_q.clear();
+                        }
                         self.palette_q.pop();
                         self.palette_sel = 0;
                     }
@@ -275,7 +298,17 @@ impl App {
                     } else {
                         format!("{}{}", self.palette_q.to_uppercase(), if blink { "_" } else { "" })
                     };
-                    let col = if self.palette_q.is_empty() { pal().ink2 } else { pal().ink };
+                    let mut col = if self.palette_q.is_empty() { pal().ink2 } else { pal().ink };
+                    // all of it selected: shown inverted
+                    if self.palette_all && !self.palette_q.is_empty() {
+                        let tw = crate::text_w(&self.palette_q.to_uppercase(), 2.0).min(r.width() - 20.0);
+                        let band = egui::Rect::from_min_max(
+                            Pos2::new(r.min.x + 8.0, r.center().y - 11.0),
+                            Pos2::new(r.min.x + 12.0 + tw, r.center().y + 11.0),
+                        );
+                        ui.painter().rect_filled(band, 0.0, pal().ink);
+                        col = pal().lcd;
+                    }
                     ptext_fit(
                         ui.painter(),
                         Pos2::new(r.min.x + 10.0, r.center().y),

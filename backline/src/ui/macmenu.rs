@@ -59,7 +59,7 @@ pub fn install(tx: &Sender<Msg>, ctx: &egui::Context) -> Option<Box<dyn std::any
         "View",
         true,
         &[
-            &it("art", "Album View", Some((cmd, Code::Digit1))),
+            &it("art", "Now Playing", Some((cmd, Code::Digit1))),
             &it("mini", "Mini Player", Some((cmd, Code::Digit2))),
             &it("full", "Enter / Exit Full Screen", Some((ctrl_cmd, Code::KeyF))),
             &PredefinedMenuItem::separator(),

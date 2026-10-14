@@ -10,6 +10,12 @@ pub(crate) struct WaTex {
     pub(crate) graph: Vec<Color32>,
     /// the playlist font the skin asks for
     pub(crate) font: Option<String>,
+    /// the EQ and PL buttons need help to be seen: outlined and lettered in this colour
+    pub(crate) eqpl_ink: Option<Color32>,
+    /// the balance picture is the volume one: drawn following the knob
+    pub(crate) bal_is_vol: bool,
+    /// the balance pictures that make a smooth run (empty: all)
+    pub(crate) bal_frames: Vec<usize>,
 }
 
 impl WaTex {
@@ -20,7 +26,7 @@ impl WaTex {
             let tex = ctx.load_texture(format!("winamp_{}", name), img, egui::TextureOptions::NEAREST);
             sheets.insert(name, (tex, Vec2::new(size[0] as f32, size[1] as f32)));
         }
-        WaTex { sheets, vis: art.vis, graph: art.graph, font: art.font }
+        WaTex { sheets, vis: art.vis, graph: art.graph, font: art.font, eqpl_ink: art.eqpl_ink, bal_is_vol: art.bal_is_vol, bal_frames: art.bal_frames }
     }
 
     pub(crate) fn size(&self, sheet: &str) -> Option<Vec2> {
@@ -29,7 +35,20 @@ impl WaTex {
 
     /// One sprite (x, y, w, h in the sheet) into `dst`. False when the skin lacks that sheet.
     pub(crate) fn spr(&self, p: &egui::Painter, sheet: &str, src: (f32, f32, f32, f32), dst: Rect) -> bool {
+        self.spr_flip(p, sheet, src, dst, false)
+    }
+
+    /// A sprite, mirrored left to right if `flip`.
+    pub(crate) fn spr_flip(&self, p: &egui::Painter, sheet: &str, src: (f32, f32, f32, f32), dst: Rect, flip: bool) -> bool {
         let Some((tex, size)) = self.sheets.get(sheet) else { return false };
+        // a sheet drawn smaller than Winamp's: only the part of the picture that is in it (drawing past its edge
+        // would smear the edge pixels); mostly missing, nothing - the caller draws a plain stand-in
+        let (w2, h2) = ((size.x - src.0).min(src.2), (size.y - src.1).min(src.3));
+        if w2 <= 0.0 || h2 <= 0.0 || w2 * h2 < 0.5 * src.2 * src.3 {
+            return false;
+        }
+        let dst = Rect::from_min_size(dst.min, Vec2::new(dst.width() * w2 / src.2, dst.height() * h2 / src.3));
+        let src = (src.0, src.1, w2, h2);
         // pull the edges in by a hair: sprites sit side by side in a sheet (the digits 0 to 9...), and sampling
         // right on the border would pick up a sliver of the neighbour
         const E: f32 = 0.02;
@@ -37,8 +56,21 @@ impl WaTex {
             Pos2::new((src.0 + E) / size.x, (src.1 + E) / size.y),
             Pos2::new((src.0 + src.2 - E) / size.x, (src.1 + src.3 - E) / size.y),
         );
+        let uv = if flip { Rect::from_min_max(Pos2::new(uv.max.x, uv.min.y), Pos2::new(uv.min.x, uv.max.y)) } else { uv };
         p.image(tex.id(), dst, uv, Color32::WHITE);
         true
+    }
+}
+
+/// A plain stand-in for a control the skin has no picture for: a small plate in the skin's colours with a label,
+/// lit when on.
+pub(crate) fn plate(p: &egui::Painter, r: Rect, text: &str, lit: bool) {
+    let pal = crate::skin::pal();
+    let (bg, fg) = if lit { (pal.ink, pal.lcd) } else { (pal.lcd.gamma_multiply(0.9), pal.ink) };
+    p.rect_filled(r, 1.0, bg);
+    p.rect_stroke(r, 1.0, Stroke::new(1.0_f32, pal.ink.gamma_multiply(0.8)));
+    if !text.is_empty() {
+        p.text(r.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::monospace((r.height() * 0.62).max(7.0)), fg);
     }
 }
 

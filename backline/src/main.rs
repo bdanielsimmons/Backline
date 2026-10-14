@@ -449,6 +449,8 @@ enum Action {
     ToggleFocus,
     RemoveVersion(usize, usize),
     Pomo,
+    /// hold the focus timer, or carry on with it
+    PomoHold,
     TimerPanel,
     FindChart(usize, Option<String>),
     LiveChart(String, Option<String>),
@@ -965,6 +967,11 @@ static VINYL: AtomicBool = AtomicBool::new(false);
 
 /// How far the record has turned: it spins up to 33 1/3 rpm times the playback speed (`speed`, 0 = stopped)
 /// and coasts to a stop on pause.
+/// Seconds since 1970 (for times kept across restarts).
+fn unix_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
 fn vinyl_angle(ui: &egui::Ui, speed: f32) -> f32 {
     let id = egui::Id::new("vinyl_angle");
     let dt = ui.input(|i| i.stable_dt).min(0.1);
@@ -1725,7 +1732,6 @@ struct App {
     lib_tab: Tab,
     loading: bool,
     search: String,
-    search_cur: usize,
     search_focus: bool,
     status: String,
     status_err: bool,
@@ -1900,6 +1906,8 @@ struct App {
     show_help: bool,
     palette_open: bool,
     palette_q: String,
+    /// the palette's text selected whole (Ctrl+A): typing replaces it
+    palette_all: bool,
     palette_sel: usize,
     palette_frame: u32,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -1981,8 +1989,11 @@ struct App {
     /// stems: 0 idle, 1 downloading the tool, 2 splitting a track
     stem_busy: u8,
     stem_on: [bool; 4],
-    /// focus timer: 0 idle, 1 focus block, 2 break
+    /// focus timer: 0 idle, 1 focus block, 2 break, 3 break over, 4 held (paused, or brought back after a restart)
     pomo: u8,
+    /// held: the seconds left and which part it was (1 focus, 2 break)
+    pomo_left: u64,
+    pomo_was: u8,
     pomo_end: Option<Instant>,
     pomo_focus: u32,
     pomo_break: u32,
@@ -2263,6 +2274,14 @@ struct App {
     stack_frac: f32,
     /// the practice panel's height (drag the edge above it)
     prac_h: f32,
+    /// the equalizer's height, dragged (None: it follows the player's size)
+    eq_h_user: Option<f32>,
+    /// the skinned deck's size in the player window (skin pixels to screen points; None: as large as fits)
+    deck_zoom: Option<f32>,
+    /// until when the skinned deck shows where its buttons are (just after a skin is put on)
+    wa_map_until: f64,
+    /// the skinned deck's guide (each button outlined and named) stays on
+    wa_guide: bool,
     /// the queue hidden (the PL button), the player taking the whole column
     queue_hidden: bool,
     /// where each floating window sits (outer rectangle), by name
@@ -2273,6 +2292,10 @@ struct App {
     /// equalizer AUTO: remember an EQ per song, and the ones remembered
     eq_auto: bool,
     eq_songs: HashMap<i64, [f32; 10]>,
+    /// your own equalizer curves, by name
+    eq_mine: Vec<(String, [f32; 10])>,
+    /// the name typed for the curve about to be saved
+    eq_name: String,
     /// left / right balance, -100 to 100
     balance: i32,
     ebuf: String,
@@ -2395,7 +2418,6 @@ impl App {
             lib_tab: Tab::Tracks,
             loading: false,
             search: String::new(),
-            search_cur: 0,
             search_focus: false,
             status: String::new(),
             status_err: false,
@@ -2528,6 +2550,7 @@ impl App {
             show_help: false,
             palette_open: false,
             palette_q: String::new(),
+            palette_all: false,
             palette_sel: 0,
             palette_frame: 0,
             menu_keep: None,
@@ -2589,6 +2612,8 @@ impl App {
             stem_busy: 0,
             stem_on: [true; 4],
             pomo: 0,
+            pomo_left: 0,
+            pomo_was: 1,
             pomo_end: None,
             pomo_focus: 25,
             pomo_break: 5,
@@ -2803,11 +2828,17 @@ impl App {
             lib_frac: 0.34,
             stack_frac: 1.0,
             prac_h: 300.0,
+            eq_h_user: None,
+            deck_zoom: None,
+            wa_map_until: 0.0,
+            wa_guide: false,
             queue_hidden: false,
             wa_pl_top: 0.0,
             pl_font: 0,
             eq_auto: false,
             eq_songs: HashMap::new(),
+            eq_mine: Vec::new(),
+            eq_name: String::new(),
             balance: 0,
             ebuf: String::new(),
             ebuf_id: 0,
@@ -2988,6 +3019,16 @@ impl App {
                 }
             }
         }
+        if let Some(list) = st["eq_mine"].as_array() {
+            for v in list {
+                let name = v[0].as_str().unwrap_or_default().to_string();
+                let g: Vec<f32> =
+                    v[1].as_array().map(|a| a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect()).unwrap_or_default();
+                if let (false, Ok(g)) = (name.is_empty(), <[f32; 10]>::try_from(g)) {
+                    app.eq_mine.push((name, g));
+                }
+            }
+        }
         if let Some(m) = st["eq_songs"].as_object() {
             for (k, v) in m {
                 let g: Vec<f32> =
@@ -3042,6 +3083,9 @@ impl App {
         if let Some(f) = st["stack_frac"].as_f64() {
             app.stack_frac = (f as f32).clamp(0.1, 1.0);
         }
+        app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
+        app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
+        app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         if let Some(h) = st["prac_h"].as_f64() {
             app.prac_h = (h as f32).clamp(220.0, 900.0);
         }
@@ -3061,6 +3105,23 @@ impl App {
         }
         if let Some(b) = st["pomo_sound"].as_bool() {
             app.pomo_sound = b;
+        }
+        // the focus timer as it was (closed, updated, crashed): held where it was, CONTINUE to carry on
+        let num = |k: &str, lo: u64, hi: u64, d: u32| st[k].as_u64().map_or(d, |v| v.clamp(lo, hi) as u32);
+        app.pomo_focus = num("pomo_focus", 1, 180, app.pomo_focus);
+        app.pomo_break = num("pomo_break", 1, 60, app.pomo_break);
+        app.pomo_cycles = num("pomo_cycles", 1, 16, app.pomo_cycles);
+        let run = st["pomo_run"].as_u64().unwrap_or(0) as u8;
+        let left = match run {
+            1 | 2 => st["pomo_end_unix"].as_u64().unwrap_or(0).saturating_sub(unix_now()),
+            4 => st["pomo_left"].as_u64().unwrap_or(0),
+            _ => 0,
+        };
+        if left > 0 {
+            app.pomo = 4;
+            app.pomo_left = left;
+            app.pomo_was = if run == 4 { st["pomo_was"].as_u64().unwrap_or(1) as u8 } else { run }.clamp(1, 2);
+            app.pomo_n = num("pomo_n", 1, 16, 1);
         }
         if let Some(p) = st["speed"].as_u64() {
             app.speed = (p as u32).clamp(25, 250);
@@ -3141,6 +3202,7 @@ impl App {
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
             Ok("mine") => app.sec = Sec::Mine,
+            Ok("yt") => app.sec = Sec::Yt,
             Ok("libfilter") => {
                 app.sec = Sec::Tidal;
                 app.apply(Action::Library);
@@ -3165,6 +3227,8 @@ impl App {
                 app.mtab = 0;
                 app.count_in = 4;
             }
+            Ok("eq") => app.show_eq = true,
+            Ok("buttonmap") => app.wa_map_until = 1e9,
             Ok("bookmarks") => {
                 app.practice = true;
                 app.more = true;
@@ -3233,6 +3297,7 @@ impl App {
             "pl_font": self.pl_font,
             "eq_auto": self.eq_auto,
             "eq_songs": self.eq_songs,
+            "eq_mine": self.eq_mine,
             "balance": self.balance,
             "winamp": self.wa_worn,
             "wa_recent": self.wa_recent,
@@ -3255,7 +3320,18 @@ impl App {
             "sc_browser": sources::SC_BROWSER.load(Ordering::Relaxed),
             "stack_frac": self.stack_frac,
             "prac_h": self.prac_h,
+            "eq_h": self.eq_h_user,
+            "deck_zoom": self.deck_zoom,
+            "wa_guide": self.wa_guide,
             "pomo_sound": self.pomo_sound,
+            "pomo_focus": self.pomo_focus,
+            "pomo_break": self.pomo_break,
+            "pomo_cycles": self.pomo_cycles,
+            "pomo_n": self.pomo_n,
+            "pomo_run": if matches!(self.pomo, 1 | 2 | 4) { self.pomo } else { 0 },
+            "pomo_end_unix": self.pomo_end.map_or(0, |e| unix_now() + e.saturating_duration_since(Instant::now()).as_secs()),
+            "pomo_left": self.pomo_left,
+            "pomo_was": self.pomo_was,
             "cols": COLS.load(Ordering::Relaxed),
             "cols_v": 2,
             "vinyl": VINYL.load(Ordering::Relaxed),
@@ -4986,13 +5062,15 @@ impl eframe::App for App {
                 // more, the practice panel gives first (down to its least), then the player scales down
                 if self.practice {
                     // the parts of the column that grow with the player's scale, and the ones that don't
-                    let skin_eq = self.show_eq && self.wa_art.is_some();
+                    let skin_eq = self.show_eq && self.wa_art.is_some() && self.eq_h_user.is_none();
                     let per_s = if self.queue_hidden { 0.0 } else { 138.0 } + if skin_eq { 116.0 } else { 0.0 };
                     let fixed = if self.queue_hidden { 160.0 } else { 44.0 + 80.0 }
                         + if !self.show_eq {
                             0.0
+                        } else if let Some(h) = self.eq_h_user {
+                            h
                         } else if skin_eq {
-                            90.0
+                            104.0
                         } else {
                             340.0
                         };
@@ -5053,11 +5131,18 @@ impl eframe::App for App {
                         });
                 }
                 // the equalizer docks under the player: the skin's at the player's own scale, or Backline's
-                let eq_h = if self.wa_art.is_some() { 116.0 * s + 44.0 + 46.0 } else { 340.0 };
+                let eq_h = self.eq_h_user.unwrap_or(if self.wa_art.is_some() { 116.0 * s + 44.0 + 60.0 } else { 340.0 });
                 if self.queue_hidden {
-                    // PL off: no queue, the player fills the column (the practice panel and equalizer under it)
+                    // PL off: no queue, the player fills the column (the practice panel under it); with the equalizer
+                    // open, the player keeps its size and the equalizer sits right under it, as with the queue
                     if self.show_eq {
-                        egui::TopBottomPanel::bottom("eq_dock")
+                        egui::TopBottomPanel::top("player")
+                            .exact_height(player_h)
+                            .resizable(false)
+                            .show_separator_line(false)
+                            .frame(panel_frame())
+                            .show(ctx, |ui| self.player_window(ui, &mut acts));
+                        egui::TopBottomPanel::top("eq_dock")
                             .exact_height(eq_h)
                             .resizable(false)
                             .show_separator_line(false)
@@ -5072,7 +5157,12 @@ impl eframe::App for App {
                             .frame(panel_frame())
                             .show(ctx, |ui| self.practice_ui(ui, &mut acts));
                     }
-                    egui::CentralPanel::default().frame(panel_frame()).show(ctx, |ui| self.player_window(ui, &mut acts));
+                    if self.show_eq {
+                        // the room left under them
+                        egui::CentralPanel::default().frame(egui::Frame::none().fill(pal().app_bg)).show(ctx, |_| {});
+                    } else {
+                        egui::CentralPanel::default().frame(panel_frame()).show(ctx, |ui| self.player_window(ui, &mut acts));
+                    }
                 } else {
                     egui::TopBottomPanel::top("player")
                         .exact_height(player_h)
@@ -5102,12 +5192,31 @@ impl eframe::App for App {
 
                 // drag handles between the windows: under the player (or the equalizer under it), its height;
                 // above the practice panel, the panel's height
-                if !self.queue_hidden {
-                    let y = screen.min.y + player_h + if self.show_eq { eq_h } else { 0.0 };
+                // the equalizer's own height: dragged at its bottom (or its top, when it sits at the bottom of the
+                // column); double-click for its size again
+                if self.show_eq {
+                    let y = screen.min.y + player_h + eq_h;
+                    let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
+                    match splitter(ctx, "split_eq", r, false) {
+                        Some(Some(py)) => {
+                            let h = py - screen.min.y - player_h;
+                            self.eq_h_user = Some(h.clamp(140.0, (screen.height() * 0.6).max(140.0)));
+                            self.dirty = true;
+                        }
+                        Some(None) => {
+                            self.eq_h_user = None;
+                            self.dirty = true;
+                        }
+                        None => {}
+                    }
+                }
+                if !self.queue_hidden || self.show_eq {
+                    // with the equalizer open, the player's handle is between the two
+                    let y = screen.min.y + player_h;
                     let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
                     match splitter(ctx, "split_h", r, false) {
                         Some(Some(py)) => {
-                            let ph = (py - screen.min.y - if self.show_eq { eq_h } else { 0.0 }).max(120.0);
+                            let ph = (py - screen.min.y).max(120.0);
                             self.stack_frac = (ph / screen.height()).clamp(0.1, 0.98);
                             self.dirty = true;
                         }

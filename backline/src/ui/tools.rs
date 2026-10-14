@@ -72,6 +72,10 @@ pub const F_GROUP_NAME: u32 = 76;
 pub const F_LIB_FILTER: u32 = 77;
 /// the song's tempo in practice (next to the count-off)
 pub const F_PR_BPM: u32 = 78;
+/// the name for an equalizer curve you save
+pub const F_EQ_NAME: u32 = 79;
+/// the Tidal search box
+pub const F_SEARCH: u32 = 80;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 
@@ -184,17 +188,28 @@ impl App {
             let clock = format!("{}:{:02}", left / 60, left % 60);
             let blocks = format!("{}/{}", self.pomo_n, self.pomo_cycles);
             match self.pomo {
-                1 => {
+                1 | 2 => {
                     ui.horizontal(|ui| {
-                        lcd_box(ui, &format!("FOCUS {}   {}", clock, blocks), 210.0, pal().ink);
+                        let what = if self.pomo == 1 { "FOCUS" } else { "REST" };
+                        let ink = if self.pomo == 1 { pal().ink } else { pal().ink2 };
+                        lcd_box(ui, &format!("{} {}   {}", what, clock, blocks), 210.0, ink);
+                        if retro_btn_w(ui, "II", 32.0, false).tip("Hold the timer (CONTINUE carries on)").clicked() {
+                            acts.push(Action::PomoHold);
+                        }
                         if retro_btn_w(ui, "STOP", 60.0, false).clicked() {
                             acts.push(Action::Pomo);
                         }
                     });
                 }
-                2 => {
+                4 => {
+                    // held: where it was, and a way on
+                    let left = self.pomo_left;
+                    let what = if self.pomo_was == 1 { "FOCUS" } else { "REST" };
                     ui.horizontal(|ui| {
-                        lcd_box(ui, &format!("REST {}   {}", clock, blocks), 210.0, pal().ink2);
+                        lcd_box(ui, &format!("{} {}:{:02}   {}", what, left / 60, left % 60, blocks), 210.0, pal().dim);
+                        if retro_btn_w(ui, "CONTINUE", 96.0, false).tip("Carry on with the timer").clicked() {
+                            acts.push(Action::PomoHold);
+                        }
                         if retro_btn_w(ui, "STOP", 60.0, false).clicked() {
                             acts.push(Action::Pomo);
                         }

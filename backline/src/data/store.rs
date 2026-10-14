@@ -204,6 +204,8 @@ pub struct SavedList {
     pub kind: String,
     pub name: String,
     pub url: String,
+    /// its songs as last read, so it opens at once (REFRESH reads it again)
+    pub items: Vec<Ext>,
 }
 
 /// A recording of a tune: from Tidal, a file on this computer, or a YouTube clip.

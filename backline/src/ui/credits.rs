@@ -117,7 +117,7 @@ impl App {
                     }
                 });
             });
-            if let Some(i) = crate::tab_row(ui, &["PLAYER SCREEN", "ALBUM VIEW"], which) {
+            if let Some(i) = crate::tab_row(ui, &["PLAYER SCREEN", "NOW PLAYING"], which) {
                 which = i;
             }
             ui.add_space(6.0);

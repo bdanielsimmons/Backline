@@ -183,6 +183,10 @@ impl App {
             Ok((s, p, art)) => {
                 crate::skin::set_custom(Some(p));
                 self.wa_art = Some(crate::winamp_ui::WaTex::new(&self.ctx, art));
+                // a skin you just put on shows where its buttons are for a moment (some hide them in the picture)
+                if announce {
+                    self.wa_map_until = self.ctx.input(|i| i.time) + 3.0;
+                }
                 crate::winamp_ui::set_chrome(self.wa_art.as_ref());
                 self.apply_pl_font();
                 crate::setup_style(&self.ctx);
@@ -1193,14 +1197,16 @@ impl App {
                             self.register(&e.to_version());
                         }
                         // imported: kept with your playlists, and open on its own page
-                        if !self.store.lists.iter().any(|l| l.url == url) {
-                            self.store.lists.push(store::SavedList {
+                        match self.store.lists.iter_mut().find(|l| l.url == url) {
+                            Some(l) => l.items = list.clone(),
+                            None => self.store.lists.push(store::SavedList {
                                 kind: "yt".to_string(),
                                 name: name.clone(),
                                 url: url.clone(),
-                            });
-                            self.store_dirty = true;
+                                items: list.clone(),
+                            }),
                         }
+                        self.store_dirty = true;
                         self.keep_all(list.iter().map(|e| e.id).collect());
                         self.yt_results = list;
                         self.yt_title = name;
@@ -1250,16 +1256,24 @@ impl App {
                         }
                         // a playlist (a link with several songs): kept with your playlists, on its own page
                         if let Some(u) = self.sc_cur.clone().filter(|_| list.len() > 1) {
-                            if !self.store.lists.iter().any(|l| l.url == u) {
-                                let name = self
-                                    .sc_sets
-                                    .iter()
-                                    .find(|(_, x)| *x == u)
-                                    .map(|(t, _)| t.clone())
-                                    .unwrap_or_else(|| sources::list_name(&u));
-                                self.store.lists.push(store::SavedList { kind: "sc".to_string(), name, url: u });
-                                self.store_dirty = true;
+                            match self.store.lists.iter_mut().find(|l| l.url == u) {
+                                Some(l) => l.items = list.clone(),
+                                None => {
+                                    let name = self
+                                        .sc_sets
+                                        .iter()
+                                        .find(|(_, x)| *x == u)
+                                        .map(|(t, _)| t.clone())
+                                        .unwrap_or_else(|| sources::list_name(&u));
+                                    self.store.lists.push(store::SavedList {
+                                        kind: "sc".to_string(),
+                                        name,
+                                        url: u,
+                                        items: list.clone(),
+                                    });
+                                }
                             }
+                            self.store_dirty = true;
                             self.keep_all(list.iter().map(|e| e.id).collect());
                         }
                         self.sc_results = list;
@@ -1271,7 +1285,8 @@ impl App {
                 }
             }
             Msg::ScMeta(e) => {
-                for slot in self.sc_results.iter_mut().chain(self.store.sc.iter_mut()) {
+                let kept = self.store.lists.iter_mut().flat_map(|l| l.items.iter_mut());
+                for slot in self.sc_results.iter_mut().chain(self.store.sc.iter_mut()).chain(kept) {
                     if slot.id == e.id {
                         slot.title = e.title.clone();
                         slot.artist = e.artist.clone();
@@ -1279,7 +1294,7 @@ impl App {
                         slot.cover = e.cover.clone();
                     }
                 }
-                if self.store.sc.iter().any(|x| x.id == e.id) {
+                if self.store.sc.iter().chain(self.store.lists.iter().flat_map(|l| l.items.iter())).any(|x| x.id == e.id) {
                     self.store_dirty = true;
                 }
             }
@@ -2596,8 +2611,23 @@ impl App {
                 self.stem_on = [true; 4];
                 self.set_note("ALL STEMS DELETED");
             }
+            Action::PomoHold => {
+                if matches!(self.pomo, 1 | 2) {
+                    self.pomo_left = self.pomo_end.map_or(0, |e| e.saturating_duration_since(Instant::now()).as_secs());
+                    self.pomo_was = self.pomo;
+                    self.pomo = 4;
+                    self.pomo_end = None;
+                    self.set_note("FOCUS TIMER HELD - CONTINUE WHEN READY");
+                } else if self.pomo == 4 {
+                    self.pomo = self.pomo_was.clamp(1, 2);
+                    self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_left.max(1)));
+                    self.set_note("FOCUS TIMER CONTINUES");
+                }
+                self.dirty = true;
+            }
             Action::Pomo => {
-                if self.pomo == 1 || self.pomo == 2 {
+                self.dirty = true;
+                if matches!(self.pomo, 1 | 2 | 4) {
                     self.pomo = 0;
                     self.pomo_end = None;
                     self.set_note("FOCUS TIMER STOPPED");
@@ -2672,6 +2702,7 @@ impl App {
             return;
         }
         self.pomo_flash = Some(Instant::now());
+        self.dirty = true;
         if self.pomo_sound {
             self.player.send(Cmd::Chime);
         }

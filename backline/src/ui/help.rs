@@ -105,13 +105,13 @@ fn start_tab(ui: &mut egui::Ui) {
         ui,
         &[
             "LEFT window = LIBRARY. The tabs at the top switch the source.",
-            "MIDDLE window = PLAYER. Play, skip, seek, volume. Click the cover to open the big album view.",
+            "MIDDLE window = PLAYER. Play, skip, seek, volume. Click the cover to open Now Playing: the song big.",
             "RIGHT window = QUEUE. Drag a row to reorder it.",
             "RIGHT-CLICK almost anything: songs, the seek bar, the skin button, the visualizer.",
             "Right-click a song for: play next, add to queue, add to a playlist, copy its link.",
         ],
     );
-    section_header(ui, "THE ALBUM VIEW");
+    section_header(ui, "NOW PLAYING");
     para(
         ui,
         "Click the cover or press A for the big view: large art, lyrics, a visualizer behind it. Made for listening.",
@@ -142,7 +142,7 @@ fn start_tab(ui: &mut egui::Ui) {
         ui,
         &[
             "Skins are in the BACKLINE menu at the top of the library, with preferences, storage and the log.",
-            "In the album view: right-click the spectrum icon for bars, waveform, colors, size.",
+            "In Now Playing: right-click the spectrum icon for bars, waveform, colors, size.",
             "Everything saves by itself.",
         ],
     );
@@ -154,7 +154,7 @@ fn keys_tab(ui: &mut egui::Ui, binds: &[Option<egui::Key>], open_prefs: &mut boo
     if retro_btn(ui, "CHANGE SHORTCUTS", false).clicked() {
         *open_prefs = true;
     }
-    for (g, name) in ["PLAYING", "ALBUM VIEW", "PRACTICE"].iter().enumerate() {
+    for (g, name) in ["PLAYING", "NOW PLAYING", "PRACTICE"].iter().enumerate() {
         if g == 2 && !PRACTICE {
             continue;
         }

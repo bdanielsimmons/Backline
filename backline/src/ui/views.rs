@@ -867,17 +867,21 @@ impl App {
             return;
         }
         section_header(ui, "PLAYLISTS");
+        crate::cards_header(ui, "LENGTH");
         for (k, (i, l)) in mine.iter().enumerate() {
-            if let Some(r) =
-                list_row(ui, k, Some(k + 1), || l.name.clone(), || "OPEN".to_string(), RowState::Normal, false, false)
-            {
+            let length = || {
+                if l.items.is_empty() {
+                    String::new()
+                } else {
+                    let total: f32 = l.items.iter().map(|e| e.dur).sum();
+                    let n = l.items.len();
+                    let time = if total > 0.0 { format!(", {}", crate::fmt_long(total)) } else { String::new() };
+                    format!("{} song{}{}", n, if n == 1 { "" } else { "s" }, time)
+                }
+            };
+            if let Some(r) = list_row(ui, k, Some(k + 1), || l.name.clone(), length, RowState::Normal, false, false) {
                 if r.clicked() {
-                    if kind == "sc" {
-                        acts.push(Action::ScOpenSet(l.url.clone()));
-                    } else {
-                        self.yt_in = l.url.clone();
-                        acts.push(Action::AddYt);
-                    }
+                    self.open_saved_list(l, acts);
                 }
                 r.context_menu(|ui| {
                     crate::link_item(ui, acts, Some(l.url.clone()));
@@ -887,6 +891,39 @@ impl App {
                     }
                 });
             }
+        }
+    }
+
+    /// Open a saved playlist on its page: at once, from the songs kept with it (read from the web only the first
+    /// time, or with REFRESH).
+    fn open_saved_list(&mut self, l: &store::SavedList, acts: &mut Vec<Action>) {
+        if l.items.is_empty() {
+            self.read_list_again(&l.kind, &l.url, acts);
+            return;
+        }
+        for e in &l.items {
+            self.register(&e.to_version());
+        }
+        self.keep_all(l.items.iter().map(|e| e.id).collect());
+        if l.kind == "sc" {
+            self.sc_cur = Some(l.url.clone());
+            self.sc_results = l.items.clone();
+        } else {
+            self.yt_cur = Some(l.url.clone());
+            self.yt_title = l.name.clone();
+            self.yt_results = l.items.clone();
+            self.yt_open = true;
+        }
+        self.list_ask = None;
+    }
+
+    /// Read a playlist from the web again (songs may have been added to it).
+    fn read_list_again(&mut self, kind: &str, url: &str, acts: &mut Vec<Action>) {
+        if kind == "sc" {
+            acts.push(Action::ScOpenSet(url.to_string()));
+        } else {
+            self.yt_in = url.to_string();
+            acts.push(Action::AddYt);
         }
     }
 
@@ -933,6 +970,9 @@ impl App {
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             play_buttons(ui, &tracks, acts, false);
+            if retro_btn(ui, "REFRESH", false).tip("Read the playlist again, for songs added to it since").clicked() {
+                self.read_list_again(kind, &url, acts);
+            }
             if self.list_ask.as_deref() != Some(url.as_str())
                 && retro_btn(ui, "REMOVE PLAYLIST...", false)
                     .tip("Take it off your playlists (the songs you kept stay)")

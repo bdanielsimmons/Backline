@@ -123,14 +123,14 @@ const BASIC: &[Step] = &[
     },
     Step {
         key: "COVER",
-        title: "THE COVER OPENS THE ALBUM VIEW",
-        text: "Click the cover art (or press A) for the big album view. NEXT opens it for you.",
+        title: "THE COVER OPENS NOW PLAYING",
+        text: "Click the cover art (or press A) for Now Playing, the song big. NEXT opens it for you.",
         ..BASE
     },
     Step {
         key: "ARTBTNS",
         scene: Scene::Album,
-        title: "THE ALBUM VIEW",
+        title: "NOW PLAYING",
         text: "A big cover, lyrics you can scroll and click to jump, and the visualizer behind it. Click the cover to put it on a spinning record. Playing is in the middle; on the left, how it looks; on the right, the speed, practice tools, the queue and the volume. CLOSE or ESC takes you back.",
         ..BASE
     },
@@ -212,8 +212,8 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "ARTPRACTICE",
         scene: Scene::AlbumPractice,
-        title: "7. PRACTICE IN THE ALBUM VIEW",
-        text: "Open the album view in practice mode and this strip comes with you: set the loop, switch it on and change the speed without leaving the big cover.",
+        title: "7. PRACTICE IN NOW PLAYING",
+        text: "Open Now Playing in practice mode and this strip comes with you: set the loop, switch it on and change the speed without leaving the big cover.",
         ab: true,
         ..BASE
     },

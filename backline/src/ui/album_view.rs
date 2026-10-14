@@ -23,6 +23,12 @@ impl App {
         let strip_h = bh() + 14.0;
         let top = 28.0 + if prac { strip_h + 10.0 } else { 0.0 };
         let area = Rect::from_min_max(full.min + Vec2::new(28.0, top), Pos2::new(full.max.x - 28.0, full.max.y - bar_h - 12.0));
+        // the queue panel, when open, is on top: nothing under it (the lyrics) takes the mouse
+        let q_panel = self.art_queue.then(|| {
+            let w = (full.width() * 0.4).min(380.0);
+            Rect::from_min_max(Pos2::new(full.max.x - 28.0 - w, area.min.y), Pos2::new(full.max.x - 28.0, area.max.y))
+        });
+        let hover = hover.filter(|pp| !q_panel.is_some_and(|q| q.contains(*pp)));
         let lyrics_on = self.show_lyrics && area.width() > 640.0;
         let art_zone = if lyrics_on {
             Rect::from_min_max(area.min, Pos2::new(area.min.x + area.width() * 0.5 - 10.0, area.max.y))
@@ -176,7 +182,11 @@ impl App {
                 // the record: a soft round shadow, then the disc turning while the music plays
                 let off = Vec2::new(-tilt.x * 22.0, -tilt.y * 12.0 + 16.0);
                 p.circle_filled(center + off, a * 0.5 + 4.0, Color32::from_black_alpha((60.0 * self.art_op) as u8));
-                let spin = vinyl_angle(ui, if active && !self.paused { self.speed as f32 / 100.0 } else { 0.0 });
+                // the record turns with the song: one turn a bar (four beats), so 133 BPM is 33 1/3 rpm; with no
+                // tempo known, 33 1/3
+                let tempo = if self.bpm > 0 { self.bpm as f32 / 133.3 } else { 1.0 };
+                let spin =
+                    vinyl_angle(ui, if active && !self.paused { self.speed as f32 / 100.0 * tempo } else { 0.0 });
                 // follows the cover opacity setting, and never fully solid, so the visualizer shows through
                 paint_vinyl(&p, Rect::from_center_size(center, Vec2::splat(a)), tex, spin, self.art_op.min(0.8));
             } else {
@@ -432,10 +442,9 @@ impl App {
         ptext(&p, Pos2::new(sb.max.x, sb.max.y + 14.0), Align::Max, &fmt_time(dur), 2.0, pal().trim);
 
         // ---- the queue, as a panel on the right (the three-lines button)
-        if self.art_queue {
-            let w = (full.width() * 0.4).min(380.0);
-            let panel =
-                Rect::from_min_max(Pos2::new(full.max.x - 28.0 - w, area.min.y), Pos2::new(full.max.x - 28.0, area.max.y));
+        if let Some(panel) = q_panel {
+            // it catches clicks on its empty part too
+            let _ = ui.interact(panel, ui.id().with("art_queue_block"), Sense::click_and_drag());
             let queue = self.queue.clone();
             let cur = self.cur;
             let mut close = false;

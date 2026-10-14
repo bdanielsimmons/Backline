@@ -33,14 +33,64 @@ impl App {
         // the player sits in the middle, in line with the equalizer under it; the album cover is small, in the
         // margin to its right, framed in the skin's colours; a click on it opens the album view
         // mini: the window is the player - the deck fills it, no cover beside it
-        let side = if self.mini { 0.0 } else { (area.height() * 0.55).min(area.width() * 0.14) };
+        let mut side = if self.mini { 0.0 } else { (area.height() * 0.55).min(area.width() * 0.14) };
         let skin_area = if self.mini { area } else { area.shrink2(Vec2::new(side + 20.0, 0.0)) };
-        // mini: the deck fills the window edge to edge (the window has its shape); otherwise whole pixels, centred
+        // mini: the deck fills the window edge to edge (the window has its shape); otherwise whole pixels, centred -
+        // or the size you gave it (dragging its corner, or ctrl + the mouse wheel over it), up to the whole window
         let pl = if self.mini {
             Place { o: skin_area.min, s: (skin_area.width() / 275.0).min(skin_area.height() / 116.0) }
+        } else if let Some(z) = self.deck_zoom {
+            // never past what shows of the window (its edges may be cut by the panel)
+            let shown = area.intersect(ui.clip_rect());
+            let s = z.min((shown.width() / 275.0).min(shown.height() / 116.0)).max(0.5);
+            // no room left beside it: the cover steps aside
+            let room = if 275.0 * s > skin_area.width() { shown } else { skin_area.intersect(shown) };
+            if 275.0 * s > skin_area.width() {
+                side = 0.0;
+            }
+            let snap = |v: f32| (v * font::ppp()).round() / font::ppp();
+            Place { o: Pos2::new(snap(room.center().x - 137.5 * s), snap(room.center().y - 58.0 * s)), s }
         } else {
             Place::fit(skin_area)
         };
+        if !self.mini {
+            let deck = Rect::from_min_size(pl.o, Vec2::new(275.0, 116.0) * pl.s);
+            // ctrl + the mouse wheel over the deck sizes it
+            if ui.rect_contains_pointer(deck) {
+                let zd = ui.input(|i| if i.modifiers.command { i.zoom_delta() } else { 1.0 });
+                if zd != 1.0 {
+                    self.deck_zoom = Some((pl.s * zd).clamp(0.5, 8.0));
+                    self.dirty = true;
+                }
+            }
+            // its corner: drag to size it (it stays centred), double-click for as large as fits
+            let grip = Rect::from_min_size(deck.max - Vec2::splat(12.0), Vec2::splat(12.0));
+            let gh = ui
+                .interact(grip, ui.id().with("deck_grip"), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
+                .tip("Drag to size the player (ctrl + mouse wheel too); double-click: as large as fits");
+            if gh.double_clicked() {
+                self.deck_zoom = None;
+                self.dirty = true;
+            } else if gh.dragged() {
+                if let Some(pp) = gh.interact_pointer_pos() {
+                    let c = deck.center();
+                    let s = ((pp.x - c.x) * 2.0 / 275.0).max((pp.y - c.y) * 2.0 / 116.0);
+                    self.deck_zoom = Some(s.clamp(0.5, 8.0));
+                    self.dirty = true;
+                }
+            }
+            if gh.hovered() || gh.dragged() {
+                let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, ui.id().with("deck_grip_mark")));
+                for k in 0..3 {
+                    let d = 3.0 + k as f32 * 3.0;
+                    p.line_segment(
+                        [Pos2::new(grip.max.x - d, grip.max.y - 1.0), Pos2::new(grip.max.x - 1.0, grip.max.y - d)],
+                        Stroke::new(1.5_f32, pal().ink),
+                    );
+                }
+            }
+        }
         let right = pl.o.x + 275.0 * pl.s;
         let cover = Rect::from_center_size(Pos2::new((right + area.max.x) / 2.0, area.center().y), Vec2::splat(side));
         // the tour points at the skinned player and its cover too
@@ -95,8 +145,8 @@ impl App {
             }
         }
         crate::tour::mark("COVER", cover);
-        if self.mini {
-            // (no cover in mini)
+        if self.mini || side < 1.0 {
+            // (no cover in mini, or with the player sized to fill the window)
         } else if let Some(tr) = self.cur_track() {
             let url = cover_url(&tr.cover, 320);
             // framed in the skin's colours
@@ -109,7 +159,7 @@ impl App {
         let ch = ui
             .interact(cover, ui.id().with("winamp_cover"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Album view  (A)");
+            .tip("Now Playing  (A)");
         if ch.clicked() {
             acts.push(Action::ToggleArt);
         }
@@ -143,9 +193,16 @@ impl App {
             ui.memory_mut(|m| m.toggle_popup(opt_menu));
         }
         egui::popup::popup_below_widget(ui, opt_menu, &opt, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-            if self.app_menu_items(ui, acts) {
+            // the menu can be taller than the mini player: a way out at the top, and it scrolls in what room there is
+            if menu_item(ui, "x  Close this menu") {
                 ui.memory_mut(|m| m.close_popup());
             }
+            let room = (ui.ctx().screen_rect().max.y - ui.cursor().min.y - 12.0).max(80.0);
+            egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
+                if self.app_menu_items(ui, acts) {
+                    ui.memory_mut(|m| m.close_popup());
+                }
+            });
         });
         if tb(ui, "min", 244.0, (9.0, 0.0), "Minimize").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
@@ -297,8 +354,26 @@ impl App {
         let br = pl.r(177.0, 57.0, 38.0, 13.0);
         // skins without a balance picture borrow the volume one, as Winamp does
         let bal = if t.size("balance").is_some() { "balance" } else { "volume" };
-        let bframe = (self.balance.unsigned_abs() as f32 / 100.0 * (frames(bal) - 1.0)).round();
-        t.spr(&p, bal, (9.0, bframe * 15.0, 38.0, 13.0), br);
+        if t.bal_is_vol && t.size(bal).is_some_and(|s| s.x >= 68.0) {
+            // a volume-style strip (filled from the left): it follows the knob, the filled part ending under it,
+            // rather than Winamp's left-right mirror, which only suits a picture drawn for it
+            let at = (self.balance + 100) as f32 / 200.0;
+            let f = (at * (frames(bal) - 1.0)).round();
+            let edge = 7.0 + f / (frames(bal) - 1.0).max(1.0) * 54.0;
+            let x = (edge - (7.0 + at * 24.0)).clamp(0.0, 30.0).round();
+            t.spr(&p, bal, (x, f * 15.0, 38.0, 13.0), br);
+        } else {
+            let mut bframe = (self.balance.unsigned_abs() as f32 / 100.0 * (frames(bal) - 1.0)).round();
+            // only the pictures of the smooth run (the nearest of them)
+            if bal == "balance" {
+                if let Some(k) = t.bal_frames.iter().min_by_key(|k| (**k as f32 - bframe).abs() as i32) {
+                    bframe = *k as f32;
+                }
+            }
+            // one set of pictures for both sides: to the left it is mirrored, so a picture that leans one way
+            // (a row of hearts emptying from one end) leans the way you pushed it
+            t.spr_flip(&p, bal, (9.0, bframe * 15.0, 38.0, 13.0), br, self.balance < 0);
+        }
         let bh = hit(ui, "balance", br, true).tip(match self.balance {
             0 => "Balance: centre  (drag; double-click to centre)".to_string(),
             b if b < 0 => format!("Balance: {}% left  (double-click to centre)", -b),
@@ -348,6 +423,14 @@ impl App {
             (true, true) => (69.0, 73.0),
         };
         t.spr(&p, "shufrep", (pl_src.0, pl_src.1, 23.0, 12.0), plr);
+        // a skin whose EQ and PL buttons can't be seen: outlined and lettered
+        if let Some(ink) = t.eqpl_ink {
+            for (r, name, on) in [(eq, "EQ", self.show_eq), (plr, "PL", !self.queue_hidden)] {
+                let r = r.shrink(pl.s * 0.5);
+                p.rect_stroke(r, 0.0, egui::Stroke::new(pl.s.max(1.0), ink.gamma_multiply(if on { 1.0 } else { 0.6 })));
+                p.text(r.center(), egui::Align2::CENTER_CENTER, name, egui::FontId::monospace(8.0 * pl.s), ink);
+            }
+        }
         if plh.clicked() {
             self.queue_hidden = !self.queue_hidden;
         }
@@ -358,7 +441,10 @@ impl App {
         if active && dur > 0.0 {
             let f = (pos / dur).clamp(0.0, 1.0);
             let src = if ph.dragged() { (278.0, 0.0, 29.0, 10.0) } else { (248.0, 0.0, 29.0, 10.0) };
-            t.spr(&p, "posbar", src, pl.r(16.0 + f * 219.0, 72.0, 29.0, 10.0));
+            let kr = pl.r(16.0 + f * 219.0, 72.0, 29.0, 10.0);
+            if !t.spr(&p, "posbar", src, kr) {
+                plate(&p, kr.shrink2(Vec2::new(pl.s, 2.0 * pl.s)), "", ph.dragged());
+            }
             if ph.dragged() || ph.clicked() {
                 if let Some(pp) = ph.interact_pointer_pos() {
                     self.seek_drag = Some(((pp.x - pr.min.x - 14.5 * pl.s) / (219.0 * pl.s)).clamp(0.0, 1.0) * dur);
@@ -390,14 +476,25 @@ impl App {
             let r = pl.r(x, 88.0, w, 18.0);
             let h = hit(ui, name, r, false).tip(tip);
             let down = if h.is_pointer_button_down_on() { 18.0 } else { 0.0 };
-            t.spr(&p, "cbuttons", (sx, down, w, 18.0), r);
+            if !t.spr(&p, "cbuttons", (sx, down, w, 18.0), r) {
+                let glyph = match name {
+                    "prev" => "|<",
+                    "play" => ">",
+                    "pause" => "||",
+                    "stop" => "[]",
+                    _ => ">|",
+                };
+                plate(&p, r.shrink(pl.s), glyph, down > 0.0);
+            }
             if h.clicked() {
                 acts.push(a);
             }
         }
         let ej = pl.r(136.0, 89.0, 22.0, 16.0);
         let ejh = hit(ui, "eject", ej, false).tip("Open files");
-        t.spr(&p, "cbuttons", (114.0, if ejh.is_pointer_button_down_on() { 16.0 } else { 0.0 }, 22.0, 16.0), ej);
+        if !t.spr(&p, "cbuttons", (114.0, if ejh.is_pointer_button_down_on() { 16.0 } else { 0.0 }, 22.0, 16.0), ej) {
+            plate(&p, ej.shrink(pl.s), "^", ejh.is_pointer_button_down_on());
+        }
         if ejh.clicked() {
             acts.push(Action::AddFiles);
         }
@@ -405,7 +502,9 @@ impl App {
         let sh = pl.r(164.0, 89.0, 47.0, 15.0);
         let shh = hit(ui, "shuffle", sh, false).tip("Shuffle");
         let sy = if self.shuffle { 30.0 } else { 0.0 } + if shh.is_pointer_button_down_on() { 15.0 } else { 0.0 };
-        t.spr(&p, "shufrep", (28.0, sy, 47.0, 15.0), sh);
+        if !t.spr(&p, "shufrep", (28.0, sy, 47.0, 15.0), sh) {
+            plate(&p, sh.shrink(pl.s), "SHUFFLE", self.shuffle);
+        }
         if shh.clicked() {
             acts.push(Action::Shuffle);
         }
@@ -416,7 +515,9 @@ impl App {
             _ => "Repeat: this song  (click: off)",
         });
         let ry = if self.repeat != Repeat::Off { 30.0 } else { 0.0 } + if rph.is_pointer_button_down_on() { 15.0 } else { 0.0 };
-        t.spr(&p, "shufrep", (0.0, ry, 28.0, 15.0), rp);
+        if !t.spr(&p, "shufrep", (0.0, ry, 28.0, 15.0), rp) {
+            plate(&p, rp.shrink(pl.s), "REP", self.repeat != Repeat::Off);
+        }
         // Winamp's button has only on / off: repeating one song gets a small "1" in the skin's own font, in the
         // button's corner, so every skin shows which it is
         if self.repeat == Repeat::One {
@@ -456,6 +557,46 @@ impl App {
                 p.rect_stroke(front, 0.0, ink);
             }
         }
+        // where the buttons are: outlined and named for a moment after a skin is put on, and while Alt is held over
+        // the player - some skins hide them in their picture
+        {
+            let deck = Rect::from_min_size(pl.o, Vec2::new(275.0, 116.0) * pl.s);
+            let (now, alt) = ui.input(|i| (i.time, i.modifiers.alt));
+            let show = self.wa_guide || now < self.wa_map_until || (alt && ui.rect_contains_pointer(deck));
+            let a = ui.ctx().animate_bool_with_time(id.with("button_map"), show, 0.3);
+            if a > 0.0 {
+                if now < self.wa_map_until {
+                    ui.ctx().request_repaint();
+                }
+                let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with("button_map_layer")));
+                let spots: [(&str, (f32, f32, f32, f32)); 13] = [
+                    ("PREV", (16.0, 88.0, 23.0, 18.0)),
+                    ("PLAY", (39.0, 88.0, 23.0, 18.0)),
+                    ("PAUSE", (62.0, 88.0, 23.0, 18.0)),
+                    ("STOP", (85.0, 88.0, 23.0, 18.0)),
+                    ("NEXT", (108.0, 88.0, 22.0, 18.0)),
+                    ("OPEN", (136.0, 89.0, 22.0, 16.0)),
+                    ("SHUFFLE", (164.0, 89.0, 47.0, 15.0)),
+                    ("REPEAT", (210.0, 89.0, 28.0, 15.0)),
+                    ("EQ", (219.0, 58.0, 23.0, 12.0)),
+                    ("PL", (242.0, 58.0, 23.0, 12.0)),
+                    ("VOLUME", (107.0, 57.0, 68.0, 13.0)),
+                    ("BAL", (177.0, 57.0, 38.0, 13.0)),
+                    ("SEEK", (16.0, 72.0, 248.0, 10.0)),
+                ];
+                let font = egui::FontId::monospace((5.5 * pl.s).max(9.0));
+                for (name, (x, y, w, h)) in spots {
+                    let r = pl.r(x, y, w, h);
+                    // dark under light, so it shows on any skin
+                    p.rect_stroke(r, 0.0, Stroke::new(3.0_f32, Color32::BLACK.gamma_multiply(0.6 * a)));
+                    p.rect_stroke(r, 0.0, Stroke::new(1.5_f32, Color32::WHITE.gamma_multiply(0.9 * a)));
+                    let g = p.layout_no_wrap(name.to_string(), font.clone(), Color32::WHITE.gamma_multiply(a));
+                    let bg = Rect::from_center_size(r.center(), g.size() + Vec2::new(4.0, 0.0));
+                    p.rect_filled(bg, 2.0, Color32::from_black_alpha((190.0 * a) as u8));
+                    p.galley(bg.center() - g.size() / 2.0, g, Color32::WHITE);
+                }
+            }
+        }
         self.wa_art = Some(t);
     }
 
@@ -475,7 +616,9 @@ impl App {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Equalizer on / off");
         let on_src = if self.eq_on { (69.0, 119.0) } else { (10.0, 119.0) };
-        t.spr(&p, "eqmain", (on_src.0, on_src.1, 26.0, 12.0), on_r);
+        if !t.spr(&p, "eqmain", (on_src.0, on_src.1, 26.0, 12.0), on_r) {
+            plate(&p, on_r.shrink(pl.s), "ON", self.eq_on);
+        }
         if on_h.clicked() {
             self.eq_on = !self.eq_on;
             changed = true;
@@ -486,7 +629,9 @@ impl App {
             .interact(au_r, id.with("auto"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("AUTO: remember the EQ for each song and bring it back when it plays");
-        t.spr(&p, "eqmain", (if self.eq_auto { 95.0 } else { 36.0 }, 119.0, 32.0, 12.0), au_r);
+        if !t.spr(&p, "eqmain", (if self.eq_auto { 95.0 } else { 36.0 }, 119.0, 32.0, 12.0), au_r) {
+            plate(&p, au_r.shrink(pl.s), "AUTO", self.eq_auto);
+        }
         if au.clicked() {
             self.eq_auto = !self.eq_auto;
             self.dirty = true;
@@ -504,23 +649,31 @@ impl App {
         let pr_r = pl.r(217.0, 18.0, 44.0, 12.0);
         let pr_h =
             ui.interact(pr_r, id.with("presets"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Presets");
-        t.spr(&p, "eqmain", (224.0, if pr_h.is_pointer_button_down_on() { 176.0 } else { 164.0 }, 44.0, 12.0), pr_r);
+        if !t.spr(&p, "eqmain", (224.0, if pr_h.is_pointer_button_down_on() { 176.0 } else { 164.0 }, 44.0, 12.0), pr_r) {
+            plate(&p, pr_r.shrink(pl.s), "PRESETS", pr_h.is_pointer_button_down_on());
+        }
         let menu_id = id.with("presets_menu");
         if pr_h.clicked() {
             ui.memory_mut(|m| m.toggle_popup(menu_id));
         }
         egui::popup::popup_below_widget(ui, menu_id, &pr_h, egui::PopupCloseBehavior::CloseOnClick, |ui| {
             ui.set_min_width(140.0);
-            for (name, g) in EQ_PRESETS.iter() {
-                if menu_item(ui, name) {
-                    self.eq_gains = *g;
+            // Backline's, then yours
+            let all: Vec<(String, [f32; 10])> =
+                EQ_PRESETS.iter().map(|(n, g)| (n.to_string(), *g)).chain(self.eq_mine.iter().cloned()).collect();
+            for (name, g) in all {
+                if menu_item(ui, &name) {
+                    self.eq_gains = g;
                     self.eq_on = true;
                     changed = true;
                 }
             }
         });
         // the curve, in the skin's own curve colours
-        t.spr(&p, "eqmain", (0.0, 294.0, 113.0, 19.0), pl.r(86.0, 17.0, 113.0, 19.0));
+        let has_graph = t.spr(&p, "eqmain", (0.0, 294.0, 113.0, 19.0), pl.r(86.0, 17.0, 113.0, 19.0));
+        if !has_graph {
+            p.rect_filled(pl.r(86.0, 17.0, 113.0, 19.0), 1.0, Color32::from_black_alpha(150));
+        }
         for x in 0..112 {
             let f = x as f32 / 111.0 * 9.0;
             let i = (f.floor() as usize).min(8);
@@ -528,16 +681,24 @@ impl App {
             let (a, b) = (self.eq_gains[i], self.eq_gains[i + 1]);
             let g = a + (b - a) * (u * u * (3.0 - 2.0 * u));
             let y = (26.0 - g / 12.0 * 9.0).round().clamp(17.0, 35.0);
-            let c = t.graph.get((y - 17.0) as usize).copied().unwrap_or(Color32::YELLOW);
+            let c = if has_graph { t.graph.get((y - 17.0) as usize).copied() } else { None }.unwrap_or(pal().ink);
             p.rect_filled(pl.r(86.0 + x as f32, y, 1.0, 1.0), 0.0, c);
         }
         // the preamp slider (a plain gain before the bands) and the ten bands
         let band = |p: &egui::Painter, x: f32, value: f32, down: bool| {
             let n = (value / 100.0 * 27.0).round().clamp(0.0, 27.0) as i32;
             let (sx, sy) = ((n % 14) as f32 * 15.0, (n / 14) as f32 * 65.0);
-            t.spr(p, "eqmain", (13.0 + sx, 164.0 + sy, 14.0, 63.0), pl.r(x, 38.0, 14.0, 63.0));
             let ty = 38.0 + (1.0 - value / 100.0) * 51.0;
-            t.spr(p, "eqmain", (0.0, if down { 176.0 } else { 164.0 }, 11.0, 11.0), pl.r(x + 1.0, ty, 11.0, 11.0));
+            if !t.spr(p, "eqmain", (13.0 + sx, 164.0 + sy, 14.0, 63.0), pl.r(x, 38.0, 14.0, 63.0)) {
+                // no slider pictures in this skin: a plain groove, filled from the middle to the knob
+                p.rect_filled(pl.r(x + 2.0, 38.0, 10.0, 63.0), 2.0, Color32::from_black_alpha(140));
+                p.rect_filled(pl.r(x + 6.0, 41.0, 2.0, 57.0), 0.0, pal().ink.gamma_multiply(0.35));
+                let (a, b) = (ty + 5.5, 69.5);
+                p.rect_filled(pl.r(x + 6.0, a.min(b), 2.0, (a - b).abs()), 0.0, pal().ink2);
+            }
+            if !t.spr(p, "eqmain", (0.0, if down { 176.0 } else { 164.0 }, 11.0, 11.0), pl.r(x + 1.0, ty, 11.0, 11.0)) {
+                plate(p, pl.r(x + 1.5, ty + 2.5, 11.0, 6.0), "", down);
+            }
         };
         let pr = pl.r(21.0, 38.0, 14.0, 63.0);
         let ph = ui.interact(pr, id.with("preamp"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(
