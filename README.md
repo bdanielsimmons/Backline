@@ -19,6 +19,9 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Winamp skins with missing or hidden parts get clean stand-ins and a guide to their buttons
+- Resize the player in its window, and the equalizer's height; save and name your own EQ curves
+- Now Playing button; the focus timer survives restarts with CONTINUE; playlists open at once
 - The count-off clicks at the song's own tempo, and counts you back in after a pause
 - A BPM control and TAP next to COUNT-OFF, for when the tempo found is wrong
 - With saving on, YouTube and SoundCloud playlists download as soon as you open them
@@ -26,9 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - MY TRACKS and LISTS get the library filter box
 - Sound output keeps up with plugging and unplugging by itself; Bluetooth dropping out pauses the music
 - YouTube and SoundCloud playlists in their own PLAYLISTS section, each on its own page
-- Playlist files (.m3u, .m3u8, .pls) come in as Backline playlists
-- Zoom the library on its own - ctrl + mouse wheel or ctrl +/- (ctrl 0 resets) with the mouse over it
-- WHAT'S NEW: after an update, the changes in this version and the few before it (any time from the BACKLINE page)
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
