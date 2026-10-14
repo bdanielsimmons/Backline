@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- The count-off clicks at the song's own tempo, and counts you back in after a pause
+- A BPM control and TAP next to COUNT-OFF, for when the tempo found is wrong
 - With saving on, YouTube and SoundCloud playlists download as soon as you open them
 - Text boxes select: Ctrl+A, Shift+arrows, drag or double-click, with copy, cut and paste
 - MY TRACKS and LISTS get the library filter box
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Playlist files (.m3u, .m3u8, .pls) come in as Backline playlists
 - Zoom the library on its own - ctrl + mouse wheel or ctrl +/- (ctrl 0 resets) with the mouse over it
 - WHAT'S NEW: after an update, the changes in this version and the few before it (any time from the BACKLINE page)
-- Favourite Winamp skins: + FAVOURITE for the one you're wearing, or right-click any skin; a FAVOURITES list wears one again (X takes it off)
-- Loop groups: keep a song's licks in groups (Head, Solo licks... or your own); make, rename and delete groups in LOOPS
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
