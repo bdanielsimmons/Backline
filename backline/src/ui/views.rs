@@ -124,7 +124,7 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
     let lh = 7.0 * spx(px) + 6.0;
     let inner = rect.shrink2(Vec2::new(8.0, 3.0));
     let mut out = FieldOut { changed: false, enter: false };
-    let resp = ui.interact(rect, ui.id().with(("fld", id)), Sense::click());
+    let resp = ui.interact(rect, ui.id().with(("fld", id)), Sense::click_and_drag());
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
@@ -149,38 +149,88 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         }
     };
 
-    if resp.clicked() {
+    // the place in the text under the mouse
+    let at = |chars: &[char], pp: Pos2, hoff: f32, voff: f32, lines: &[(usize, usize)]| -> usize {
+        let li = if multi { (((pp.y - inner.min.y + voff) / lh).floor().max(0.0) as usize).min(lines.len() - 1) } else { 0 };
+        let (s, e) = lines[li];
+        let x = pp.x - inner.min.x + hoff;
+        let mut best = s;
+        let mut best_d = f32::MAX;
+        for k in s..=e {
+            let d = (caret_x(chars, s, k, px) - x).abs();
+            if d < best_d {
+                best_d = d;
+                best = k;
+            }
+        }
+        best
+    };
+    let shift = ui.input(|i| i.modifiers.shift);
+    if resp.double_clicked() && focused {
+        // a double click picks the word
+        let c = ed.cur.min(chars.len());
+        let word = |ch: &char| !ch.is_whitespace();
+        let s = (0..c).rev().take_while(|k| word(&chars[*k])).last().unwrap_or(c);
+        let e = (c..chars.len()).take_while(|k| word(&chars[*k])).last().map_or(c, |k| k + 1);
+        ed.anchor = Some(s);
+        ed.cur = e;
+    } else if resp.clicked() || resp.drag_started() {
         let (lines, hoff, voff) = offsets(&chars, ed.cur, focused);
+        let was = if focused { Some(ed.cur) } else { None };
         ed.id = id;
         if let Some(pp) = resp.interact_pointer_pos() {
-            let li = if multi { (((pp.y - inner.min.y + voff) / lh).floor().max(0.0) as usize).min(lines.len() - 1) } else { 0 };
-            let (s, e) = lines[li];
-            let x = pp.x - inner.min.x + hoff;
-            let mut best = s;
-            let mut best_d = f32::MAX;
-            for k in s..=e {
-                let w = caret_x(&chars, s, k, px);
-                let d = (w - x).abs();
-                if d < best_d {
-                    best_d = d;
-                    best = k;
-                }
-            }
-            ed.cur = best;
+            ed.cur = at(&chars, pp, hoff, voff, &lines);
         } else {
             ed.cur = chars.len();
         }
+        // shift-click stretches the selection; a plain click or the start of a drag starts again here
+        ed.anchor = if shift { was.or(ed.anchor) } else { Some(ed.cur) };
+    } else if resp.dragged() && focused {
+        // dragging across the text selects it
+        let (lines, hoff, voff) = offsets(&chars, ed.cur, focused);
+        if let Some(pp) = ui.input(|i| i.pointer.interact_pos()) {
+            ed.cur = at(&chars, pp, hoff, voff, &lines);
+        }
     } else if focused && ui.input(|i| i.pointer.primary_pressed()) && !resp.hovered() {
         ed.id = 0;
+        ed.anchor = None;
     }
 
     if ed.id == id {
         let events = ui.input(|i| i.events.clone());
         let mut cur = ed.cur.min(chars.len());
+        let mut anchor = ed.anchor.map(|a| a.min(chars.len()));
         let mut edited = false;
+        // the selection (start, end), if any
+        let sel_of = |anchor: Option<usize>, cur: usize| anchor.filter(|a| *a != cur).map(|a| (a.min(cur), a.max(cur)));
+        // take the selection out (true if there was one)
+        let cut = |chars: &mut Vec<char>, cur: &mut usize, anchor: &mut Option<usize>| -> bool {
+            match sel_of(*anchor, *cur) {
+                Some((s, e)) => {
+                    chars.drain(s..e);
+                    *cur = s;
+                    *anchor = None;
+                    true
+                }
+                None => {
+                    *anchor = None;
+                    false
+                }
+            }
+        };
         for ev in events {
             match ev {
+                egui::Event::Copy | egui::Event::Cut => {
+                    if let Some((s, e)) = sel_of(anchor, cur) {
+                        ui.ctx().copy_text(chars[s..e].iter().collect());
+                        if matches!(ev, egui::Event::Cut) {
+                            edited |= cut(&mut chars, &mut cur, &mut anchor);
+                        }
+                    }
+                }
                 egui::Event::Text(t) | egui::Event::Paste(t) => {
+                    // typing over a selection replaces it
+                    edited |= cut(&mut chars, &mut cur, &mut anchor);
                     for c in t.chars() {
                         if c == '\n' || c == '\r' {
                             if multi {
@@ -195,7 +245,39 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
                         }
                     }
                 }
-                egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
+                egui::Event::Key { key: egui::Key::A, pressed: true, modifiers, .. } if modifiers.command => {
+                    // select all
+                    anchor = Some(0);
+                    cur = chars.len();
+                }
+                egui::Event::Key { key, pressed: true, modifiers, .. } => {
+                    let moving = matches!(
+                        key,
+                        egui::Key::ArrowLeft
+                            | egui::Key::ArrowRight
+                            | egui::Key::ArrowUp
+                            | egui::Key::ArrowDown
+                            | egui::Key::Home
+                            | egui::Key::End
+                    );
+                    let sel = sel_of(anchor, cur);
+                    if moving && modifiers.shift {
+                        // shift + a move stretches the selection from where it began
+                        anchor.get_or_insert(cur);
+                    } else if moving && sel.is_some() && matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowRight) {
+                        // left or right with a selection: to its start or end
+                        let (s, e) = sel.unwrap_or((cur, cur));
+                        cur = if key == egui::Key::ArrowLeft { s } else { e };
+                        anchor = None;
+                        continue;
+                    } else if moving {
+                        anchor = None;
+                    }
+                    if matches!(key, egui::Key::Backspace | egui::Key::Delete) && sel.is_some() {
+                        edited |= cut(&mut chars, &mut cur, &mut anchor);
+                        continue;
+                    }
+                    match key {
                     egui::Key::Backspace => {
                         if modifiers.ctrl {
                             while cur > 0 && chars[cur - 1] == ' ' {
@@ -257,13 +339,18 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
                             out.enter = true;
                         }
                     }
-                    egui::Key::Escape => ed.id = 0,
+                    egui::Key::Escape => {
+                        ed.id = 0;
+                        anchor = None;
+                    }
                     _ => {}
-                },
+                    }
+                }
                 _ => {}
             }
         }
         ed.cur = cur;
+        ed.anchor = anchor;
         if edited {
             *text = chars.iter().collect();
             out.changed = true;
@@ -290,6 +377,23 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         let line: String = chars[*s..(*e).min(chars.len())].iter().collect();
         let cy = if multi { y } else { rect.center().y };
         ptext(&cp, Pos2::new(inner.min.x - hoff, cy), Align::Min, &line, px, pal().ink);
+    }
+    // the selection, shown inverted over the text
+    if let Some((ss, se)) = ed.anchor.filter(|a| focused && *a != ed.cur).map(|a| (a.min(ed.cur), a.max(ed.cur))) {
+        for (li, (s, e)) in lines.iter().enumerate() {
+            let (a, b) = (ss.max(*s), se.min(*e));
+            if a >= b {
+                continue;
+            }
+            let y = if multi { inner.min.y - voff + li as f32 * lh + lh / 2.0 } else { rect.center().y };
+            let x0 = inner.min.x - hoff + caret_x(&chars, *s, a, px);
+            let x1 = inner.min.x - hoff + caret_x(&chars, *s, b, px);
+            let band = Rect::from_min_max(Pos2::new(x0, y - lh / 2.0), Pos2::new(x1, y + lh / 2.0));
+            fill_rect(&cp, band, pal().ink);
+            // the line again in the field's colour, seen only inside the band
+            let line: String = chars[*s..(*e).min(chars.len())].iter().collect();
+            ptext(&cp.with_clip_rect(band.intersect(inner)), Pos2::new(inner.min.x - hoff, y), Align::Min, &line, px, pal().lcd);
+        }
     }
     if focused && (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0 {
         let li = line_of(&lines, ed.cur);
@@ -547,6 +651,22 @@ impl App {
         }
     }
 
+    /// The box that filters your library down as you type (every word must match; typos forgiven), with X to
+    /// clear it. One filter for the Tidal library, MY TRACKS and LISTS.
+    pub(crate) fn filter_box(&mut self, ui: &mut egui::Ui, hint: &str) {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.add_space(6.0);
+            let w = (ui.available_width() - 60.0).max(80.0);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+            let _ = field(ui, &mut self.ed, crate::tools::F_LIB_FILTER, &mut self.lib_filter, rect, hint, false);
+            if !self.lib_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter").clicked() {
+                self.lib_filter.clear();
+            }
+        });
+        ui.add_space(4.0);
+    }
+
     /// MY TRACKS: every song you liked, from every source (your Tidal likes, and the files, SoundCloud and YouTube
     /// songs you hearted), with a SOURCES row to leave any of them out.
     pub(crate) fn mine_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
@@ -584,7 +704,20 @@ impl App {
             para(ui, "Nothing here yet. Click the heart on any song - Tidal, your files, SoundCloud or YouTube - and it shows up here.", pal().ink2);
             return;
         }
-        title_line(ui, &format!("{} songs", tracks.len()), 2.0, pal().ink2);
+        self.filter_box(ui, "Filter your songs: title, artist or album...");
+        let filter = self.lib_filter.trim().to_string();
+        let all = tracks.len();
+        if !filter.is_empty() {
+            let keep = crate::filtered(&filter, &tracks, |t| vec![t.title.clone(), t.artists_text(), t.album.clone()], 3);
+            tracks = keep.into_iter().map(|i| tracks[i].clone()).collect();
+            title_line(ui, &format!("{} of {} songs match", tracks.len(), all), 2.0, pal().ink2);
+            if tracks.is_empty() {
+                title_line(ui, "No songs match.", 2.0, pal().ink2);
+                return;
+            }
+        } else {
+            title_line(ui, &format!("{} songs", tracks.len()), 2.0, pal().ink2);
+        }
         crate::play_buttons(ui, &tracks, acts, false);
         ui.add_space(4.0);
         let playing = self.cur_track().map(|t| t.id);
@@ -1100,6 +1233,7 @@ impl App {
                     self.grp_edit = Some(g.to_string());
                     self.grp_name = g.to_string();
                     self.ed.id = crate::tools::F_GROUP_NAME;
+                    self.ed.anchor = None;
                 }
                 if retro_btn(ui, "DELETE...", self.grp_ask.is_some()).clicked() {
                     self.grp_ask = Some(g.to_string());
@@ -1212,6 +1346,7 @@ impl App {
                 if retro_btn(ui, "+ NEW GROUP", false).clicked() {
                     self.grp_adding = true;
                     self.ed.id = crate::tools::F_GROUP_NAME + 100;
+                    self.ed.anchor = None;
                 }
                 return;
             }
@@ -1582,10 +1717,24 @@ impl App {
                 para(ui, "Right-click any song, anywhere, and choose Add to a playlist. Playlists live on this PC only; they can hold tracks from every source at once.", pal().ink2);
             }
             ui.add_space(4.0);
-            for (i, pl) in self.store.playlists.iter().enumerate() {
+            // your playlists, filtered by name as you type
+            let filter = self.lib_filter.trim().to_string();
+            if !self.store.playlists.is_empty() {
+                self.filter_box(ui, "Filter your playlists...");
+            }
+            let order: Vec<usize> = if filter.is_empty() {
+                (0..self.store.playlists.len()).collect()
+            } else {
+                crate::filtered(&filter, &self.store.playlists, |p| vec![p.name.clone()], 4)
+            };
+            if !filter.is_empty() && order.is_empty() && !self.store.playlists.is_empty() {
+                title_line(ui, "No playlists match.", 2.0, pal().ink2);
+            }
+            for (row, &i) in order.iter().enumerate() {
+                let pl = &self.store.playlists[i];
                 let n = pl.items.len();
                 if let Some(r) =
-                    list_row(ui, i, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
+                    list_row(ui, row, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
                 {
                     if r.clicked() {
                         acts.push(Action::PlaylistOpen(Some(i)));
@@ -2865,6 +3014,7 @@ impl App {
                     self.more = true;
                     self.mtab = 3;
                     self.ed.id = 5000 + k as u32;
+                    self.ed.anchor = None;
                 }
                 if let Some(list) = self.store.marks.get_mut(&id) {
                     if let Some((k, c)) = recolour {
@@ -3205,6 +3355,7 @@ impl App {
                             self.clip_note = s.note.clone();
                             self.clip_group = String::new();
                             self.ed.id = crate::tools::F_CLIP_GROUP;
+                            self.ed.anchor = None;
                             ui.close_menu();
                         }
                         if !s.group.is_empty() && menu_item(ui, "Out of the group") {

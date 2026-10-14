@@ -240,11 +240,13 @@ enum Sec {
 /// ("file", "sc", "yt"). Adding a source is one more line here.
 pub(crate) const SOURCES: [(&str, &str); 4] = [("tidal", "TIDAL"), ("file", "FILES"), ("sc", "SOUNDCLOUD"), ("yt", "YOUTUBE")];
 
-/// Which text field has the keyboard (0 = none) and where its caret is.
+/// Which text field has the keyboard (0 = none), where its caret is, and where a selection starts (it runs from
+/// there to the caret).
 #[derive(Default)]
 struct Ed {
     id: u32,
     cur: usize,
+    anchor: Option<usize>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -1517,7 +1519,7 @@ thread_local! {
 }
 
 /// The items that match the filter, the closest first (worked out once per filter and list).
-fn filtered<T>(filter: &str, items: &[T], fields: impl Fn(&T) -> Vec<String>, key: u64) -> Vec<usize> {
+pub(crate) fn filtered<T>(filter: &str, items: &[T], fields: impl Fn(&T) -> Vec<String>, key: u64) -> Vec<usize> {
     FILTERED.with(|c| {
         let mut c = c.borrow_mut();
         if c.0 != filter || c.1 != items.len() || c.2 != key {
@@ -3140,6 +3142,14 @@ impl App {
                 app.sec = Sec::Tidal;
                 app.apply(Action::Library);
                 app.lib_filter = "monk dream".to_string();
+            }
+            Ok("minefilter") => {
+                // MY TRACKS filtered, the filter's text selected
+                app.sec = Sec::Mine;
+                app.lib_filter = "monk".to_string();
+                app.ed.id = crate::tools::F_LIB_FILTER;
+                app.ed.anchor = Some(0);
+                app.ed.cur = 4;
             }
             Ok("scales") => {
                 app.sec = Sec::Lines;

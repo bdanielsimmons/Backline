@@ -944,6 +944,7 @@ impl App {
                         if rsp.clicked() {
                             self.bar_edit = Some((idx, bar.chords.join(" ")));
                             self.ed.id = F_BAR;
+                            self.ed.anchor = None;
                             self.ed.cur = bar.chords.join(" ").chars().count();
                         }
                         rsp.context_menu(|ui| {
