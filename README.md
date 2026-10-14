@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Star your loops - a gig coming up, a part not to forget - and show only the starred ones
+- Filter and sort your saved loops: newest, name, time spent or song
 - The diary sums up the week, month or year: time a day by song, the kind of practice, top songs and loops
 - The player's title buttons fit the window: the most-used stay, the rest go in a ... menu
 - Click a song in the diary to see the loops you worked on that day, how long and how many passes
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Winamp skins with missing or hidden parts get clean stand-ins and a guide to their buttons
 - Resize the player in its window, and the equalizer's height; save and name your own EQ curves
 - Now Playing button; the focus timer survives restarts with CONTINUE; playlists open at once
-- The count-off clicks at the song's own tempo, and counts you back in after a pause
-- A BPM control and TAP next to COUNT-OFF, for when the tempo found is wrong
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
