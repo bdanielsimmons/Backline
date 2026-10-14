@@ -1863,6 +1863,8 @@ struct App {
     mark_col: Option<[u8; 3]>,
     show_cache: bool,
     keep_cache: bool,
+    /// look over your YouTube and SoundCloud songs for ones to keep (at start, and after anything is added)
+    keep_sweep: bool,
     cache_stats: (usize, u64),
     cache_at: Instant,
 
@@ -2494,6 +2496,7 @@ impl App {
             show_cache: false,
             // tracks are streamed, not kept; saving them to disk is switched on by hand
             keep_cache: false,
+            keep_sweep: true,
             cache_stats: (0, 0),
             cache_at: Instant::now(),
             store: store::Store::load(),
@@ -4589,7 +4592,15 @@ impl App {
             Action::ToggleKeep => {
                 self.keep_cache = !self.keep_cache;
                 self.dirty = true;
-                self.set_note(if self.keep_cache { "SAVING TRACKS TO DISK" } else { "NOT SAVING NEW TRACKS" });
+                crate::extras::KEEP_ON.store(self.keep_cache, std::sync::atomic::Ordering::Relaxed);
+                let n = self.keep_everything();
+                self.set_note(&if !self.keep_cache {
+                    "NOT SAVING NEW TRACKS".to_string()
+                } else if n > 0 {
+                    format!("SAVING TRACKS TO DISK - KEEPING YOUR {} SONGS IN THE BACKGROUND", n)
+                } else {
+                    "SAVING TRACKS TO DISK".to_string()
+                });
             }
             Action::TogglePractice if PRACTICE => {
                 self.practice = !self.practice;

@@ -394,6 +394,13 @@ impl App {
             self.store.save();
             self.store_dirty = false;
             self.store_saved = Instant::now();
+            // something new may have come in: keep it too
+            self.keep_sweep = true;
+        }
+        crate::extras::KEEP_ON.store(self.keep_cache, std::sync::atomic::Ordering::Relaxed);
+        if self.keep_sweep {
+            self.keep_sweep = false;
+            self.keep_everything();
         }
     }
 
@@ -889,23 +896,39 @@ impl App {
     }
 
     // ------------------------------------------------------------ sources
-    /// With keeping songs on: a playlist's songs are kept one by one in the background, so it plays at once and
-    /// with no internet (the ones kept already are skipped).
-    pub(crate) fn keep_all(&self, ids: Vec<i64>) {
+    /// With keeping songs on: these songs are kept one by one in the background, so they play at once and with no
+    /// internet (the ones kept already, or waiting their turn, are skipped). How many were added to the line.
+    pub(crate) fn keep_all(&self, ids: Vec<i64>) -> usize {
         if !self.keep_cache {
-            return;
+            return 0;
         }
-        let todo: Vec<(i64, Option<Src>)> =
-            ids.into_iter().filter(|id| !cache::has(*id)).map(|id| (id, self.srcmap.get(&id).cloned())).collect();
-        if todo.is_empty() {
-            return;
+        let todo: Vec<(i64, Option<Src>)> = ids
+            .into_iter()
+            .filter(|id| !cache::has(*id) && !matches!(self.srcmap.get(id), Some(Src::File(_))))
+            .map(|id| (id, self.srcmap.get(&id).cloned()))
+            .collect();
+        keep_queue(&self.api, todo)
+    }
+
+    /// With keeping songs on: every YouTube and SoundCloud song you have (brought in, in a playlist, liked) kept on
+    /// this computer, in the background, so it plays at once and offline. Tidal songs are kept as they play.
+    pub(crate) fn keep_everything(&mut self) -> usize {
+        if !self.keep_cache {
+            return 0;
         }
-        let api = self.api.clone();
-        std::thread::spawn(move || {
-            for (id, src) in todo {
-                let _ = crate::fetch_audio(&api, id, false, true, src);
-            }
-        });
+        for e in self.store.yt.clone().iter().chain(self.store.sc.clone().iter()).chain(self.store.hearts.clone().iter()) {
+            self.register(&e.to_version());
+        }
+        let mut ids: Vec<i64> = Vec::new();
+        ids.extend(self.store.hearts.iter().map(|e| e.id));
+        ids.extend(self.store.yt.iter().map(|e| e.id));
+        ids.extend(self.store.sc.iter().map(|e| e.id));
+        for pl in &self.store.playlists {
+            ids.extend(pl.items.iter().filter(|v| v.kind == "yt").map(|v| v.id));
+        }
+        let mut seen = HashSet::new();
+        ids.retain(|id| matches!(self.srcmap.get(id), Some(Src::Yt(_))) && seen.insert(*id));
+        self.keep_all(ids)
     }
 
     pub(crate) fn handle_paths(&mut self, paths: Vec<PathBuf>) {
@@ -3024,4 +3047,49 @@ fn write_tags(path: &str, title: &str, artist: &str) -> Result<String, String> {
     tag.set_artist(artist.to_string());
     tag.save_to_path(path, lofty::config::WriteOptions::default()).map_err(|e| e.to_string())?;
     Ok(std::path::Path::new(path).file_name().map_or(path.to_string(), |n| n.to_string_lossy().to_string()))
+}
+
+/// The songs waiting to be kept (one download at a time, in the background), the ones already lined up since
+/// Backline started (so a song that failed is not tried over and over), and whether the downloader is running.
+type KeepLine = (std::collections::VecDeque<(i64, Option<Src>)>, HashSet<i64>, bool);
+static KEEP: std::sync::LazyLock<std::sync::Mutex<KeepLine>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new((std::collections::VecDeque::new(), HashSet::new(), false)));
+/// keeping songs is on (off stops the downloader after the song it is on)
+pub(crate) static KEEP_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Add songs to the line to keep, and start the downloader if it is not running. How many were added.
+fn keep_queue(api: &crate::api::Api, todo: Vec<(i64, Option<Src>)>) -> usize {
+    use std::sync::atomic::Ordering;
+    let Ok(mut k) = KEEP.lock() else { return 0 };
+    let mut added = 0;
+    for (id, src) in todo {
+        if k.1.insert(id) {
+            k.0.push_back((id, src));
+            added += 1;
+        }
+    }
+    if added > 0 && !k.2 {
+        k.2 = true;
+        let api = api.clone();
+        std::thread::spawn(move || loop {
+            let next = KEEP.lock().ok().and_then(|mut k| {
+                let n = if KEEP_ON.load(Ordering::Relaxed) { k.0.pop_front() } else { None };
+                if n.is_none() {
+                    // stopped or done: the rest may be lined up again later
+                    for (id, _) in std::mem::take(&mut k.0) {
+                        k.1.remove(&id);
+                    }
+                    k.2 = false;
+                }
+                n
+            });
+            let Some((id, src)) = next else { break };
+            if !cache::has(id) {
+                if let Err(e) = crate::fetch_audio(&api, id, false, true, src) {
+                    crate::api::log(&format!("keep {}: {}", id, e));
+                }
+            }
+        });
+    }
+    added
 }
