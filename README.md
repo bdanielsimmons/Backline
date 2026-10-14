@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- With saving on, YouTube and SoundCloud playlists download as soon as you open them
 - Text boxes select: Ctrl+A, Shift+arrows, drag or double-click, with copy, cut and paste
 - MY TRACKS and LISTS get the library filter box
 - Sound output keeps up with plugging and unplugging by itself; Bluetooth dropping out pauses the music
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - WHAT'S NEW: after an update, the changes in this version and the few before it (any time from the BACKLINE page)
 - Favourite Winamp skins: + FAVOURITE for the one you're wearing, or right-click any skin; a FAVOURITES list wears one again (X takes it off)
 - Loop groups: keep a song's licks in groups (Head, Solo licks... or your own); make, rename and delete groups in LOOPS
-- Zoom the practice waveform like Audacity: the mouse wheel over it zooms where the mouse is, + and - zoom where it's playing, FIT shows the whole song
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
