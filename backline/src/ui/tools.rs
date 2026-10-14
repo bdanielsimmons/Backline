@@ -70,6 +70,8 @@ pub const F_CLIP_GROUP: u32 = 75;
 pub const F_GROUP_NAME: u32 = 76;
 /// the filter over your Tidal library (MY TRACKS, PLAYLISTS, ALBUMS, ARTISTS)
 pub const F_LIB_FILTER: u32 = 77;
+/// the song's tempo in practice (next to the count-off)
+pub const F_PR_BPM: u32 = 78;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 

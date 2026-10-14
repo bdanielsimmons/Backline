@@ -3547,6 +3547,22 @@ impl App {
                     {
                         acts.push(Action::CountIn);
                     }
+                    // the song's tempo the count-off clicks at: found by itself, or set here if that is wrong
+                    ui.add_space(8.0);
+                    label(ui, "BPM", 36.0);
+                    let s = if self.bpm > 0 { self.bpm.to_string() } else { "---".to_string() };
+                    self.num_step(
+                        ui,
+                        acts,
+                        crate::tools::F_PR_BPM,
+                        46.0,
+                        Knob::Bpm,
+                        s,
+                        "The song's tempo (found by itself) - if it's wrong, set it or type it",
+                    );
+                    if retro_btn_w(ui, "TAP", 52.0, false).tip("Tap along with the music to find the tempo").clicked() {
+                        acts.push(Action::TapTempo);
+                    }
                 });
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {

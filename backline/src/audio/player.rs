@@ -1344,6 +1344,13 @@ impl Player {
                     Ok(Cmd::Resume) => {
                         user_paused = false;
                         if let Some(s) = &sink {
+                            // with a count-off on, it counts you back in
+                            let beats = ctl_t.count_in.load(Ordering::Relaxed);
+                            let bpm = ctl_t.bpm10.load(Ordering::Relaxed) as f32 / 10.0;
+                            if beats > 0 && bpm > 0.0 {
+                                let spd = ctl_t.speed.load(Ordering::Relaxed).max(25) as f32;
+                                play_clicks(&handle, beats, 60.0 / bpm * 100.0 / spd, vol);
+                            }
                             s.play();
                         }
                     }

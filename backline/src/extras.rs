@@ -841,8 +841,15 @@ impl App {
         self.pending_seek = None;
         self.sel_anchor = None;
         self.last_wraps = self.player.ctl.wraps();
-        self.bpm =
-            self.store.bpm.get(&t.id).copied().or_else(|| self.store.tune_of(t.id).and_then(|i| self.tune_bpm(i))).unwrap_or(0);
+        // the tempo you set for it, or its tune's, or the one Tidal gave or Backline heard
+        self.bpm = self
+            .store
+            .bpm
+            .get(&t.id)
+            .copied()
+            .or_else(|| self.store.tune_of(t.id).and_then(|i| self.tune_bpm(i)))
+            .or_else(|| crate::meta::get(t.id).and_then(|m| m.bpm).map(u32::from))
+            .unwrap_or(0);
         self.wave = (t.id, None);
         self.sync_loop();
     }
@@ -1435,6 +1442,13 @@ impl App {
                 crate::meta::set_detected(id, found);
                 self.store.meta = crate::meta::saved();
                 self.store_dirty = true;
+                // the playing song's tempo just heard: the count-off can use it
+                if self.bpm == 0 && self.cur_track().is_some_and(|t| t.id == id) {
+                    if let Some(b) = crate::meta::get(id).and_then(|m| m.bpm) {
+                        self.bpm = b as u32;
+                        self.sync_loop();
+                    }
+                }
             }
             Msg::Tuning(id, r) => {
                 self.tuning_busy = false;
@@ -2759,6 +2773,8 @@ impl App {
                         self.store_dirty = true;
                     }
                 }
+                // the count-off clicks at the new tempo
+                self.sync_loop();
             }
             Knob::Beats => {
                 self.mt.beats = u(1.0, 32.0);

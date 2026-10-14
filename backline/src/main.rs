@@ -3159,6 +3159,12 @@ impl App {
                 app.ln_tab = 1;
                 app.ln_sub = 3;
             }
+            Ok("countoff") => {
+                app.practice = true;
+                app.more = true;
+                app.mtab = 0;
+                app.count_in = 4;
+            }
             Ok("bookmarks") => {
                 app.practice = true;
                 app.more = true;
