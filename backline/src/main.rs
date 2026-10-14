@@ -144,6 +144,8 @@ enum Msg {
     Code(String, String),
     LoggedIn,
     NeedLogin(String),
+    /// Tidal couldn't be reached at all (no internet): carry on with what is on this computer
+    NoInternet,
     Page(Page, bool),
     MoreTracks(u64, Vec<Track>),
     Err(String),
@@ -2289,6 +2291,13 @@ struct App {
     stack_frac: f32,
     /// the practice panel's height (drag the edge above it)
     prac_h: f32,
+    /// Tidal can't be reached (no internet): when it was last tried (it is tried again now and then)
+    net_down: bool,
+    net_try: Instant,
+    /// how many liked songs were last kept on disk
+    lib_saved_n: usize,
+    /// how many liked songs are in, and since when (they are kept once the count stops changing)
+    lib_seen: (usize, Instant),
     /// the equalizer's height, dragged (None: it follows the player's size)
     eq_h_user: Option<f32>,
     /// the skinned deck's size in the player window (skin pixels to screen points; None: as large as fits)
@@ -2855,6 +2864,10 @@ impl App {
             lib_frac: 0.34,
             stack_frac: 1.0,
             prac_h: 300.0,
+            net_down: false,
+            net_try: Instant::now(),
+            lib_saved_n: 0,
+            lib_seen: (0, Instant::now()),
             eq_h_user: None,
             deck_zoom: None,
             eq_zoom: None,
@@ -3204,6 +3217,10 @@ impl App {
                     Ok(()) => {
                         let _ = tx.send(Msg::LoggedIn);
                     }
+                    // no internet is not a logged-out session: open as usual with what is here
+                    Err(e) if crate::api::no_internet(&e) => {
+                        let _ = tx.send(Msg::NoInternet);
+                    }
                     Err(e) => {
                         let _ = tx.send(Msg::NeedLogin(e));
                     }
@@ -3470,6 +3487,16 @@ impl App {
 
     fn set_err(&mut self, e: String) {
         api::log(&format!("ERROR: {}", e));
+        // no internet: say so plainly, not the network library's words (and keep trying until it is back)
+        let raw = crate::api::no_internet(&e) && e.chars().any(|c| c.is_lowercase());
+        if raw && self.auth == Auth::In && !self.offline && !self.net_down {
+            let _ = self.tx.send(Msg::NoInternet);
+        }
+        let e = if raw {
+            "NO INTERNET - THAT NEEDS IT (SONGS KEPT ON THIS COMPUTER STILL PLAY)".to_string()
+        } else {
+            e
+        };
         self.status = e;
         self.status_err = true;
     }
@@ -3533,6 +3560,10 @@ impl App {
     }
 
     fn after_login(&mut self) {
+        if self.net_down {
+            self.net_down = false;
+            self.set_note("BACK ONLINE - TIDAL IS HERE AGAIN");
+        }
         self.auth = Auth::In;
         self.offline = false;
         self.dirty = true;
@@ -3578,7 +3609,37 @@ impl App {
                 Msg::LoggedIn => self.after_login(),
                 Msg::NeedLogin(e) => {
                     self.auth = Auth::LoggedOut;
-                    self.login_err = e;
+                    self.login_err = if crate::api::no_internet(&e) {
+                        "NO INTERNET RIGHT NOW. USE WITHOUT TIDAL: YOUR FILES, YOUTUBE AND SOUNDCLOUD SONGS YOU KEPT, LOOPS AND ALL THE PRACTICE TOOLS WORK. LOG IN WHEN YOU'RE ONLINE".to_string()
+                    } else {
+                        e
+                    };
+                }
+                Msg::NoInternet => {
+                    let first = !self.net_down;
+                    self.net_down = true;
+                    self.net_try = Instant::now();
+                    self.loading = false;
+                    // (wake up to try again, even with nothing else moving)
+                    self.ctx.request_repaint_after(Duration::from_secs(21));
+                    if first {
+                        // your Tidal likes as last seen; the ones kept on this computer play
+                        let tracks = crate::api::load_liked();
+                        if !tracks.is_empty() && self.lib_page.is_none() {
+                            let p = Page {
+                                title: "My Library".to_string(),
+                                total: tracks.len(),
+                                tracks,
+                                library: true,
+                                ..Default::default()
+                            };
+                            self.liked.extend(p.tracks.iter().map(|t| t.id));
+                            let p = Arc::new(p);
+                            self.lib_page = Some(p.clone());
+                            self.page = Some(p);
+                        }
+                        self.set_note("NO INTERNET - PLAYING WHAT'S ON THIS COMPUTER. TIDAL COMES BACK BY ITSELF");
+                    }
                 }
                 Msg::Page(mut p, push) => {
                     // a tour (or recording one): the library holds only the tour's song (your own comes back after)
@@ -3682,6 +3743,15 @@ impl App {
                                 let name = self.queue[k].title.to_uppercase();
                                 self.advance_to(k);
                                 self.set_err(format!("TIDAL CAN'T BE REACHED - ON TO {}, WHICH IS ON THIS COMPUTER", name));
+                            }
+                            None if tidal && crate::api::no_internet(&e) => {
+                                if !self.net_down && !self.offline {
+                                    let _ = self.tx.send(Msg::NoInternet);
+                                }
+                                self.set_err(
+                                    "NO INTERNET - THIS SONG ISN'T ON THIS COMPUTER YET. YOUR FILES AND KEPT SONGS (MARKED WITH A TICK) STILL PLAY"
+                                        .to_string(),
+                                )
                             }
                             None if tidal => self.set_err(format!(
                                 "TIDAL CAN'T BE REACHED ({}). SONGS WITH LOOPS OR BOOKMARKS, AND YOUR FILES, STILL PLAY",
@@ -5370,6 +5440,19 @@ impl eframe::App for App {
         // keep the library copy current (more songs arrive in pages; likes change it)
         if self.page.as_ref().is_some_and(|p| p.library) && self.tour_play.is_none() {
             self.lib_page = self.page.clone();
+            // the list, once it has finished coming in (some likes never arrive - gone from Tidal): kept on disk
+            // for when there is no internet
+            if let Some(p) = self.lib_page.as_ref().filter(|_| !self.net_down) {
+                let n = p.tracks.len();
+                if n != self.lib_seen.0 {
+                    self.lib_seen = (n, Instant::now());
+                    self.ctx.request_repaint_after(Duration::from_secs(6));
+                } else if n != self.lib_saved_n && self.lib_seen.1.elapsed() > Duration::from_secs(5) {
+                    self.lib_saved_n = n;
+                    let tracks = p.tracks.clone();
+                    std::thread::spawn(move || crate::api::save_liked(&tracks));
+                }
+            }
         }
         let busy = self.cur.is_some() && !self.stopped && !self.paused;
         ctx.request_repaint_after(Duration::from_millis(if self.art_view {
@@ -5460,6 +5543,9 @@ fn main() -> eframe::Result<()> {
             .with_position([-1700.0, 40.0])
             .with_active(false)
             .with_taskbar(false);
+    } else if std::env::var_os("BACKLINE_HOME").is_some() {
+        // a test copy (a test profile): out of sight, never in front of what you are doing or taking the keyboard
+        viewport = viewport.with_position([-1700.0, 40.0]).with_active(false).with_taskbar(false);
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     crate::api::log(&format!("start: build {}", update::build()));

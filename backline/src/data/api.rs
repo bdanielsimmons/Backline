@@ -37,6 +37,59 @@ pub fn config_dir() -> PathBuf {
 /// Append a line to %APPDATA%\backline\log.txt (handy when something won't play).
 static LOG_RING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// Did this fail because there is no internet (nothing reached the server), rather than the server saying no?
+pub fn no_internet(e: &str) -> bool {
+    let e = e.to_lowercase();
+    ["error sending request", "dns", "timed out", "connection refused", "connect error", "no such host", "network is unreachable"]
+        .iter()
+        .any(|w| e.contains(w))
+}
+
+/// An error in plain words: no internet said as such (a network library's own words otherwise).
+pub fn plain(e: &str) -> String {
+    if no_internet(e) {
+        "NO INTERNET - TRY AGAIN WHEN YOU'RE ONLINE".to_string()
+    } else {
+        e.to_string()
+    }
+}
+
+/// Your Tidal liked songs as last loaded, kept on this computer so the library still shows with no internet.
+pub fn save_liked(tracks: &[Track]) {
+    let rows: Vec<Value> = tracks
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.id, "title": t.title, "artist": t.artist, "album": t.album, "cover": t.cover,
+                "duration": t.duration, "artists": t.artists.iter().map(|a| json!([a.0, a.1])).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let _ = std::fs::write(config_dir().join("tidal_liked.json"), Value::Array(rows).to_string());
+}
+
+/// The liked songs kept by `save_liked` (empty if none).
+pub fn load_liked() -> Vec<Track> {
+    let Ok(b) = std::fs::read(config_dir().join("tidal_liked.json")) else { return Vec::new() };
+    let Ok(Value::Array(rows)) = serde_json::from_slice::<Value>(&b) else { return Vec::new() };
+    rows.iter()
+        .map(|v| Track {
+            id: v["id"].as_i64().unwrap_or(0),
+            title: v["title"].as_str().unwrap_or_default().to_string(),
+            artist: v["artist"].as_str().unwrap_or_default().to_string(),
+            album: v["album"].as_str().unwrap_or_default().to_string(),
+            cover: v["cover"].as_str().unwrap_or_default().to_string(),
+            duration: v["duration"].as_f64().unwrap_or(0.0) as f32,
+            artists: v["artists"]
+                .as_array()
+                .map(|a| a.iter().map(|x| (x[0].as_i64().unwrap_or(0), x[1].as_str().unwrap_or_default().to_string())).collect())
+                .unwrap_or_default(),
+            qid: 0,
+        })
+        .filter(|t| t.id != 0)
+        .collect()
+}
+
 pub fn log(msg: &str) {
     use std::io::Write;
     let t = now() % 86400; // UTC time of day
@@ -1298,6 +1351,15 @@ impl Api {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn tells_no_internet_from_other_errors() {
+        assert!(no_internet("error sending request for url (https://api.tidal.com/v1/sessions)"));
+        assert!(no_internet("operation timed out"));
+        assert!(!no_internet("401 /sessions: Unauthorized"));
+        assert_eq!(plain("401 /x: nope"), "401 /x: nope");
+        assert!(plain("error sending request").starts_with("NO INTERNET"));
+    }
 
     #[test]
     fn image_urls() {

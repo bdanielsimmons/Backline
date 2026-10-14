@@ -395,6 +395,19 @@ impl App {
         if playing && self.last_cap.elapsed() > Duration::from_secs(10) {
             self.capture_last();
         }
+        // no internet: try Tidal again now and then; it comes back by itself
+        if self.net_down && self.net_try.elapsed() > Duration::from_secs(20) {
+            self.net_try = Instant::now();
+            let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+            std::thread::spawn(move || {
+                let _ = match api.refresh_info() {
+                    Ok(()) => tx.send(crate::Msg::LoggedIn),
+                    Err(e) if crate::api::no_internet(&e) => tx.send(crate::Msg::NoInternet),
+                    Err(e) => tx.send(crate::Msg::NeedLogin(e)),
+                };
+                ctx.request_repaint();
+            });
+        }
         if self.store_dirty && self.store_saved.elapsed() > Duration::from_secs(3) {
             self.store.save();
             self.store_dirty = false;
@@ -1205,7 +1218,7 @@ impl App {
                     }
                     Err(e) => {
                         api::log(&format!("youtube: {}", e));
-                        self.yt_msg = format!("ERROR: {}", e);
+                        self.yt_msg = format!("ERROR: {}", api::plain(&e));
                     }
                 }
             }
@@ -1237,7 +1250,7 @@ impl App {
                     }
                     Err(e) => {
                         api::log(&format!("youtube playlist: {}", e));
-                        self.yt_msg = format!("ERROR: {}", e);
+                        self.yt_msg = format!("ERROR: {}", api::plain(&e));
                     }
                 }
             }
@@ -1250,7 +1263,7 @@ impl App {
                     }
                     Err(e) => {
                         api::log(&format!("soundcloud sets: {}", e));
-                        self.sc_msg = format!("ERROR: {}", e);
+                        self.sc_msg = format!("ERROR: {}", api::plain(&e));
                     }
                 }
             }
@@ -1302,7 +1315,7 @@ impl App {
                     }
                     Err(e) => {
                         api::log(&format!("soundcloud: {}", e));
-                        self.sc_msg = format!("ERROR: {}", e);
+                        self.sc_msg = format!("ERROR: {}", api::plain(&e));
                     }
                 }
             }
@@ -1326,7 +1339,7 @@ impl App {
                     Ok(p) => self.yt_msg = format!("YT-DLP READY: {}", p.display()),
                     Err(e) => {
                         api::log(&format!("yt-dlp download: {}", e));
-                        self.yt_msg = format!("ERROR: {}", e);
+                        self.yt_msg = format!("ERROR: {}", api::plain(&e));
                     }
                 }
             }
