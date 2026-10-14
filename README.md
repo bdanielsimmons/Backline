@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- The diary sums up the week, month or year: time a day by song, the kind of practice, top songs and loops
+- The player's title buttons fit the window: the most-used stay, the rest go in a ... menu
 - Click a song in the diary to see the loops you worked on that day, how long and how many passes
 - Size the equalizer like the player; its preset cards give way and come back
 - A + card saves the curve you have, by name
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Now Playing button; the focus timer survives restarts with CONTINUE; playlists open at once
 - The count-off clicks at the song's own tempo, and counts you back in after a pause
 - A BPM control and TAP next to COUNT-OFF, for when the tempo found is wrong
-- With saving on, YouTube and SoundCloud playlists download as soon as you open them
-- Text boxes select: Ctrl+A, Shift+arrows, drag or double-click, with copy, cut and paste
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
