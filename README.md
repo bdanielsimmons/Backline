@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Click a song in the diary to see the loops you worked on that day, how long and how many passes
 - Size the equalizer like the player; its preset cards give way and come back
 - A + card saves the curve you have, by name
 - Winamp skins with missing or hidden parts get clean stand-ins and a guide to their buttons
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - A BPM control and TAP next to COUNT-OFF, for when the tempo found is wrong
 - With saving on, YouTube and SoundCloud playlists download as soon as you open them
 - Text boxes select: Ctrl+A, Shift+arrows, drag or double-click, with copy, cut and paste
-- MY TRACKS and LISTS get the library filter box
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
