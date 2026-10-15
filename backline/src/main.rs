@@ -2252,6 +2252,8 @@ struct App {
     /// and their key
     cm_tab: u8,
     cm_list: Option<Vec<(std::path::PathBuf, String)>>,
+    /// when the transcriptions folder was last read
+    cm_list_at: Instant,
     cm_moves: Vec<transcription::Move>,
     cm_moves_read: bool,
     cm_file: Option<std::path::PathBuf>,
@@ -2930,6 +2932,7 @@ impl App {
             pf_play: 0,
             cm_tab: 0,
             cm_list: None,
+            cm_list_at: Instant::now(),
             cm_moves: Vec::new(),
             cm_moves_read: false,
             cm_file: None,

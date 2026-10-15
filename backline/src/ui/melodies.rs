@@ -879,8 +879,10 @@ impl App {
         }
         ui.add_space(6.0);
         // the tunes in the folder (read once, again after an import)
-        if self.cm_list.is_none() {
+        // (and again every few seconds, so files copied into the folder show up by themselves)
+        if self.cm_list.is_none() || self.cm_list_at.elapsed().as_secs() >= 3 {
             self.cm_list = Some(transcription::list());
+            self.cm_list_at = Instant::now();
         }
         if !self.cm_moves_read {
             self.cm_moves = transcription::load_moves();
@@ -1131,7 +1133,11 @@ impl App {
             {
                 let d = transcription::dir();
                 let _ = std::fs::create_dir_all(&d);
-                let _ = webbrowser::open(&d.to_string_lossy());
+                // in the file manager (Explorer on Windows), not the browser
+                #[cfg(windows)]
+                let _ = std::process::Command::new("explorer").arg(&d).spawn();
+                #[cfg(not(windows))]
+                let _ = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }).arg(&d).spawn();
             }
         });
         if list.is_empty() {
