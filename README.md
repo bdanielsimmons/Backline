@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Go offline - only what's on this computer, nothing goes out to the internet - and back online in one click
 - No internet? Backline opens as usual with your Tidal likes and plays what's on this computer
 - Tidal reconnects by itself when the internet is back
 - Star your loops - a gig coming up, a part not to forget - and show only the starred ones
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Click a song in the diary to see the loops you worked on that day, how long and how many passes
 - Size the equalizer like the player; its preset cards give way and come back
 - A + card saves the curve you have, by name
-- Winamp skins with missing or hidden parts get clean stand-ins and a guide to their buttons
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
