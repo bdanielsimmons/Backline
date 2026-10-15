@@ -1606,9 +1606,9 @@ impl App {
                 egui::Frame::none().fill(pal().app_bg).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(16.0).show(
                     ui,
                     |ui| {
-                        ui.set_width(560.0_f32.min(screen.width() - 40.0));
+                        ui.set_width(460.0_f32.min(screen.width() - 40.0));
                         title_line(ui, "WHAT'S NEW", 3.0, pal().ink);
-                        egui::ScrollArea::vertical().max_height((screen.height() * 0.6).max(160.0)).show(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height((screen.height() * 0.45).max(160.0)).show(ui, |ui| {
                             for (tag, body) in &notes {
                                 let this = tag.rsplit('.').next().and_then(|n| n.parse::<u64>().ok()) == Some(me);
                                 section_header(
@@ -1616,10 +1616,16 @@ impl App {
                                     &format!("{}{}", tag.to_uppercase(), if this { "  - THIS VERSION" } else { "" }),
                                 );
                                 for line in body.lines() {
-                                    // the notes are written for GitHub: headings and bullets become plain lines; the
-                                    // download instructions (the same every time) are left out
+                                    // the notes are written for GitHub; here, only what changes for you: one line a
+                                    // change (the details under each, the headings and the download instructions are
+                                    // left out)
                                     if line.trim().trim_start_matches('#').trim().eq_ignore_ascii_case("downloads") {
                                         break;
+                                    }
+                                    if line.trim_start().starts_with('#')
+                                        || (line.starts_with(char::is_whitespace) && line.trim_start().starts_with("- "))
+                                    {
+                                        continue;
                                     }
                                     let l = line.trim().trim_start_matches('#').trim().replace('`', "");
                                     if l.is_empty() || l.starts_with("**Full Changelog") || l.starts_with("<!--") {

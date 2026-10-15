@@ -971,8 +971,9 @@ impl App {
             }
             self.q_scroll = false;
         }
-        let area = ui.interact(list, id.with("list"), Sense::hover());
-        if area.hovered() {
+        // the wheel anywhere over the list (the rows on top take the hover, so it is the pointer that counts)
+        let _ = ui.interact(list, id.with("list"), Sense::hover());
+        if ui.input(|i| i.pointer.hover_pos()).is_some_and(|pp| list.contains(pp)) {
             let wheel = ui.input(|i| i.smooth_scroll_delta.y);
             first = (first - wheel / row_h).clamp(0.0, max_top);
         }
