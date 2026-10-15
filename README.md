@@ -19,16 +19,16 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
+- PENTATONICS & MORE - pentatonic, hexatonic (triad pairs), diminished and chromatic options, with exercises
+- SUPERIMPOSE - what to play over a chord to get its colours
+- Coltrane cells in SCALES, and through a whole tune
 - Go offline - only what's on this computer, nothing goes out to the internet - and back online in one click
 - No internet? Backline opens as usual with your Tidal likes and plays what's on this computer
 - Tidal reconnects by itself when the internet is back
 - Star your loops - a gig coming up, a part not to forget - and show only the starred ones
 - Filter and sort your saved loops: newest, name, time spent or song
 - The diary sums up the week, month or year: time a day by song, the kind of practice, top songs and loops
-- The player's title buttons fit the window: the most-used stay, the rest go in a ... menu
-- Click a song in the diary to see the loops you worked on that day, how long and how many passes
-- Size the equalizer like the player; its preset cards give way and come back
-- A + card saves the curve you have, by name
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
