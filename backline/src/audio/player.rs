@@ -1108,7 +1108,9 @@ fn output_devices() -> Vec<String> {
 pub fn outputs() -> Vec<(String, bool)> {
     use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
     use windows::Win32::Media::Audio::{eRender, IDeviceTopology, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE};
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
+    };
     let mut out = Vec::new();
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -1120,10 +1122,12 @@ pub fn outputs() -> Vec<(String, bool)> {
         };
         for i in 0..devs.GetCount().unwrap_or(0) {
             let Ok(dev) = devs.Item(i) else { continue };
-            let Some(name) = dev.OpenPropertyStore(STGM_READ).ok().and_then(|ps| ps.GetValue(&PKEY_Device_FriendlyName).ok()).and_then(|v| {
-                let p = v.Anonymous.Anonymous.Anonymous.pwszVal;
-                (!p.is_null()).then(|| p.to_string().unwrap_or_default())
-            }) else {
+            let Some(name) =
+                dev.OpenPropertyStore(STGM_READ).ok().and_then(|ps| ps.GetValue(&PKEY_Device_FriendlyName).ok()).and_then(|v| {
+                    let p = v.Anonymous.Anonymous.Anonymous.pwszVal;
+                    (!p.is_null()).then(|| p.to_string().unwrap_or_default())
+                })
+            else {
                 continue;
             };
             // what the output is wired to: a Bluetooth one's path names the Bluetooth bus
@@ -1137,7 +1141,10 @@ pub fn outputs() -> Vec<(String, bool)> {
                     s.to_ascii_lowercase()
                 })
                 .unwrap_or_default();
-            let bt = wired.contains("bthenum") || wired.contains("bthhfenum") || wired.contains("bthledevice") || looks_bluetooth(&name);
+            let bt = wired.contains("bthenum")
+                || wired.contains("bthhfenum")
+                || wired.contains("bthledevice")
+                || looks_bluetooth(&name);
             if !out.iter().any(|o: &(String, bool)| o.0 == name) {
                 out.push((name, bt));
             }

@@ -185,8 +185,7 @@ impl App {
                 // the record turns with the song: one turn a bar (four beats), so 133 BPM is 33 1/3 rpm; with no
                 // tempo known, 33 1/3
                 let tempo = if self.bpm > 0 { self.bpm as f32 / 133.3 } else { 1.0 };
-                let spin =
-                    vinyl_angle(ui, if active && !self.paused { self.speed as f32 / 100.0 * tempo } else { 0.0 });
+                let spin = vinyl_angle(ui, if active && !self.paused { self.speed as f32 / 100.0 * tempo } else { 0.0 });
                 // follows the cover opacity setting, and never fully solid, so the visualizer shows through
                 paint_vinyl(&p, Rect::from_center_size(center, Vec2::splat(a)), tex, spin, self.art_op.min(0.8));
             } else {

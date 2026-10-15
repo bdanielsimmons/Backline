@@ -26,7 +26,15 @@ impl WaTex {
             let tex = ctx.load_texture(format!("winamp_{}", name), img, egui::TextureOptions::NEAREST);
             sheets.insert(name, (tex, Vec2::new(size[0] as f32, size[1] as f32)));
         }
-        WaTex { sheets, vis: art.vis, graph: art.graph, font: art.font, eqpl_ink: art.eqpl_ink, bal_is_vol: art.bal_is_vol, bal_frames: art.bal_frames }
+        WaTex {
+            sheets,
+            vis: art.vis,
+            graph: art.graph,
+            font: art.font,
+            eqpl_ink: art.eqpl_ink,
+            bal_is_vol: art.bal_is_vol,
+            bal_frames: art.bal_frames,
+        }
     }
 
     pub(crate) fn size(&self, sheet: &str) -> Option<Vec2> {

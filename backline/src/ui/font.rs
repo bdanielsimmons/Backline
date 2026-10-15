@@ -462,7 +462,7 @@ fn draw_dots(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, col
 // ------------------------------------------------------------------ drawn symbols
 // The chord symbols no font draws well (a triangle for major 7, a small circle for diminished) are drawn as shapes,
 // sized to the capitals of whatever font is on.
-const DRAWN: [char; 2] = ['\u{0394}', '\u{00b0}'];
+const DRAWN: [char; 3] = ['\u{0394}', '\u{00b0}', '\u{266D}'];
 
 /// Text cut into runs of plain text (Ok) and drawn symbols (Err).
 fn drawn_split(text: &str) -> Vec<Result<&str, char>> {
@@ -496,6 +496,8 @@ fn drawn_w(c: char, px: f32) -> f32 {
     let h = cap_h(px);
     if c == '\u{00b0}' {
         h * 0.6
+    } else if c == '\u{266D}' {
+        h * 0.62
     } else {
         h * 1.05 + h * 0.2
     }
@@ -518,6 +520,23 @@ fn ptext_drawn(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, c
                 let r = ch * 0.2;
                 p.circle_stroke(Pos2::new(x + ch * 0.3, anchor.y - ch * 0.5 + r), r, egui::Stroke::new(line * 0.8, color));
                 x += drawn_w('\u{00b0}', px);
+            }
+            Err('\u{266D}') => {
+                // a flat: a stem the height of the capitals with a small rounded bowl at its foot
+                let sx = x + ch * 0.14;
+                let (top, bot) = (anchor.y - ch * 0.6, anchor.y + ch * 0.5);
+                let s = egui::Stroke::new(line, color);
+                p.line_segment([Pos2::new(sx, top), Pos2::new(sx, bot)], s);
+                let mid = anchor.y + ch * 0.02;
+                let bowl = vec![
+                    Pos2::new(sx, mid),
+                    Pos2::new(sx + ch * 0.22, mid - ch * 0.12),
+                    Pos2::new(sx + ch * 0.38, mid + ch * 0.02),
+                    Pos2::new(sx + ch * 0.3, mid + ch * 0.28),
+                    Pos2::new(sx, bot),
+                ];
+                p.add(egui::Shape::line(bowl, s));
+                x += drawn_w('\u{266D}', px);
             }
             Err(c) => {
                 // an upright triangle, as tall as the capitals

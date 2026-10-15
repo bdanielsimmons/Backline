@@ -64,12 +64,17 @@ mod clusters;
 mod credits;
 #[path = "ui/font.rs"]
 mod font;
+#[path = "data/gp.rs"]
+#[allow(dead_code)]
+mod gp;
 #[path = "ui/help.rs"]
 mod help;
 #[path = "ui/history.rs"]
 mod history;
 #[path = "ui/icons.rs"]
 mod icons;
+#[path = "ui/improv.rs"]
+mod improv;
 #[path = "ui/library_win.rs"]
 mod library_win;
 #[path = "ui/lines.rs"]
@@ -77,6 +82,8 @@ mod lines_ui;
 #[cfg(target_os = "macos")]
 #[path = "ui/macmenu.rs"]
 mod macmenu;
+#[path = "ui/melodies.rs"]
+mod melodies;
 #[path = "ui/palette.rs"]
 mod palette;
 #[path = "ui/player_win.rs"]
@@ -91,6 +98,8 @@ mod skin;
 mod tools;
 #[path = "ui/tour.rs"]
 mod tour;
+#[path = "data/transcription.rs"]
+mod transcription;
 #[path = "ui/triads.rs"]
 mod triads;
 #[path = "ui/vicon.rs"]
@@ -146,6 +155,8 @@ enum Msg {
     NeedLogin(String),
     /// Tidal couldn't be reached at all (no internet): carry on with what is on this computer
     NoInternet,
+    /// transcriptions brought in: the names, or what went wrong
+    CmImported(Result<Vec<String>, String>),
     Page(Page, bool),
     MoreTracks(u64, Vec<Track>),
     Err(String),
@@ -236,6 +247,8 @@ enum Sec {
     Lists,
     /// MY TRACKS: every song you liked, from every source
     Mine,
+    /// CHORD MELODIES: transcriptions (SONGS) and the moves in them (MOVES)
+    Melodies,
 }
 
 /// The sources Backline plays from: (key, name). A song's source is "tidal" for Tidal, otherwise its kind
@@ -320,7 +333,6 @@ enum Action {
     Volume(f32),
     Shuffle,
     Repeat,
-    ToggleLossless,
     ClearStatus,
     CopyLog,
     ToggleArt,
@@ -453,6 +465,8 @@ enum Action {
     Pomo,
     /// hold the focus timer, or carry on with it
     PomoHold,
+    /// bring in transcriptions: Guitar Pro files (false) or Backline transcription files (true)
+    CmImport(bool),
     /// offline mode on (nothing goes out to the internet) or off
     GoOffline(bool),
     TimerPanel,
@@ -1349,17 +1363,14 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::PickTune(t.clone()));
         ui.close_menu();
     }
+    // each picker has a name box too: NEW makes a playlist with the song in it (NEW ON TIDAL, one on your Tidal
+    // account)
     if menu_item(ui, "Add to a Backline playlist...") {
         acts.push(Action::PlaylistPick(t.clone()));
         ui.close_menu();
     }
     if t.id > 0 && menu_item(ui, "Add to a Tidal playlist...") {
         acts.push(Action::PlaylistPickTidal(t.clone()));
-        ui.close_menu();
-    }
-    // the picker's name box: NEW makes a Backline playlist, NEW ON TIDAL one on your Tidal account
-    if menu_item(ui, "New playlist with this song...") {
-        acts.push(Action::PlaylistPick(t.clone()));
         ui.close_menu();
     }
 }
@@ -2039,6 +2050,8 @@ struct App {
     last_wrap_at: Option<Instant>,
     /// pitch shift in cents (100 = a semitone)
     semis: i32,
+    /// the pitch as typed in its box
+    pitch_text: String,
     chan: u32,
     acc: f32,
     acc_at: Instant,
@@ -2194,6 +2207,81 @@ struct App {
     pass_pair: usize,
     /// LINES: which tab, the Slonimsky division / kind / pattern / first note / direction / octave up
     ln_tab: u8,
+    /// PENTATONICS: key, major or minor, the box shown (5 = the whole neck), the blue note and in-between notes,
+    /// labels (degrees, notes, fingers), the exercise, its string, and what it is played over
+    pn_root: i32,
+    pn_box: u8,
+    pn_blue: bool,
+    pn_between: bool,
+    pn_label: u8,
+    pn_ex: u8,
+    pn_string: u8,
+    pn_back: u8,
+    /// which box counts as box 1 (0: the one with its root on the 6th string, first finger)
+    pn_first: u8,
+    /// PENTATONICS & MORE: the family (0 pentatonic, 1 hexatonic, 2 diminished), the scale in it, notes per string
+    pn_fam: u8,
+    pn_scale: u8,
+    pn_nps: u8,
+    /// SUPERIMPOSE: the chord (root, quality), suggestions or any shape, the suggestion picked, the shape and its
+    /// root (from the chord's root), and what the line is played over
+    si_root: i32,
+    si_quality: u8,
+    si_any: bool,
+    si_pick: u8,
+    si_kind: u8,
+    si_kroot: u8,
+    si_back: u8,
+    /// SCALE FINGERINGS: the scale (by name), key, system (0 five positions, else notes a string), the position
+    /// shown (its count = the whole neck), labels, which shape is position 1 (255: the one rooted on the 5th
+    /// string), the starred scales, and shifting through them all
+    pf_scale: String,
+    pf_root: i32,
+    pf_sys: u8,
+    pf_pos: u8,
+    pf_label: u8,
+    pf_first: u8,
+    pf_stars: Vec<String>,
+    /// what SCALES plays: 0 this position up and down, 1 every position in turn, 2.. a pattern (3rds, 4ths...)
+    pf_play: u8,
+    /// CHORD MELODIES: SONGS or MOVES; the transcriptions listed; the moves kept (and read yet); the tune open and
+    /// read; its tempo; what is shown (chord names, grips, staff, tab, note names); playing (since, from, to in
+    /// quarter notes); looping; the bars to play; the beat picked (and the one shift-clicked); the moves' filters
+    /// and their key
+    cm_tab: u8,
+    cm_list: Option<Vec<(std::path::PathBuf, String)>>,
+    cm_moves: Vec<transcription::Move>,
+    cm_moves_read: bool,
+    cm_file: Option<std::path::PathBuf>,
+    cm_loaded: Option<(std::path::PathBuf, Arc<transcription::Tune>)>,
+    /// the moves spotted in the tune open (worked out once per tune)
+    cm_found: Option<(std::path::PathBuf, Vec<(usize, (usize, usize), (usize, usize))>)>,
+    cm_bpm: u32,
+    cm_show: [bool; 5],
+    cm_play: Option<(Instant, f32, f32)>,
+    cm_loop: bool,
+    cm_from: usize,
+    cm_to: usize,
+    cm_sel: Option<(usize, usize)>,
+    cm_sel2: Option<(usize, usize)>,
+    cm_kind: u8,
+    cm_star_only: bool,
+    cm_shift: i32,
+    /// the move open under the list
+    cm_open: Option<usize>,
+    /// the moves spotted, marked over the bars (all kinds, or one); the one clicked
+    cm_marks: bool,
+    cm_mark_kind: u8,
+    cm_mark: Option<usize>,
+    /// CHORD MELODIES: the beats being dragged over (from, to); the tune open has its chord names worked out
+    cm_drag: Option<((usize, usize), (usize, usize))>,
+    cm_named: bool,
+    /// COLTRANE CELLS THROUGH A TUNE: which cell
+    ct_cell: u8,
+    /// the grip clicked in the panel (the panel's first beat, which grip)
+    cm_step: Option<((usize, usize), usize)>,
+    /// a line played over something (0 nothing, 1 drone, 2 chord, 3 band) and that chord's notes; None for plain lines
+    ln_backing: Option<(u8, Vec<i32>)>,
     /// SLONIMSKY'S DIARY: the book's pattern open, the note it starts on (0 = C, as written), played backwards
     ln_at: usize,
     ln_root: i32,
@@ -2216,13 +2304,9 @@ struct App {
     ln_sub: u8,
     ln_loop: bool,
     ln_playing: String,
-    /// SCALES: family, scale, pattern, octaves, direction, root
-    sc_fam: usize,
-    sc_idx: usize,
-    sc_pat: usize,
+    /// SCALES: the range and direction of its patterns
     sc_oct: usize,
     sc_dir: usize,
-    sc_root: i32,
     /// the last sequence played, to go round again
     seq_last: Option<Vec<Vec<i32>>>,
     /// PRACTICE PROGRESSIONS: which groups are folded open, key, minor, 7th chords, all twelve keys, one being typed
@@ -2243,6 +2327,8 @@ struct App {
     edit_kb: (String, String),
     /// which skin groups are open on the BACKLINE page (ORIGINAL, RETRO ORIGINAL, WINAMP)
     skins_open: [bool; 3],
+    /// under WINAMP in the skin list: FAVOURITES and WORN LATELY folded open or not
+    wa_groups_open: [bool; 2],
     neck_zoom: f32,
     ghost_alpha: f32,
     /// the analyzer's reading: the one picked (click), the one hovered
@@ -2685,6 +2771,7 @@ impl App {
             last_wraps: 0,
             last_wrap_at: None,
             semis: 0,
+            pitch_text: String::new(),
             chan: 0,
             acc: 0.0,
             acc_at: Instant::now(),
@@ -2799,6 +2886,60 @@ impl App {
             vc_set: 0,
             pass_pair: 0,
             ln_tab: 0,
+            pn_root: 9,
+            pn_box: 0,
+            pn_blue: false,
+            pn_between: false,
+            pn_label: 0,
+            pn_ex: 0,
+            pn_string: 5,
+            pn_back: 0,
+            pn_first: 0,
+            pn_fam: 0,
+            pn_scale: 0,
+            pn_nps: 2,
+            si_root: 0,
+            si_quality: 1,
+            si_any: false,
+            si_pick: 0,
+            si_kind: 0,
+            si_kroot: 7,
+            si_back: 2,
+            pf_scale: "Ionian (major)".to_string(),
+            pf_root: 0,
+            pf_sys: 0,
+            pf_pos: 0,
+            pf_label: 0,
+            pf_first: 255,
+            pf_stars: Vec::new(),
+            pf_play: 0,
+            cm_tab: 0,
+            cm_list: None,
+            cm_moves: Vec::new(),
+            cm_moves_read: false,
+            cm_file: None,
+            cm_loaded: None,
+            cm_found: None,
+            cm_bpm: 90,
+            cm_show: [true; 5],
+            cm_play: None,
+            cm_loop: false,
+            cm_from: 0,
+            cm_to: usize::MAX,
+            cm_sel: None,
+            cm_sel2: None,
+            cm_kind: 0,
+            cm_star_only: false,
+            cm_shift: 0,
+            cm_open: None,
+            cm_marks: true,
+            cm_mark_kind: 0,
+            cm_mark: None,
+            cm_drag: None,
+            cm_named: false,
+            ct_cell: 0,
+            cm_step: None,
+            ln_backing: None,
             ln_at: 0,
             ln_root: 0,
             ln_back: false,
@@ -2814,12 +2955,8 @@ impl App {
             ln_sub: 2,
             ln_loop: true,
             ln_playing: String::new(),
-            sc_fam: 0,
-            sc_idx: 0,
-            sc_pat: 0,
             sc_oct: 2,
             sc_dir: 2,
-            sc_root: 0,
             seq_last: None,
             prog_shown: Vec::new(),
             prog_key: 0,
@@ -2830,6 +2967,7 @@ impl App {
             prac_chart: None,
             seq_play: None,
             skins_open: [false; 3],
+            wa_groups_open: [true, false],
             edit_info: None,
             edit_kb: (String::new(), String::new()),
             neck_zoom: 1.0,
@@ -2922,9 +3060,8 @@ impl App {
         if let Some(v) = st["volume"].as_f64() {
             app.volume = (v as f32).clamp(0.0, 1.0);
         }
-        if let Some(b) = st["lossless"].as_bool() {
-            app.prefer_lossless = b;
-        }
+        // always the best quality Tidal gives (it sends lossless when it will, else 320): no setting
+        app.prefer_lossless = true;
         if let Some(b) = st["spec"].as_bool() {
             app.show_spec = b;
         }
@@ -3149,6 +3286,11 @@ impl App {
         }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
+        app.pn_first = st["pn_first"].as_u64().unwrap_or(0).min(4) as u8;
+        app.pf_first = st["pf_first"].as_u64().unwrap_or(255).min(255) as u8;
+        if let Some(a) = st["pf_stars"].as_array() {
+            app.pf_stars = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        }
         if st["go_offline"].as_bool() == Some(true) {
             app.go_offline = true;
             crate::api::OFFLINE.store(true, Ordering::Relaxed);
@@ -3228,7 +3370,9 @@ impl App {
         crate::api::log(&format!("backline {} started (token saved: {})", VERSION, app.api.has_token()));
         // a test copy (a test profile, BACKLINE_OPEN or BACKLINE_MUTE) makes no sound - not even the opening chime:
         // it plays, but nothing reaches the speakers
-        if ["BACKLINE_HOME", "BACKLINE_OPEN", "BACKLINE_MUTE"].iter().any(|v| std::env::var_os(v).is_some()) {
+        // (BACKLINE_SHOW: a test copy put in front of you to try - with sound)
+        let showing = std::env::var_os("BACKLINE_SHOW").is_some();
+        if !showing && ["BACKLINE_HOME", "BACKLINE_OPEN", "BACKLINE_MUTE"].iter().any(|v| std::env::var_os(v).is_some()) {
             crate::player::MUTED.store(true, Ordering::Relaxed);
         }
         app.play_intro();
@@ -3282,9 +3426,34 @@ impl App {
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
             Ok("diary") => app.sec = Sec::Diary,
+            Ok("analyzer") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 1;
+                // an Em9 grip to show
+                app.an_frets = [Some(0), Some(7), None, Some(12), Some(12), Some(7)];
+            }
+            Ok("superimpose") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 3;
+            }
+            Ok("fingerings") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 1;
+            }
+            Ok("melodies") => app.sec = Sec::Melodies,
+            Ok("voicings") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 3;
+            }
+            Ok("pent") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 2;
+            }
             Ok("diarysong") => {
                 app.sec = Sec::Diary;
-                if let Some((id, _)) = app.store.days.iter().find(|d| d.date == store::today_str()).and_then(|d| d.songs.iter().next()) {
+                if let Some((id, _)) =
+                    app.store.days.iter().find(|d| d.date == store::today_str()).and_then(|d| d.songs.iter().next())
+                {
                     app.diary_song = Some((store::today_str(), *id));
                 }
             }
@@ -3410,6 +3579,9 @@ impl App {
             "eq_zoom": self.eq_zoom,
             "wa_guide": self.wa_guide,
             "go_offline": self.go_offline,
+            "pn_first": self.pn_first,
+            "pf_first": self.pf_first,
+            "pf_stars": self.pf_stars,
             "diary_span": self.diary_span,
             "diary_reading": self.diary_reading,
             "loops_sort": self.loops_sort,
@@ -3519,11 +3691,7 @@ impl App {
         if raw && self.auth == Auth::In && !self.offline && !self.net_down {
             let _ = self.tx.send(Msg::NoInternet);
         }
-        let e = if raw {
-            "NO INTERNET - THAT NEEDS IT (SONGS KEPT ON THIS COMPUTER STILL PLAY)".to_string()
-        } else {
-            e
-        };
+        let e = if raw { "NO INTERNET - THAT NEEDS IT (SONGS KEPT ON THIS COMPUTER STILL PLAY)".to_string() } else { e };
         self.status = e;
         self.status_err = true;
     }
@@ -4139,6 +4307,44 @@ impl App {
         }
     }
 
+    /// A line's sound: the notes, `gap` seconds apart, over its backing - nothing, the root held, the chord
+    /// strummed each bar, or the band on the chord (four beats a bar at the line's tempo).
+    fn line_pcm(&self, notes: &[Vec<i32>], gap: f32) -> Vec<i16> {
+        let line = band::line_sound(notes, gap);
+        let Some((mode, chord)) = self.ln_backing.as_ref().filter(|b| b.0 > 0 && !b.1.is_empty()) else { return line };
+        let bar = 4.0 * 60.0 / self.ln_bpm.max(20) as f32;
+        let len = notes.len() as f32 * gap;
+        let bars = (len / bar).ceil().max(1.0) as usize;
+        let back: Vec<i16> = match mode {
+            // the root, low, struck each bar so it never dies away
+            1 => band::sequence_sound(&vec![vec![chord[0] - 12]; bars], bar),
+            // the chord, strummed on the one of each bar
+            2 => band::sequence_sound(&vec![chord.clone(); bars], bar),
+            // the band on the chord
+            _ => {
+                let name = format!(
+                    "{}{}",
+                    theory::note_name(chord[0], lines::key_sharps(chord[0])),
+                    if chord.get(1).is_some_and(|t| t - chord[0] == 3) { "m7" } else { "6" }
+                );
+                let text = format!("T44 {}|", format!("| {} ", name).repeat(bars));
+                let chart = crate::chart::parse_friendly(&text);
+                let order: Vec<usize> = (0..chart.bars.len()).collect();
+                let lv = [0, 1, 2].map(|i| if self.band_parts[i] { self.band_lv[i] } else { 0.0 });
+                band::render(&chart, &order, self.ln_bpm as f32, self.band_style, lv, false)
+            }
+        };
+        // the two together; the line a little louder than what it sits on
+        let n = line.len().max(back.len());
+        (0..n)
+            .map(|i| {
+                let a = line.get(i).copied().unwrap_or(0) as f32;
+                let b = back.get(i).copied().unwrap_or(0) as f32 * 0.6;
+                (a + b).clamp(-32768.0, 32767.0) as i16
+            })
+            .collect()
+    }
+
     /// The opening sound, as set in Preferences.
     fn play_intro(&self) {
         let file = match self.intro {
@@ -4240,8 +4446,9 @@ impl App {
             Action::PlaySequenceAt(chords, gap, tag) => {
                 if !chords.is_empty() {
                     self.player.send(Cmd::StopOnce);
-                    // a single-note line is played short and clean; chords ring into each other
-                    let pcm = if tag == "line" { band::line_sound(&chords, gap) } else { band::sequence_sound(&chords, gap) };
+                    // a single-note line is played short and clean (over its backing, if it has one); chords ring
+                    // into each other
+                    let pcm = if tag == "line" { self.line_pcm(&chords, gap) } else { band::sequence_sound(&chords, gap) };
                     self.player.send(Cmd::Once(pcm, 0.9));
                     self.seq_last = Some(chords.clone());
                     self.seq_play = Some((Instant::now(), gap, tag, chords.len()));
@@ -4605,14 +4812,6 @@ impl App {
                 };
                 self.dirty = true;
                 self.refresh_prefetch();
-            }
-            Action::ToggleLossless => {
-                self.prefer_lossless = !self.prefer_lossless;
-                self.dirty = true;
-                self.prefetched = None;
-                self.prefetching = 0;
-                let msg = if self.prefer_lossless { "HIFI LOSSLESS - NEXT TRACK" } else { "320K AAC - NEXT TRACK" };
-                self.set_note(msg);
             }
             Action::ClearStatus => self.status.clear(),
             Action::CopyLog => {
@@ -5209,28 +5408,42 @@ impl eframe::App for App {
                     let want = (self.stack_frac * screen.height() - 44.0).max(0.0);
                     (inner_w / 300.0).min(want / 138.0).clamp(0.6, 3.0)
                 };
-                // the whole column fits in the window: when player, equalizer, playlist and practice panel add up to
-                // more, the practice panel gives first (down to its least), then the player scales down
-                if self.practice {
+                // the whole column fits in the window, the playlist always with room for a good few songs: when
+                // player, equalizer, playlist and practice panel add up to more, the practice panel gives first (down
+                // to its least), then an equalizer you sized, then the player scales down
+                const PLAYLIST_MIN: f32 = 200.0;
+                let mut eq_fit = self.eq_h_user;
+                {
                     // the parts of the column that grow with the player's scale, and the ones that don't
-                    let skin_eq = self.show_eq && self.wa_art.is_some() && self.eq_h_user.is_none();
+                    let skin_eq = self.show_eq && self.wa_art.is_some() && eq_fit.is_none();
                     let per_s = if self.queue_hidden { 0.0 } else { 138.0 } + if skin_eq { 116.0 } else { 0.0 };
-                    let fixed = if self.queue_hidden { 160.0 } else { 44.0 + 80.0 }
-                        + if !self.show_eq {
+                    let base = if self.queue_hidden { 160.0 } else { 44.0 + PLAYLIST_MIN };
+                    let eq_part = |eq: Option<f32>| {
+                        if !self.show_eq {
                             0.0
-                        } else if let Some(h) = self.eq_h_user {
+                        } else if let Some(h) = eq {
                             h
                         } else if skin_eq {
                             104.0
                         } else {
                             340.0
-                        };
-                    let room = screen.height() - fixed - per_s * s;
-                    if practice_h > room {
-                        practice_h = room.max(220.0);
+                        }
+                    };
+                    let h = screen.height();
+                    if self.practice {
+                        let room = h - base - eq_part(eq_fit) - per_s * s;
+                        if practice_h > room {
+                            practice_h = room.max(220.0);
+                        }
+                    }
+                    if let Some(e) = eq_fit.filter(|_| self.show_eq) {
+                        let room = h - base - practice_h - per_s * s;
+                        if e > room {
+                            eq_fit = Some(room.max(140.0));
+                        }
                     }
                     if per_s > 0.0 {
-                        s = s.min((screen.height() - fixed - practice_h) / per_s).max(0.4);
+                        s = s.min((h - base - eq_part(eq_fit) - practice_h) / per_s).max(0.4);
                     }
                 }
                 let player_h = 138.0 * s + 44.0;
@@ -5282,7 +5495,7 @@ impl eframe::App for App {
                         });
                 }
                 // the equalizer docks under the player: the skin's at the player's own scale, or Backline's
-                let eq_h = self.eq_h_user.unwrap_or(if self.wa_art.is_some() { 116.0 * s + 44.0 + 60.0 } else { 340.0 });
+                let eq_h = eq_fit.unwrap_or(if self.wa_art.is_some() { 116.0 * s + 44.0 + 60.0 } else { 340.0 });
                 if self.queue_hidden {
                     // PL off: no queue, the player fills the column (the practice panel under it); with the equalizer
                     // open, the player keeps its size and the equalizer sits right under it, as with the queue
@@ -5577,7 +5790,7 @@ fn main() -> eframe::Result<()> {
             .with_position([-1700.0, 40.0])
             .with_active(false)
             .with_taskbar(false);
-    } else if std::env::var_os("BACKLINE_HOME").is_some() {
+    } else if std::env::var_os("BACKLINE_HOME").is_some() && std::env::var_os("BACKLINE_SHOW").is_none() {
         // a test copy (a test profile): out of sight, never in front of what you are doing or taking the keyboard
         viewport = viewport.with_position([-1700.0, 40.0]).with_active(false).with_taskbar(false);
     }

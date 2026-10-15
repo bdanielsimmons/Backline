@@ -620,6 +620,19 @@ pub(crate) fn dropdown(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str],
     dropdown_at(ui, id, title, items, sel, min_w, false)
 }
 
+/// One choice on a line of its own: its name, then a dropdown of the options. Returns the index chosen this frame.
+pub(crate) fn choice_line(ui: &mut egui::Ui, id: &str, name: &str, items: &[&str], sel: usize, w: f32) -> Option<usize> {
+    let mut out = None;
+    ui.horizontal(|ui| {
+        crate::views::label(ui, name, 100.0);
+        // as wide as its longest option (so it doesn't jump about), never past the page; the text stays full size
+        let widest = items.iter().map(|s| text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
+        let room = (ui.available_width() - 4.0).max(120.0);
+        out = dropdown_fixed(ui, id, items, sel, widest.max(w.min(widest)).min(room));
+    });
+    out
+}
+
 /// A dropdown of exactly `w` wide whatever it shows (a long choice is cut to fit), so what sits beside it stays put.
 pub(crate) fn dropdown_fixed(ui: &mut egui::Ui, id: &str, items: &[&str], sel: usize, w: f32) -> Option<usize> {
     dropdown_at(ui, id, "", items, sel, w, true)
@@ -643,7 +656,17 @@ pub(crate) fn dropdown_at(
     let down = resp.is_pointer_button_down_on() || open;
     raised_h(ui.painter(), rect, down, resp.hovered());
     let dy = if down { 1.0 } else { 0.0 };
-    ptext_fit(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + dy), Align::Min, &text, 2.0, w - 38.0, pal().ink);
+    // (too long for the box: cut short with ..., never shrunk to unreadable)
+    let shown = if text_w(&text, 2.0) > w - 38.0 {
+        let mut c: Vec<char> = text.chars().collect();
+        while !c.is_empty() && text_w(&(c.iter().collect::<String>() + "..."), 2.0) > w - 38.0 {
+            c.pop();
+        }
+        c.iter().collect::<String>().trim_end().to_string() + "..."
+    } else {
+        text.clone()
+    };
+    ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + dy), Align::Min, &shown, 2.0, pal().ink);
     pixmap(
         ui.painter(),
         Pos2::new(rect.max.x - 20.0, rect.center().y - 3.0 + dy),

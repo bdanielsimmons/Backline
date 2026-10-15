@@ -31,6 +31,7 @@ base64 = "0.22"
 # stem separation: ONNX Runtime is loaded from a DLL that is downloaded on demand (nothing is linked in)
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.37"
 swash = "0.1"
 lofty = "0.22"
 

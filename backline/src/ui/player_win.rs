@@ -710,14 +710,15 @@ impl App {
         // where the window's name (and its little picture) ends - as the frame draws it
         let title_end = inner.min.x + 8.0 + text_w("PLAYER", 2.0) + 28.0 + 26.0 + 10.0;
         let room = inner.max.x - 8.0 - title_end;
-        let q_txt = if self.prefer_lossless { "HIFI" } else { "320K" };
         // (name, width, how much it matters: lower stays longer); in the order they sit, right to left
         let mut items: Vec<(&str, f32, u8)> = vec![("PIN", fit("PIN"), 4), ("MINI", fit("MINI"), 1)];
         if PRACTICE {
             items.extend([("PRACTICE", fit("PRACTICE"), 0), ("LISTEN", fit("LISTEN"), 0), ("FOCUS", fit("FOCUS"), 3)]);
         }
-        items.push(("QUALITY", fit(q_txt), 5));
         items.push(("OFFLINE", fit("OFFLINE"), 3));
+        // ONLINE as usual; OFFLINE (lit) in offline mode, or while the internet is gone
+        let off = self.go_offline || self.net_down;
+        let net_txt = if off { "OFFLINE" } else { "ONLINE" };
         if self.wa_art.is_some() {
             items.push(("GUIDE", 26.0, 6));
         }
@@ -761,7 +762,9 @@ impl App {
                 }
                 "PRACTICE" => {
                     tour::mark("CHIP", r);
-                    if chip(ui, r, "PRACTICE", self.practice, "c_prac").tip("Transcribing: loop a section, slow it down").clicked()
+                    if chip(ui, r, "PRACTICE", self.practice, "c_prac")
+                        .tip("Transcribing: loop a section, slow it down")
+                        .clicked()
                         && !self.practice
                     {
                         acts.push(Action::TogglePractice);
@@ -783,27 +786,17 @@ impl App {
                     }
                 }
                 "OFFLINE" => {
-                    if chip(ui, r, "OFFLINE", self.go_offline, "c_offline")
+                    if chip(ui, r, net_txt, off, "c_offline")
                         .tip(if self.go_offline {
                             "Offline mode: nothing goes out to the internet, only what's on this computer. Click to go online"
+                        } else if self.net_down {
+                            "No internet right now: playing what's on this computer. Click to stay offline until you go online again"
                         } else {
-                            "Go offline: only what's on this computer, nothing goes out to the internet"
+                            "Online. Click to go offline: only what's on this computer, nothing goes out to the internet"
                         })
                         .clicked()
                     {
                         acts.push(Action::GoOffline(!self.go_offline));
-                    }
-                }
-                "QUALITY" => {
-                    if chip(ui, r, q_txt, self.prefer_lossless, "c_quality")
-                        .tip(if self.prefer_lossless {
-                            "Stream quality: HiFi (lossless when Tidal has it). Click for 320 kbps"
-                        } else {
-                            "Stream quality: 320 kbps. Click for HiFi (lossless)"
-                        })
-                        .clicked()
-                    {
-                        acts.push(Action::ToggleLossless);
                     }
                 }
                 "GUIDE" => {
@@ -819,7 +812,10 @@ impl App {
                     }
                 }
                 _ => {
-                    if chip(ui, r, "NOW PLAYING", false, "c_art").tip("Now Playing: the song big - cover, lyrics, visualizer  (A)").clicked() {
+                    if chip(ui, r, "NOW PLAYING", false, "c_art")
+                        .tip("Now Playing: the song big - cover, lyrics, visualizer  (A)")
+                        .clicked()
+                    {
                         acts.push(Action::ToggleArt);
                     }
                 }
@@ -849,7 +845,9 @@ impl App {
                             }
                         }
                         "PRACTICE" | "LISTEN" => {
-                            if *name == "PRACTICE" && menu_item(ui, if self.practice { "Listen (leave practice)" } else { "Practice" }) {
+                            if *name == "PRACTICE"
+                                && menu_item(ui, if self.practice { "Listen (leave practice)" } else { "Practice" })
+                            {
                                 acts.push(Action::TogglePractice);
                             }
                         }
@@ -861,11 +859,6 @@ impl App {
                         "OFFLINE" => {
                             if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline" }) {
                                 acts.push(Action::GoOffline(!self.go_offline));
-                            }
-                        }
-                        "QUALITY" => {
-                            if menu_item(ui, if self.prefer_lossless { "Quality: HiFi (click for 320 kbps)" } else { "Quality: 320 kbps (click for HiFi)" }) {
-                                acts.push(Action::ToggleLossless);
                             }
                         }
                         "GUIDE" => {

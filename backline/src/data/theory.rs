@@ -176,7 +176,6 @@ pub fn centre(g: &[Option<u8>; 6]) -> f32 {
     }
 }
 
-#[cfg(test)]
 pub fn name_chords(notes: &[i32], bass: Option<i32>) -> Vec<String> {
     let set: Vec<i32> = {
         let mut v: Vec<i32> = notes.iter().map(|n| n.rem_euclid(12)).collect();

@@ -479,14 +479,11 @@ impl App {
     }
 
     fn quality_row(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            for (i, (n, _)) in QUALITIES.iter().enumerate() {
-                if retro_btn(ui, n, self.tr_q == i).clicked() {
-                    self.tr_q = i;
-                    self.tr_sel = 0;
-                }
-            }
-        });
+        let names: Vec<&str> = QUALITIES.iter().map(|(n, _)| *n).collect();
+        if let Some(i) = crate::choice_line(ui, "tr_q", "QUALITY", &names, self.tr_q, 200.0) {
+            self.tr_q = i;
+            self.tr_sel = 0;
+        }
         ui.add_space(6.0);
     }
 

@@ -195,7 +195,15 @@ impl App {
                 crate::para(ui, "NAME THIS CURVE", pal().ink2);
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(170.0, bh()), Sense::hover());
-                    let o = crate::views::field(ui, &mut self.ed, crate::tools::F_EQ_NAME, &mut self.eq_name, rect, "My curve...", false);
+                    let o = crate::views::field(
+                        ui,
+                        &mut self.ed,
+                        crate::tools::F_EQ_NAME,
+                        &mut self.eq_name,
+                        rect,
+                        "My curve...",
+                        false,
+                    );
                     save = o.enter || retro_btn_w(ui, "SAVE", 70.0, false).clicked();
                 });
             },
@@ -260,7 +268,8 @@ impl App {
                 None => 56.0,
             };
             let strip_h = if strip_h < 30.0 { 0.0 } else { strip_h };
-            let eq_area = Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - strip_h - if strip_h > 0.0 { 4.0 } else { 0.0 }));
+            let eq_area =
+                Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - strip_h - if strip_h > 0.0 { 4.0 } else { 0.0 }));
             self.winamp_eq(ui, eq_area);
             let mut changed = false;
             if strip_h > 0.0 {
@@ -446,32 +455,47 @@ impl App {
             self.skins_open[2] = !self.skins_open[2];
         }
         if self.skins_open[2] {
-            // the one worn first, then the ones worn lately (X takes one off the list)
-            let mut list: Vec<(String, String)> = Vec::new();
-            if let Some(w) = &museum {
-                list.push(w.clone());
+            // two groups, each folding open: your favourites, and the ones worn lately (X takes one off: a favourite
+            // out of your favourites, the others off the list)
+            let favs: Vec<(String, String)> = self.wa_favs.clone();
+            let mut recent: Vec<(String, String)> = Vec::new();
+            if let Some(w) = museum.clone().filter(|w| !favs.iter().any(|f| f.0 == w.0)) {
+                recent.push(w);
             }
             for r in &self.wa_recent {
-                if !list.iter().any(|l| l.0 == r.0) {
-                    list.push(r.clone());
+                if !recent.iter().any(|l| l.0 == r.0) && !favs.iter().any(|f| f.0 == r.0) {
+                    recent.push(r.clone());
                 }
             }
-            for (md5, name) in list {
-                let on = museum.as_ref().is_some_and(|w| w.0 == md5);
-                // X first: the name takes the rest of the row
-                ui.horizontal(|ui| {
-                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list").clicked() {
-                        acts.push(Action::WaForget(md5.clone()));
-                    }
-                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) && !on {
-                        acts.push(Action::WaApply(crate::winamp::WaSkin {
-                            md5: md5.clone(),
-                            name: name.clone(),
-                            shot: String::new(),
-                            download: String::new(),
-                        }));
-                    }
-                });
+            for (g, (title, list, fav)) in [("FAVOURITES", favs, true), ("WORN LATELY", recent, false)].into_iter().enumerate() {
+                if list.is_empty() {
+                    continue;
+                }
+                let open = self.wa_groups_open[g];
+                if menu_item(ui, &format!("    {} {}  ({})", if open { "-" } else { "+" }, title, list.len())) {
+                    self.wa_groups_open[g] = !open;
+                }
+                if !open {
+                    continue;
+                }
+                for (md5, name) in list {
+                    let on = museum.as_ref().is_some_and(|w| w.0 == md5);
+                    ui.horizontal(|ui| {
+                        ui.add_space(24.0);
+                        let tip = if fav { "Take it out of your favourites" } else { "Take it off this list" };
+                        if retro_btn_w(ui, "X", 24.0, false).tip(tip).clicked() {
+                            acts.push(if fav { Action::WaFav(md5.clone(), name.clone()) } else { Action::WaForget(md5.clone()) });
+                        }
+                        if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) && !on {
+                            acts.push(Action::WaApply(crate::winamp::WaSkin {
+                                md5: md5.clone(),
+                                name: name.clone(),
+                                shot: String::new(),
+                                download: String::new(),
+                            }));
+                        }
+                    });
+                }
             }
             if menu_item(ui, "  BROWSE WINAMP SKINS...") {
                 acts.push(Action::WaOpen);
@@ -522,15 +546,15 @@ impl App {
     /// Winamp skins from the Skin Museum: search, a grid of screenshots, click one to wear it.
     pub(crate) fn winamp_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            title_line(ui, "WINAMP SKINS", 3.0, pal().ink);
-            // the ones worn lately, in a drop-down: click one to wear it again, X to take it off the list
+        title_line(ui, "WINAMP SKINS", 3.0, pal().ink);
+        // under the title: the ones worn lately and your favourites, each a drop-down (a little darker, set apart)
+        {
             let favs = self.wa_favs.clone();
             if !self.wa_recent.is_empty() || !favs.is_empty() {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.horizontal_wrapped(|ui| {
                     // your favourites: kept for good, until you take them off
                     if !favs.is_empty() {
-                        let fd = retro_btn(ui, "FAVOURITES  v", false).tip("Your favourite skins");
+                        let fd = retro_btn(ui, "FAVOURITES  v", true).tip("Your favourite skins");
                         let fmenu = ui.id().with("wa_favs");
                         if fd.clicked() {
                             ui.memory_mut(|m| m.toggle_popup(fmenu));
@@ -560,7 +584,7 @@ impl App {
                     if self.wa_recent.is_empty() {
                         return;
                     }
-                    let dd = retro_btn(ui, "WORN LATELY  v", false).tip("Skins you wore lately");
+                    let dd = retro_btn(ui, "WORN LATELY  v", true).tip("Skins you wore lately");
                     let menu = ui.id().with("worn_lately");
                     if dd.clicked() {
                         ui.memory_mut(|m| m.toggle_popup(menu));
@@ -588,7 +612,7 @@ impl App {
                     });
                 });
             }
-        });
+        }
         para(ui, "From the Winamp Skin Museum. Click one to wear it. The back arrow takes you back.", pal().ink2);
         if let Some((md5, name)) = self.wa_worn.clone().filter(|w| !w.0.starts_with("gen:")) {
             ui.horizontal(|ui| {
@@ -604,9 +628,11 @@ impl App {
         } else if let Some((_, name)) = &self.wa_worn {
             para(ui, &format!("WEARING: {}", name.to_uppercase()), pal().ink);
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let go_w = 54.0;
-            let w = (ui.available_width() - go_w - 70.0 - 3.0 * ui.spacing().item_spacing.x - 8.0).max(80.0);
+            // (measured against what shows, so GO and BEST never end up past the panel's edge)
+            let seen = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width());
+            let w = (seen - go_w - 70.0 - 3.0 * ui.spacing().item_spacing.x - 12.0).max(120.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let o = crate::views::field(
                 ui,
@@ -632,7 +658,8 @@ impl App {
             // cards: the screenshot (main window, equalizer and playlist) and the name
             let (cw, ch) = (150.0, 150.0 * 348.0 / 275.0);
             let gap = 12.0;
-            let per_row = ((ui.available_width() + gap) / (cw + gap)).floor().max(1.0) as usize;
+            let seen = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width());
+            let per_row = ((seen + gap) / (cw + gap)).floor().max(1.0) as usize;
             for row in list.chunks(per_row) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = gap;
@@ -908,6 +935,10 @@ impl App {
                 self.backline_page(ui, acts);
                 return;
             }
+            if sec == Sec::Melodies {
+                ui.push_id((serial, sec_i), |ui| self.melodies_view(ui, acts));
+                return;
+            }
             // the scrollbar's room is always kept: a page about as tall as the window would otherwise gain and lose
             // its scrollbar every frame (the width changes, rows wrap, the height changes) and flicker
             egui::ScrollArea::vertical()
@@ -978,6 +1009,7 @@ impl App {
                         Sec::Reading => self.reading_view(ui, acts),
                         Sec::Chords => self.chords_view(ui, acts),
                         Sec::Lines => self.lines_view(ui, acts),
+                        Sec::Melodies => {}
                         Sec::Lists => self.playlists_view(ui, acts),
                         Sec::Mine => self.mine_view(ui, acts),
                     });

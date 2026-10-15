@@ -78,6 +78,8 @@ pub const F_EQ_NAME: u32 = 79;
 pub const F_SEARCH: u32 = 80;
 /// the filter over your saved loops
 pub const F_LOOPS_FILTER: u32 = 81;
+/// the pitch, typed (semitones like +0.25, or cents like -30c)
+pub const F_PITCH: u32 = 82;
 pub const F_INFO_KEY: u32 = 57;
 pub const F_INFO_BPM: u32 = 58;
 

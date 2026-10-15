@@ -202,10 +202,18 @@ impl App {
         let Some((t0, gap, tag, len)) = self.seq_play.clone() else { return };
         let el = t0.elapsed().as_secs_f32();
         let pass = gap * len as f32;
-        if tag == "line" && el >= pass + gap {
+        // over a backing, each time round lasts whole bars, so the line and the backing stay together
+        let round = if self.ln_backing.as_ref().is_some_and(|b| b.0 > 0) {
+            let bar = 4.0 * 60.0 / self.ln_bpm.max(20) as f32;
+            (pass / bar).ceil().max(1.0) * bar
+        } else {
+            pass + gap
+        };
+        if tag == "line" && el >= round {
             match (self.ln_loop, self.seq_last.clone()) {
                 (true, Some(seq)) => {
-                    self.player.send(Cmd::Once(band::line_sound(&seq, gap), 0.9));
+                    // the line again - with its backing, as the first time
+                    self.player.send(Cmd::Once(self.line_pcm(&seq, gap), 0.9));
                     self.seq_play = Some((Instant::now(), gap, tag, len));
                 }
                 _ => self.seq_play = None,
@@ -221,19 +229,23 @@ impl App {
         crate::tour::mark("LINESVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
-        if let Some(t) = tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES"], self.ln_tab as usize) {
+        if let Some(t) = tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES", "PENTATONICS & MORE", "SUPERIMPOSE"], self.ln_tab as usize)
+        {
             self.ln_tab = t as u8;
         }
         ui.add_space(6.0);
-        if self.ln_tab == 0 {
-            self.slonimsky(ui, acts);
-        } else {
-            self.scales(ui, acts);
+        // only the improvising tabs play a line over something
+        self.ln_backing = None;
+        match self.ln_tab {
+            0 => self.slonimsky(ui, acts),
+            1 => self.fingerings(ui, acts),
+            2 => self.pentatonics(ui, acts),
+            _ => self.superimpose(ui, acts),
         }
     }
 
     /// PLAY / STOP, LOOP, the tempo and the note value, and how many times this line has been played.
-    fn line_player(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, notes: &[i32], key: &str) {
+    pub(crate) fn line_player(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, notes: &[i32], key: &str) {
         // a different line: back to the tempo it was last played at
         if self.seq_now("line").is_none() && self.ln_playing != key {
             self.ln_playing = key.to_string();
@@ -281,12 +293,12 @@ impl App {
         });
         // the feel: how many notes to a beat - the usual ones, tuplets, or any number you type
         ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "FEEL", 60.0);
-            for (n, name) in
-                [(1u8, "1/4"), (2, "1/8"), (3, "TRIPLETS"), (4, "1/16"), (5, "QUINTUPLETS"), (6, "SEXTUPLETS"), (7, "SEPTUPLETS")]
-            {
-                if retro_btn(ui, name, self.ln_sub == n).tip(format!("{} notes to a beat", n)).clicked() {
-                    self.ln_sub = n;
+            crate::views::label(ui, "FEEL", 100.0);
+            const FEELS: [&str; 8] = ["1/4", "1/8", "TRIPLETS", "1/16", "QUINTUPLETS", "SEXTUPLETS", "SEPTUPLETS", "OTHER"];
+            let cur = if (1..=7).contains(&self.ln_sub) { self.ln_sub as usize - 1 } else { 7 };
+            if let Some(i) = crate::dropdown_fixed(ui, "ln_feel", &FEELS, cur, 220.0) {
+                if i < 7 {
+                    self.ln_sub = i as u8 + 1;
                 }
             }
             crate::views::label(ui, "OR", 30.0);
@@ -324,7 +336,7 @@ impl App {
                 let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
                 if i < seq.len() {
                     self.player.send(Cmd::StopOnce);
-                    self.player.send(Cmd::Once(crate::band::line_sound(&seq[i..], gap), 0.9));
+                    self.player.send(Cmd::Once(self.line_pcm(&seq[i..], gap), 0.9));
                     self.seq_play = Some((
                         Instant::now() - std::time::Duration::from_secs_f32(i as f32 * gap),
                         gap,
@@ -653,72 +665,6 @@ impl App {
     }
 
     /// SCALES: any scale, straight or in intervals and groups, over one or two octaves.
-    fn scales(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Play a scale straight, then in intervals - 3rds, 4ths, 5ths, 6ths - and in groups, from every note, until you can go anywhere in it. The same work makes the exotic scales usable: hear what each one does.", pal().ink2);
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "FAMILY", 100.0);
-            for (i, (name, _)) in lines::SCALE_FAMILIES.iter().enumerate() {
-                if retro_btn(ui, name, self.sc_fam == i).clicked() {
-                    self.sc_fam = i;
-                    self.sc_idx = 0;
-                }
-            }
-        });
-        let fam = lines::SCALE_FAMILIES[self.sc_fam.min(lines::SCALE_FAMILIES.len() - 1)].1;
-        self.sc_idx = self.sc_idx.min(fam.len() - 1);
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "SCALE", 100.0);
-            for (i, (name, _, _)) in fam.iter().enumerate() {
-                if retro_btn(ui, &name.to_uppercase(), self.sc_idx == i).clicked() {
-                    self.sc_idx = i;
-                }
-            }
-        });
-        let (sname, steps, about) = fam[self.sc_idx];
-        if let Some(pc) = Self::note_row(ui, "ROOT", self.sc_root, lines::key_sharps(self.sc_root)) {
-            self.sc_root = pc;
-        }
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "PLAY IT", 100.0);
-            for (i, (name, _)) in lines::SCALE_PATTERNS.iter().enumerate() {
-                if retro_btn(ui, name, self.sc_pat == i).clicked() {
-                    self.sc_pat = i;
-                }
-            }
-        });
-        crate::views::dim_line(ui, &lines::SCALE_PATTERNS[self.sc_pat.min(7)].1.to_uppercase(), 1.0, pal().ink2);
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "DIRECTION", 100.0);
-            for (i, d) in lines::DIRECTIONS.iter().enumerate() {
-                if retro_btn(ui, d, self.sc_dir == i).clicked() {
-                    self.sc_dir = i;
-                }
-            }
-            for o in [1usize, 2] {
-                if retro_btn(ui, &format!("{} OCTAVE{}", o, if o > 1 { "S" } else { "" }), self.sc_oct == o).clicked() {
-                    self.sc_oct = o;
-                }
-            }
-        });
-        let sharps = lines::key_sharps(self.sc_root);
-        let names: Vec<&str> = steps.iter().map(|x| theory::note_name(self.sc_root + x, sharps)).collect();
-        section_header(ui, &format!("{} {}", theory::note_name(self.sc_root, sharps), sname.to_uppercase()));
-        crate::views::dim_line(
-            ui,
-            &format!("{}   -   {}   -   {}", lines::formula(steps), names.join(" "), about.to_uppercase()),
-            1.0,
-            pal().ink2,
-        );
-        // low enough for two octaves on the guitar
-        let root = 40 + (self.sc_root - 4).rem_euclid(12) + if self.sc_oct == 1 { 5 } else { 0 };
-        let notes = lines::scale_line(root, steps, self.sc_pat, self.sc_oct, self.sc_dir);
-        let key = format!("scale:{}:{}:{}", sname, self.sc_pat, self.sc_root);
-        self.line_player(ui, acts, &notes, &key);
-        let lit = self.seq_now("line");
-        // written in the feel: triplets in threes, sixteenths in fours...
-        line_score(ui, acts, &notes, self.ln_sub as usize, sharps, lit, None);
-    }
-
     // ------------------------------------------------------------------ practice progressions (under TUNES)
 
     /// PRACTICE PROGRESSIONS at the foot of the tunes list: each group folds open (the arrow turns down) to show its
@@ -1122,6 +1068,16 @@ pub(crate) fn accidental(p: &egui::Painter, c: Pos2, acc: i32, g: f32, col: Colo
                 Stroke::new(1.8_f32, col),
             );
         }
+    } else if acc == 0 {
+        // a natural
+        p.line_segment([Pos2::new(c.x - 0.3 * g, c.y - 1.2 * g), Pos2::new(c.x - 0.3 * g, c.y + 0.5 * g)], s);
+        p.line_segment([Pos2::new(c.x + 0.3 * g, c.y - 0.5 * g), Pos2::new(c.x + 0.3 * g, c.y + 1.2 * g)], s);
+        for dy in [-0.35, 0.35] {
+            p.line_segment(
+                [Pos2::new(c.x - 0.3 * g, c.y + dy * g + 0.15 * g), Pos2::new(c.x + 0.3 * g, c.y + dy * g - 0.15 * g)],
+                Stroke::new(1.8_f32, col),
+            );
+        }
     } else {
         let x = c.x - 0.35 * g;
         p.line_segment([Pos2::new(x, c.y - 1.6 * g), Pos2::new(x, c.y + 0.5 * g)], s);
@@ -1132,6 +1088,109 @@ pub(crate) fn accidental(p: &egui::Painter, c: Pos2, acc: i32, g: f32, col: Colo
             Pos2::new(x, c.y - 0.15 * g),
         ];
         p.add(egui::Shape::line(bowl, Stroke::new(1.3_f32, col)));
+    }
+}
+
+/// A chord written on a staff, as guitar music is (an octave above how it sounds): its notes stacked, a note a
+/// step from the one below set beside it, the accidentals kept clear of each other; each note named with its
+/// degree in a column beside it, and the chord's tab when it has one ((string, fret) per note). `label` names a
+/// note's degree.
+pub(crate) fn chord_staff(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    notes: &[(i32, Option<(usize, u8)>)],
+    sharps: bool,
+    label: &dyn Fn(i32) -> (String, Color32),
+) {
+    let p = ui.painter();
+    p.rect_filled(rect, 3.0, pal().beige_lt);
+    if notes.is_empty() {
+        return;
+    }
+    let g = 7.0_f32;
+    let mut ns: Vec<(i32, Option<(usize, u8)>)> = notes.to_vec();
+    ns.sort_by_key(|n| n.0);
+    ns.dedup_by_key(|n| n.0);
+    // the staff, upright in the middle of the box
+    let top = rect.center().y - 2.0 * g;
+    let bottom = top + 4.0 * g;
+    let line = Stroke::new(1.0_f32, pal().ink2);
+    let staff_w = 120.0_f32.min(rect.width() * 0.4);
+    for k in 0..5 {
+        let y = top + k as f32 * g;
+        p.line_segment([Pos2::new(rect.min.x + 6.0, y), Pos2::new(rect.min.x + staff_w, y)], line);
+    }
+    pixmap(p, Pos2::new(rect.min.x + 10.0, top - 1.7 * g), 7.4 * g / CLEF.len() as f32, &CLEF, pal().ink);
+    let x = rect.min.x + staff_w * 0.72;
+    let mut last: Option<(i32, bool)> = None;
+    let mut acc_cols: Vec<(i32, usize)> = Vec::new();
+    let ink = pal().ink;
+    for (m, _) in &ns {
+        let (letter, acc, oct) = lines::spell(m + 12, sharps);
+        let step = oct * 7 + letter;
+        let y = bottom - (step - 30) as f32 * g / 2.0;
+        // a second above the note under it: set to the right of the stem side
+        let beside = last.is_some_and(|(s, b)| step - s == 1 && !b);
+        let hx = if beside { x + g * 1.15 } else { x };
+        last = Some((step, beside));
+        let mut s = 28;
+        while s >= step {
+            let ly = bottom - (s - 30) as f32 * g / 2.0;
+            p.line_segment([Pos2::new(x - 8.0, ly), Pos2::new(x + 8.0 + if beside { g } else { 0.0 }, ly)], line);
+            s -= 2;
+        }
+        let mut s = 40;
+        while s <= step {
+            let ly = bottom - (s - 30) as f32 * g / 2.0;
+            p.line_segment([Pos2::new(x - 8.0, ly), Pos2::new(x + 8.0 + if beside { g } else { 0.0 }, ly)], line);
+            s += 2;
+        }
+        p.circle_filled(Pos2::new(hx, y), g * 0.55, ink);
+        if acc != 0 {
+            // an accidental within a 6th of one already placed goes a column further left
+            let col = acc_cols.iter().filter(|(s, _)| (step - s).abs() < 6).map(|(_, c)| c + 1).max().unwrap_or(0);
+            acc_cols.push((step, col));
+            accidental(p, Pos2::new(x - g * 1.8 - col as f32 * g * 1.3, y), acc, g, ink);
+        }
+    }
+    // the names, high to low, in a column
+    let names_x = rect.min.x + staff_w + 14.0;
+    let row_h = ((rect.height() - 12.0) / ns.len().max(1) as f32).min(16.0);
+    let col_top = rect.center().y - row_h * ns.len() as f32 / 2.0 + row_h / 2.0;
+    for (k, (m, _)) in ns.iter().rev().enumerate() {
+        let y = col_top + k as f32 * row_h;
+        let (letter, acc, _) = lines::spell(*m, sharps);
+        let name = format!(
+            "{}{}",
+            ["C", "D", "E", "F", "G", "A", "B"][letter as usize],
+            match acc {
+                1 => "#",
+                -1 => "\u{266D}",
+                _ => "",
+            }
+        );
+        let (deg, col) = label(*m);
+        ptext(p, Pos2::new(names_x, y), Align::Min, &name, 1.5, pal().ink);
+        ptext(p, Pos2::new(names_x + 34.0, y), Align::Min, &deg, 1.5, col);
+    }
+    // the tab: high E on top, the frets in a column
+    if ns.iter().any(|n| n.1.is_some()) {
+        let tx = names_x + 80.0;
+        let tg = (rect.height() - 24.0) / 6.0;
+        let ty0 = rect.center().y - 2.5 * tg;
+        let tab_y = |s: usize| ty0 + (5 - s) as f32 * tg;
+        for s in 0..6 {
+            p.line_segment([Pos2::new(tx, tab_y(s)), Pos2::new((tx + 46.0).min(rect.max.x - 6.0), tab_y(s))], line);
+        }
+        for (_, sf) in &ns {
+            if let Some((s, f)) = sf {
+                let txt = f.to_string();
+                let w = text_w(&txt, 1.5) + 4.0;
+                let c = Pos2::new(tx + 23.0, tab_y(*s));
+                p.rect_filled(Rect::from_center_size(c, Vec2::new(w, tg * 0.9)), 0.0, pal().beige_lt);
+                ptext(p, c, Align::Center, &txt, 1.5, pal().ink);
+            }
+        }
     }
 }
 

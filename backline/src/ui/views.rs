@@ -5,8 +5,6 @@ use crate::api::Track;
 use crate::extras::{Knob, CHAN_NAMES};
 use crate::font::{ptext, ptext_fit, spx, text_w};
 use crate::sources;
-use crate::{check_box, dropdown};
-use egui::Color32;
 use crate::stems;
 use crate::store::{self, Ext};
 use crate::tools::{F_LOOK, F_LOOP_A, F_LOOP_B, F_SPEED, F_TR_LOOPS, F_TR_STEP, F_TUNE_IREAL};
@@ -16,7 +14,9 @@ use crate::{
     play_buttons, retro_btn, retro_btn_w, section_header, tab_row, table_header, title_line, track_cells, window_deco, Action,
     App, Ed, RowState, Sec, Tip, PRACTICE,
 };
+use crate::{check_box, dropdown};
 use eframe::egui::{self, Align, Pos2, Rect, Sense, Vec2};
+use egui::Color32;
 use std::sync::atomic::Ordering;
 
 /// "45 SEC", "12 MIN", "1 H 05 MIN"
@@ -280,72 +280,75 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
                         continue;
                     }
                     match key {
-                    egui::Key::Backspace => {
-                        if modifiers.ctrl {
-                            while cur > 0 && chars[cur - 1] == ' ' {
+                        egui::Key::Backspace => {
+                            if modifiers.ctrl {
+                                while cur > 0 && chars[cur - 1] == ' ' {
+                                    chars.remove(cur - 1);
+                                    cur -= 1;
+                                    edited = true;
+                                }
+                                while cur > 0 && chars[cur - 1] != ' ' && chars[cur - 1] != '\n' {
+                                    chars.remove(cur - 1);
+                                    cur -= 1;
+                                    edited = true;
+                                }
+                            } else if cur > 0 {
                                 chars.remove(cur - 1);
                                 cur -= 1;
                                 edited = true;
                             }
-                            while cur > 0 && chars[cur - 1] != ' ' && chars[cur - 1] != '\n' {
-                                chars.remove(cur - 1);
-                                cur -= 1;
+                        }
+                        egui::Key::Delete => {
+                            if cur < chars.len() {
+                                chars.remove(cur);
                                 edited = true;
                             }
-                        } else if cur > 0 {
-                            chars.remove(cur - 1);
-                            cur -= 1;
-                            edited = true;
                         }
-                    }
-                    egui::Key::Delete => {
-                        if cur < chars.len() {
-                            chars.remove(cur);
-                            edited = true;
+                        egui::Key::ArrowLeft => cur = cur.saturating_sub(1),
+                        egui::Key::ArrowRight => cur = (cur + 1).min(chars.len()),
+                        egui::Key::ArrowUp | egui::Key::ArrowDown if multi => {
+                            let lines = layout_lines(&chars, px, inner.width());
+                            let li = line_of(&lines, cur);
+                            let col = cur - lines[li].0;
+                            let to = if key == egui::Key::ArrowUp {
+                                li.checked_sub(1)
+                            } else {
+                                Some(li + 1).filter(|n| *n < lines.len())
+                            };
+                            if let Some(t) = to {
+                                let (s, e) = lines[t];
+                                cur = (s + col).min(e);
+                            }
                         }
-                    }
-                    egui::Key::ArrowLeft => cur = cur.saturating_sub(1),
-                    egui::Key::ArrowRight => cur = (cur + 1).min(chars.len()),
-                    egui::Key::ArrowUp | egui::Key::ArrowDown if multi => {
-                        let lines = layout_lines(&chars, px, inner.width());
-                        let li = line_of(&lines, cur);
-                        let col = cur - lines[li].0;
-                        let to =
-                            if key == egui::Key::ArrowUp { li.checked_sub(1) } else { Some(li + 1).filter(|n| *n < lines.len()) };
-                        if let Some(t) = to {
-                            let (s, e) = lines[t];
-                            cur = (s + col).min(e);
+                        egui::Key::Home => {
+                            cur = if multi {
+                                layout_lines(&chars, px, inner.width())[line_of(&layout_lines(&chars, px, inner.width()), cur)].0
+                            } else {
+                                0
+                            };
                         }
-                    }
-                    egui::Key::Home => {
-                        cur = if multi {
-                            layout_lines(&chars, px, inner.width())[line_of(&layout_lines(&chars, px, inner.width()), cur)].0
-                        } else {
-                            0
-                        };
-                    }
-                    egui::Key::End => {
-                        cur = if multi {
-                            let l = layout_lines(&chars, px, inner.width());
-                            l[line_of(&l, cur)].1
-                        } else {
-                            chars.len()
-                        };
-                    }
-                    egui::Key::Enter => {
-                        if multi {
-                            chars.insert(cur, '\n');
-                            cur += 1;
-                            edited = true;
-                        } else {
-                            out.enter = true;
+                        egui::Key::End => {
+                            cur = if multi {
+                                let l = layout_lines(&chars, px, inner.width());
+                                l[line_of(&l, cur)].1
+                            } else {
+                                chars.len()
+                            };
                         }
-                    }
-                    egui::Key::Escape => {
-                        ed.id = 0;
-                        anchor = None;
-                    }
-                    _ => {}
+                        egui::Key::Enter => {
+                            if multi {
+                                chars.insert(cur, '\n');
+                                cur += 1;
+                                edited = true;
+                            } else {
+                                out.enter = true;
+                            }
+                        }
+                        egui::Key::Escape => {
+                            ed.id = 0;
+                            anchor = None;
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
@@ -555,13 +558,14 @@ impl App {
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
     /// Each group comes back to the list you last had open in it. The plain build has only MUSIC, so only its row shows.
     pub(crate) fn section_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        const PRACTICE_SECS: [(Sec, &str); 6] = [
+        const PRACTICE_SECS: [(Sec, &str); 7] = [
             (Sec::Tunes, "TUNES"),
             (Sec::Diary, "DIARY"),
             (Sec::Loops, "LOOPS"),
             (Sec::Reading, "READING"),
             (Sec::Chords, "CHORDS"),
             (Sec::Lines, "LINES"),
+            (Sec::Melodies, "CHORD MELODIES"),
         ];
         // the BACKLINE tab covers its own page and the pages opened from it
         let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
@@ -2528,7 +2532,15 @@ impl App {
             let (ic, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
             crate::icon_in(ui.painter(), ic.shrink(4.0), &crate::IC_FILTER, pal().ink2);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
-            let _ = field(ui, &mut self.ed, crate::tools::F_LOOPS_FILTER, &mut self.loops_filter, rect, "Filter: name, song, group, note...", false);
+            let _ = field(
+                ui,
+                &mut self.ed,
+                crate::tools::F_LOOPS_FILTER,
+                &mut self.loops_filter,
+                rect,
+                "Filter: name, song, group, note...",
+                false,
+            );
             if !self.loops_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter").clicked() {
                 self.loops_filter.clear();
             }
@@ -2539,7 +2551,12 @@ impl App {
                 self.dirty = true;
             }
             let star = retro_btn(ui, "   ONLY", self.loops_fav).tip("Only the loops you starred");
-            crate::icon_in(ui.painter(), Rect::from_center_size(star.rect.left_center() + Vec2::new(14.0, 0.0), Vec2::splat(12.0)), &crate::IC_STAR, STAR_COL);
+            crate::icon_in(
+                ui.painter(),
+                Rect::from_center_size(star.rect.left_center() + Vec2::new(14.0, 0.0), Vec2::splat(12.0)),
+                &crate::IC_STAR,
+                STAR_COL,
+            );
             if star.clicked() {
                 self.loops_fav = !self.loops_fav;
                 self.dirty = true;
@@ -2560,7 +2577,11 @@ impl App {
                 .days
                 .iter()
                 .flat_map(|d| d.loop_time.iter())
-                .filter_map(|(k, v)| store::parse_loop_key(k).filter(|x| x.0 == id && (x.1 - s.a).abs() < 0.06 && (x.2 - s.b).abs() < 0.06).map(|_| v.0))
+                .filter_map(|(k, v)| {
+                    store::parse_loop_key(k)
+                        .filter(|x| x.0 == id && (x.1 - s.a).abs() < 0.06 && (x.2 - s.b).abs() < 0.06)
+                        .map(|_| v.0)
+                })
                 .sum()
         };
         // (the songs come from a map, in no set order: ties always fall the same way)
@@ -2568,12 +2589,22 @@ impl App {
         match self.loops_sort {
             1 => clips.sort_by(|a, b| a.2.name.to_lowercase().cmp(&b.2.name.to_lowercase()).then(tie(a, b))),
             2 => clips.sort_by(|a, b| spent(b.0, &b.2).cmp(&spent(a.0, &a.2)).then(tie(a, b))),
-            3 => clips.sort_by(|a, b| song_of(a.0).to_lowercase().cmp(&song_of(b.0).to_lowercase()).then(a.2.a.total_cmp(&b.2.a)).then(tie(a, b))),
+            3 => clips.sort_by(|a, b| {
+                song_of(a.0).to_lowercase().cmp(&song_of(b.0).to_lowercase()).then(a.2.a.total_cmp(&b.2.a)).then(tie(a, b))
+            }),
             _ => clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved).then(tie(a, b))),
         }
         let spent_on: Vec<u32> = clips.iter().map(|c| spent(c.0, &c.2)).collect();
         if clips.is_empty() && (self.loops_fav || !filter.is_empty()) {
-            para(ui, if self.loops_fav { "No starred loops here. Click the star on a loop to keep it close." } else { "No loops match." }, pal().ink2);
+            para(
+                ui,
+                if self.loops_fav {
+                    "No starred loops here. Click the star on a loop to keep it close."
+                } else {
+                    "No loops match."
+                },
+                pal().ink2,
+            );
             return;
         }
         if clips.is_empty() {
@@ -2617,9 +2648,21 @@ impl App {
             }
             // the star: click to keep it close (it sits over the row, so it takes the click)
             let sr = Rect::from_center_size(Pos2::new(r.max.x - 22.0, r.min.y + 18.0), Vec2::splat(26.0));
-            let sh = ui.interact(sr, ui.id().with(("loop_star", *id, *i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-            let sh = sh.tip(if s.fav { "Starred: one that matters. Click to unstar" } else { "Star it: one that matters (a gig coming up, a part not to forget)" });
-            let star_col = if s.fav { STAR_COL } else if sh.hovered() || resp.hovered() { pal().dim } else { pal().dim.gamma_multiply(0.35) };
+            let sh = ui
+                .interact(sr, ui.id().with(("loop_star", *id, *i)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let sh = sh.tip(if s.fav {
+                "Starred: one that matters. Click to unstar"
+            } else {
+                "Star it: one that matters (a gig coming up, a part not to forget)"
+            });
+            let star_col = if s.fav {
+                STAR_COL
+            } else if sh.hovered() || resp.hovered() {
+                pal().dim
+            } else {
+                pal().dim.gamma_multiply(0.35)
+            };
             crate::icon_in(ui.painter(), sr.shrink(6.0), &crate::IC_STAR, star_col);
             if sh.clicked() {
                 if let Some(x) = self.store.sections.get_mut(id).and_then(|l| l.get_mut(*i)) {
@@ -2905,7 +2948,11 @@ impl App {
                 let name = v.as_ref().map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "A SONG".to_string());
                 // its time, and how much of it was looping
                 let looped: u32 = self.store.days.iter().find(|d| d.date == date).map_or(0, |d| {
-                    d.loop_time.iter().filter(|(k, _)| store::parse_loop_key(k).is_some_and(|x| x.0 == *id)).map(|(_, v)| v.0).sum()
+                    d.loop_time
+                        .iter()
+                        .filter(|(k, _)| store::parse_loop_key(k).is_some_and(|x| x.0 == *id))
+                        .map(|(_, v)| v.0)
+                        .sum()
                 });
                 let r = list_row(
                     ui,
@@ -3939,7 +3986,24 @@ impl App {
                                         {
                                             acts.push(Action::Transpose(-10));
                                         }
-                                        lcd_box(ui, &format!("{:+.2}", self.semis as f32 / 100.0), 64.0, pal().ink);
+                                        // the pitch, to read or to type: semitones (+0.25, -2) or cents (30c, -15c); Enter sets it
+                                        if self.ed.id != crate::tools::F_PITCH {
+                                            self.pitch_text = format!("{:+.2}", self.semis as f32 / 100.0);
+                                        }
+                                        let (pr, _) = ui.allocate_exact_size(Vec2::new(78.0, bh()), Sense::hover());
+                                        let o = field(ui, &mut self.ed, crate::tools::F_PITCH, &mut self.pitch_text, pr, "+0.00", false);
+                                        if o.enter {
+                                            let s = self.pitch_text.trim().to_lowercase().replace(' ', "");
+                                            let cents = match s.strip_suffix('c') {
+                                                Some(c) => c.parse::<f32>().ok(),
+                                                None => s.parse::<f32>().ok().map(|x| x * 100.0),
+                                            };
+                                            if let Some(c) = cents {
+                                                let want = (c.round() as i32).clamp(-1200, 1200);
+                                                acts.push(Action::Transpose(want - self.semis));
+                                            }
+                                            self.ed.id = 0;
+                                        }
                                         if retro_btn_w(ui, "+10c", 44.0, false)
                                             .tip("Fine tune: raise the pitch 10 cents")
                                             .clicked()
@@ -4143,7 +4207,8 @@ impl Period {
                     cols: (1..=12u32)
                         .map(|m| {
                             let first = store::days_from_civil(y, m, 1);
-                            let next = if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
+                            let next =
+                                if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
                             (M[m as usize - 1].to_string(), (first..next).collect())
                         })
                         .collect(),
@@ -4183,7 +4248,11 @@ impl Summary {
         let read_secs = |d: &store::Day| d.secs.get("Sight reading").copied().unwrap_or(0);
         let day_total = |d: &store::Day| {
             let all: u32 = d.secs.values().sum();
-            if with_reading { all } else { all - read_secs(d) }
+            if with_reading {
+                all
+            } else {
+                all - read_secs(d)
+            }
         };
         let (mut tunes, mut free, mut reading) = (0, 0, 0);
         let mut songs: std::collections::HashMap<i64, u32> = Default::default();
@@ -4233,7 +4302,18 @@ impl Summary {
             .collect();
         loops.sort_by(|a, b| b.3.cmp(&a.3).then(a.0.cmp(&b.0)).then(a.1.total_cmp(&b.1)).then(a.2.total_cmp(&b.2)));
         let total = cols.iter().map(|c| c.total).sum();
-        Summary { cols, total, tunes, free, reading, songs, loops, days_practised: practised, days_so_far: so_far.max(1), with_reading }
+        Summary {
+            cols,
+            total,
+            tunes,
+            free,
+            reading,
+            songs,
+            loops,
+            days_practised: practised,
+            days_so_far: so_far.max(1),
+            with_reading,
+        }
     }
 
     /// A song's colour here: one of five for the top songs, the dim ink for the rest.
@@ -4349,7 +4429,8 @@ fn bar_row(ui: &mut egui::Ui, name: &str, secs: u32, most: u32, col: Color32, ri
     let name_w = (r.width() * 0.45).min(320.0);
     let right_w = text_w(right, 1.0) + 8.0;
     ptext(p, Pos2::new(r.min.x, r.center().y), Align::Min, &clip_text(name, 1.0, name_w - 8.0), 1.0, pal().ink);
-    let bar = Rect::from_min_max(Pos2::new(r.min.x + name_w, r.center().y - 4.0), Pos2::new(r.max.x - right_w, r.center().y + 4.0));
+    let bar =
+        Rect::from_min_max(Pos2::new(r.min.x + name_w, r.center().y - 4.0), Pos2::new(r.max.x - right_w, r.center().y + 4.0));
     p.rect_filled(bar, 0.0, pal().dim.gamma_multiply(0.25));
     let f = secs as f32 / most.max(1) as f32;
     p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 0.0, col);

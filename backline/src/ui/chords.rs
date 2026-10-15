@@ -66,15 +66,19 @@ impl App {
         });
         if let Some(root) = self.cf_root {
             rule(ui);
-            ui.horizontal_wrapped(|ui| {
-                crate::views::label(ui, "2  KIND", 90.0);
-                for (i, (name, _)) in theory::FINDER_FAMILIES.iter().enumerate() {
-                    if retro_btn(ui, name, self.cf_fam == Some(i)).clicked() && self.cf_fam != Some(i) {
-                        self.cf_fam = Some(i);
-                        self.chord_q.clear();
-                    }
+            // (a kind picked from a list, the first line asking until one is)
+            let mut kinds: Vec<&str> = Vec::new();
+            if self.cf_fam.is_none() {
+                kinds.push("PICK ONE...");
+            }
+            kinds.extend(theory::FINDER_FAMILIES.iter().map(|(n, _)| *n));
+            let off = usize::from(self.cf_fam.is_none());
+            if let Some(i) = crate::choice_line(ui, "cf_fam", "2  KIND", &kinds, self.cf_fam.map_or(0, |f| f + off), 300.0) {
+                if i >= off && self.cf_fam != Some(i - off) {
+                    self.cf_fam = Some(i - off);
+                    self.chord_q.clear();
                 }
-            });
+            }
             if let Some(f) = self.cf_fam {
                 rule(ui);
                 ui.horizontal_wrapped(|ui| {
@@ -138,10 +142,20 @@ impl App {
                 true,
             );
             // the chord on a piano, to look at (not to click)
-            section_header(ui, "ON THE PIANO");
-            let pw = ui.available_width().min(560.0);
-            let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 86.0), Sense::hover());
-            piano_span(ui, pr.shrink2(Vec2::new(4.0, 4.0)), &piano_voicing(&c), false, "find_piano", Some(c.root), 48, 2);
+            section_header(ui, "ON THE PIANO AND THE STAFF");
+            let voiced = piano_voicing(&c);
+            ui.horizontal(|ui| {
+                let pw = (ui.available_width() - 270.0).clamp(240.0, 560.0);
+                let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 96.0), Sense::hover());
+                piano_span(ui, pr.shrink2(Vec2::new(4.0, 4.0)), &voiced, false, "find_piano", Some(c.root), 48, 2);
+                let (sr, _) = ui.allocate_exact_size(Vec2::new(260.0, 96.0), Sense::hover());
+                let pcs = c.pcs.clone();
+                let notes: Vec<(i32, Option<(usize, u8)>)> = voiced.iter().map(|m| (*m, None)).collect();
+                crate::lines_ui::chord_staff(ui, sr, &notes, lines::key_sharps(c.root), &|m| {
+                    let (d, col) = degree_in(m.rem_euclid(12), c.root, &pcs);
+                    (d.to_string(), col)
+                });
+            });
             ui.add_space(6.0);
             section_header(ui, "GUITAR");
             let q = self.chord_q.trim().to_string();
@@ -237,8 +251,21 @@ impl App {
         }
         ui.add_space(8.0);
         // the same notes on a piano, as a picture (four octaves cover the guitar)
-        let (pr, _) = ui.allocate_exact_size(Vec2::new(w.min(720.0), 70.0), Sense::hover());
-        piano_span(ui, pr, &notes, false, "an_piano", root, 36, 4);
+        let shape_now = self.an_frets;
+        ui.horizontal(|ui| {
+            let pw = (ui.available_width() - 270.0).clamp(240.0, 720.0);
+            let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 96.0), Sense::hover());
+            piano_span(ui, pr.shrink2(Vec2::new(0.0, 13.0)), &notes, false, "an_piano", root, 36, 4);
+            let (sr, _) = ui.allocate_exact_size(Vec2::new(260.0, 96.0), Sense::hover());
+            let staffed: Vec<(i32, Option<(usize, u8)>)> =
+                (0..6).filter_map(|s| shape_now[s].map(|f| (theory::STANDARD[s] + f as i32, Some((s, f))))).collect();
+            let pcs: Vec<i32> = staffed.iter().map(|n| n.0.rem_euclid(12)).collect();
+            let r = root.unwrap_or_else(|| staffed.first().map_or(0, |n| n.0.rem_euclid(12)));
+            crate::lines_ui::chord_staff(ui, sr, &staffed, lines::key_sharps(r), &|m| {
+                let (d, col) = degree_in(m.rem_euclid(12), r, &pcs);
+                (d.to_string(), col)
+            });
+        });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if retro_btn(ui, "STRUM", false).tip("Hear the chord, low string to high").clicked() && !notes.is_empty() {
@@ -431,16 +458,8 @@ impl App {
 
     /// A row of the twelve notes to pick from.
     pub(crate) fn note_row(ui: &mut egui::Ui, label: &str, cur: i32, sharps: bool) -> Option<i32> {
-        let mut out = None;
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, label, 100.0);
-            for pc in 0..12 {
-                if retro_btn_w(ui, theory::note_name(pc, sharps), 38.0, cur == pc).clicked() {
-                    out = Some(pc);
-                }
-            }
-        });
-        out
+        let names: Vec<&str> = (0..12).map(|pc| theory::note_name(pc, sharps)).collect();
+        crate::choice_line(ui, &format!("note_{}", label), label, &names, cur.rem_euclid(12) as usize, 90.0).map(|i| i as i32)
     }
 
     /// The changes to practise over: the open tune's chart, else the ones typed here (Night & Day's to start).
@@ -544,16 +563,13 @@ impl App {
             _ => &[],
         };
         self.vc_set = self.vc_set.min(sets.len() - 1);
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "STRINGS", 100.0);
-            for (i, s) in sets.iter().enumerate() {
-                // numbered the guitarist's way: 6 is the low E
-                let label: Vec<String> = s.iter().map(|x| (6 - x).to_string()).collect();
-                if retro_btn(ui, &label.join(" "), self.vc_set == i).clicked() {
-                    self.vc_set = i;
-                }
-            }
-        });
+        // numbered the guitarist's way: 6 is the low E
+        let labels: Vec<String> =
+            sets.iter().map(|s| s.iter().map(|x| (6 - x).to_string()).collect::<Vec<_>>().join(" ")).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        if let Some(i) = crate::choice_line(ui, "vc_set", "STRINGS", &labels, self.vc_set, 200.0) {
+            self.vc_set = i;
+        }
         (fam, sets[self.vc_set], drop, if fam == 3 { 5 } else { 4 })
     }
 
@@ -647,15 +663,12 @@ impl App {
             theory::VOICING_TYPES.iter().map(|(n, v)| (*n, v.to_vec())).collect()
         };
         self.vc_type = self.vc_type.min(types.len() - 1);
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "CHORD", 100.0);
-            for (i, (n, _)) in types.iter().enumerate() {
-                let label = format!("{}{}", theory::note_name(self.vc_root, sharps), n);
-                if retro_btn(ui, &label, self.vc_type == i).clicked() {
-                    self.vc_type = i;
-                }
-            }
-        });
+        let labels: Vec<String> =
+            types.iter().map(|(n, _)| format!("{}{}", theory::note_name(self.vc_root, sharps), n)).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        if let Some(i) = crate::choice_line(ui, "vc_type", "CHORD", &labels, self.vc_type, 200.0) {
+            self.vc_type = i;
+        }
         let root = self.vc_root;
         let chord = types[self.vc_type].1.clone();
         let chord_pcs: Vec<i32> = chord.iter().map(|x| (root + x).rem_euclid(12)).collect();
@@ -681,7 +694,7 @@ impl App {
             for (gi, (label, g)) in grips.iter().enumerate() {
                 // a thin line between grips
                 if gi > 0 {
-                    let (d, _) = ui.allocate_exact_size(Vec2::new(9.0, 170.0), Sense::hover());
+                    let (d, _) = ui.allocate_exact_size(Vec2::new(9.0, 270.0), Sense::hover());
                     ui.painter().line_segment(
                         [Pos2::new(d.center().x, d.min.y + 4.0), Pos2::new(d.center().x, d.max.y - 4.0)],
                         Stroke::new(1.0_f32, pal().dim),
@@ -709,6 +722,13 @@ impl App {
                             if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                 acts.push(Action::PlayNotes(grip_notes(g)));
                             }
+                            // the same grip on the staff, each note's degree beside it
+                            let (sr, _) = ui.allocate_exact_size(Vec2::new(112.0, 96.0), Sense::hover());
+                            let notes: Vec<(i32, Option<(usize, u8)>)> = grip_notes(g).into_iter().map(|m| (m, None)).collect();
+                            crate::lines_ui::chord_staff(ui, sr, &notes, sharps, &|m| {
+                                let (d, col) = degree_in(m.rem_euclid(12), root, &chord_pcs);
+                                (d.to_string(), col)
+                            });
                         }
                         None => {
                             ptext(ui.painter(), r.center(), Align::Center, "OUT OF REACH", 1.0, pal().dim);
@@ -769,13 +789,11 @@ impl App {
             return;
         }
         title_line(ui, &title.to_uppercase(), 2.5, pal().ink);
-        ui.horizontal_wrapped(|ui| {
-            for (i, (a, b)) in pairs.iter().enumerate() {
-                if retro_btn(ui, &format!("{} > {}", a, b), self.pass_pair == i).clicked() {
-                    self.pass_pair = i;
-                }
-            }
-        });
+        let labels: Vec<String> = pairs.iter().map(|(a, b)| format!("{} > {}", a, b)).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        if let Some(i) = crate::choice_line(ui, "pass_pair", "CHANGE", &labels, self.pass_pair.min(pairs.len() - 1), 200.0) {
+            self.pass_pair = i;
+        }
         let (from, to) = pairs[self.pass_pair.min(pairs.len() - 1)].clone();
         let gap = 60.0 / self.band_bpm() * 2.0;
         for (k, (kind, chords, why)) in theory::passing_options(&to).into_iter().enumerate() {

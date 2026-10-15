@@ -280,7 +280,7 @@ pub const SCALE_FAMILIES: [(&str, &[(&str, &[i32], &str)]); 4] = [
 ];
 
 /// How a scale is played: (name, what it is).
-pub const SCALE_PATTERNS: [(&str, &str); 8] = [
+pub const SCALE_PATTERNS: [(&str, &str); 11] = [
     ("STRAIGHT", "Up the scale, note by note."),
     ("IN 3RDS", "Each note and the one a 3rd above it: 1 3, 2 4, 3 5..."),
     ("IN 4THS", "Each note and the one a 4th above it: 1 4, 2 5, 3 6..."),
@@ -289,6 +289,9 @@ pub const SCALE_PATTERNS: [(&str, &str); 8] = [
     ("GROUPS OF 3", "Three notes up from each degree: 1 2 3, 2 3 4, 3 4 5..."),
     ("GROUPS OF 4", "Four notes up from each degree: 1 2 3 4, 2 3 4 5..."),
     ("TRIADS", "The triad on each degree, arpeggiated: 1 3 5, 2 4 6..."),
+    ("COLTRANE 1 2 3 5", "Coltrane's cell from each degree of the scale: 1 2 3 5, 2 3 4 6... - over a minor scale it comes out 1 2 b3 5. Then run it through a tune, one cell a chord"),
+    ("COLTRANE 5 3 2 1", "The same cell turned around, from the top: 5 3 2 1, 6 4 3 2..."),
+    ("COLTRANE 1 3 4 5", "The cell players use on minor chords (1 b3 4 5 over minor), from each degree: 1 3 4 5, 2 4 5 6..."),
 ];
 
 /// A scale played in a pattern over `octaves` octaves from `root`, up, down or both.
@@ -305,6 +308,9 @@ pub fn scale_line(root: i32, steps: &[i32], pattern: usize, octaves: usize, dir:
         5 => vec![0, 1, 2],
         6 => vec![0, 1, 2, 3],
         7 => vec![0, 2, 4],
+        8 => vec![0, 1, 2, 4],
+        9 => vec![4, 2, 1, 0],
+        10 => vec![0, 2, 3, 4],
         _ => vec![0],
     };
     let up: Vec<i32> = (0..top).flat_map(|d| figure.iter().map(move |f| note(d + f))).chain(std::iter::once(note(top))).collect();
@@ -642,6 +648,13 @@ pub fn spell(midi: i32, sharps: bool) -> (i32, i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coltrane_cells_from_each_degree() {
+        // C major, 1 2 3 5 from C then from D
+        let v = scale_line(60, &[0, 2, 4, 5, 7, 9, 11], 8, 1, 0);
+        assert_eq!(&v[..8], &[60, 62, 64, 67, 62, 64, 65, 69]);
+    }
 
     #[test]
     fn slonimskys_system() {

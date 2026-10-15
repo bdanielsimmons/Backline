@@ -1091,6 +1091,17 @@ impl App {
 
     pub(crate) fn drain_extra(&mut self, m: Msg) {
         match m {
+            Msg::CmImported(r) => match r {
+                Ok(names) => {
+                    self.cm_list = None;
+                    self.set_note(&format!(
+                        "{} TRANSCRIPTION{} BROUGHT IN",
+                        names.len(),
+                        if names.len() == 1 { "" } else { "S" }
+                    ));
+                }
+                Err(e) => self.set_err(format!("IMPORT: {}", e)),
+            },
             Msg::News(r) => match r {
                 Ok(n) if !n.is_empty() => self.news = Some(n),
                 Ok(_) => self.set_note("NO RELEASE NOTES FOUND"),
@@ -2666,6 +2677,44 @@ impl App {
                 let _ = std::fs::remove_dir_all(api::config_dir().join("stems"));
                 self.stem_on = [true; 4];
                 self.set_note("ALL STEMS DELETED");
+            }
+            Action::CmImport(own) => {
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let picked = if own {
+                        rfd::FileDialog::new()
+                            .set_title("Import transcriptions")
+                            .add_filter("Backline transcription", &["json"])
+                            .pick_files()
+                    } else {
+                        rfd::FileDialog::new().set_title("Import Guitar Pro files").add_filter("Guitar Pro", &["gp"]).pick_files()
+                    };
+                    let Some(files) = picked else { return };
+                    let mut done = Vec::new();
+                    let mut errs = Vec::new();
+                    for f in files {
+                        let stem = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                        let r = if own {
+                            crate::transcription::load(&f).and_then(|t| {
+                                // its recording too, when it came with one beside it
+                                let audio =
+                                    (!t.audio.is_empty()).then(|| f.with_file_name(&t.audio)).and_then(|a| std::fs::read(a).ok());
+                                crate::transcription::save_in(None, t, audio.as_deref())
+                            })
+                        } else {
+                            std::fs::read(&f)
+                                .map_err(|e| e.to_string())
+                                .and_then(|b| crate::transcription::from_gp(&b, &stem))
+                                .and_then(|(t, a)| crate::transcription::save_in(None, t, a.as_deref()))
+                        };
+                        match r {
+                            Ok(p) => done.push(p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()),
+                            Err(e) => errs.push(format!("{}: {}", stem, e)),
+                        }
+                    }
+                    let _ = tx.send(crate::Msg::CmImported(if done.is_empty() { Err(errs.join("; ")) } else { Ok(done) }));
+                    ctx.request_repaint();
+                });
             }
             Action::PomoHold => {
                 if matches!(self.pomo, 1 | 2) {

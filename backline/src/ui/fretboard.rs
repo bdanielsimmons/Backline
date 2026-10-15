@@ -12,10 +12,35 @@ thread_local! {
     pub(crate) static SEVENTH: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
 }
 
+thread_local! {
+    /// The chord the piano is drawn over (its notes from the root): with it, the keys are named as the chord
+    /// spells them (#11, not b5).
+    static OVER_CHORD: std::cell::RefCell<Option<Vec<i32>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Draw with the notes named over this chord (`pcs` from its root) - for the piano.
+pub(crate) fn over_chord<R>(pcs: &[i32], f: impl FnOnce() -> R) -> R {
+    OVER_CHORD.with(|c| *c.borrow_mut() = Some(pcs.to_vec()));
+    let r = f();
+    OVER_CHORD.with(|c| *c.borrow_mut() = None);
+    r
+}
+
+/// A note's name over the chord being drawn (if one is set), else by its plain degree.
+fn key_name(m: i32, root: i32) -> &'static str {
+    match OVER_CHORD.with(|c| c.borrow().clone()) {
+        Some(pcs) => {
+            let abs: Vec<i32> = pcs.iter().map(|x| (root + x).rem_euclid(12)).collect();
+            degree_in(m.rem_euclid(12), root, &abs).0
+        }
+        None => degree(m, root).0,
+    }
+}
+
 /// A note's role in a chord with this root, and its colour: the root red, thirds blue, fifths green, sixths and
 /// sevenths orange, the colour notes (9, 11) purple.
 pub(crate) fn degree(pc: i32, root: i32) -> (&'static str, Color32) {
-    const NAMES: [&str; 12] = ["R", "b9", "9", "b3", "3", "11", "b5", "5", "#5", "6", "b7", "7"];
+    const NAMES: [&str; 12] = ["R", "\u{266D}9", "9", "\u{266D}3", "3", "11", "\u{266D}5", "5", "#5", "6", "\u{266D}7", "7"];
     let s = (pc - root).rem_euclid(12) as usize;
     // over a seventh the sixth is the 13th (G13b9: its E is the 13)
     if s == 9 && SEVENTH.with(|c| c.get() == Some(root.rem_euclid(12))) {
@@ -41,7 +66,7 @@ pub(crate) fn degree_in(pc: i32, root: i32, pcs: &[i32]) -> (&'static str, Color
     let name = match s {
         6 if has(4) && has(7) => "#11",
         3 if has(4) => "#9",
-        8 if has(7) => "b13",
+        8 if has(7) => "\u{266D}13",
         9 if has(10) || has(11) => "13",
         5 if !has(3) && !has(4) => "4",
         2 if !has(3) && !has(4) && !has(10) && !has(11) => "2",
@@ -89,7 +114,7 @@ pub(crate) fn piano_span(
         p.rect_filled(r, 2.0, fill);
         p.rect_stroke(r, 2.0, Stroke::new(1.0_f32, Color32::from_gray(90)));
         if let (true, Some(rt)) = (on, root) {
-            ptext(&p, Pos2::new(r.center().x, r.max.y - 10.0), Align::Center, degree(m, rt).0, 1.0, Color32::from_gray(10));
+            ptext(&p, Pos2::new(r.center().x, r.max.y - 10.0), Align::Center, key_name(m, rt), 1.0, Color32::from_gray(10));
         }
         if click && ui.interact(r, ui.id().with((id, "w", k)), Sense::click()).clicked() {
             hit = Some(m.rem_euclid(12));
