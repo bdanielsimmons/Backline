@@ -742,6 +742,9 @@ impl App {
         let before = acts.len();
         let mut done = false;
         // the window: keep it on top, the mini player and back
+        if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline (only what's on this computer)" }) {
+            acts.push(Action::GoOffline(!self.go_offline));
+        }
         if menu_item(ui, if self.pinned { "Keep on top  (on)" } else { "Keep on top" }) {
             acts.push(Action::TogglePin);
         }

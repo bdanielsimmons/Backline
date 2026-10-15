@@ -37,6 +37,20 @@ pub fn config_dir() -> PathBuf {
 /// Append a line to %APPDATA%\backline\log.txt (handy when something won't play).
 static LOG_RING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// Offline mode (you chose it): nothing goes out to the internet - every request stops here.
+pub static OFFLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// What a request says in offline mode.
+pub const OFFLINE_MSG: &str = "OFFLINE MODE - GO ONLINE FOR THAT";
+
+/// In offline mode: stop before anything goes out.
+pub fn guard() -> Res<()> {
+    if OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
+        Err(OFFLINE_MSG.to_string())
+    } else {
+        Ok(())
+    }
+}
+
 /// Did this fail because there is no internet (nothing reached the server), rather than the server saying no?
 pub fn no_internet(e: &str) -> bool {
     let e = e.to_lowercase();
@@ -491,6 +505,7 @@ impl Api {
     // ---------------------------------------------------------------- login
 
     pub fn start_login(&self) -> Res<DeviceCode> {
+        guard()?;
         let (cid, _) = self.creds();
         let r = self
             .http
@@ -522,6 +537,7 @@ impl Api {
 
     /// Blocks, polling until the user approves in the browser.
     pub fn finish_login(&self, dc: &DeviceCode) -> Res<()> {
+        guard()?;
         let deadline = now() + dc.expires_in;
         loop {
             if now() > deadline {
@@ -574,6 +590,7 @@ impl Api {
     }
 
     fn refresh(&self) -> Res<()> {
+        guard()?;
         let (cid, sec) = self.creds();
         let rt = self.session.lock().unwrap().refresh_token.clone();
         if rt.is_empty() {
@@ -620,6 +637,7 @@ impl Api {
     // -------------------------------------------------------------- requests
 
     pub fn get(&self, path: &str, params: &[(&str, &str)]) -> Res<Value> {
+        guard()?;
         let (exp, has_rt) = {
             let s = self.session.lock().unwrap();
             (s.expires_at, !s.refresh_token.is_empty())
@@ -683,6 +701,7 @@ impl Api {
 
     /// Raw bytes of any URL (cover art, audio file).
     pub fn fetch(&self, url: &str) -> Res<Vec<u8>> {
+        guard()?;
         let r = self.http.get(url).timeout(Duration::from_secs(600)).send().map_err(e2s)?.error_for_status().map_err(e2s)?;
         r.bytes().map(|b| b.to_vec()).map_err(e2s)
     }
@@ -767,6 +786,7 @@ impl Api {
 
     /// Add a track to one of your Tidal playlists (already in it: left as it is).
     pub fn playlist_add(&self, uuid: &str, id: i64) -> Res<()> {
+        guard()?;
         let (tok, country, _) = self.auth();
         // Tidal wants the playlist's current version with a change, so two edits never cross
         let head = self
@@ -798,6 +818,7 @@ impl Api {
 
     /// Make a new playlist on your Tidal account; its id.
     pub fn playlist_create(&self, title: &str) -> Res<String> {
+        guard()?;
         let (tok, country, uid) = self.auth();
         let r = self
             .http
@@ -818,6 +839,7 @@ impl Api {
 
     /// Like (true) or unlike (false) a track.
     pub fn set_liked(&self, id: i64, like: bool) -> Res<()> {
+        guard()?;
         let (exp, has_rt) = {
             let s = self.session.lock().unwrap();
             (s.expires_at, !s.refresh_token.is_empty())

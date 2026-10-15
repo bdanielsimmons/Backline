@@ -40,10 +40,12 @@ impl App {
         let pl = if self.mini {
             Place { o: skin_area.min, s: (skin_area.width() / 275.0).min(skin_area.height() / 116.0) }
         } else if let Some(z) = self.deck_zoom {
-            // never past what shows of the window (its edges may be cut by the panel)
+            // never past what shows of the window (its edges may be cut by the panel). When Backline opens the
+            // cover beside it always shows (the size kept from last time stops at it); sized up now, the cover
+            // steps aside to make room
             let shown = area.intersect(ui.clip_rect());
-            let s = z.min((shown.width() / 275.0).min(shown.height() / 116.0)).max(0.5);
-            // no room left beside it: the cover steps aside
+            let limit = if self.deck_free { shown } else { skin_area.intersect(shown) };
+            let s = z.min((limit.width() / 275.0).min(limit.height() / 116.0)).max(0.5);
             let room = if 275.0 * s > skin_area.width() { shown } else { skin_area.intersect(shown) };
             if 275.0 * s > skin_area.width() {
                 side = 0.0;
@@ -60,6 +62,7 @@ impl App {
                 let zd = ui.input(|i| if i.modifiers.command { i.zoom_delta() } else { 1.0 });
                 if zd != 1.0 {
                     self.deck_zoom = Some((pl.s * zd).clamp(0.5, 8.0));
+                    self.deck_free = true;
                     self.dirty = true;
                 }
             }
@@ -77,6 +80,7 @@ impl App {
                     let c = deck.center();
                     let s = ((pp.x - c.x) * 2.0 / 275.0).max((pp.y - c.y) * 2.0 / 116.0);
                     self.deck_zoom = Some(s.clamp(0.5, 8.0));
+                    self.deck_free = true;
                     self.dirty = true;
                 }
             }

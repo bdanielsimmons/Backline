@@ -453,6 +453,8 @@ enum Action {
     Pomo,
     /// hold the focus timer, or carry on with it
     PomoHold,
+    /// offline mode on (nothing goes out to the internet) or off
+    GoOffline(bool),
     TimerPanel,
     FindChart(usize, Option<String>),
     LiveChart(String, Option<String>),
@@ -1566,18 +1568,28 @@ fn page_view(
             Tab::Tracks => {
                 title_line(ui, "MY TRACKS", 3.0, pal().ink);
                 // filtered by the words typed above (title, artist or album)
+                // (offline mode: only the songs on this computer)
+                let here: Vec<Track>;
+                let all: &[Track] = if crate::api::OFFLINE.load(Ordering::Relaxed) {
+                    here = page.tracks.iter().filter(|t| cache::has(t.id)).cloned().collect();
+                    &here
+                } else {
+                    &page.tracks
+                };
                 let shown: Vec<Track>;
                 let tracks: &[Track] = if filter.trim().is_empty() {
-                    &page.tracks
+                    all
                 } else {
-                    shown = filtered(filter, &page.tracks, |t| vec![t.title.clone(), t.artists_text(), t.album.clone()], 1)
+                    shown = filtered(filter, all, |t| vec![t.title.clone(), t.artists_text(), t.album.clone()], 1)
                         .into_iter()
-                        .map(|i| page.tracks[i].clone())
+                        .map(|i| all[i].clone())
                         .collect();
                     &shown
                 };
                 let sub = if !filter.trim().is_empty() {
-                    format!("{} of {} songs match", tracks.len(), page.tracks.len())
+                    format!("{} of {} songs match", tracks.len(), all.len())
+                } else if crate::api::OFFLINE.load(Ordering::Relaxed) {
+                    format!("offline: {} of {} songs are on this computer", all.len(), page.tracks.len())
                 } else if page.total > page.tracks.len() {
                     format!("{} of {} songs loaded...", page.tracks.len(), page.total)
                 } else {
@@ -2294,6 +2306,10 @@ struct App {
     /// Tidal can't be reached (no internet): when it was last tried (it is tried again now and then)
     net_down: bool,
     net_try: Instant,
+    /// the wait before the next try after the internet went: longer each time it fails (30 s up to 10 min)
+    net_wait: u64,
+    /// offline mode: you chose it - nothing goes out, only what is on this computer shows and plays
+    go_offline: bool,
     /// how many liked songs were last kept on disk
     lib_saved_n: usize,
     /// how many liked songs are in, and since when (they are kept once the count stops changing)
@@ -2304,6 +2320,8 @@ struct App {
     deck_zoom: Option<f32>,
     /// the skinned equalizer's size in its window (None: as large as fits)
     eq_zoom: Option<f32>,
+    /// the player was sized in this session (until then, the cover beside it always shows)
+    deck_free: bool,
     /// the box for naming a new equalizer curve is open
     eq_naming: bool,
     /// until when the skinned deck shows where its buttons are (just after a skin is put on)
@@ -2353,6 +2371,7 @@ pub(crate) fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: O
                 crate::api::log(&format!("youtube {}: playing from disk ({} bytes)", vid, b.len()));
                 return Ok(b);
             }
+            crate::api::guard()?;
             let b = sources::yt_fetch(&vid)?;
             if keep {
                 if let Some(p) = cache::put(id, &b) {
@@ -2866,11 +2885,14 @@ impl App {
             prac_h: 300.0,
             net_down: false,
             net_try: Instant::now(),
+            net_wait: 30,
+            go_offline: false,
             lib_saved_n: 0,
             lib_seen: (0, Instant::now()),
             eq_h_user: None,
             deck_zoom: None,
             eq_zoom: None,
+            deck_free: false,
             eq_naming: false,
             wa_map_until: 0.0,
             wa_guide: false,
@@ -3127,6 +3149,10 @@ impl App {
         }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
+        if st["go_offline"].as_bool() == Some(true) {
+            app.go_offline = true;
+            crate::api::OFFLINE.store(true, Ordering::Relaxed);
+        }
         app.diary_span = st["diary_span"].as_u64().unwrap_or(0).min(2) as u8;
         app.diary_reading = st["diary_reading"].as_bool().unwrap_or(true);
         app.loops_sort = st["loops_sort"].as_u64().unwrap_or(0).min(3) as u8;
@@ -3217,8 +3243,8 @@ impl App {
                     Ok(()) => {
                         let _ = tx.send(Msg::LoggedIn);
                     }
-                    // no internet is not a logged-out session: open as usual with what is here
-                    Err(e) if crate::api::no_internet(&e) => {
+                    // no internet (or offline mode) is not a logged-out session: open as usual with what is here
+                    Err(e) if crate::api::no_internet(&e) || e == crate::api::OFFLINE_MSG => {
                         let _ = tx.send(Msg::NoInternet);
                     }
                     Err(e) => {
@@ -3383,6 +3409,7 @@ impl App {
             "deck_zoom": self.deck_zoom,
             "eq_zoom": self.eq_zoom,
             "wa_guide": self.wa_guide,
+            "go_offline": self.go_offline,
             "diary_span": self.diary_span,
             "diary_reading": self.diary_reading,
             "loops_sort": self.loops_sort,
@@ -3488,7 +3515,7 @@ impl App {
     fn set_err(&mut self, e: String) {
         api::log(&format!("ERROR: {}", e));
         // no internet: say so plainly, not the network library's words (and keep trying until it is back)
-        let raw = crate::api::no_internet(&e) && e.chars().any(|c| c.is_lowercase());
+        let raw = crate::api::no_internet(&e) && e.chars().any(|c| c.is_lowercase()) && !self.go_offline;
         if raw && self.auth == Auth::In && !self.offline && !self.net_down {
             let _ = self.tx.send(Msg::NoInternet);
         }
@@ -3620,8 +3647,11 @@ impl App {
                     self.net_down = true;
                     self.net_try = Instant::now();
                     self.loading = false;
-                    // (wake up to try again, even with nothing else moving)
-                    self.ctx.request_repaint_after(Duration::from_secs(21));
+                    // each failed try waits twice as long before the next (30 s, 1, 2, 4... up to 10 minutes)
+                    self.net_wait = if first { 30 } else { (self.net_wait * 2).min(600) };
+                    if !self.go_offline {
+                        self.ctx.request_repaint_after(Duration::from_secs(self.net_wait + 1));
+                    }
                     if first {
                         // your Tidal likes as last seen; the ones kept on this computer play
                         let tracks = crate::api::load_liked();
@@ -3638,7 +3668,11 @@ impl App {
                             self.lib_page = Some(p.clone());
                             self.page = Some(p);
                         }
-                        self.set_note("NO INTERNET - PLAYING WHAT'S ON THIS COMPUTER. TIDAL COMES BACK BY ITSELF");
+                        self.set_note(if self.go_offline {
+                            "OFFLINE MODE - ONLY WHAT'S ON THIS COMPUTER"
+                        } else {
+                            "NO INTERNET - PLAYING WHAT'S ON THIS COMPUTER. TIDAL COMES BACK BY ITSELF"
+                        });
                     }
                 }
                 Msg::Page(mut p, push) => {

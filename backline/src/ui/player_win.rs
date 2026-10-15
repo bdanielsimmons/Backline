@@ -717,6 +717,7 @@ impl App {
             items.extend([("PRACTICE", fit("PRACTICE"), 0), ("LISTEN", fit("LISTEN"), 0), ("FOCUS", fit("FOCUS"), 3)]);
         }
         items.push(("QUALITY", fit(q_txt), 5));
+        items.push(("OFFLINE", fit("OFFLINE"), 3));
         if self.wa_art.is_some() {
             items.push(("GUIDE", 26.0, 6));
         }
@@ -781,6 +782,18 @@ impl App {
                         acts.push(Action::ToggleFocus);
                     }
                 }
+                "OFFLINE" => {
+                    if chip(ui, r, "OFFLINE", self.go_offline, "c_offline")
+                        .tip(if self.go_offline {
+                            "Offline mode: nothing goes out to the internet, only what's on this computer. Click to go online"
+                        } else {
+                            "Go offline: only what's on this computer, nothing goes out to the internet"
+                        })
+                        .clicked()
+                    {
+                        acts.push(Action::GoOffline(!self.go_offline));
+                    }
+                }
                 "QUALITY" => {
                     if chip(ui, r, q_txt, self.prefer_lossless, "c_quality")
                         .tip(if self.prefer_lossless {
@@ -843,6 +856,11 @@ impl App {
                         "FOCUS" => {
                             if menu_item(ui, &format!("Focus{}", on(self.focus_mode))) {
                                 acts.push(Action::ToggleFocus);
+                            }
+                        }
+                        "OFFLINE" => {
+                            if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline" }) {
+                                acts.push(Action::GoOffline(!self.go_offline));
                             }
                         }
                         "QUALITY" => {

@@ -700,6 +700,11 @@ impl App {
                 None => waiting = true,
             }
         }
+        // offline mode: only what is on this computer (your files, and the songs kept)
+        if self.go_offline {
+            tracks.retain(|t| cache::has(t.id) || matches!(self.srcmap.get(&t.id), Some(crate::Src::File(_))));
+            dim_line(ui, "OFFLINE MODE - ONLY THE SONGS ON THIS COMPUTER", 1.0, pal().dim);
+        }
         ui.add_space(4.0);
         if waiting {
             dim_line(ui, "YOUR TIDAL LIKES SHOW ONCE TIDAL > MY LIBRARY HAS LOADED", 1.0, pal().dim);

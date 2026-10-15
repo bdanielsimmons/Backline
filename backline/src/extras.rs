@@ -395,8 +395,8 @@ impl App {
         if playing && self.last_cap.elapsed() > Duration::from_secs(10) {
             self.capture_last();
         }
-        // no internet: try Tidal again now and then; it comes back by itself
-        if self.net_down && self.net_try.elapsed() > Duration::from_secs(20) {
+        // no internet: try Tidal again now and then, less often each time (never in offline mode)
+        if self.net_down && !self.go_offline && self.net_try.elapsed() > Duration::from_secs(self.net_wait) {
             self.net_try = Instant::now();
             let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
             std::thread::spawn(move || {
@@ -945,7 +945,7 @@ impl App {
     /// With keeping songs on: these songs are kept one by one in the background, so they play at once and with no
     /// internet (the ones kept already, or waiting their turn, are skipped). How many were added to the line.
     pub(crate) fn keep_all(&self, ids: Vec<i64>) -> usize {
-        if !self.keep_cache {
+        if !self.keep_cache || self.go_offline {
             return 0;
         }
         let todo: Vec<(i64, Option<Src>)> = ids
@@ -2013,6 +2013,27 @@ impl App {
                         self.store_dirty = true;
                     }
                     self.set_note("KEPT IN MY SOUNDCLOUD");
+                }
+            }
+            Action::GoOffline(on) => {
+                self.go_offline = on;
+                crate::api::OFFLINE.store(on, std::sync::atomic::Ordering::Relaxed);
+                self.dirty = true;
+                if on {
+                    // as if there were no internet: your library as kept here, only what is on this computer
+                    let _ = self.tx.send(crate::Msg::NoInternet);
+                    self.set_note("OFFLINE MODE - ONLY WHAT'S ON THIS COMPUTER. GO ONLINE TO BRING TIDAL BACK");
+                } else {
+                    self.set_note("GOING ONLINE...");
+                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                    std::thread::spawn(move || {
+                        let _ = match api.refresh_info() {
+                            Ok(()) => tx.send(crate::Msg::LoggedIn),
+                            Err(e) if crate::api::no_internet(&e) => tx.send(crate::Msg::NoInternet),
+                            Err(e) => tx.send(crate::Msg::NeedLogin(e)),
+                        };
+                        ctx.request_repaint();
+                    });
                 }
             }
             Action::Offline(on) => {
