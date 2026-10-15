@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- ARPEGGIOS in LINES - a chord's notes inside its scale, in the same positions as SCALES, played every way round and through a tune
 - CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
 - PENTATONICS & MORE - pentatonic, hexatonic (triad pairs), diminished and chromatic options, with exercises
 - SUPERIMPOSE - what to play over a chord to get its colours
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Tidal reconnects by itself when the internet is back
 - Star your loops - a gig coming up, a part not to forget - and show only the starred ones
 - Filter and sort your saved loops: newest, name, time spent or song
-- The diary sums up the week, month or year: time a day by song, the kind of practice, top songs and loops
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
