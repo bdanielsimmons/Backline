@@ -19,6 +19,34 @@ pub(crate) const CLEF: [&str; 18] = [
 /// tab under it and the note names under that, `group` notes to a beat beamed together (1: quarter notes, unbeamed;
 /// 2 and 3 one beam; 4 to 7 two; 8 and up three; a tuplet - 3, 5, 6, 7... - numbered), the note at `lit` lit up.
 /// Click a note to hear it.
+/// A line on the neck: every note where it is played (the tab given, else fingered near the one before), named,
+/// the first note square, the one sounding lit.
+pub(crate) fn line_neck(ui: &mut egui::Ui, notes: &[i32], tab: Option<&[Option<(usize, u8)>]>, lit: Option<usize>) {
+    if notes.is_empty() {
+        return;
+    }
+    let spots: Vec<Option<(usize, u8)>> = match tab {
+        Some(t) => t.to_vec(),
+        None => lines::finger_line(notes, &theory::STANDARD),
+    };
+    let mut dots: Vec<crate::improv::NeckDot> = Vec::new();
+    for (i, s) in spots.iter().enumerate() {
+        let Some(s) = s else { continue };
+        if dots.iter().any(|d| d.spot == *s) {
+            continue;
+        }
+        dots.push(crate::improv::NeckDot {
+            spot: *s,
+            text: theory::note_name(notes[i], false).to_string(),
+            col: pal().ink,
+            strength: 0.85,
+            ring: false,
+            root: i == 0,
+        });
+    }
+    crate::improv::neck_view(ui, &dots, lit.and_then(|i| spots.get(i).copied().flatten()));
+}
+
 pub(crate) fn line_score(
     ui: &mut egui::Ui,
     acts: &mut Vec<Action>,
@@ -521,6 +549,7 @@ impl App {
         self.line_player(ui, acts, &notes, &key);
         let lit = self.seq_now("line");
         let tab = tab.iter().all(|x| x.is_some()).then_some(tab);
+        line_neck(ui, &notes, tab.as_deref(), lit);
         line_score(ui, acts, &notes, self.ln_sub as usize, false, lit, tab);
         // what it is made of, and how the recipe works, folded away until wanted
         if fold_row(ui, "ABOUT THIS PATTERN", &mut self.ln_about) {
@@ -661,6 +690,7 @@ impl App {
         let key = format!("slon:{}:{}:{}", self.sl_div, self.sl_kind, self.sl_pat);
         self.line_player(ui, acts, &notes, &key);
         let lit = self.seq_now("line");
+        line_neck(ui, &notes, None, lit);
         line_score(ui, acts, &notes, self.ln_sub as usize, false, lit, None);
         if fold_row(ui, "HOW THESE LINES WORK", &mut self.ln_how) {
             para(ui, &format!("{} Slonimsky calls the notes of the division the principal tones, and builds lines by adding notes to each one the same way: between it and the next (interpolation), below it (infrapolation), or above the next one (ultrapolation). This line: {} The same shape is played from every principal tone - learn it slowly, then move it to all twelve notes.", dabout, lines::KINDS[self.sl_kind].1), pal().ink2);

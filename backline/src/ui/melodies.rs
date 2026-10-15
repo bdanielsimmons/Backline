@@ -1028,7 +1028,12 @@ impl App {
                 self.cm_bpm = (self.cm_bpm + 5).min(300);
             }
         });
-        self.cm_focus(ui, acts, &tune, sharps, now, &marks);
+        if let Some(a) = self.cm_sel {
+            let b = self.cm_sel2.unwrap_or(a);
+            let (from, to) = if a <= b { (a, b) } else { (b, a) };
+            let kind = self.cm_mark.and_then(|i| marks.get(i)).map(|m| m.0);
+            self.cm_focus(ui, acts, &tune, sharps, now, from, to, kind, None);
+        }
         ui.add_space(4.0);
         // ---- below, scrolling: the tune, what is shown, and the bars
         let mut area = egui::ScrollArea::vertical().id_salt("cm_songs").auto_shrink([false, false]).max_height(room(ui));
@@ -1051,7 +1056,7 @@ impl App {
                 pal().dim,
             );
             ui.add_space(6.0);
-            let out = self.draw_bars(ui, &tune.bars, &tune.grips, sharps, now, true, &marks, 0);
+            let out = self.draw_bars(ui, &tune.bars, &tune.grips, sharps, now, true, &marks, 0, None);
             // press on a beat and drag to another: those bars looped (as in iReal Pro); a click picks a beat, or a move
             let (pressed, down, released, shift) = ui.input(|i| {
                 (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.primary_released(), i.modifiers.shift)
@@ -1195,6 +1200,8 @@ impl App {
     /// The beats picked - a loop dragged, a move clicked, a beat - looked at in a small panel pinned under the play
     /// row: play, keep or close it; the chord's grip; the neck with the grip, the notes in reach that fit the chord,
     /// and the move's own notes lit; what the move is and what each chord's notes are.
+    /// `saved`: a move from MOVES (its beats as the tune), not beats picked in a song.
+    #[allow(clippy::too_many_arguments)]
     fn cm_focus(
         &mut self,
         ui: &mut egui::Ui,
@@ -1202,13 +1209,23 @@ impl App {
         tune: &Tune,
         sharps: bool,
         now: Option<Spot>,
-        marks: &[(usize, Spot, Spot)],
+        from: Spot,
+        to: Spot,
+        kind: Option<usize>,
+        saved: Option<usize>,
     ) {
-        let Some(a) = self.cm_sel else { return };
-        let b = self.cm_sel2.unwrap_or(a);
-        let (from, to) = if a <= b { (a, b) } else { (b, a) };
+        if tune.bars.is_empty() {
+            return;
+        }
         let to = (to.0.min(tune.bars.len() - 1), to.1);
-        let picked_mark = self.cm_mark.and_then(|i| marks.get(i)).copied();
+        // (kind, from, to) of the move looked at
+        let picked_mark: Option<(usize, Spot, Spot)> = kind.map(|k| (k, from, to));
+        // stepping through it a beat at a time: lit as if sounding (forgotten when something else is looked at)
+        if self.cm_cursor.is_some_and(|c| c.0 != (from, saved)) {
+            self.cm_cursor = None;
+        }
+        let now = now.or(self.cm_cursor.map(|c| c.1));
+        let mut step: Option<i32> = None;
         let sc = crate::font::ui_scale();
         // the chord at the first beat (the last one named), its grip
         let chord = (0..=from.0).rev().find_map(|bi| {
@@ -1233,27 +1250,59 @@ impl App {
         egui::Frame::none().fill(pal().beige).stroke(Stroke::new(1.0_f32, pal().ink2)).inner_margin(6.0).show(ui, |ui| {
             // the title, and what to do with it - always in sight
             ui.horizontal_wrapped(|ui| {
-                let header = match picked_mark {
-                    Some(m) => format!("{}  -  BARS {}-{}", SHORT[m.0.min(9)], from.0 + 1, to.0 + 1),
-                    None if from == to => format!("BAR {}", from.0 + 1),
-                    None => format!("BARS {}-{}", from.0 + 1, to.0 + 1),
+                let header = match (saved, picked_mark) {
+                    (Some(_), Some(m)) => format!("{}  -  {}", SHORT[m.0.min(9)], tune.title.to_uppercase()),
+                    (_, Some(m)) => format!("{}  -  BARS {}-{}", SHORT[m.0.min(9)], from.0 + 1, to.0 + 1),
+                    _ if from == to => format!("BAR {}", from.0 + 1),
+                    _ => format!("BARS {}-{}", from.0 + 1, to.0 + 1),
                 };
                 crate::views::dim_line(ui, &header, 1.5, pal().ink);
-                let playing = self.cm_play.is_some();
+                // a saved move plays its own beats; the song's beats play as the song does (with LOOP)
+                let playing = if saved.is_some() { self.cm_mplay.is_some() } else { self.cm_play.is_some() };
                 if retro_btn(ui, if playing { "STOP" } else { "PLAY" }, playing)
-                    .tip("Play these bars (round and round with LOOP)")
+                    .tip("Play it (round and round with LOOP)")
                     .clicked()
                 {
                     if playing {
                         self.player.send(Cmd::StopOnce);
                         self.cm_play = None;
+                        self.cm_mplay = None;
+                    } else if let Some(i) = saved {
+                        let bts: Vec<Beat> = tune
+                            .bars
+                            .iter()
+                            .enumerate()
+                            .flat_map(|(bi, b)| {
+                                b.beats.iter().map(move |k| {
+                                    let mut k = k.clone();
+                                    k.at += bi as f32 * 4.0;
+                                    k
+                                })
+                            })
+                            .collect();
+                        self.cm_play_beats(&bts, 0);
+                        self.cm_mplay = Some((Instant::now(), 60.0 / self.cm_bpm.max(20) as f32, i));
                     } else {
                         self.cm_from = from.0;
                         self.cm_to = to.0;
                         self.cm_start(tune);
                     }
                 }
-                if retro_btn(ui, "SAVE AS A MOVE", false).tip("Keep it in MOVES (and marked on the song)").clicked() {
+                if retro_btn_w(ui, "<", 30.0, false).tip("Step back a beat").clicked() {
+                    step = Some(-1);
+                }
+                if retro_btn_w(ui, ">", 30.0, false)
+                    .tip("Step on a beat: hear it, see it lit on the staff and the neck")
+                    .clicked()
+                {
+                    step = Some(1);
+                }
+                if retro_btn(ui, "LOOP", self.cm_loop).tip("Round and round").clicked() {
+                    self.cm_loop = !self.cm_loop;
+                }
+                if saved.is_none()
+                    && retro_btn(ui, "SAVE AS A MOVE", false).tip("Keep it in MOVES (and marked on the song)").clicked()
+                {
                     let kind = picked_mark.map_or(MY_OWN, |m| m.0);
                     let name = match picked_mark {
                         Some(m) => format!("{} - {}", tune.title, KINDS[m.0].to_lowercase()),
@@ -1273,7 +1322,15 @@ impl App {
                     self.cm_mark = None;
                     self.set_note("KEPT IN MOVES - MARKED ON THE SONG TOO");
                 }
-                if let Some(m) = picked_mark {
+                if let Some(i) = saved {
+                    if retro_btn(ui, "FORGET THIS MOVE", false).tip("Take it out of your moves").clicked() {
+                        if i < self.cm_moves.len() {
+                            self.cm_moves.remove(i);
+                            transcription::save_moves(&self.cm_moves);
+                        }
+                        close = true;
+                    }
+                } else if let Some(m) = picked_mark {
                     if retro_btn(ui, "REMOVE THIS MOVE", false)
                         .tip("Not one you want marked: gone from this tune (BRING BACK under MOVES returns it)")
                         .clicked()
@@ -1319,9 +1376,39 @@ impl App {
                 let (r, g2, bl) = MARK_COLS[m.0.min(9)];
                 Color32::from_rgb(r, g2, bl)
             });
+            // a step taken: the next beat (or the one before), heard, and lit
+            if let Some(d) = step {
+                let all: Vec<Spot> = (from.0..=to.0)
+                    .flat_map(|b| (0..tune.bars[b].beats.len()).map(move |k| (b, k)))
+                    .filter(|s| *s >= from && *s <= to)
+                    .collect();
+                if !all.is_empty() {
+                    let at = self.cm_cursor.and_then(|c| all.iter().position(|s| *s == c.1));
+                    let i = match at {
+                        Some(i) => (i as i32 + d).rem_euclid(all.len() as i32) as usize,
+                        None if d < 0 => all.len() - 1,
+                        None => 0,
+                    };
+                    let s = all[i];
+                    self.cm_cursor = Some(((from, saved), s));
+                    self.cm_play = None;
+                    self.cm_mplay = None;
+                    let ev: Vec<(usize, i32, f32, f32)> = tune.bars[s.0].beats[s.1]
+                        .notes
+                        .iter()
+                        .filter(|n| (0..6).contains(&n[1]))
+                        .enumerate()
+                        .map(|(j, n)| (n[1] as usize, n[0], j as f32 * 0.02, 0.85))
+                        .collect();
+                    self.player.send(Cmd::StopOnce);
+                    if !ev.is_empty() {
+                        self.player.send(Cmd::Once(crate::band::string_events(&ev, 1.4), 0.9));
+                    }
+                }
+            }
             let steps = move_steps(tune, from, to, chord.clone());
             // (its own scroll: at most about 45% of the window, so the song stays in view)
-            let max_h = (ui.ctx().screen_rect().height() * 0.35).max(200.0);
+            let max_h = (ui.ctx().screen_rect().height() * 0.7).max(240.0);
             egui::ScrollArea::vertical().id_salt("cm_focus").max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     let bw = 78.0 * sc;
@@ -1376,6 +1463,20 @@ impl App {
                         });
                     }
                 });
+                // the move's bars: names, staff and tab, the beat sounding lit
+                let bars_here = &tune.bars[from.0..=to.0.min(tune.bars.len() - 1)];
+                let now_here = now.filter(|n| n.0 >= from.0 && n.0 <= to.0).map(|n| (n.0 - from.0, n.1));
+                let _ = self.draw_bars(
+                    ui,
+                    bars_here,
+                    &tune.grips,
+                    sharps,
+                    now_here,
+                    false,
+                    &[],
+                    from.0,
+                    Some([true, false, true, true, false]),
+                );
                 // the neck: the grip, what is in reach around it that fits the chord, the move's notes
                 let mut dots = focus_dots(&grip, chord.as_deref(), &beats, picked_mark.map(|m| m.0));
                 // the grip clicked above: its notes ringed brightly, the rest dimmed
@@ -1402,7 +1503,41 @@ impl App {
                         }
                     }
                 }
-                crate::improv::neck_view(ui, &dots, None);
+                // playing: the notes sounding now, bright on the neck
+                let sounding: Vec<(usize, u8)> = now
+                    .filter(|n| *n >= from && *n <= to)
+                    .and_then(|n| tune.bars.get(n.0).and_then(|b| b.beats.get(n.1)))
+                    .map(|b| {
+                        b.notes
+                            .iter()
+                            .filter(|n| (0..6).contains(&n[1]))
+                            .map(|n| (n[1] as usize, n[2].clamp(0, 24) as u8))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !sounding.is_empty() {
+                    for d in dots.iter_mut() {
+                        d.strength *= 0.45;
+                    }
+                    for spot in &sounding {
+                        match dots.iter_mut().find(|d| d.spot == *spot) {
+                            Some(d) => {
+                                d.strength = 1.0;
+                                d.ring = false;
+                                d.col = pal().red;
+                            }
+                            None => dots.push(crate::improv::NeckDot {
+                                spot: *spot,
+                                text: String::new(),
+                                col: pal().red,
+                                strength: 1.0,
+                                ring: false,
+                                root: false,
+                            }),
+                        }
+                    }
+                }
+                crate::improv::neck_view(ui, &dots, sounding.first().copied());
                 // what it is: the move, and each chord's notes
                 if let Some(m) = picked_mark {
                     crate::views::dim_line(ui, EXPLAIN[m.0.min(9)], 1.0, pal().ink2);
@@ -1471,9 +1606,14 @@ impl App {
             });
         });
         if close {
-            self.cm_sel = None;
-            self.cm_sel2 = None;
-            self.cm_mark = None;
+            if saved.is_some() {
+                self.cm_open = None;
+                self.cm_mplay = None;
+            } else {
+                self.cm_sel = None;
+                self.cm_sel2 = None;
+                self.cm_mark = None;
+            }
         }
     }
 
@@ -1497,7 +1637,8 @@ impl App {
                         }
                     }
                 }
-                end_q = q0 + bar_q;
+                let last = b.beats.iter().map(|k| k.at + k.len).fold(0.0, f32::max);
+                end_q = q0 + bar_q.max(last);
             }
             q0 += bar_q;
         }
@@ -1549,8 +1690,9 @@ impl App {
         live: bool,
         marks: &[(usize, Spot, Spot)],
         first_bar: usize,
+        only: Option<[bool; 5]>,
     ) -> BarsOut {
-        let show = self.cm_show;
+        let show = only.unwrap_or(self.cm_show);
         let sc = crate::font::ui_scale();
         let g = 7.0 * sc; // the staff's line gap
         let hw = 0.62 * g; // half a note head
@@ -1838,18 +1980,20 @@ impl App {
                             );
                         }
                         if show[1] {
-                            let shape: [Option<u8>; 6] = match grips.iter().find(|g| g.name == c) {
-                                Some(gr) => gr.frets.map(|f| if f < 0 { None } else { Some(f as u8) }),
-                                None => {
-                                    let mut s = [None; 6];
-                                    for n in it.beat.and_then(|k| bar.beats.get(k)).map(|k| k.notes.as_slice()).unwrap_or(&[]) {
-                                        if (0..6).contains(&n[1]) {
-                                            s[n[1] as usize] = Some(n[2].clamp(0, 24) as u8);
+                            let shape: [Option<u8>; 6] =
+                                match grips.iter().find(|g| g.name == c && g.frets.iter().any(|f| *f >= 0)) {
+                                    Some(gr) => gr.frets.map(|f| if f < 0 { None } else { Some(f as u8) }),
+                                    None => {
+                                        let mut s = [None; 6];
+                                        for n in it.beat.and_then(|k| bar.beats.get(k)).map(|k| k.notes.as_slice()).unwrap_or(&[])
+                                        {
+                                            if (0..6).contains(&n[1]) {
+                                                s[n[1] as usize] = Some(n[2].clamp(0, 24) as u8);
+                                            }
                                         }
+                                        s
                                     }
-                                    s
-                                }
-                            };
+                                };
                             if shape.iter().any(|f| f.is_some()) {
                                 let gb =
                                     Rect::from_min_size(Pos2::new(bx - 4.0 * sc, grip_top), Vec2::new(grip_w, grip_h - 6.0 * sc));
@@ -2102,6 +2246,8 @@ impl App {
                 }
                 if retro_btn_w(ui, "PLAY", 60.0, false).clicked() {
                     self.cm_play_beats(&m.beats, shift);
+                    self.cm_mplay = Some((Instant::now(), 60.0 / self.cm_bpm.max(20) as f32, i));
+                    self.cm_open = Some(i);
                 }
                 let chords: Vec<String> = m.beats.iter().filter_map(|b| shifted(b, shift).chord).collect();
                 let label = format!(
@@ -2137,7 +2283,6 @@ impl App {
         // the move open: drawn like the songs, in the key picked
         if let Some(m) = self.cm_open.and_then(|i| self.cm_moves.get(i)).cloned() {
             ui.add_space(6.0);
-            section_header(ui, &m.name.to_uppercase());
             let beats: Vec<Beat> = m.beats.iter().map(|b| shifted(b, shift)).collect();
             let grips: Vec<transcription::Grip> = m
                 .grips
@@ -2161,7 +2306,35 @@ impl App {
                 .collect();
             let sharps = beats.iter().find_map(|b| b.chord.as_deref().and_then(chord_root)).map_or(false, lines::key_sharps);
             let bars = as_bars(&beats);
-            let _ = self.draw_bars(ui, &bars, &grips, sharps, None, false, &[], 0);
+            // the beat sounding (when this move is the one playing)
+            let mut now: Option<Spot> = None;
+            if let Some((t0, spb, which)) = self.cm_mplay {
+                let q = t0.elapsed().as_secs_f32() / spb;
+                let end = beats.iter().map(|b| b.at + b.len).fold(0.0, f32::max);
+                if Some(which) == self.cm_open && q <= end {
+                    let first = beats.iter().map(|b| (b.at / 4.0).floor()).fold(f32::MAX, f32::min).max(0.0);
+                    let bar = ((q / 4.0).floor() - first).max(0.0) as usize;
+                    now = bars
+                        .get(bar)
+                        .and_then(|b| b.beats.iter().rposition(|k| k.at <= q - (first + bar as f32) * 4.0 + 1e-3))
+                        .map(|k| (bar, k));
+                    ui.ctx().request_repaint();
+                } else if q > end {
+                    // round again when looping, else done
+                    if self.cm_loop && Some(which) == self.cm_open {
+                        self.cm_play_beats(&m.beats, shift);
+                        self.cm_mplay = Some((Instant::now(), spb, which));
+                        ui.ctx().request_repaint();
+                    } else {
+                        self.cm_mplay = None;
+                    }
+                }
+            }
+            // the same panel as on the song: the grips step by step, the bars, the neck, what it is
+            let own = Tune { title: m.tune.clone(), bars: bars.clone(), grips, ..Default::default() };
+            let last = (own.bars.len().saturating_sub(1), own.bars.last().map_or(0, |b| b.beats.len().saturating_sub(1)));
+            let open = self.cm_open;
+            self.cm_focus(ui, acts, &own, sharps, now, (0, 0), last, Some(m.kind), open);
         }
         if let Some(i) = drop {
             self.cm_moves.remove(i);

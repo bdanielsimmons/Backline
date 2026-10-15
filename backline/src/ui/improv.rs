@@ -156,6 +156,35 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
             plain("MINOR 6  (R 2 \u{266D}3 4 5 #5 6 7)", &[0, 2, 3, 5, 7, 8, 9, 11], &[0, 3, 7, 9], format!("OVER {}M6 AND {}M(MAJ7): MELODIC MINOR WITH THE #5 PASSING - THE {}M6 CHORD AND A DIMINISHED CHORD TAKING TURNS", n(0), n(0), n(0))),
             plain("DOMINANT 7SUS  (R 2 3 4 5 6 \u{266D}7 7)", &[0, 2, 4, 5, 7, 9, 10, 11], &[0, 5, 7, 10], format!("OVER {}7SUS: THE SAME NOTES AS THE DOMINANT ONE, THE 4TH NOW THE CHORD TONE AND THE 3RD PASSING", n(0))),
         ],
+        // pentatonics from Japan, Bali, Egypt and the jazz players' own
+        4 => vec![
+            plain("HIRAJOSHI  (R 2 \u{266D}3 5 \u{266D}6)", &[0, 2, 3, 7, 8], &[0, 3, 7], format!("JAPANESE: DARK AND OPEN - OVER {}M(ADD9) OR {}M6 WITH A FLAT 6TH", n(0), n(0))),
+            plain("IN SEN  (R \u{266D}2 4 5 \u{266D}7)", &[0, 1, 5, 7, 10], &[0, 5, 7, 10], format!("JAPANESE: THE KOTO'S SOUND - OVER {}7SUS4 WITH A FLAT 9TH, OR {}PHRYGIAN", n(0), n(0))),
+            plain("IWATO  (R \u{266D}2 4 \u{266D}5 \u{266D}7)", &[0, 1, 5, 6, 10], &[0, 3, 6, 10], format!("JAPANESE, THE DARKEST: OVER {}M7(\u{266D}5)", n(0))),
+            plain("KUMOI  (R 2 \u{266D}3 5 6)", &[0, 2, 3, 7, 9], &[0, 3, 7, 9], format!("JAPANESE, MELODIC MINOR'S PENTATONIC: OVER {}M6 AND {}M(MAJ7)", n(0), n(0))),
+            plain("PELOG  (R \u{266D}2 \u{266D}3 5 \u{266D}6)", &[0, 1, 3, 7, 8], &[0, 3, 7], format!("BALINESE GAMELAN: OVER {}PHRYGIAN - EERIE, SHIMMERING", n(0))),
+            plain("EGYPTIAN  (R 2 4 5 \u{266D}7)", &[0, 2, 5, 7, 10], &[0, 5, 7, 10], format!("SUSPENDED: NO 3RD AT ALL - OVER {}7SUS4 AND {}M11", n(0), n(0))),
+            plain("DOMINANT  (R 2 3 5 \u{266D}7)", &[0, 2, 4, 7, 10], &[0, 4, 7, 10], format!("THE 9TH CHORD AS A SCALE: OVER {}9 - NO 4TH TO AVOID", n(0))),
+            plain("MINOR 6  (R \u{266D}3 4 5 6)", &[0, 3, 5, 7, 9], &[0, 3, 7, 9], format!("DORIAN'S PENTATONIC: OVER {}M6 AND {}M13", n(0), n(0))),
+            plain("MAJOR \u{266D}6  (R 2 3 5 \u{266D}6)", &[0, 2, 4, 7, 8], &[0, 4, 7], format!("OVER {}7(\u{266D}13) AND {}(ADD \u{266D}6): MAJOR WITH A DARK EDGE", n(0), n(0))),
+            plain("ALTERED  (R \u{266D}2 3 \u{266D}5 \u{266D}7)", &[0, 1, 4, 6, 10], &[0, 4, 6, 10], format!("OVER {}7ALT: THE \u{266D}9 AND \u{266D}5 IN A FIVE-NOTE SHAPE", n(0))),
+        ],
+        // six-note scales beyond the major and minor hexatonics
+        5 => vec![
+            plain("BLUES  (R \u{266D}3 4 \u{266D}5 5 \u{266D}7)", &[0, 3, 5, 6, 7, 10], &[0, 3, 7, 10], format!("THE MINOR PENTATONIC WITH THE BLUE NOTE: OVER {}7 AND {}M7", n(0), n(0))),
+            plain("MAJOR BLUES  (R 2 \u{266D}3 3 5 6)", &[0, 2, 3, 4, 7, 9], &[0, 4, 7, 9], format!("THE MAJOR PENTATONIC WITH THE BLUE NOTE: OVER {}6 AND {}7 - COUNTRY AND GOSPEL", n(0), n(0))),
+            plain("PROMETHEUS  (R 2 3 #4 6 \u{266D}7)", &[0, 2, 4, 6, 9, 10], &[0, 4, 10, 18], format!("SCRIABIN'S MYSTIC CHORD: OVER {}7(#11) AND {}13(#11)", n(0), n(0))),
+            plain("TRITONE  (R \u{266D}2 3 \u{266D}5 5 \u{266D}7)", &[0, 1, 4, 6, 7, 10], &[0, 4, 7, 10], format!("TWO MAJOR TRIADS A TRITONE APART: OVER {}7(\u{266D}9 #11) - THE SUB INSIDE", n(0))),
+            plain("AUGMENTED  (R #2 3 5 #5 7)", &[0, 3, 4, 7, 8, 11], &[0, 4, 8, 11], format!("TWO AUGMENTED TRIADS: OVER {}MAJ7#5 - SYMMETRIC, EVERY MAJOR 3RD", n(0))),
+            plain("RAGA KAFI HEXATONIC  (R 2 \u{266D}3 4 5 \u{266D}7)", &[0, 2, 3, 5, 7, 10], &[0, 3, 7, 10], format!("NO 6TH, NO TROUBLE: OVER {}M7 AND {}M11", n(0), n(0))),
+        ],
+        // four notes: the Coltrane cells as scales, sparse and strong
+        6 => vec![
+            plain("1 2 3 5", &[0, 2, 4, 7], &[0, 4, 7], format!("COLTRANE'S CELL AS A SCALE: OVER {} AND {}MAJ7", n(0), n(0))),
+            plain("1 \u{266D}3 4 5", &[0, 3, 5, 7], &[0, 3, 7], format!("THE MINOR CELL: OVER {}M7 - THE PENTATONIC'S CORE", n(0))),
+            plain("1 2 4 5", &[0, 2, 5, 7], &[0, 5, 7], format!("SUSPENDED, NO 3RD: OVER {}SUS AND {}7SUS4", n(0), n(0))),
+            plain("1 3 5 \u{266D}7", &[0, 4, 7, 10], &[0, 4, 7, 10], format!("THE DOMINANT ARPEGGIO AS A SCALE: OVER {}7", n(0))),
+        ],
         _ => vec![
             plain("MINOR  (R \u{266D}3 4 5 \u{266D}7)", &PENT_MINOR, &[0, 3, 7, 10], format!("OVER {}M7 - AND OVER A {}7 OR {} BLUES", n(0), n(0), n(0))),
             plain("MAJOR  (R 2 3 5 6)", &PENT_MAJOR, &[0, 4, 7, 9], format!("OVER {} AND {}6 - THE SAME NOTES AS {} MINOR", n(0), n(0), n(9))),
@@ -199,7 +228,15 @@ impl App {
             ui,
             "pn_fam",
             "FAMILY",
-            &["PENTATONIC  (5 NOTES)", "HEXATONIC  (6 NOTES)", "DIMINISHED  (8 NOTES)", "CHROMATIC OPTIONS  (8 NOTES)"],
+            &[
+                "PENTATONIC  (5 NOTES)",
+                "HEXATONIC  (6 NOTES)",
+                "DIMINISHED  (8 NOTES)",
+                "CHROMATIC OPTIONS  (8 NOTES)",
+                "EXOTIC PENTATONICS  (5 NOTES)",
+                "MORE HEXATONICS  (6 NOTES)",
+                "FOUR-NOTE SCALES",
+            ],
             self.pn_fam as usize,
             260.0,
         ) {
@@ -1319,6 +1356,20 @@ pub(crate) fn neck_view(ui: &mut egui::Ui, dots: &[NeckDot], lit: Option<Spot>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_family_lays_out_on_the_neck() {
+        for fam in 0..=6u8 {
+            let list = family_scales(fam, 9, false);
+            assert!(!list.is_empty(), "family {}", fam);
+            for sc in &list {
+                assert!(sc.steps.iter().all(|s| (0..12).contains(s)), "{}", sc.name);
+                for nps in [2, 3] {
+                    assert!(!positions(9, &sc.steps, nps).is_empty(), "{} {}", sc.name, nps);
+                }
+            }
+        }
+    }
 
     #[test]
     fn coltrane_cells_follow_the_changes() {

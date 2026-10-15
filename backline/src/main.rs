@@ -2284,6 +2284,10 @@ struct App {
     ct_cell: u8,
     /// CHORD MELODIES: the spotted moves you removed
     cm_hidden: Vec<transcription::Hidden>,
+    /// MOVES: a move playing (since, seconds a beat, which)
+    cm_mplay: Option<(Instant, f32, usize)>,
+    /// the panel's step cursor: (what is looked at (its first beat, the saved move), the beat)
+    cm_cursor: Option<(((usize, usize), Option<usize>), (usize, usize))>,
     /// ARPEGGIOS: from a scale's chords or any chord; the key (or root); the scale; its degree; the chord kind; the
     /// position shown; what is played; what it is played over; the line through a tune
     ar_src: u8,
@@ -2957,6 +2961,8 @@ impl App {
             cm_named: false,
             ct_cell: 0,
             cm_hidden: Vec::new(),
+            cm_mplay: None,
+            cm_cursor: None,
             ar_src: 0,
             ar_root: 0,
             ar_scale: 0,
@@ -3469,6 +3475,10 @@ impl App {
                 app.ln_tab = 1;
             }
             Ok("melodies") => app.sec = Sec::Melodies,
+            Ok("slonimsky") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 0;
+            }
             Ok("arpeggios") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 4;
