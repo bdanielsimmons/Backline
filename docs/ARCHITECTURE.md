@@ -29,6 +29,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | CHORDS: find, analyzer, voicings, passing chords | `ui/chords.rs`; triads/moves `ui/triads.rs`; clusters `ui/clusters.rs` |
 | LINES: Slonimsky, scales, the line player (`line_player`, `line_score`) | `ui/lines.rs` (UI), `data/lines.rs` (patterns) |
 | LINES improvising tab PENTATONICS & MORE: pentatonic / hexatonic (triad pairs) / diminished / chromatic options families, `family_scales()`, exercises; PENTATONICS (boxes, `positions()` for any scale / notes per string, `neck_view`) | `ui/improv.rs` |
+| LINES tab ARPEGGIOS: a chord's notes inside its scale's positions (the chords of a scale, or any chord), exercises, through a tune (guide tones, arpeggios, 3-5-7-9) | `ui/arpeggios.rs` |
 | READING (sight reading) | `ui/reading.rs` |
 | Music theory (chord notes, names, grips, scales) | `data/theory.rs` |
 | Neck and piano drawings | `ui/fretboard.rs` (shared with the phone app) |
@@ -64,7 +65,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
 - `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops groups prog news mini mine yt diary
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
-  fingerings melodies analyzer voicings.
+  fingerings melodies analyzer voicings arpeggios.
 - CHORD MELODIES only: `BACKLINE_CM_SCROLL=<px>` opens the bars scrolled down; `BACKLINE_CM_PICK=<kind>` opens the
   first move of that kind (its index in `KINDS`) in the panel.
 - Unit tests: `cargo test --release` in `backline/`.

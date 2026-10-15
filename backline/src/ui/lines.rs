@@ -229,9 +229,11 @@ impl App {
         crate::tour::mark("LINESVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
-        if let Some(t) = tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES", "PENTATONICS & MORE", "SUPERIMPOSE"], self.ln_tab as usize)
-        {
-            self.ln_tab = t as u8;
+        // shown in this order; each tab keeps its own number (ARPEGGIOS came last)
+        const ORDER: [u8; 5] = [0, 1, 4, 2, 3];
+        let shown = ORDER.iter().position(|t| *t == self.ln_tab).unwrap_or(0);
+        if let Some(t) = tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES", "ARPEGGIOS", "PENTATONICS & MORE", "SUPERIMPOSE"], shown) {
+            self.ln_tab = ORDER[t];
         }
         ui.add_space(6.0);
         // only the improvising tabs play a line over something
@@ -240,6 +242,7 @@ impl App {
             0 => self.slonimsky(ui, acts),
             1 => self.fingerings(ui, acts),
             2 => self.pentatonics(ui, acts),
+            4 => self.arpeggios(ui, acts),
             _ => self.superimpose(ui, acts),
         }
     }

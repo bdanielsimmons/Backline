@@ -62,7 +62,7 @@ pub(crate) fn fingers(pos: &[Spot]) -> Vec<u8> {
 }
 
 /// Where a box's lowest root is: "ROOT ON 6TH STRING, 1ST FINGER".
-fn root_place(pos: &[Spot], root: i32) -> String {
+pub(crate) fn root_place(pos: &[Spot], root: i32) -> String {
     const STRINGS: [&str; 6] = ["6TH", "5TH", "4TH", "3RD", "2ND", "1ST"];
     const FINGERS: [&str; 5] = ["", "1ST", "2ND", "3RD", "4TH"];
     let fing = fingers(pos);

@@ -56,6 +56,8 @@ mod winamp_draw;
 pub(crate) use widgets::*;
 #[path = "ui/album_view.rs"]
 mod album_view;
+#[path = "ui/arpeggios.rs"]
+mod arpeggios;
 #[path = "ui/chords.rs"]
 mod chords;
 #[path = "ui/clusters.rs"]
@@ -2278,6 +2280,17 @@ struct App {
     cm_named: bool,
     /// COLTRANE CELLS THROUGH A TUNE: which cell
     ct_cell: u8,
+    /// ARPEGGIOS: from a scale's chords or any chord; the key (or root); the scale; its degree; the chord kind; the
+    /// position shown; what is played; what it is played over; the line through a tune
+    ar_src: u8,
+    ar_root: i32,
+    ar_scale: u8,
+    ar_deg: u8,
+    ar_q: u8,
+    ar_pos: u8,
+    ar_ex: u8,
+    ar_back: u8,
+    ar_tune: u8,
     /// the grip clicked in the panel (the panel's first beat, which grip)
     cm_step: Option<((usize, usize), usize)>,
     /// a line played over something (0 nothing, 1 drone, 2 chord, 3 band) and that chord's notes; None for plain lines
@@ -2938,6 +2951,15 @@ impl App {
             cm_drag: None,
             cm_named: false,
             ct_cell: 0,
+            ar_src: 0,
+            ar_root: 0,
+            ar_scale: 0,
+            ar_deg: 1,
+            ar_q: 0,
+            ar_pos: 0,
+            ar_ex: 0,
+            ar_back: 0,
+            ar_tune: 0,
             cm_step: None,
             ln_backing: None,
             ln_at: 0,
@@ -3441,6 +3463,10 @@ impl App {
                 app.ln_tab = 1;
             }
             Ok("melodies") => app.sec = Sec::Melodies,
+            Ok("arpeggios") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 4;
+            }
             Ok("voicings") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 3;

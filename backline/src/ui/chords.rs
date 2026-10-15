@@ -527,8 +527,8 @@ impl App {
         about: bool,
         first: usize,
     ) -> (usize, &'static [usize], &'static [usize], u8) {
-        const FAMILIES: [&str; 7] = ["TRIADS", "SPREAD TRIADS", "SHELLS", "CLOSE", "DROP 2", "DROP 3", "DROP 2&4"];
-        const ABOUT: [&str; 7] = [
+        const FAMILIES: [&str; 8] = ["TRIADS", "SPREAD TRIADS", "SHELLS", "CLOSE", "DROP 2", "DROP 3", "DROP 2&4", "3RDS & 7THS"];
+        const ABOUT: [&str; 8] = [
             "Three notes on three neighbouring strings. Learn all three inversions (root, 3rd or 5th on the bottom) on every set of strings and you can find any major or minor chord anywhere on the neck.",
             "A triad with its middle note dropped an octave, so it skips a string: wide and open, like a piano player's left and right hand.",
             "Root, 3rd and 7th - the notes that say what a chord is. The bread and butter of comping: root on the 6th or 5th string.",
@@ -536,6 +536,7 @@ impl App {
             "Take a close voicing and drop its second highest note an octave. Four neighbouring strings, easy to grip: the most used jazz chord shapes there are.",
             "Drop the third highest note instead. The bass sits on the 6th or 5th string with a string skipped: a big, full sound for chord melody and comping.",
             "Drop the second and fourth highest notes. Wide and open across two string groups.",
+            "Just the 3rd and the 7th - the two notes that say major, minor or dominant. Through a ii-V-I the 7th falls a half step to the next 3rd and the 3rd stays as the next 7th, so the hand hardly moves: light comping, and the bones of every line.",
         ];
         if (self.vc_family as usize) < first {
             self.vc_family = first as u8;
@@ -544,7 +545,7 @@ impl App {
             self.vc_family = (v + first) as u8;
             self.vc_set = 0;
         }
-        let fam = (self.vc_family as usize).min(6);
+        let fam = (self.vc_family as usize).min(7);
         if about {
             para(ui, ABOUT[fam], pal().ink2);
         }
@@ -554,6 +555,7 @@ impl App {
             2 => &[&[0, 1, 2], &[1, 2, 3]],
             3 | 4 => &[&[2, 3, 4, 5], &[1, 2, 3, 4], &[0, 1, 2, 3]],
             5 => &[&[0, 2, 3, 4], &[1, 3, 4, 5]],
+            7 => &[&[2, 3], &[3, 4], &[1, 2]],
             _ => &[&[0, 1, 3, 4], &[1, 2, 4, 5]],
         };
         let drop: &'static [usize] = match fam {
@@ -832,6 +834,14 @@ impl App {
     ) -> Vec<(String, Option<[Option<u8>; 6]>)> {
         const DEG: [&str; 12] = ["R", "b9", "9", "b3", "3", "11", "b5", "5", "#5", "6", "b7", "7"];
         let deg = |x: i32| DEG[x.rem_euclid(12) as usize];
+        if fam == 7 {
+            let third = chord.get(1).copied().unwrap_or(4);
+            let seventh = chord.get(3).copied().filter(|s| *s < 12).unwrap_or(chord.get(2).copied().unwrap_or(7));
+            return vec![
+                ("3 BASS  7 TOP".to_string(), theory::fit_on(&[third, seventh], root, strings, &theory::STANDARD, reach)),
+                ("7 BASS  3 TOP".to_string(), theory::fit_on(&[seventh, third + 12], root, strings, &theory::STANDARD, reach)),
+            ];
+        }
         if fam == 2 {
             let third = chord.get(1).copied().unwrap_or(4);
             let seventh = chord.get(3).copied().filter(|s| *s < 12).unwrap_or(chord.get(2).copied().unwrap_or(7));
