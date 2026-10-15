@@ -624,7 +624,7 @@ pub(crate) fn dropdown(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str],
 pub(crate) fn choice_line(ui: &mut egui::Ui, id: &str, name: &str, items: &[&str], sel: usize, w: f32) -> Option<usize> {
     let mut out = None;
     ui.horizontal(|ui| {
-        crate::views::label(ui, name, 100.0);
+        label(ui, name, 100.0);
         // as wide as its longest option (so it doesn't jump about), never past the page; the text stays full size
         let widest = items.iter().map(|s| text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
         let room = (ui.available_width() - 4.0).max(120.0);

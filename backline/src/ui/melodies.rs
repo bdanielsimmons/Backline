@@ -884,6 +884,7 @@ impl App {
         }
         if !self.cm_moves_read {
             self.cm_moves = transcription::load_moves();
+            self.cm_hidden = transcription::load_hidden();
             self.cm_moves_read = true;
         }
         if self.cm_tab == 0 {
@@ -903,6 +904,7 @@ impl App {
         if self.cm_loaded.as_ref().map(|l| &l.0) != Some(&path) {
             match transcription::load(&path) {
                 Ok(mut t) => {
+                    t.grips.retain(|g| g.frets.iter().any(|f| *f >= 0));
                     self.cm_named = name_from_notes(&mut t);
                     self.cm_bpm = if t.tempo > 0.0 { t.tempo.round() as u32 } else { 90 };
                     self.cm_loaded = Some((path.clone(), std::sync::Arc::new(t)));
@@ -960,6 +962,8 @@ impl App {
                     }
                 }
             }
+            // not the ones you removed
+            all.retain(|m| !self.cm_hidden.iter().any(|h| h.0 == tune.title && h.1 == m.0 && h.2 == m.1 && h.3 == m.2));
             all.sort_by_key(|m| (m.1, m.0));
             all.into_iter().filter(|m| self.cm_mark_kind == 0 || m.0 == self.cm_mark_kind as usize - 1).collect()
         } else {
@@ -1167,6 +1171,18 @@ impl App {
                 self.cm_mark_kind = i as u8;
                 self.cm_mark = None;
             }
+            // the ones you removed from this tune, back again
+            let title = self.cm_loaded.as_ref().map(|l| l.1.title.clone()).unwrap_or_default();
+            let gone = self.cm_hidden.iter().filter(|h| h.0 == title).count();
+            if gone > 0
+                && retro_btn(ui, &format!("BRING BACK {} REMOVED", gone), false)
+                    .tip("The moves you removed from this tune")
+                    .clicked()
+            {
+                self.cm_hidden.retain(|h| h.0 != title);
+                transcription::save_hidden(&self.cm_hidden);
+                self.cm_mark = None;
+            }
         }
     }
 
@@ -1250,6 +1266,29 @@ impl App {
                     transcription::save_moves(&self.cm_moves);
                     self.cm_mark = None;
                     self.set_note("KEPT IN MOVES - MARKED ON THE SONG TOO");
+                }
+                if let Some(m) = picked_mark {
+                    if retro_btn(ui, "REMOVE THIS MOVE", false)
+                        .tip("Not one you want marked: gone from this tune (BRING BACK under MOVES returns it)")
+                        .clicked()
+                    {
+                        // one you kept: forgotten; one Backline spotted: hidden
+                        match self
+                            .cm_moves
+                            .iter()
+                            .position(|mv| mv.tune == tune.title && mv.kind == m.0 && mv.spots == Some((m.1, m.2)))
+                        {
+                            Some(i) => {
+                                self.cm_moves.remove(i);
+                                transcription::save_moves(&self.cm_moves);
+                            }
+                            None => {
+                                self.cm_hidden.push((tune.title.clone(), m.0, m.1, m.2));
+                                transcription::save_hidden(&self.cm_hidden);
+                            }
+                        }
+                        close = true;
+                    }
                 }
                 if retro_btn(ui, "ANALYZER", false)
                     .tip("The first beat in the chord analyzer: every name it has, the piano")

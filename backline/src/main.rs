@@ -2280,6 +2280,8 @@ struct App {
     cm_named: bool,
     /// COLTRANE CELLS THROUGH A TUNE: which cell
     ct_cell: u8,
+    /// CHORD MELODIES: the spotted moves you removed
+    cm_hidden: Vec<transcription::Hidden>,
     /// ARPEGGIOS: from a scale's chords or any chord; the key (or root); the scale; its degree; the chord kind; the
     /// position shown; what is played; what it is played over; the line through a tune
     ar_src: u8,
@@ -2951,6 +2953,7 @@ impl App {
             cm_drag: None,
             cm_named: false,
             ct_cell: 0,
+            cm_hidden: Vec::new(),
             ar_src: 0,
             ar_root: 0,
             ar_scale: 0,

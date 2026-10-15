@@ -87,6 +87,23 @@ pub fn save_moves(m: &[Move]) {
     }
 }
 
+/// A spotted move you removed: the tune, its kind, and where it was ((bar, beat) from and to).
+pub type Hidden = (String, usize, (usize, usize), (usize, usize));
+
+/// The spotted moves you removed (in Backline's folder, not with the transcriptions you might send).
+pub fn load_hidden() -> Vec<Hidden> {
+    std::fs::read(crate::api::config_dir().join("hidden_moves.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_hidden(h: &[Hidden]) {
+    if let Ok(t) = serde_json::to_string(h) {
+        let _ = std::fs::write(crate::api::config_dir().join("hidden_moves.json"), t);
+    }
+}
+
 /// The folder the transcriptions live in.
 pub fn dir() -> PathBuf {
     crate::api::config_dir().join("transcriptions")
@@ -137,6 +154,7 @@ pub fn from_gp(bytes: &[u8], fallback: &str) -> Result<(Tune, Option<Vec<u8>>), 
         grips: s
             .chords
             .iter()
+            .filter(|c| c.frets.iter().any(|f| f.is_some()))
             .map(|c| Grip { name: c.name.clone(), frets: c.frets.map(|f| f.map_or(-1, |v| v as i8)) })
             .collect(),
         audio: String::new(),
