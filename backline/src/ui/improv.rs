@@ -962,32 +962,57 @@ impl App {
         if let Some(pc) = Self::note_row(ui, "KEY", self.pf_root, sharps) {
             self.pf_root = pc;
         }
-        // your starred scales first, then the rest by family
+        // first the family (your starred scales as one of them), then the scale in it
         let scales = all_scales();
-        let mut order: Vec<usize> = (0..scales.len()).filter(|i| self.pf_stars.iter().any(|s| s == scales[*i].1)).collect();
-        order.extend((0..scales.len()).filter(|i| !self.pf_stars.iter().any(|s| s == scales[*i].1)));
-        let names: Vec<String> = order
-            .iter()
-            .map(|i| {
-                let (fam, name, _) = &scales[*i];
-                let star = if self.pf_stars.iter().any(|s| s == name) { "* " } else { "" };
-                format!("{}{}  ({})", star, name.to_uppercase(), fam)
-            })
-            .collect();
+        const MINE: &str = "MY SCALES (STARRED)";
+        let mut fams: Vec<&str> = Vec::new();
+        if !self.pf_stars.is_empty() {
+            fams.push(MINE);
+        }
+        for s in &scales {
+            if !fams.contains(&s.0) {
+                fams.push(s.0);
+            }
+        }
+        let own_fam = scales.iter().find(|s| s.1 == self.pf_scale).map_or(scales[0].0, |s| s.0);
+        let fam_now = fams.iter().copied().find(|f| *f == self.pf_fam).unwrap_or(own_fam);
+        let in_fam = |f: &str| -> Vec<usize> {
+            (0..scales.len())
+                .filter(|i| if f == MINE { self.pf_stars.iter().any(|s| s == scales[*i].1) } else { scales[*i].0 == f })
+                .collect()
+        };
+        if let Some(i) =
+            crate::choice_line(ui, "pf_fam", "FAMILY", &fams, fams.iter().position(|f| *f == fam_now).unwrap_or(0), 260.0)
+        {
+            self.pf_fam = fams[i].to_string();
+            // a scale of that family (the one you were on, if it is in it)
+            let list = in_fam(fams[i]);
+            if !list.iter().any(|j| scales[*j].1 == self.pf_scale) {
+                if let Some(j) = list.first() {
+                    self.pf_scale = scales[*j].1.to_string();
+                    self.pf_pos = 0;
+                }
+            }
+        }
+        let fam_now = fams.iter().copied().find(|f| *f == self.pf_fam).unwrap_or(own_fam);
+        let order = in_fam(fam_now);
+        let order = if order.is_empty() { (0..scales.len()).collect() } else { order };
+        let names: Vec<String> = order.iter().map(|i| scales[*i].1.to_uppercase()).collect();
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let cur = order.iter().position(|i| scales[*i].1 == self.pf_scale).unwrap_or(0);
         ui.horizontal(|ui| {
             crate::views::label(ui, "SCALE", 100.0);
             let widest = names.iter().map(|s| crate::font::text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
             if let Some(i) =
-                crate::dropdown_fixed(ui, "pf_scale", &names, cur, widest.min(ui.available_width() - 140.0).max(200.0))
+                crate::dropdown_fixed(ui, "pf_scale", &names, cur, widest.min(ui.available_width() - 60.0).max(200.0))
             {
                 self.pf_scale = scales[order[i]].1.to_string();
                 self.pf_pos = 0;
             }
+            // the star: one you use a lot, kept in MY SCALES
             let starred = self.pf_stars.iter().any(|s| *s == self.pf_scale);
-            if retro_btn(ui, if starred { "* MY SCALE" } else { "+ MY SCALES" }, starred)
-                .tip("Star the scales you use a lot: they come first in the list")
+            if crate::ibtn(ui, &crate::IC_STAR, "", starred)
+                .tip(if starred { "In MY SCALES - click to take it out" } else { "Star it: kept in MY SCALES, the first family" })
                 .clicked()
             {
                 if starred {
@@ -999,6 +1024,11 @@ impl App {
                 self.dirty = true;
             }
         });
+        if !order.iter().any(|i| scales[*i].1 == self.pf_scale) {
+            if let Some(j) = order.first() {
+                self.pf_scale = scales[*j].1.to_string();
+            }
+        }
         let si = order[order.iter().position(|i| scales[*i].1 == self.pf_scale).unwrap_or(0)];
         let steps = scales[si].2.clone();
         let root = self.pf_root;
@@ -1051,10 +1081,18 @@ impl App {
 
         // the line: this position up and down - or every position in turn (SHIFT THROUGH ALL)
         let pitch = |s: &Spot| theory::STANDARD[s.0] + s.1 as i32;
+        // (the whole position, or one or two octaves of it from its lowest root)
+        let range = self.pf_range;
         let up_down = |p: &Vec<Spot>| -> Vec<Spot> {
             let mut u = p.clone();
             u.sort_by_key(|s| pitch(s));
             u.dedup_by_key(|s| pitch(s));
+            if range > 0 {
+                if let Some(st) = u.iter().position(|s| (pitch(s) - root).rem_euclid(12) == 0) {
+                    let top = pitch(&u[st]) + 12 * range as i32;
+                    u = u[st..].iter().copied().filter(|s| pitch(s) <= top).collect();
+                }
+            }
             let mut v = u.clone();
             v.extend(u.iter().rev().skip(1));
             v
@@ -1086,7 +1124,8 @@ impl App {
         // while shifting, the position sounding now is the one shown bright
         let bright: Option<usize> = match (playing, shifting) {
             (Some(i), true) => owner.get(i).copied(),
-            (_, false) => Some(pick),
+            // one position shown: that one bright; the whole neck: all of them, each in its colour
+            (_, false) => (pick < np).then_some(pick),
             _ => None,
         };
 
@@ -1147,6 +1186,12 @@ impl App {
         let plays: Vec<&str> = plays.iter().map(String::as_str).collect();
         if let Some(i) = crate::choice_line(ui, "pf_play", "PLAY", &plays, (self.pf_play as usize).min(plays.len() - 1), 260.0) {
             self.pf_play = i as u8;
+        }
+        if self.pf_play < 2 {
+            const RANGES: [&str; 3] = ["THE WHOLE POSITION", "1 OCTAVE, FROM THE ROOT", "2 OCTAVES, FROM THE ROOT"];
+            if let Some(i) = crate::choice_line(ui, "pf_range", "RANGE", &RANGES, (self.pf_range as usize).min(2), 260.0) {
+                self.pf_range = i as u8;
+            }
         }
         if self.pf_play >= 2 {
             let pat = (self.pf_play as usize - 2).min(lines::SCALE_PATTERNS.len() - 1);

@@ -2223,6 +2223,10 @@ struct App {
     pn_first: u8,
     /// NUMBERING, kept for each tab by where position 1's root sits (empty: the usual one)
     pn_num: String,
+    /// SCALES: the family the scale list shows (empty: the scale's own)
+    pf_fam: String,
+    /// SCALES, playing a position: all of it (0), or 1 or 2 octaves from its lowest root
+    pf_range: u8,
     pf_num: String,
     ar_num: String,
     /// PENTATONICS & MORE: the family (0 pentatonic, 1 hexatonic, 2 diminished), the scale in it, notes per string
@@ -2925,6 +2929,8 @@ impl App {
             pn_back: 0,
             pn_first: 0,
             pn_num: String::new(),
+            pf_fam: String::new(),
+            pf_range: 0,
             pf_num: String::new(),
             ar_num: String::new(),
             pn_fam: 0,
