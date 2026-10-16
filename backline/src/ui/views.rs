@@ -881,6 +881,7 @@ impl App {
         }
         section_header(ui, "PLAYLISTS");
         crate::cards_header(ui, "LENGTH");
+        let mut queue: Option<(usize, bool)> = None;
         for (k, (i, l)) in mine.iter().enumerate() {
             let length = || {
                 if l.items.is_empty() {
@@ -897,6 +898,16 @@ impl App {
                     self.open_saved_list(l, acts);
                 }
                 r.context_menu(|ui| {
+                    if !l.items.is_empty() {
+                        if menu_item(ui, "Play next") {
+                            queue = Some((k, true));
+                            ui.close_menu();
+                        }
+                        if menu_item(ui, "Add to queue") {
+                            queue = Some((k, false));
+                            ui.close_menu();
+                        }
+                    }
                     crate::link_item(ui, acts, Some(l.url.clone()));
                     if menu_item(ui, "Remove from my playlists") {
                         acts.push(Action::RemoveList(*i));
@@ -904,6 +915,15 @@ impl App {
                     }
                 });
             }
+        }
+        // its songs, known to the player first, then into the queue
+        if let Some((k, next)) = queue {
+            let l = &mine[k].1;
+            for e in &l.items {
+                self.register(&e.to_version());
+            }
+            self.keep_all(l.items.iter().map(|e| e.id).collect());
+            acts.push(Action::QueueTracks(l.name.clone(), l.items.iter().map(|e| e.to_track()).collect(), next));
         }
     }
 

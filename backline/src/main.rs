@@ -321,6 +321,8 @@ enum Action {
     PlayNext(Track),
     /// every song of an album or playlist, played next (true) or added to the end of the queue
     QueueCard(Card, bool),
+    /// these songs (a list's name for the note) into the queue: next (true) or at the end
+    QueueTracks(String, Vec<Track>, bool),
     Enqueue(Track),
     Remove(usize),
     ClearQueue,
@@ -1447,6 +1449,12 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
         }
         if ibtn(ui, &IC_SHUF, "SHUFFLE", false).clicked() {
             acts.push(Action::PlayShuffled(tracks.to_vec()));
+        }
+        if retro_btn(ui, "PLAY NEXT", false).tip("All of these right after the song playing").clicked() {
+            acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
+        }
+        if retro_btn(ui, "ADD TO QUEUE", false).tip("All of these at the end of the queue").clicked() {
+            acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
         if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again").clicked() {
             acts.push(Action::RefreshLibrary);
@@ -4762,6 +4770,10 @@ impl App {
                     let _ = tx.send(Msg::CardTracks(c.title.clone(), r, next));
                     ctx.request_repaint();
                 });
+            }
+            Action::QueueTracks(name, tracks, next) => {
+                let _ = self.tx.send(Msg::CardTracks(name, Ok(tracks), next));
+                self.ctx.request_repaint();
             }
             Action::Enqueue(mut t) => {
                 self.q_next += 1;
