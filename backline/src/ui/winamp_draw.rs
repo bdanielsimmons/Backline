@@ -65,39 +65,10 @@ impl WaTex {
             Pos2::new((src.0 + src.2 - E) / size.x, (src.1 + src.3 - E) / size.y),
         );
         let uv = if flip { Rect::from_min_max(Pos2::new(uv.max.x, uv.min.y), Pos2::new(uv.min.x, uv.max.y)) } else { uv };
-        p.image(tex.id(), dst, uv, TINT.with(|t| t.get()));
+        p.image(tex.id(), dst, uv, Color32::WHITE);
         true
     }
 }
-
-thread_local! {
-    /// The tint sprites are drawn with (white: as they are).
-    static TINT: std::cell::Cell<Color32> = const { std::cell::Cell::new(Color32::WHITE) };
-}
-
-/// Draw sprites tinted. A tint with no alpha adds light instead of covering (black adds nothing, lit pixels shine):
-/// what the glow is made of.
-pub(crate) fn tinted<R>(tint: Color32, f: impl FnOnce() -> R) -> R {
-    let old = TINT.with(|t| t.replace(tint));
-    let r = f();
-    TINT.with(|t| t.set(old));
-    r
-}
-
-/// Light added at this strength scaled by `s` (the GLOW strength chosen), up to the sprite's own brightness again.
-pub(crate) fn light_x(k: u8, s: f32) -> Color32 {
-    light((k as f32 * s).clamp(0.0, 255.0) as u8)
-}
-
-/// Light added at this strength (0 = none, 255 = the sprite's own brightness again).
-pub(crate) fn light(k: u8) -> Color32 {
-    Color32::from_rgba_premultiplied(k, k, k, 0)
-}
-
-/// The rings a glow is drawn in: (how far out, how strong); and the directions round each ring.
-pub(crate) const GLOW_RINGS: [(f32, u8); 4] = [(0.0, 80), (0.8, 52), (1.8, 28), (3.2, 13)];
-pub(crate) const GLOW_DIRS: [(f32, f32); 8] =
-    [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)];
 
 /// A plain stand-in for a control the skin has no picture for: a small plate in the skin's colours with a label,
 /// lit when on.

@@ -286,41 +286,31 @@ impl App {
             self.wa_after = Some((self.wa_secs, std::time::Instant::now()));
             self.wa_secs = secs;
         }
-        if active && self.crt[5] {
-            if let Some((old, at)) = self.wa_after {
-                let e = at.elapsed().as_secs_f32();
-                if e < 0.7 {
-                    let k = ((1.0 - e / 0.7) * 170.0) as u8;
-                    crate::winamp_draw::tinted(crate::winamp_draw::light_x(k, self.glow_scale()), || {
-                        for ((x, d), (_, n)) in places(old).into_iter().zip(places(secs)) {
-                            if d != n {
-                                t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
-                            }
-                        }
-                    });
-                    ui.ctx().request_repaint();
-                }
-            }
-        }
         if active {
             for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)] {
                 t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
             }
-            // glow: the lit digits bleed light round themselves
-            if self.crt[4] {
-                // stronger: brighter, and spread wider
-                let gs = self.glow_scale();
-                let spread = gs.sqrt();
-                for (r, k) in crate::winamp_draw::GLOW_RINGS {
-                    let r = r * spread;
-                    let dirs: &[(f32, f32)] = if r == 0.0 { &[(0.0, 0.0)] } else { &crate::winamp_draw::GLOW_DIRS };
-                    crate::winamp_draw::tinted(crate::winamp_draw::light_x(k, gs), || {
-                        for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)] {
-                            for (dx, dy) in dirs {
-                                t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x + dx * r, 26.0 + dy * r, 9.0, 13.0));
+            let light = glow_colour(&t);
+            let gs = self.glow_scale();
+            // afterglow: a digit that just changed lingers over the new one, fading, as a phosphor does
+            if self.crt[5] {
+                if let Some((old, at)) = self.wa_after {
+                    let e = at.elapsed().as_secs_f32();
+                    if e < 0.7 {
+                        let f = (1.0 - e / 0.7) * gs.max(0.5);
+                        for ((x, d), (_, n)) in places(old).into_iter().zip(places(secs)) {
+                            if d != n {
+                                seg_glow(&p, pl.r(x, 26.0, 9.0, 13.0), d, light, f * 1.4, 0.6);
                             }
                         }
-                    });
+                        ui.ctx().request_repaint();
+                    }
+                }
+            }
+            // glow: the lit segments brighter, and light spread round them
+            if self.crt[4] {
+                for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)] {
+                    seg_glow(&p, pl.r(x, 26.0, 9.0, 13.0), d, light, gs, gs.sqrt());
                 }
             }
         }
@@ -365,26 +355,31 @@ impl App {
             0.0
         };
         let clip = p.with_clip_rect(marquee);
-        // afterglow: the moving title leaves a short fading trail; glow: its letters bleed light
+        // the title; glow: its letters bleed light; afterglow: a short fading smear behind them as they move
         wa_text(&t, &clip, pl, 111.0 - shift, 24.0, &title);
-        if self.crt[5] && shift > 0.0 {
-            for (k, a) in [(1.0, 70u8), (2.0, 40), (3.0, 18)] {
-                crate::winamp_draw::tinted(crate::winamp_draw::light_x(a, self.glow_scale()), || {
-                    wa_text(&t, &clip, pl, 111.0 - shift + k, 24.0, &title)
-                });
-            }
-        }
-        if self.crt[4] {
+        if self.crt[4] || (self.crt[5] && shift > 0.0) {
+            let light = glow_colour(&t);
             let gs = self.glow_scale();
-            let spread = gs.sqrt();
-            for (r, k) in crate::winamp_draw::GLOW_RINGS {
-                let r = r * spread;
-                let dirs: &[(f32, f32)] = if r == 0.0 { &[(0.0, 0.0)] } else { &crate::winamp_draw::GLOW_DIRS };
-                crate::winamp_draw::tinted(crate::winamp_draw::light_x(k, gs), || {
-                    for (dx, dy) in dirs {
-                        wa_text(&t, &clip, pl, 111.0 - shift + dx * r * 0.6, 24.0 + dy * r * 0.6, &title);
+            let copies: Vec<f32> = if w > 154.0 && shift > 0.0 { vec![0.0, w + 25.0] } else { vec![0.0] };
+            for base in copies {
+                for (ci, ch) in title.chars().enumerate() {
+                    if ch == ' ' {
+                        continue;
                     }
-                });
+                    let x = 111.0 - shift + base + ci as f32 * 5.0;
+                    if x < 100.0 || x > 270.0 {
+                        continue;
+                    }
+                    let cell = pl.r(x + 0.5, 24.5, 4.0, 5.0);
+                    if self.crt[4] {
+                        haze(&clip, cell, light, gs * 0.8, gs.sqrt());
+                    }
+                    if self.crt[5] && shift > 0.0 {
+                        for (k, a) in [(1.0, 0.5), (2.0, 0.28), (3.0, 0.12)] {
+                            haze(&clip, cell.translate(Vec2::new(k * cell.width() / 4.0, 0.0)), light, a * gs.max(0.5), 0.5);
+                        }
+                    }
+                }
             }
         }
         if w > 154.0 && shift > 0.0 {
@@ -1304,5 +1299,32 @@ impl App {
             }
         }
         self.wa_art = Some(t);
+    }
+}
+
+/// The colour a skin's readout glows in: its visualizer's middle green (the LCD's own colour on most skins).
+fn glow_colour(t: &WaTex) -> Color32 {
+    t.vis.get(9).copied().filter(|c| c.r() as u32 + c.g() as u32 + c.b() as u32 > 120).unwrap_or(pal().ink)
+}
+
+/// Light over a seven-segment digit's lit segments and round them: a phosphor's glow. `a`: how strong; `spread`:
+/// how far it reaches.
+fn seg_glow(p: &egui::Painter, r: Rect, d: u32, col: Color32, a: f32, spread: f32) {
+    let m = seg_mask(d);
+    let (kx, ky) = (r.width() / 8.0, r.height() / 14.0);
+    for (i, (x, y, w, h)) in SEGS.iter().enumerate() {
+        if m[i] == 1 {
+            let sr = Rect::from_min_size(r.min + Vec2::new(x * kx, y * ky), Vec2::new(w * kx, h * ky));
+            haze(p, sr, col, a, spread);
+        }
+    }
+}
+
+/// Soft light over and round a shape: a few layers, each wider and fainter.
+fn haze(p: &egui::Painter, r: Rect, col: Color32, a: f32, spread: f32) {
+    let u = (r.width().min(r.height()) * 0.5).max(1.0);
+    for (e, f) in [(0.0, 0.30), (0.9, 0.16), (2.0, 0.08), (3.4, 0.04)] {
+        let g = e * u * spread;
+        p.rect_filled(r.expand(g), g.max(0.5), col.gamma_multiply((f * a).min(1.0)));
     }
 }
