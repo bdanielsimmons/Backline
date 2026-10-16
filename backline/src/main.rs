@@ -2286,6 +2286,10 @@ struct App {
     cm_named: bool,
     /// COLTRANE CELLS THROUGH A TUNE: which cell
     ct_cell: u8,
+    /// the current loop: the diary key it was last kept under (its ends move with it until it is cleared or another is
+    /// picked), and the saved loop it is (song, which), if one
+    loop_ident: Option<String>,
+    loop_saved: Option<(i64, usize)>,
     /// CHORD MELODIES: the spotted moves you removed
     cm_hidden: Vec<transcription::Hidden>,
     /// MOVES: a move playing (since, seconds a beat, which)
@@ -2967,6 +2971,8 @@ impl App {
             cm_drag: None,
             cm_named: false,
             ct_cell: 0,
+            loop_ident: None,
+            loop_saved: None,
             cm_hidden: Vec::new(),
             cm_mplay: None,
             cm_cursor: None,
@@ -3693,6 +3699,17 @@ impl App {
         self.player.ctl.set_balance(self.balance);
         self.player.ctl.set_count_in(if self.practice { self.count_in } else { 0 }, self.bpm as f32);
         // the loop is remembered for the song (not for the tour's demo song)
+        if let (Some((id, i)), Some(t), Some((a, b))) = (self.loop_saved, self.cur_track(), both) {
+            if t.id == id {
+                if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
+                    if (s.a - a).abs() > 0.001 || (s.b - b).abs() > 0.001 {
+                        s.a = a;
+                        s.b = b;
+                        self.store_dirty = true;
+                    }
+                }
+            }
+        }
         if let Some(t) = self.cur_track().filter(|t| !self.is_demo(t.id)) {
             match both {
                 Some(ab) => {
@@ -5155,6 +5172,9 @@ impl App {
                 self.loop_a = None;
                 self.loop_b = None;
                 self.loop_on = false;
+                // the current loop is let go: the next A and B make a new one
+                self.loop_ident = None;
+                self.loop_saved = None;
                 self.sync_loop();
                 self.set_note("LOOP CLEARED");
             }

@@ -345,6 +345,43 @@ pub struct Day {
     pub loop_time: BTreeMap<String, (u32, u32)>,
 }
 
+/// Whether two loops of a song are really the same one nudged a little: they share most of their length.
+fn nudged(a: (i64, f32, f32), b: (i64, f32, f32)) -> bool {
+    let inter = (a.2.min(b.2) - a.1.max(b.1)).max(0.0);
+    let uni = a.2.max(b.2) - a.1.min(b.1);
+    a.0 == b.0 && uni > 0.0 && inter / uni >= 0.6
+}
+
+impl Day {
+    /// The current loop's ends moved: what was kept under its old ends carried over to the new ones.
+    pub fn move_loop(&mut self, old: &str, new: &str) {
+        if let Some(v) = self.loop_time.remove(old) {
+            let e = self.loop_time.entry(new.to_string()).or_insert((0, 0));
+            e.0 += v.0;
+            e.1 += v.1;
+        }
+    }
+
+    /// Loops kept as several because they were nudged, made one again: the time and passes added up, under the
+    /// ends of the one worked on longest.
+    pub fn merge_nudged(&mut self) {
+        loop {
+            let keys: Vec<(String, (i64, f32, f32), u32)> =
+                self.loop_time.iter().filter_map(|(k, v)| parse_loop_key(k).map(|p| (k.clone(), p, v.0))).collect();
+            let pair = keys
+                .iter()
+                .enumerate()
+                .find_map(|(i, a)| keys[i + 1..].iter().find(|b| nudged(a.1, b.1)).map(|b| (a.clone(), b.clone())));
+            let Some((a, b)) = pair else { break };
+            let (keep, gone) = if a.2 >= b.2 { (a.0, b.0) } else { (b.0, a.0) };
+            let g = self.loop_time.remove(&gone).unwrap_or_default();
+            let e = self.loop_time.entry(keep).or_insert((0, 0));
+            e.0 += g.0;
+            e.1 += g.1;
+        }
+    }
+}
+
 /// The key a loop's practice is kept under in a day: the song and where the loop starts and ends.
 pub fn loop_key(id: i64, a: f32, b: f32) -> String {
     format!("{}:{}:{}", id, (a * 1000.0).round() as i64, (b * 1000.0).round() as i64)
@@ -481,6 +518,10 @@ impl Store {
         let mut s: Store = std::fs::read_to_string(path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         for t in &mut s.tunes {
             t.take_old_info();
+        }
+        // a loop nudged a little was kept as a new one each time: those made one again
+        for d in &mut s.days {
+            d.merge_nudged();
         }
         s
     }
@@ -649,6 +690,24 @@ pub fn hash_id(s: &str) -> i64 {
 #[cfg(test)]
 mod share_tests {
     use super::*;
+
+    #[test]
+    fn a_nudged_loop_stays_one_loop() {
+        let mut d = Day::default();
+        d.loop_time.insert(loop_key(7, 238.0, 242.0), (30, 2));
+        // the current loop's end moved: its time goes with it
+        d.move_loop(&loop_key(7, 238.0, 242.0), &loop_key(7, 238.0, 243.0));
+        assert_eq!(d.loop_time.len(), 1);
+        assert_eq!(d.loop_time.get(&loop_key(7, 238.0, 243.0)), Some(&(30, 2)));
+        // ones kept apart before are made one
+        let mut old = Day::default();
+        old.loop_time.insert(loop_key(7, 238.0, 242.0), (35, 3));
+        old.loop_time.insert(loop_key(7, 238.0, 243.0), (10, 1));
+        old.loop_time.insert(loop_key(7, 0.0, 9.0), (2, 0));
+        old.merge_nudged();
+        assert_eq!(old.loop_time.len(), 2);
+        assert_eq!(old.loop_time.get(&loop_key(7, 238.0, 242.0)), Some(&(45, 4)));
+    }
 
     #[test]
     fn sharing_adds_only_what_is_new() {

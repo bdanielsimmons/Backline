@@ -10,3 +10,7 @@ reading_book.txt
 
 # the phone app's build output
 /android/target/
+
+# stray build output that once landed in src/ (never commit)
+/backline/src/release/
+/backline/src/.rustc_info.json

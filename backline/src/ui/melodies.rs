@@ -1538,6 +1538,12 @@ impl App {
                     }
                 }
                 crate::improv::neck_view(ui, &dots, sounding.first().copied());
+                let keys: Vec<i32> = if sounding.is_empty() {
+                    crate::fretboard::grip_notes(&grip)
+                } else {
+                    sounding.iter().map(|s| theory::STANDARD[s.0] + s.1 as i32).collect()
+                };
+                crate::improv::look_piano(ui, "cm_piano", &keys, chord.as_deref().and_then(chord_root));
                 // what it is: the move, and each chord's notes
                 if let Some(m) = picked_mark {
                     crate::views::dim_line(ui, EXPLAIN[m.0.min(9)], 1.0, pal().ink2);

@@ -330,6 +330,7 @@ impl App {
                 self.loop_a = Some(a);
                 self.loop_b = Some(b);
                 self.loop_on = true;
+                self.new_current_loop();
                 self.sync_loop();
                 self.player.send(Cmd::Seek(a));
             }
@@ -435,9 +436,9 @@ impl App {
         }
         self.acc -= secs as f32;
         let label = self.practice_label();
-        let date = store::today_str();
         let song = self.cur_track();
         let lp = self.loop_now();
+        let date = store::today_str();
         let d = self.store.day_mut(&date);
         *d.secs.entry(label).or_insert(0) += secs;
         // and on which song, so free practice still says what you worked on
@@ -454,13 +455,38 @@ impl App {
         self.store_dirty = true;
     }
 
-    /// The loop being practised now (the song and its A-B), as a day keeps it; None when no loop is on.
-    fn loop_now(&self) -> Option<String> {
+    /// The loop being practised now (the song and its A-B), as a day keeps it; None when no loop is on. It is the
+    /// current loop until it is cleared or another is picked: its ends moved, today's time on it goes with them
+    /// (adjusting a loop doesn't make a new one).
+    fn loop_now(&mut self) -> Option<String> {
         if !(self.practice && self.loop_on) {
             return None;
         }
         let (a, b) = self.loop_a.zip(self.loop_b)?;
-        Some(store::loop_key(self.cur_track()?.id, a, b))
+        let k = store::loop_key(self.cur_track()?.id, a, b);
+        if let Some(old) = self.loop_ident.clone().filter(|o| *o != k) {
+            let same_song = old.split(':').next() == k.split(':').next();
+            if same_song {
+                self.store.day_mut(&store::today_str()).move_loop(&old, &k);
+                self.store_dirty = true;
+            }
+        }
+        self.loop_ident = Some(k.clone());
+        Some(k)
+    }
+
+    /// A loop picked (or the song changed, or the loop cleared): a new current loop - one of the song's saved loops
+    /// when its ends are one's, so editing it moves that saved loop too.
+    pub(crate) fn new_current_loop(&mut self) {
+        self.loop_ident = None;
+        self.loop_saved = None;
+        let Some(t) = self.cur_track() else { return };
+        let Some((a, b)) = self.loop_a.zip(self.loop_b) else { return };
+        if let Some(i) =
+            self.store.sections.get(&t.id).and_then(|l| l.iter().position(|s| (s.a - a).abs() < 0.01 && (s.b - b).abs() < 0.01))
+        {
+            self.loop_saved = Some((t.id, i));
+        }
     }
 
     fn on_loops(&mut self, n: u32) {
@@ -867,6 +893,7 @@ impl App {
                 self.loop_on = false;
             }
         }
+        self.new_current_loop();
         // the lead sheet follows the player (unless LOCKED): the new song's tune, or its changes looked up
         if !self.chart_lock {
             self.chart_follow(t.id);
@@ -2373,6 +2400,8 @@ impl App {
                 self.loop_a = Some(s.a);
                 self.loop_b = Some(s.b);
                 self.loop_on = true;
+                self.loop_ident = None;
+                self.loop_saved = Some((t.id, i));
                 self.sync_loop();
                 self.player.send(Cmd::Seek(s.a));
             }
@@ -2400,6 +2429,8 @@ impl App {
                 }
             }
             Action::ForgetLoop(id, i) => {
+                // (the saved loops are counted again: which one is current, found afresh)
+                self.loop_saved = None;
                 if let Some(l) = self.store.sections.get_mut(&id) {
                     if i < l.len() {
                         l.remove(i);
@@ -2411,6 +2442,7 @@ impl App {
                 }
             }
             Action::DeleteSection(i) => {
+                self.loop_saved = None;
                 if let Some(t) = self.cur_track() {
                     if let Some(l) = self.store.sections.get_mut(&t.id) {
                         if i < l.len() {

@@ -377,6 +377,12 @@ impl App {
         }
         neck_view(ui, &dots, lit);
         crate::views::dim_line(ui, "BRIGHT: THE ARPEGGIO (BY DEGREE)   RINGS: THE REST OF THE SCALE AROUND IT", 1.0, pal().dim);
+        // the piano: the chord, or the note sounding
+        let keys: Vec<i32> = match lit {
+            Some(s) => vec![theory::STANDARD[s.0] + s.1 as i32],
+            None => now_arp.tones.iter().map(|x| 48 + now_arp.root + x).collect(),
+        };
+        crate::improv::look_piano(ui, "ar_piano", &keys, Some(now_arp.root));
 
         // ---- play it, over the chord
         ui.add_space(6.0);

@@ -45,6 +45,16 @@ pub(crate) fn line_neck(ui: &mut egui::Ui, notes: &[i32], tab: Option<&[Option<(
         });
     }
     crate::improv::neck_view(ui, &dots, lit.and_then(|i| spots.get(i).copied().flatten()));
+    let keys: Vec<i32> = match lit.and_then(|i| notes.get(i)) {
+        Some(m) => vec![*m],
+        None => {
+            let mut k = notes.to_vec();
+            k.sort();
+            k.dedup();
+            k
+        }
+    };
+    crate::improv::look_piano(ui, "line_piano", &keys, notes.first().copied());
 }
 
 pub(crate) fn line_score(

@@ -429,6 +429,11 @@ impl App {
             }
         }
         neck_view(ui, &dots, lit);
+        let keys: Vec<i32> = match lit {
+            Some(s) => vec![theory::STANDARD[s.0] + s.1 as i32],
+            None => steps.iter().map(|x| 48 + root.rem_euclid(12) + x).collect(),
+        };
+        look_piano(ui, "pn_piano", &keys, Some(root));
         if let Some((a, b)) = sc.triads {
             let names = |t: [i32; 3]| t.iter().map(|x| theory::note_name(root + x, sharps)).collect::<Vec<_>>().join(" ");
             crate::views::dim_line(ui, &format!("BLUE: {}     ORANGE: {}", names(a), names(b)), 1.0, pal().ink2);
@@ -1289,6 +1294,13 @@ fn coltrane_cells(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>
         out.push((c.clone(), root, vec![third + 12, seventh + 12], notes));
     }
     out
+}
+
+/// A piano to look at (not to play) under a neck: these keys lit, named from `root`.
+pub(crate) fn look_piano(ui: &mut egui::Ui, id: &str, keys: &[i32], root: Option<i32>) {
+    let pw = ui.available_width().min(720.0);
+    let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 70.0), Sense::hover());
+    crate::fretboard::piano_span(ui, pr, keys, false, id, root.map(|r| r.rem_euclid(12)), 36, 4);
 }
 
 /// One dot on the neck picture.
