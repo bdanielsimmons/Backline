@@ -195,3 +195,24 @@ impl Source for SymSource {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A song from the cache decoded start to end (run by hand: BACKLINE_DECODE=<file>): how far it gets.
+    #[test]
+    #[ignore]
+    fn decodes_a_cached_song() {
+        let Ok(path) = std::env::var("BACKLINE_DECODE") else { return };
+        let bytes = std::fs::read(&path).unwrap();
+        let mut s = SymSource::new(bytes).unwrap();
+        let (rate, ch) = (s.sample_rate() as f64, s.channels() as f64);
+        let dur = s.total_duration();
+        let mut n = 0u64;
+        while s.next().is_some() {
+            n += 1;
+        }
+        eprintln!("decoded {:.1} s of {:?}", n as f64 / rate / ch, dur);
+    }
+}

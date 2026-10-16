@@ -268,11 +268,60 @@ impl App {
         t.spr(&p, "playpaus", (st, 0.0, 9.0, 9.0), pl.r(26.0, 28.0, 9.0, 9.0));
         // the time, in the skin's big digits
         let digits = if t.size("nums_ex").is_some() { "nums_ex" } else { "numbers" };
+        if self.crt[2] {
+            let mut gp = p.clone();
+            gp.set_opacity(0.13);
+            for x in [48.0, 60.0, 78.0, 90.0] {
+                t.spr(&gp, digits, (8.0 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
+            }
+        }
         let secs = pos.max(0.0) as u32;
         let (m, s) = ((secs / 60) % 100, secs % 60);
+        let places = |v: u32| {
+            let (m, s) = ((v / 60) % 100, v % 60);
+            [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)]
+        };
+        // afterglow: a digit that just changed lingers, fading, as a phosphor does
+        if self.wa_secs != secs {
+            self.wa_after = Some((self.wa_secs, std::time::Instant::now()));
+            self.wa_secs = secs;
+        }
+        if active && self.crt[5] {
+            if let Some((old, at)) = self.wa_after {
+                let e = at.elapsed().as_secs_f32();
+                if e < 0.7 {
+                    let k = ((1.0 - e / 0.7) * 170.0) as u8;
+                    crate::winamp_draw::tinted(crate::winamp_draw::light_x(k, self.glow_scale()), || {
+                        for ((x, d), (_, n)) in places(old).into_iter().zip(places(secs)) {
+                            if d != n {
+                                t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
+                            }
+                        }
+                    });
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
         if active {
             for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)] {
                 t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
+            }
+            // glow: the lit digits bleed light round themselves
+            if self.crt[4] {
+                // stronger: brighter, and spread wider
+                let gs = self.glow_scale();
+                let spread = gs.sqrt();
+                for (r, k) in crate::winamp_draw::GLOW_RINGS {
+                    let r = r * spread;
+                    let dirs: &[(f32, f32)] = if r == 0.0 { &[(0.0, 0.0)] } else { &crate::winamp_draw::GLOW_DIRS };
+                    crate::winamp_draw::tinted(crate::winamp_draw::light_x(k, gs), || {
+                        for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)] {
+                            for (dx, dy) in dirs {
+                                t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x + dx * r, 26.0 + dy * r, 9.0, 13.0));
+                            }
+                        }
+                    });
+                }
             }
         }
         // the scrolling title; while a slider is hovered or dragged it says where that slider is, as Winamp does
@@ -295,6 +344,20 @@ impl App {
             (None, None) => "BACKLINE - A RETRO PLAYER FOR TIDAL".to_string(),
         };
         let marquee = pl.r(111.0, 24.0, 154.0, 6.0);
+        if self.crt[3] {
+            // what sat there for years, worn in: the player's own name, still, behind whatever scrolls
+            let mut bp = p.clone();
+            bp.set_opacity(0.09);
+            bp.set_clip_rect(marquee);
+            crate::ptext(
+                &bp,
+                Pos2::new(marquee.min.x, marquee.center().y),
+                Align::Min,
+                "BACKLINE - A RETRO PLAYER FOR TIDAL",
+                1.0,
+                pal().ink,
+            );
+        }
         let w = title.chars().count() as f32 * 5.0;
         let shift = if w > 154.0 && hint.is_none() && !crate::skin::calm() {
             ((ui.input(|i| i.time) as f32 * 22.0) % (w + 25.0)).floor()
@@ -302,7 +365,28 @@ impl App {
             0.0
         };
         let clip = p.with_clip_rect(marquee);
+        // afterglow: the moving title leaves a short fading trail; glow: its letters bleed light
         wa_text(&t, &clip, pl, 111.0 - shift, 24.0, &title);
+        if self.crt[5] && shift > 0.0 {
+            for (k, a) in [(1.0, 70u8), (2.0, 40), (3.0, 18)] {
+                crate::winamp_draw::tinted(crate::winamp_draw::light_x(a, self.glow_scale()), || {
+                    wa_text(&t, &clip, pl, 111.0 - shift + k, 24.0, &title)
+                });
+            }
+        }
+        if self.crt[4] {
+            let gs = self.glow_scale();
+            let spread = gs.sqrt();
+            for (r, k) in crate::winamp_draw::GLOW_RINGS {
+                let r = r * spread;
+                let dirs: &[(f32, f32)] = if r == 0.0 { &[(0.0, 0.0)] } else { &crate::winamp_draw::GLOW_DIRS };
+                crate::winamp_draw::tinted(crate::winamp_draw::light_x(k, gs), || {
+                    for (dx, dy) in dirs {
+                        wa_text(&t, &clip, pl, 111.0 - shift + dx * r * 0.6, 24.0 + dy * r * 0.6, &title);
+                    }
+                });
+            }
+        }
         if w > 154.0 && shift > 0.0 {
             wa_text(&t, &clip, pl, 111.0 - shift + w + 25.0, 24.0, &title);
             // it moves one skin pixel at a time (22 a second): redrawn that often, not every frame

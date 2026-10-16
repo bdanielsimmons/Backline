@@ -2298,6 +2298,13 @@ struct App {
     cm_named: bool,
     /// COLTRANE CELLS THROUGH A TUNE: which cell
     ct_cell: u8,
+    /// OLD SCREEN effects: scanlines, tube edges, ghost segments, burn-in
+    crt: [bool; 6],
+    /// how strong the glow and afterglow are: 1 faint ... 4 as made ... 10 blazing
+    crt_glow: u8,
+    /// the time readout's seconds last drawn, and the ones before with when they changed (for the afterglow)
+    wa_secs: u32,
+    wa_after: Option<(u32, std::time::Instant)>,
     /// the current loop: the diary key it was last kept under (its ends move with it until it is cleared or another is
     /// picked), and the saved loop it is (song, which), if one
     loop_ident: Option<String>,
@@ -2985,6 +2992,10 @@ impl App {
             cm_drag: None,
             cm_named: false,
             ct_cell: 0,
+            crt: [false; 6],
+            crt_glow: 4,
+            wa_secs: 0,
+            wa_after: None,
             loop_ident: None,
             loop_saved: None,
             cm_hidden: Vec::new(),
@@ -3349,6 +3360,12 @@ impl App {
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
         app.pn_first = st["pn_first"].as_u64().unwrap_or(0).min(4) as u8;
         app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
+        app.crt_glow = st["crt_glow"].as_u64().unwrap_or(4).clamp(1, 10) as u8;
+        if let Some(a) = st["crt"].as_array() {
+            for (i, v) in a.iter().take(6).enumerate() {
+                app.crt[i] = v.as_bool().unwrap_or(false);
+            }
+        }
         app.pf_num = st["pf_num"].as_str().unwrap_or("").to_string();
         app.ar_num = st["ar_num"].as_str().unwrap_or("").to_string();
         app.pf_first = st["pf_first"].as_u64().unwrap_or(255).min(255) as u8;
@@ -3436,7 +3453,10 @@ impl App {
         // it plays, but nothing reaches the speakers
         // (BACKLINE_SHOW: a test copy put in front of you to try - with sound)
         let showing = std::env::var_os("BACKLINE_SHOW").is_some();
-        if !showing && ["BACKLINE_HOME", "BACKLINE_OPEN", "BACKLINE_MUTE"].iter().any(|v| std::env::var_os(v).is_some()) {
+        // (BACKLINE_MUTE keeps even a shown one silent)
+        if std::env::var_os("BACKLINE_MUTE").is_some()
+            || (!showing && ["BACKLINE_HOME", "BACKLINE_OPEN"].iter().any(|v| std::env::var_os(v).is_some()))
+        {
             crate::player::MUTED.store(true, Ordering::Relaxed);
         }
         app.play_intro();
@@ -3465,6 +3485,8 @@ impl App {
         // BACKLINE_OPEN=practice / lists: start with that open (for checking layouts and recording demos)
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
+            // pick up the last song where it was left (as CONTINUE does)
+            Ok("continue") => app.apply(Action::Continue),
             Ok("zoom") => {
                 app.practice = true;
                 if let Some(p) = tour_song::ready() {
@@ -3653,6 +3675,8 @@ impl App {
             "go_offline": self.go_offline,
             "pn_first": self.pn_first,
             "pn_num": self.pn_num,
+            "crt": self.crt,
+            "crt_glow": self.crt_glow,
             "pf_num": self.pf_num,
             "ar_num": self.ar_num,
             "pf_first": self.pf_first,
@@ -3702,6 +3726,47 @@ impl App {
     }
 
     /// Push loop / speed state to the audio thread and remember the loop for this track.
+    /// The GLOW strength as a factor on the light (4, as made, is 1).
+    pub(crate) fn glow_scale(&self) -> f32 {
+        self.crt_glow as f32 / 4.0
+    }
+
+    /// OLD SCREEN, over everything (drawn only, never in the way of a click): scanlines, and the tube's darker edges.
+    fn crt_overlay(&self, ctx: &egui::Context) {
+        if !self.crt[0] && !self.crt[1] {
+            return;
+        }
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Debug, egui::Id::new("crt")));
+        let r = ctx.screen_rect();
+        if self.crt[0] {
+            let line = Stroke::new(1.0_f32, Color32::from_black_alpha(46));
+            let mut y = r.min.y + 1.5;
+            while y < r.max.y {
+                p.line_segment([Pos2::new(r.min.x, y), Pos2::new(r.max.x, y)], line);
+                y += 3.0;
+            }
+        }
+        if self.crt[1] {
+            // a band round the edge, dark at the rim, clear inside
+            let inner = r.shrink2(Vec2::new(r.width() * 0.16, r.height() * 0.16));
+            let dark = Color32::from_black_alpha(120);
+            let clear = Color32::TRANSPARENT;
+            let o = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()];
+            let i = [inner.left_top(), inner.right_top(), inner.right_bottom(), inner.left_bottom()];
+            let mut mesh = egui::Mesh::default();
+            for k in 0..4 {
+                let b = mesh.vertices.len() as u32;
+                mesh.colored_vertex(o[k], dark);
+                mesh.colored_vertex(o[(k + 1) % 4], dark);
+                mesh.colored_vertex(i[(k + 1) % 4], clear);
+                mesh.colored_vertex(i[k], clear);
+                mesh.add_triangle(b, b + 1, b + 2);
+                mesh.add_triangle(b, b + 2, b + 3);
+            }
+            p.add(egui::Shape::mesh(mesh));
+        }
+    }
+
     fn sync_loop(&mut self) {
         let both = self.loop_a.zip(self.loop_b);
         let on = self.practice && self.loop_on && both.is_some();
@@ -5750,6 +5815,7 @@ impl eframe::App for App {
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
+        self.crt_overlay(ctx);
         // the first time in: once you've chosen Tidal or not, straight into the tour
         if !self.tour_seen && (self.auth == Auth::In || self.offline) && self.frames >= 10 && self.tour.is_none() {
             self.tour_seen = true;
