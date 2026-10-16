@@ -491,6 +491,12 @@ impl App {
         (i < *len).then_some(i)
     }
 
+    /// Whether the sequence started with this tag is playing - the whole time, the pause between rounds of a loop
+    /// too (it is let go when it ends or is stopped).
+    pub(crate) fn seq_on(&self, tag: &str) -> bool {
+        self.seq_play.as_ref().is_some_and(|p| p.2 == tag)
+    }
+
     /// A play button for a sequence that turns into STOP while it plays.
     pub(crate) fn seq_button(
         &self,
@@ -502,7 +508,7 @@ impl App {
         seq: impl FnOnce() -> Vec<Vec<i32>>,
         gap: f32,
     ) {
-        if self.seq_now(tag).is_some() {
+        if self.seq_on(tag) {
             if retro_btn(ui, "STOP", true).clicked() {
                 acts.push(Action::StopSequence);
             }

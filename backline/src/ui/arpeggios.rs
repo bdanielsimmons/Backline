@@ -212,7 +212,11 @@ impl App {
         let mut by_neck: Vec<usize> = (0..np).collect();
         by_neck.sort_by_key(|p| positions[*p].iter().map(|s| s.1).min().unwrap_or(0));
         let about: Vec<String> = by_neck.iter().map(|p| crate::improv::root_place(&positions[*p], arp.root)).collect();
-        let first = about.iter().position(|a| a.starts_with("ROOT ON 5TH")).unwrap_or(0);
+        let (first, changed) =
+            crate::improv::numbering_line(ui, "ar_num", &about, &mut self.ar_num, &["ROOT ON 5TH STRING, 2ND", "ROOT ON 5TH"]);
+        if changed {
+            self.dirty = true;
+        }
         let nth = |k: usize| by_neck[(first + k) % np];
         let shown: Vec<String> = (0..np)
             .map(|k| format!("POSITION {}  -  {}", k + 1, about[(first + k) % np]))

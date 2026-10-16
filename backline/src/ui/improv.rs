@@ -72,6 +72,25 @@ pub(crate) fn root_place(pos: &[Spot], root: i32) -> String {
     }
 }
 
+/// NUMBERING: which position is number 1 - the one you picked, kept by where its root sits (so it means the same in
+/// any key, scale or family, and each tab keeps its own), else your usual one (marked in the list: the first of
+/// `usual` found). Returns its index in `about`, and whether it was just changed.
+pub(crate) fn numbering_line(ui: &mut egui::Ui, id: &str, about: &[String], saved: &mut String, usual: &[&str]) -> (usize, bool) {
+    let def = usual.iter().find_map(|u| about.iter().position(|a| a.starts_with(u))).unwrap_or(0);
+    let cur = about.iter().position(|a| !saved.is_empty() && a == saved).unwrap_or(def);
+    let labels: Vec<String> =
+        about.iter().enumerate().map(|(i, a)| format!("1 = {}{}", a, if i == def { "  (USUAL)" } else { "" })).collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    match crate::choice_line(ui, id, "NUMBERING", &labels, cur, 360.0) {
+        Some(i) => {
+            // the usual one picked: follow it (nothing kept)
+            *saved = if i == def { String::new() } else { about[i].clone() };
+            (i, true)
+        }
+        None => (cur, false),
+    }
+}
+
 /// A degree's name in a scale (4, not 11; b6, not b13).
 fn degree_name(pc: i32, root: i32) -> &'static str {
     const N: [&str; 12] = ["R", "\u{266D}2", "2", "\u{266D}3", "3", "4", "\u{266D}5", "5", "\u{266D}6", "6", "\u{266D}7", "7"];
@@ -281,14 +300,11 @@ impl App {
         let word = if pent && nps == 2 { "BOX" } else { "POSITION" };
         // each position by where its lowest root is; number 1 is the one you choose, the rest count on up the neck
         let about: Vec<String> = boxes.iter().map(|b| root_place(b, root)).collect();
-        let first = (self.pn_first as usize).min(nb - 1);
-        let firsts: Vec<String> = about.iter().map(|a| format!("1 = {}", a)).collect();
-        let firsts: Vec<&str> = firsts.iter().map(String::as_str).collect();
-        if let Some(i) = crate::choice_line(ui, "pn_first", "NUMBERING", &firsts, first, 360.0) {
-            self.pn_first = i as u8;
+        let (first, changed) =
+            numbering_line(ui, "pn_num", &about, &mut self.pn_num, &["ROOT ON 6TH STRING, 1ST", "ROOT ON 6TH"]);
+        if changed {
             self.dirty = true;
         }
-        let first = (self.pn_first as usize).min(nb - 1);
         let shown: Vec<String> = (0..nb)
             .map(|k| format!("{} {}  -  {}", word, k + 1, about[(first + k) % nb]))
             .chain(std::iter::once(format!("WHOLE NECK  -  ALL {} TOGETHER", nb)))
@@ -995,18 +1011,11 @@ impl App {
         let mut by_neck: Vec<usize> = (0..np).collect();
         by_neck.sort_by_key(|p| positions[*p].iter().map(|s| s.1).min().unwrap_or(0));
         let about: Vec<String> = by_neck.iter().map(|p| root_place(&positions[*p], root)).collect();
-        let first = if self.pf_first == 255 {
-            about.iter().position(|a| a.starts_with("ROOT ON 5TH")).unwrap_or(0)
-        } else {
-            (self.pf_first as usize).min(np - 1)
-        };
-        let firsts: Vec<String> = about.iter().map(|a| format!("1 = {}", a)).collect();
-        let firsts: Vec<&str> = firsts.iter().map(String::as_str).collect();
-        if let Some(i) = crate::choice_line(ui, "pf_first", "NUMBERING", &firsts, first, 360.0) {
-            self.pf_first = i as u8;
+        let (first, changed) =
+            numbering_line(ui, "pf_num", &about, &mut self.pf_num, &["ROOT ON 5TH STRING, 2ND", "ROOT ON 5TH"]);
+        if changed {
             self.dirty = true;
         }
-        let first = if self.pf_first == 255 { first } else { (self.pf_first as usize).min(np - 1) };
         // position k as numbered (0-based) -> the index into `positions`
         let nth = |k: usize| by_neck[(first + k) % np];
         let shown: Vec<String> = (0..np)

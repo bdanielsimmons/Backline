@@ -1,5 +1,5 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 // Folders: audio/ = playback and sound analysis, data/ = Tidal, files, library and updates, ui/ = everything drawn.
 // The modules keep flat names (crate::player, crate::views...) so the folders are purely for reading.
@@ -2221,6 +2221,10 @@ struct App {
     pn_back: u8,
     /// which box counts as box 1 (0: the one with its root on the 6th string, first finger)
     pn_first: u8,
+    /// NUMBERING, kept for each tab by where position 1's root sits (empty: the usual one)
+    pn_num: String,
+    pf_num: String,
+    ar_num: String,
     /// PENTATONICS & MORE: the family (0 pentatonic, 1 hexatonic, 2 diminished), the scale in it, notes per string
     pn_fam: u8,
     pn_scale: u8,
@@ -2916,6 +2920,9 @@ impl App {
             pn_string: 5,
             pn_back: 0,
             pn_first: 0,
+            pn_num: String::new(),
+            pf_num: String::new(),
+            ar_num: String::new(),
             pn_fam: 0,
             pn_scale: 0,
             pn_nps: 2,
@@ -3321,6 +3328,9 @@ impl App {
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
         app.pn_first = st["pn_first"].as_u64().unwrap_or(0).min(4) as u8;
+        app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
+        app.pf_num = st["pf_num"].as_str().unwrap_or("").to_string();
+        app.ar_num = st["ar_num"].as_str().unwrap_or("").to_string();
         app.pf_first = st["pf_first"].as_u64().unwrap_or(255).min(255) as u8;
         if let Some(a) = st["pf_stars"].as_array() {
             app.pf_stars = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
@@ -3622,6 +3632,9 @@ impl App {
             "wa_guide": self.wa_guide,
             "go_offline": self.go_offline,
             "pn_first": self.pn_first,
+            "pn_num": self.pn_num,
+            "pf_num": self.pf_num,
+            "ar_num": self.ar_num,
             "pf_first": self.pf_first,
             "pf_stars": self.pf_stars,
             "diary_span": self.diary_span,

@@ -278,7 +278,7 @@ impl App {
     /// PLAY / STOP, LOOP, the tempo and the note value, and how many times this line has been played.
     pub(crate) fn line_player(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, notes: &[i32], key: &str) {
         // a different line: back to the tempo it was last played at
-        if self.seq_now("line").is_none() && self.ln_playing != key {
+        if !self.seq_on("line") && self.ln_playing != key {
             self.ln_playing = key.to_string();
             if let Some(b) = self.store.lines_tempo.get(key) {
                 self.ln_bpm = *b;
