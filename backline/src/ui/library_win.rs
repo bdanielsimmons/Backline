@@ -578,6 +578,47 @@ impl App {
         });
     }
 
+    /// RECENT: the songs played in Backline, newest first, by day - every one, cached or not (Tidal's own history
+    /// only hears of what streams from it, and isn't open to Backline).
+    fn recent_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        ui.add_space(6.0);
+        title_line(ui, "RECENT", 3.0, pal().ink);
+        // played here, by day
+        section_header(ui, "PLAYED IN BACKLINE");
+        if self.store.recent.is_empty() {
+            dim_line(ui, "NOTHING YET - SONGS SHOW UP HERE AS YOU PLAY THEM", 1.0, pal().dim);
+        }
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let day = |at: u64| -> &'static str {
+            let ago = now.saturating_sub(at);
+            if ago < 86_400 {
+                "TODAY"
+            } else if ago < 2 * 86_400 {
+                "YESTERDAY"
+            } else if ago < 7 * 86_400 {
+                "THIS WEEK"
+            } else {
+                "EARLIER"
+            }
+        };
+        let recent = self.store.recent.clone();
+        for v in recent.iter().map(|r| &r.0) {
+            self.register(v);
+        }
+        let playing = self.cur_track().map(|t| t.id);
+        let mut i = 0;
+        while i < recent.len() {
+            let label = day(recent[i].1);
+            let n = recent[i..].iter().take_while(|r| day(r.1) == label).count();
+            dim_line(ui, label, 1.0, pal().ink2);
+            let tracks: Vec<Track> = recent[i..i + n].iter().map(|r| r.0.to_track()).collect();
+            crate::tracks_list(ui, &tracks, playing, &self.liked, acts);
+            ui.add_space(6.0);
+            i += n;
+        }
+        ui.add_space(20.0);
+    }
+
     /// Winamp skins from the Skin Museum: search, a grid of screenshots, click one to wear it.
     pub(crate) fn winamp_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
@@ -911,8 +952,13 @@ impl App {
         // library tabs
         let is_lib = self.sec == Sec::Tidal && self.page.as_ref().map(|p| p.library).unwrap_or(false);
         if is_lib && !self.show_log && !self.show_cache && !self.show_winamp && !self.show_tl {
-            const TABS: [(Tab, &str); 4] =
-                [(Tab::Tracks, "MY TRACKS"), (Tab::Lists, "LISTS"), (Tab::Albums, "ALBUMS"), (Tab::Artists, "ARTISTS")];
+            const TABS: [(Tab, &str); 5] = [
+                (Tab::Tracks, "MY TRACKS"),
+                (Tab::Recent, "RECENT"),
+                (Tab::Lists, "LISTS"),
+                (Tab::Albums, "ALBUMS"),
+                (Tab::Artists, "ARTISTS"),
+            ];
             let names: Vec<&str> = TABS.iter().map(|t| t.1).collect();
             let cur = TABS.iter().position(|t| t.0 == self.lib_tab).unwrap_or(0);
             if let Some(i) = tab_row(ui, &names, cur) {
@@ -1020,6 +1066,11 @@ impl App {
                                         }
                                     });
                                     ui.add_space(4.0);
+                                }
+                                // RECENT: what you played here
+                                if pg.library && tab == Tab::Recent {
+                                    self.recent_view(ui, acts);
+                                    return;
                                 }
                                 // your library: a box that filters it down as you type (every word must match)
                                 if pg.library {

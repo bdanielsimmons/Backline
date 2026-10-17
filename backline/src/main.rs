@@ -269,6 +269,8 @@ struct Ed {
 #[derive(PartialEq, Clone, Copy)]
 enum Tab {
     Tracks,
+    /// what you played lately in Backline (cached songs too, which Tidal never hears about)
+    Recent,
     Lists,
     Albums,
     Artists,
@@ -3498,6 +3500,10 @@ impl App {
                 app.wv_zoom = 6.0;
             }
             Ok("lists") => app.sec = Sec::Lists,
+            Ok("recent") => {
+                app.sec = Sec::Tidal;
+                app.lib_tab = Tab::Recent;
+            }
             Ok("loops") => app.sec = Sec::Loops,
             Ok("groups") => {
                 app.sec = Sec::Loops;
@@ -4236,6 +4242,15 @@ impl App {
         self.paused = false;
         self.audio_err_shown = false;
         crate::api::log(&format!("play: '{}' - '{}' (lossless: {})", t.artist, t.title, self.prefer_lossless));
+        // kept for RECENT (the same song again moves to the top)
+        if !self.is_demo(t.id) {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            let v = self.version_of(&t);
+            self.store.recent.retain(|(r, _)| r.id != t.id);
+            self.store.recent.insert(0, (v, now));
+            self.store.recent.truncate(500);
+            self.store_dirty = true;
+        }
 
         if let Some((id, bytes)) = self.prefetched.take() {
             if id == t.id {

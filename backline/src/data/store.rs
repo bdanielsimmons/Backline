@@ -482,6 +482,8 @@ pub struct Store {
     /// tempo and key found by listening to the audio (see meta.rs)
     pub meta: HashMap<i64, crate::meta::Info>,
     pub last: Option<Last>,
+    /// what you played in Backline, newest first: the song and when it started (seconds since 1970); the last 500
+    pub recent: Vec<(Version, u64)>,
     /// LINES: the tempo each line was last played at, and your favorites
     pub lines_tempo: HashMap<String, u32>,
     pub lines_stars: Vec<String>,
