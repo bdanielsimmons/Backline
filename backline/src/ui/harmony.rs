@@ -160,7 +160,7 @@ fn up_and_down(pcs: &[i32], base: i32) -> Vec<i32> {
 }
 
 /// The two triads one after the other, each climbing from where the last note was: up two rounds, then back.
-fn pair_line(a: &[i32], b: &[i32], base: i32) -> Vec<i32> {
+pub(crate) fn pair_line(a: &[i32], b: &[i32], base: i32) -> Vec<i32> {
     let mut up: Vec<i32> = Vec::new();
     let mut at = base - 1;
     for _ in 0..2 {

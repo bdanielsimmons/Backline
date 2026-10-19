@@ -51,6 +51,8 @@ enum Scene {
     Chords,
     /// practice mode, the CHORDS tab on its analyzer, with a grip on the neck
     Analyzer,
+    /// practice mode, CHORDS on SCALE HARMONY
+    Harmony,
     /// practice mode, LINES on Slonimsky's Diary
     Lines,
     /// practice mode, the lead sheet on the right with a ii-V-I on it
@@ -67,7 +69,8 @@ struct Step {
     speed: u32,
     ab: bool,
     eq: Option<usize>,
-    /// done once when the step opens (the tour's song pauses for it): 1 strum a chord, 2 play a line, 3 the band
+    /// done once when the step opens (the tour's song pauses for it): 1 strum a chord, 2 play a line, 3 the band,
+    /// 4 notes put on the analyzer's neck, 5 a triad pair played
     act: u8,
 }
 
@@ -80,69 +83,57 @@ const BASE: Step = Step { key: "", scene: Scene::Normal, title: "", text: "", sp
 const BASIC: &[Step] = &[
     Step {
         title: "WELCOME",
-        text: "A quick tour that shows each thing working. It plays a song so you can hear what happens. NEXT and BACK (or the arrow keys) move along, ESC stops. When it ends, everything comes back as it was: your queue, your song and where you were in it.",
+        text: "A quick look around, with a song playing so you hear each thing work. NEXT and BACK (or the arrow keys) move along, ESC stops. Your queue and song come back at the end.",
         ..BASE
     },
     Step {
         key: "PLAYER",
         title: "THE PLAYER",
-        text: "That is the tour's song playing. Play, pause, skip, seek and volume live here, with the tempo and key of the song. The little screen is a visualizer: click it to change its style, right-click for its settings.",
+        text: "Play, pause, skip, seek and volume, with the song's tempo and key. Click the little screen to change the visualizer.",
         ..BASE
     },
     Step {
         key: "SPEEDBTN",
         title: "SPEED",
-        text: "Hear it? The song is at 70% now and the pitch has not moved. Click the speed for the next one, right-click to pick any; UP and DOWN step it 5% at a time.",
+        text: "Now at 70%, and the pitch has not moved. Click for the next speed, right-click to pick any.",
         speed: 70,
         ..BASE
     },
     Step {
         key: "EQUALIZER",
         title: "THE EQUALIZER",
-        text: "The tour switched the equalizer on with the BASS preset: the low end comes up. Pick a preset or drag the sliders; AUTO remembers an EQ for each song. Ctrl+K and \"eq\" gets you here from anywhere.",
+        text: "The BASS preset is on: hear the low end come up. AUTO remembers an EQ for each song.",
         eq: Some(1),
         ..BASE
     },
     Step {
         key: "LIBRARY",
         title: "THE LIBRARY",
-        text: "Everything you can play lives here. Click a song to play it, right-click it for more.",
-        ..BASE
-    },
-    Step {
-        key: "TABS",
-        title: "WHERE THE MUSIC COMES FROM",
-        text: "These tabs switch the source: Tidal, SoundCloud, your files, YouTube and your own LISTS. PRACTICE holds your tunes and the practice diary.",
+        text: "Everything you can play: Tidal, SoundCloud, your files, YouTube and your own lists. Click a song to play it, right-click for more.",
         ..BASE
     },
     Step {
         key: "QUEUE",
         title: "THE QUEUE",
-        text: "What plays next. Right now it holds just the tour's song; yours is safe and comes back at the end. Drag a row to reorder it; right-click to remove it or add it to a playlist.",
-        ..BASE
-    },
-    Step {
-        key: "COVER",
-        title: "THE COVER OPENS NOW PLAYING",
-        text: "Click the cover art (or press A) for Now Playing, the song big. NEXT opens it for you.",
+        text: "What plays next. Drag a row to reorder it, right-click to remove it or add it to a playlist.",
         ..BASE
     },
     Step {
         key: "ARTBTNS",
         scene: Scene::Album,
         title: "NOW PLAYING",
-        text: "A big cover, lyrics you can scroll and click to jump, and the visualizer behind it. Click the cover to put it on a spinning record. Playing is in the middle; on the left, how it looks; on the right, the speed, practice tools, the queue and the volume. CLOSE or ESC takes you back.",
+        text: "Click the cover (or press A): the cover big, lyrics you can click to jump, the visualizer behind. ESC takes you back.",
         ..BASE
     },
     Step {
         key: "APPMENU",
         title: "MUSIC, PRACTICE, BACKLINE",
-        text: "Three tabs: MUSIC (Tidal, your library and the other sources), PRACTICE (your tunes and the diary) and BACKLINE (skins, preferences, help and these tours, storage and the log). Under them: back and forward (the mouse's side buttons work too) and search. BACKLINE has its own tabs, Winamp skins among them. Ctrl+K finds any action by typing.",
+        text: "Your music; your tunes and practice diary; skins, preferences and help. Ctrl+K finds any action by typing.",
         ..BASE
     },
     Step {
         title: "THAT'S IT",
-        text: "DONE puts everything back the way you had it. Preferences has ACCESSIBILITY (colour-blind safe loops, reduce motion), and the BACKLINE tab has HIGH CONTRAST skins. When an update is ready, a bar at the top says so. The ? button has every key and tip. Nothing you do here is reported to Tidal.",
+        text: "DONE puts everything back the way you had it. The ? button has every key and tip.",
         ..BASE
     },
 ];
@@ -152,21 +143,14 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHIP",
         scene: Scene::PracticeOff,
         title: "PRACTICE MODE",
-        text: "Tools for learning music from recordings: loop a hard spot, slow it down, fix the pitch, keep time. The tour plays its song so you can hear each one. Click PRACTICE (or press P) to switch them on, LISTEN to go back to plain listening.",
-        ..BASE
-    },
-    Step {
-        key: "PRACTICE",
-        scene: Scene::Practice,
-        title: "THE PRACTICE PANEL",
-        text: "Practice mode opens this panel: the waveform of the song with your loop on it, and the loop and speed tools.",
+        text: "Tools for learning music from recordings. Click PRACTICE (or press P) to switch them on.",
         ..BASE
     },
     Step {
         key: "LOOPROW",
         scene: Scene::Practice,
         title: "1. LOOP A SPOT",
-        text: "The tour just looped a few seconds and jumped there: listen to them come round again. Press A where the hard part starts and B where it ends ([ and ] keys), then loop it (\\ key). Click a time to type it exactly. SAVE LOOP keeps it with the song.",
+        text: "Hear a few seconds come round again? Set A and B ([ and ] keys), then loop it (\\). SAVE LOOP keeps it with the song.",
         ab: true,
         ..BASE
     },
@@ -174,7 +158,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "SPEEDROW",
         scene: Scene::Practice,
         title: "2. SLOW IT DOWN",
-        text: "Same loop, now at 85%, same pitch. Pick a speed from the list, or step it 1% at a time with - and + (click the number to type any). Play it clean slow, then step up.",
+        text: "The same loop at 85%, same pitch. Play it clean slow, then step it up.",
         ab: true,
         speed: 85,
         ..BASE
@@ -183,7 +167,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "MOREBOX",
         scene: Scene::PracticeMore(0),
         title: "3. LET IT SPEED YOU UP",
-        text: "The tabs along the top hold the bigger tools. The TRAINER plays your loop a set number of times, then speeds it up by a set percent, again and again: start slow and let it bring you up to tempo.",
+        text: "The TRAINER plays your loop a few times, then speeds it up a little, again and again.",
         ab: true,
         speed: 85,
         ..BASE
@@ -192,28 +176,28 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "MOREBOX",
         scene: Scene::PracticeMore(1),
         title: "4. FIX THE PITCH",
-        text: "PITCH moves the key in semitones or 10-cent steps; FIND TUNING tells you how far the record is from A440, and its key, and TUNE TO A440 lines it up with your instrument. The ear modes play one side of the stereo, or take the middle out.",
+        text: "Move the key, find how far the record is from A440, and tune it to your instrument.",
         ..BASE
     },
     Step {
         key: "MOREBOX",
         scene: Scene::PracticeMore(2),
         title: "5. PULL IT APART",
-        text: "STEMS splits a stored track into drums, bass, vocals and the rest, on this computer (a one-time download of the tool). Then play just one part, or everything but it.",
+        text: "STEMS splits a song into drums, bass, vocals and the rest. Play one part, or everything but it.",
         ..BASE
     },
     Step {
         key: "TIMEBTNS",
         scene: Scene::Practice,
         title: "6. KEEP TIME",
-        text: "Up in the practice window's corner: the focus timer (a pomodoro: work blocks with short rests) and the metronome (count-in, and it can lock to the track's own beat).",
+        text: "A focus timer, and a metronome that can lock to the song's own beat.",
         ..BASE
     },
     Step {
         key: "ARTPRACTICE",
         scene: Scene::AlbumPractice,
         title: "7. PRACTICE IN NOW PLAYING",
-        text: "Open Now Playing in practice mode and this strip comes with you: set the loop, switch it on and change the speed without leaving the big cover.",
+        text: "The loop and speed come with you to the big cover.",
         ab: true,
         ..BASE
     },
@@ -221,7 +205,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHORDSVIEW",
         scene: Scene::Chords,
         title: "8. CHORDS",
-        text: "Find any chord: its notes, grips and the scales that fit, and hear it strummed. The other tabs name a chord you click on a neck, and teach clusters, drop voicings and passing chords.",
+        text: "Any chord: its notes, grips and the scales that fit. The tabs come in three groups: FIND & NAME, SHAPES and HARMONY.",
         act: 1,
         ..BASE
     },
@@ -229,31 +213,39 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHORDSVIEW",
         scene: Scene::Analyzer,
         title: "9. NAME A CHORD",
-        text: "The analyzer works the other way round: click notes on the neck (or a piano) and it names the chord, with other names it could have and its grips. This one is Dm7.",
+        text: "Click notes on a neck or a piano and it names the chord. This one is Dm7.",
         act: 4,
+        ..BASE
+    },
+    Step {
+        key: "CHORDSVIEW",
+        scene: Scene::Harmony,
+        title: "10. THE CHORDS OF A SCALE",
+        text: "Every chord a scale makes, with its mode and a grip: here G melodic minor. Pick one to see what to solo over it. You are hearing a triad pair, C then D.",
+        act: 5,
         ..BASE
     },
     Step {
         key: "LINESVIEW",
         scene: Scene::Lines,
-        title: "10. LINES",
-        text: "Slonimsky's Diary and scales in 3rds, 4ths and more, written out in notation and tab, played back and looped at your tempo.",
+        title: "11. LINES",
+        text: "Scales, arpeggios, pentatonics and Slonimsky's Diary in notation and tab, played alone or over the band.",
         act: 2,
         ..BASE
     },
     Step {
         key: "SHEET",
         scene: Scene::Sheet,
-        title: "11. THE LEAD SHEET AND THE BAND",
-        text: "Every tune can have a chart, and a little band plays it at your tempo: bass, chords and drums. Drag across bars to loop just those. Here: Cherokee.",
+        title: "12. THE LEAD SHEET AND THE BAND",
+        text: "Every tune can have a chart, and a little band plays it at your tempo. Here: Cherokee.",
         act: 3,
         ..BASE
     },
     Step {
         key: "TABS",
         scene: Scene::Practice,
-        title: "12. KEEP TRACK",
-        text: "The PRACTICE tab holds TUNES (your repertoire, recordings and charts the band can play) and the DIARY (what you practiced). DONE puts everything back the way you had it.",
+        title: "13. KEEP TRACK",
+        text: "PRACTICE holds your TUNES and a DIARY of what you practised. DONE puts everything back.",
         ..BASE
     },
 ];
@@ -538,6 +530,7 @@ impl App {
             | Scene::AlbumPractice
             | Scene::Chords
             | Scene::Analyzer
+            | Scene::Harmony
             | Scene::Lines
             | Scene::Sheet => true,
             _ => practice,
@@ -562,6 +555,10 @@ impl App {
             Scene::Analyzer => {
                 self.sec = crate::Sec::Chords;
                 self.chords_tab = 1;
+            }
+            Scene::Harmony => {
+                self.sec = crate::Sec::Chords;
+                self.chords_tab = 6;
             }
             Scene::Lines => {
                 self.sec = crate::Sec::Lines;
@@ -636,6 +633,11 @@ impl App {
                 if let Some(c) = crate::theory::chord_notes("Cmaj7") {
                     self.apply(Action::PlayNotes(crate::chords::piano_voicing(&c)));
                 }
+            }
+            5 => {
+                // the triad pair of G melodic minor, C then D, up and back
+                let notes = crate::harmony::pair_line(&[0, 4, 7], &[2, 6, 9], 60);
+                self.apply(Action::PlaySequenceAt(notes.iter().map(|m| vec![*m]).collect(), 0.18, "hm_tour".to_string()));
             }
             4 => {
                 // the neck starts empty; the notes go on one by one (tour_place_notes)
@@ -1010,9 +1012,15 @@ impl App {
                         rec.step_at = now;
                     }
                     let list = steps(kind);
-                    // long enough to read the card: a few seconds plus time for its words
+                    // long enough to read the card, and for what it shows to be heard: the notes going on the
+                    // neck, a line, the band
                     let words = list[i].text.split_whitespace().count() as f32;
-                    let stay = (2.0 + words / 5.0).clamp(4.0, 10.0);
+                    let least = match list[i].act {
+                        3 => 7.0,
+                        2 | 4 | 5 => 5.0,
+                        _ => 3.0,
+                    };
+                    let stay = (1.5 + words / 6.0).clamp(least, 8.0);
                     // the first step waits for the tour's song to be playing
                     let waiting = i == 0 && self.tour_play.as_ref().is_some_and(|s| s.song.is_none());
                     if waiting {
