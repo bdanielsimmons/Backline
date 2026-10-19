@@ -14,13 +14,26 @@ impl App {
         // a sequence playing: keep redrawing so the chord sounding now lights up
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
-        if let Some(t) = tab_row(
-            ui,
-            &["FIND A CHORD", "CHORD ANALYZER", "TRIADS", "VOICINGS", "CLUSTERS", "PASSING CHORDS", "MOVES (EXPERIMENTAL)"],
-            self.chords_tab as usize,
-        ) {
-            self.chords_tab = t as u8;
+        // three groups on top, the pages of the open one under them (each page keeps its own number)
+        const GROUPS: [(&str, &[(u8, &str)]); 3] = [
+            ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
+            ("SHAPES", &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")]),
+            ("HARMONY", &[(6, "SCALE HARMONY"), (5, "PASSING CHORDS"), (7, "MOVES (EXPERIMENTAL)")]),
+        ];
+        let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
+        let names: Vec<&str> = GROUPS.iter().map(|g| g.0).collect();
+        if let Some(g) = tab_row(ui, &names, group) {
+            if g != group {
+                self.chords_tab = GROUPS[g].1[0].0;
+            }
         }
+        ui.horizontal_wrapped(|ui| {
+            for (t, name) in GROUPS[group].1.iter() {
+                if retro_btn(ui, name, *t == self.chords_tab).clicked() {
+                    self.chords_tab = *t;
+                }
+            }
+        });
         ui.add_space(6.0);
         match self.chords_tab {
             0 => self.chord_find(ui, acts),
@@ -29,6 +42,7 @@ impl App {
             3 => self.voicings(ui, acts),
             4 => self.clusters(ui, acts),
             5 => self.passing(ui, acts),
+            6 => self.scale_harmony(ui, acts),
             _ => self.moves(ui, acts),
         }
     }
@@ -575,15 +589,17 @@ impl App {
         let labels: Vec<String> =
             sets.iter().map(|s| s.iter().map(|x| (6 - x).to_string()).collect::<Vec<_>>().join(" ")).collect();
         let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        if let Some(i) = crate::choice_line(ui, "vc_set", "STRINGS", &labels, self.vc_set, 200.0) {
-            self.vc_set = i;
-        }
+        ui.horizontal_wrapped(|ui| {
+            if let Some(i) = dropdown(ui, "vc_set", "STRINGS", &labels, self.vc_set, 0.0) {
+                self.vc_set = i;
+            }
+        });
         (fam, sets[self.vc_set], drop, if fam == 3 { 5 } else { 4 })
     }
 
     /// Chords one after another in a voicing family on a string set, each the nearest grip to the one before (the
     /// way you would comp them): (name, grip, root, notes). Chords that cannot be read or reached are left out.
-    fn led_grips(
+    pub(crate) fn led_grips(
         names: &[String],
         fam: usize,
         strings: &[usize],
@@ -660,11 +676,6 @@ impl App {
         let sharps = self.chord_sp.sharps;
         const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
         let _ = sharps;
-        ui.horizontal_wrapped(|ui| {
-            if let Some(k) = dropdown(ui, "vc_root", "ROOT", &KEYS, self.vc_root as usize, 110.0) {
-                self.vc_root = k as i32;
-            }
-        });
         let types: Vec<(&str, Vec<i32>)> = if triads {
             theory::TRIAD_TYPES.iter().map(|(n, v)| (*n, v.to_vec())).collect()
         } else {
@@ -674,9 +685,14 @@ impl App {
         let labels: Vec<String> =
             types.iter().map(|(n, _)| format!("{}{}", theory::note_name(self.vc_root, sharps), n)).collect();
         let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        if let Some(i) = crate::choice_line(ui, "vc_type", "CHORD", &labels, self.vc_type, 200.0) {
-            self.vc_type = i;
-        }
+        ui.horizontal_wrapped(|ui| {
+            if let Some(k) = dropdown(ui, "vc_root", "ROOT", &KEYS, self.vc_root as usize, 0.0) {
+                self.vc_root = k as i32;
+            }
+            if let Some(i) = dropdown(ui, "vc_type", "CHORD", &labels, self.vc_type, 0.0) {
+                self.vc_type = i;
+            }
+        });
         let root = self.vc_root;
         let chord = types[self.vc_type].1.clone();
         let chord_pcs: Vec<i32> = chord.iter().map(|x| (root + x).rem_euclid(12)).collect();
@@ -745,6 +761,53 @@ impl App {
                 });
             }
         });
+
+        // ---- the whole neck: each inversion in its own colour, wherever it fits (an octave up or down too); the one
+        // sounding stands out
+        mini_header(ui, "ACROSS THE NECK");
+        const INV_COLS: [Color32; 4] = [
+            Color32::from_rgb(217, 164, 65),
+            Color32::from_rgb(95, 168, 211),
+            Color32::from_rgb(214, 104, 83),
+            Color32::from_rgb(111, 191, 115),
+        ];
+        let mut dots: Vec<crate::improv::NeckDot> = Vec::new();
+        for (gi, (_, g)) in grips.iter().enumerate() {
+            let Some(g) = g else { continue };
+            let sounding = lit_up.is_some_and(|l| l == *g);
+            let strength = if lit_up.is_none() || sounding { 1.0 } else { 0.4 };
+            for shift in [-12i32, 0, 12] {
+                let frets: Vec<(usize, i32)> = (0..6).filter_map(|s| g[s].map(|f| (s, f as i32 + shift))).collect();
+                if frets.iter().any(|(_, f)| *f < 0 || *f > 17) {
+                    continue;
+                }
+                for (s, f) in frets {
+                    let pc = (theory::STANDARD[s] + f).rem_euclid(12);
+                    dots.push(crate::improv::NeckDot {
+                        spot: (s, f as u8),
+                        text: degree_in(pc, root, &chord_pcs).0.to_string(),
+                        col: INV_COLS[gi % 4],
+                        strength,
+                        ring: false,
+                        root: pc == root.rem_euclid(12),
+                    });
+                }
+            }
+        }
+        crate::improv::neck_view(ui, &dots, None);
+        // which colour is which: click one to hear it
+        ui.horizontal_wrapped(|ui| {
+            for (gi, (label, g)) in grips.iter().enumerate() {
+                let Some(g) = g else { continue };
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::click());
+                ui.painter().rect_filled(r, 1.0, INV_COLS[gi % 4]);
+                let (bass, top) = label.split_once("  ").unwrap_or((label.as_str(), ""));
+                if retro_btn(ui, &format!("{}, {}", bass, top), false).tip("Hear it").clicked() || resp.clicked() {
+                    acts.push(Action::PlayNotes(grip_notes(g)));
+                }
+                ui.add_space(10.0);
+            }
+        });
     }
 
     /// WALK THE CHANGES: these voicings through a tune, each chord the closest grip to the one before.
@@ -777,7 +840,57 @@ impl App {
             );
             crate::views::dim_line(ui, &format!("AT {} BPM", bpm), 1.0, pal().dim);
         });
-        Self::grip_row(ui, acts, &walk, self.seq_now("walk"));
+        // the neck: the chord sounding now in its degree colours, where the hand goes next ringed (before it
+        // plays: the first chord and the second)
+        // or one chord at a time: step through, each one played as you land on it
+        self.vc_step = self.vc_step.min(walk.len() - 1);
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "< BACK", false).tip("The chord before").clicked() && self.vc_step > 0 {
+                self.vc_step -= 1;
+                acts.push(Action::PlayNotes(grip_notes(&walk[self.vc_step].1)));
+            }
+            if retro_btn(ui, "NEXT >", false).tip("The next chord").clicked() {
+                self.vc_step = (self.vc_step + 1) % walk.len();
+                acts.push(Action::PlayNotes(grip_notes(&walk[self.vc_step].1)));
+            }
+            crate::views::label(ui, &format!("CHORD {} OF {}", self.vc_step + 1, walk.len()), 0.0);
+        });
+        let now = self.seq_now("walk").unwrap_or(self.vc_step).min(walk.len() - 1);
+        let next = (now + 1 < walk.len()).then(|| now + 1);
+        let mut dots: Vec<crate::improv::NeckDot> = Vec::new();
+        let mut put = |i: usize, ring: bool| {
+            let (_, g, root, pcs) = &walk[i];
+            for s in 0..6 {
+                if let Some(f) = g[s] {
+                    let pc = (theory::STANDARD[s] + f as i32).rem_euclid(12);
+                    let (d, col) = degree_in(pc, *root, pcs);
+                    dots.push(crate::improv::NeckDot {
+                        spot: (s, f),
+                        text: d.to_string(),
+                        col,
+                        strength: if ring { 0.7 } else { 1.0 },
+                        ring,
+                        root: !ring && pc == root.rem_euclid(12),
+                    });
+                }
+            }
+        };
+        if let Some(n) = next {
+            put(n, true);
+        }
+        put(now, false);
+        crate::improv::neck_view(ui, &dots, None);
+        crate::views::dim_line(
+            ui,
+            &match next {
+                Some(n) => format!("NOW: {}      NEXT (RINGED): {}", walk[now].0, walk[n].0),
+                None => format!("NOW: {}", walk[now].0),
+            },
+            1.0,
+            pal().ink,
+        );
+        ui.add_space(4.0);
+        Self::grip_row(ui, acts, &walk, Some(now));
     }
 
     /// PASSING CHORDS: the ways into each chord of a tune - its V7, its ii-V, the tritone sub, a diminished chord, a

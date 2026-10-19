@@ -438,8 +438,11 @@ pub(crate) fn parse_chord(c: &str) -> Option<Chord> {
     if r.contains("#9") {
         exts.push(15);
     }
-    // a plain 9 (not b9/#9), or the 9 a plain 13 or 11 carries ("13" alone keeps just the 13, as voiced before)
-    if r.replace("b9", "").replace("#9", "").contains('9') {
+    // a plain 9 (not b9/#9) - written, or carried by a plain 13 or 11 (C13 is 3 7 9 13, Cm11 has its 9); an
+    // altered 9 takes its place, and a b13 or #11 alone (C7b13, C7#11) carries none
+    let altered9 = r.contains("b9") || r.contains("#9");
+    let carried = !r.contains("add") && ((r.contains("13") && !r.contains("b13")) || (r.contains("11") && !r.contains("#11")));
+    if r.replace("b9", "").replace("#9", "").contains('9') || (carried && !altered9) {
         exts.push(14);
     }
     if r.contains("#11") {

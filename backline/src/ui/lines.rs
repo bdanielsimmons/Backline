@@ -297,6 +297,7 @@ impl App {
         let before = self.ln_bpm;
         let before_sub = self.ln_sub;
         let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
+        // everything on one row: play, loop, tempo, feel, what it is played over, favourite
         ui.horizontal_wrapped(|ui| {
             self.seq_button(
                 ui,
@@ -310,8 +311,7 @@ impl App {
             if retro_btn(ui, "LOOP", self.ln_loop).tip("Round and round until you stop it").clicked() {
                 self.ln_loop = !self.ln_loop;
             }
-            ui.add_space(8.0);
-            crate::views::label(ui, "TEMPO", 60.0);
+            ui.add_space(10.0);
             if retro_btn_w(ui, "-", 28.0, false).clicked() {
                 self.ln_bpm = self.ln_bpm.saturating_sub(5).max(20);
             }
@@ -331,31 +331,51 @@ impl App {
             if retro_btn_w(ui, "+", 28.0, false).clicked() {
                 self.ln_bpm = (self.ln_bpm + 5).min(400);
             }
-        });
-        // the feel: how many notes to a beat - the usual ones, tuplets, or any number you type
-        ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "FEEL", 100.0);
+            crate::views::label(ui, "BPM", 40.0);
+            ui.add_space(10.0);
+            // the feel: how many notes to a beat - the usual ones, tuplets, or (OTHER) any number you type
             const FEELS: [&str; 8] = ["1/4", "1/8", "TRIPLETS", "1/16", "QUINTUPLETS", "SEXTUPLETS", "SEPTUPLETS", "OTHER"];
             let cur = if (1..=7).contains(&self.ln_sub) { self.ln_sub as usize - 1 } else { 7 };
-            if let Some(i) = crate::dropdown_fixed(ui, "ln_feel", &FEELS, cur, 220.0) {
-                if i < 7 {
-                    self.ln_sub = i as u8 + 1;
+            if let Some(i) = crate::dropdown(ui, "ln_feel", "FEEL", &FEELS, cur, 0.0) {
+                self.ln_sub = if i < 7 { i as u8 + 1 } else { 8 };
+            }
+            if cur == 7 {
+                if self.ed.id != crate::tools::F_LN_SUB {
+                    self.ln_sub_text = self.ln_sub.to_string();
                 }
-            }
-            crate::views::label(ui, "OR", 30.0);
-            if self.ed.id != crate::tools::F_LN_SUB {
-                self.ln_sub_text = self.ln_sub.to_string();
-            }
-            let (r, _) = ui.allocate_exact_size(Vec2::new(44.0, bh()), Sense::hover());
-            let o = field(ui, &mut self.ed, crate::tools::F_LN_SUB, &mut self.ln_sub_text, r, "N", false);
-            if o.changed || o.enter {
-                if let Ok(n) = self.ln_sub_text.trim().parse::<u8>() {
-                    if (1..=16).contains(&n) {
-                        self.ln_sub = n;
+                let (r, _) = ui.allocate_exact_size(Vec2::new(44.0, bh()), Sense::hover());
+                let o = field(ui, &mut self.ed, crate::tools::F_LN_SUB, &mut self.ln_sub_text, r, "N", false);
+                if o.changed || o.enter {
+                    if let Ok(n) = self.ln_sub_text.trim().parse::<u8>() {
+                        if (1..=16).contains(&n) {
+                            self.ln_sub = n;
+                        }
                     }
                 }
+                crate::views::label(ui, "A BEAT", 60.0);
             }
-            crate::views::dim_line(ui, "NOTES A BEAT (1-16)", 1.0, pal().dim);
+            // what it is played over (the page says which chord)
+            if let Some(b) = self.ln_backing.as_mut() {
+                ui.add_space(10.0);
+                const OVER: [&str; 4] = ["NOTHING", "A DRONE", "THE CHORD", "THE BAND"];
+                if let Some(i) = crate::dropdown(ui, "ln_over", "OVER", &OVER, (self.ln_over as usize).min(3), 0.0) {
+                    self.ln_over = i as u8;
+                    b.0 = i as u8;
+                }
+            }
+            ui.add_space(10.0);
+            let starred = self.store.lines_stars.iter().any(|s| s == key);
+            if retro_btn(ui, if starred { "* FAVORITE" } else { "+ FAVORITE" }, starred)
+                .tip("Keep this one in your favorites")
+                .clicked()
+            {
+                if starred {
+                    self.store.lines_stars.retain(|s| s != key);
+                } else {
+                    self.store.lines_stars.push(key.to_string());
+                }
+                self.store_dirty = true;
+            }
         });
         // the tempo is kept with the line
         if self.ln_bpm != before {
@@ -387,20 +407,6 @@ impl App {
                 }
             }
         }
-        ui.horizontal_wrapped(|ui| {
-            let starred = self.store.lines_stars.iter().any(|s| s == key);
-            if retro_btn(ui, if starred { "* FAVORITE" } else { "+ FAVORITE" }, starred)
-                .tip("Keep this one in your favorites")
-                .clicked()
-            {
-                if starred {
-                    self.store.lines_stars.retain(|s| s != key);
-                } else {
-                    self.store.lines_stars.push(key.to_string());
-                }
-                self.store_dirty = true;
-            }
-        });
     }
 
     /// SLONIMSKY'S DIARY: every pattern of your pattern book, picked by part, chapter and section from three

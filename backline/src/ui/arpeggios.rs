@@ -386,16 +386,11 @@ impl App {
 
         // ---- play it, over the chord
         ui.add_space(6.0);
-        const OVER: [&str; 4] =
-            ["NOTHING - JUST THE LINE", "DRONE - THE ROOT HELD", "CHORD - STRUMMED EVERY BAR", "BAND - DRUMS, BASS, COMPING"];
-        if let Some(i) = crate::choice_line(ui, "ar_over", "OVER", &OVER, self.ar_back as usize, 300.0) {
-            self.ar_back = i as u8;
-        }
         // (every chord in turn changes chord: under it, just the key's root)
         self.ln_backing = Some(if ex == 6 || ex == 7 {
-            (self.ar_back.min(1), vec![48 + arp.scale_root])
+            (self.ln_over.min(1), vec![48 + arp.scale_root])
         } else {
-            (self.ar_back, arp.tones.iter().map(|x| 48 + arp.root + x).collect())
+            (self.ln_over, arp.tones.iter().map(|x| 48 + arp.root + x).collect())
         });
         let key = format!("ar:{}:{}:{}:{}:{}:{}:{}", self.ar_src, root_key, self.ar_scale, self.ar_deg, self.ar_q, pick, ex);
         self.line_player(ui, acts, &notes, &key);

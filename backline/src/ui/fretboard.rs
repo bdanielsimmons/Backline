@@ -64,7 +64,7 @@ pub(crate) fn degree_in(pc: i32, root: i32, pcs: &[i32]) -> (&'static str, Color
     let (name, col) = degree(pc, root);
     let s = (pc - root).rem_euclid(12);
     let name = match s {
-        6 if has(4) && has(7) => "#11",
+        6 if has(7) => "#11",
         3 if has(4) => "#9",
         8 if has(7) => "\u{266D}13",
         9 if has(10) || has(11) => "13",

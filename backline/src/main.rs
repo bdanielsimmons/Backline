@@ -69,6 +69,8 @@ mod font;
 #[path = "data/gp.rs"]
 #[allow(dead_code)]
 mod gp;
+#[path = "ui/harmony.rs"]
+mod harmony;
 #[path = "ui/help.rs"]
 mod help;
 #[path = "ui/history.rs"]
@@ -2112,6 +2114,8 @@ struct App {
     /// the CHORDS tab: which side (find / name), the chord typed, the notes clicked on the neck and the piano,
     /// and guitar shapes already worked out
     chords_tab: u8,
+    /// the chord stepped to in WALK THE CHANGES
+    vc_step: usize,
     /// the chord finder's funnel: the root and the kind of chord picked
     cf_root: Option<i32>,
     cf_fam: Option<usize>,
@@ -2228,7 +2232,6 @@ struct App {
     pn_label: u8,
     pn_ex: u8,
     pn_string: u8,
-    pn_back: u8,
     /// which box counts as box 1 (0: the one with its root on the 6th string, first finger)
     pn_first: u8,
     /// NUMBERING, kept for each tab by where position 1's root sits (empty: the usual one)
@@ -2246,12 +2249,22 @@ struct App {
     /// SUPERIMPOSE: the chord (root, quality), suggestions or any shape, the suggestion picked, the shape and its
     /// root (from the chord's root), and what the line is played over
     si_root: i32,
-    si_quality: u8,
+    /// SUPERIMPOSE: the chord's kind and which chord (as in FIND A CHORD), and the scale it is heard in
+    si_fam: u8,
+    si_chord: u8,
+    si_scale: u8,
+    /// what a line is played over (LINES and SCALE HARMONY): nothing, a drone, the chord, the band
+    ln_over: u8,
+    hm_parent: u8,
+    hm_key: i32,
+    hm_stack: u8,
+    hm_deg: u8,
+    hm_solo: u8,
+    hm_vamp: Vec<u8>,
     si_any: bool,
     si_pick: u8,
     si_kind: u8,
     si_kroot: u8,
-    si_back: u8,
     /// SCALE FINGERINGS: the scale (by name), key, system (0 five positions, else notes a string), the position
     /// shown (its count = the whole neck), labels, which shape is position 1 (255: the one rooted on the 5th
     /// string), the starred scales, and shifting through them all
@@ -2326,7 +2339,6 @@ struct App {
     ar_q: u8,
     ar_pos: u8,
     ar_ex: u8,
-    ar_back: u8,
     ar_tune: u8,
     /// the grip clicked in the panel (the panel's first beat, which grip)
     cm_step: Option<((usize, usize), usize)>,
@@ -2855,6 +2867,7 @@ impl App {
             chart_edit: false,
             bar_edit: None,
             chords_tab: 0,
+            vc_step: 0,
             cf_root: None,
             cf_fam: None,
             cb_size: 3,
@@ -2943,7 +2956,6 @@ impl App {
             pn_label: 0,
             pn_ex: 0,
             pn_string: 5,
-            pn_back: 0,
             pn_first: 0,
             pn_num: String::new(),
             pf_fam: String::new(),
@@ -2954,12 +2966,21 @@ impl App {
             pn_scale: 0,
             pn_nps: 2,
             si_root: 0,
-            si_quality: 1,
+            si_fam: 0,
+            si_chord: 4,
+            si_scale: 0,
+            // G melodic minor, its Bb maj7#5 picked
+            hm_parent: 1,
+            ln_over: 3,
+            hm_key: 7,
+            hm_stack: 1,
+            hm_deg: 2,
+            hm_solo: 0,
+            hm_vamp: Vec::new(),
             si_any: false,
             si_pick: 0,
             si_kind: 0,
             si_kroot: 7,
-            si_back: 2,
             pf_scale: "Ionian (major)".to_string(),
             pf_root: 0,
             pf_sys: 0,
@@ -3010,7 +3031,6 @@ impl App {
             ar_q: 0,
             ar_pos: 0,
             ar_ex: 0,
-            ar_back: 0,
             ar_tune: 0,
             cm_step: None,
             ln_backing: None,
@@ -3544,6 +3564,10 @@ impl App {
             Ok("voicings") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 3;
+            }
+            Ok("harmony") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 6;
             }
             Ok("pent") => {
                 app.sec = Sec::Lines;

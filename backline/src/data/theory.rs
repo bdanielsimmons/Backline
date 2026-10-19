@@ -1104,12 +1104,12 @@ pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
     let dim7 = has(3) && has(6) && has(9) && !has(10);
     let alt = dom && (has(1) || has(8) || (has(3) && has(4)));
     match () {
-        _ if dim7 => vec![("Diminished (whole-half)", &[0, 2, 3, 5, 6, 8, 9, 11][..])],
-        _ if half_dim => vec![("Locrian", &[0, 1, 3, 5, 6, 8, 10][..]), ("Locrian #2", &[0, 2, 3, 5, 6, 8, 10][..])],
+        _ if dim7 => vec![("Whole-half diminished", &[0, 2, 3, 5, 6, 8, 9, 11][..])],
+        _ if half_dim => vec![("Locrian", &[0, 1, 3, 5, 6, 8, 10][..]), ("Locrian nat 9", &[0, 2, 3, 5, 6, 8, 10][..])],
         _ if alt => vec![
             ("Altered", &[0, 1, 3, 4, 6, 8, 10][..]),
             ("Half-whole diminished", &[0, 1, 3, 4, 6, 7, 9, 10][..]),
-            ("Mixolydian b9 b13", &[0, 1, 4, 5, 7, 8, 10][..]),
+            ("Phrygian dominant", &[0, 1, 4, 5, 7, 8, 10][..]),
         ],
         _ if dom => vec![
             ("Mixolydian", &[0, 2, 4, 5, 7, 9, 10][..]),
@@ -1117,6 +1117,8 @@ pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
             ("Dominant bebop", &[0, 2, 4, 5, 7, 9, 10, 11][..]),
             ("Blues", &[0, 3, 5, 6, 7, 10][..]),
         ],
+        // a maj7#5 has no natural 5th to be had: Lydian augmented
+        _ if maj7 && has(8) => vec![("Lydian augmented", &[0, 2, 4, 6, 8, 9, 11][..])],
         _ if maj7 => vec![("Ionian (major)", &[0, 2, 4, 5, 7, 9, 11][..]), ("Lydian", &[0, 2, 4, 6, 7, 9, 11][..])],
         _ if minor && has(11) => {
             vec![("Melodic minor", &[0, 2, 3, 5, 7, 9, 11][..]), ("Harmonic minor", &[0, 2, 3, 5, 7, 8, 11][..])]
@@ -1177,6 +1179,77 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn every_finder_chord_reads_right() {
+        // each name in the funnel, on C: its notes as they should be
+        let want: &[(&str, &[i32])] = &[
+            ("", &[0, 4, 7]),
+            ("6", &[0, 4, 7, 9]),
+            ("69", &[0, 2, 4, 7, 9]),
+            ("add9", &[0, 2, 4, 7]),
+            ("maj7", &[0, 4, 7, 11]),
+            ("maj9", &[0, 2, 4, 7, 11]),
+            ("maj7#11", &[0, 4, 6, 7, 11]),
+            ("maj13", &[0, 2, 4, 7, 9, 11]),
+            ("m", &[0, 3, 7]),
+            ("m6", &[0, 3, 7, 9]),
+            ("madd9", &[0, 2, 3, 7]),
+            ("m7", &[0, 3, 7, 10]),
+            ("m9", &[0, 2, 3, 7, 10]),
+            ("m11", &[0, 2, 3, 5, 7, 10]),
+            ("m(maj7)", &[0, 3, 7, 11]),
+            ("7", &[0, 4, 7, 10]),
+            ("9", &[0, 2, 4, 7, 10]),
+            ("13", &[0, 2, 4, 7, 9, 10]),
+            ("7b9", &[0, 1, 4, 7, 10]),
+            ("7#9", &[0, 3, 4, 7, 10]),
+            ("7#11", &[0, 4, 6, 7, 10]),
+            ("7b5", &[0, 4, 6, 10]),
+            ("7#5", &[0, 4, 8, 10]),
+            ("7b13", &[0, 4, 7, 8, 10]),
+            ("13b9", &[0, 1, 4, 7, 9, 10]),
+            ("13#11", &[0, 2, 4, 6, 7, 9, 10]),
+            ("9#11", &[0, 2, 4, 6, 7, 10]),
+            ("7b9b13", &[0, 1, 4, 7, 8, 10]),
+            ("7#9b13", &[0, 3, 4, 7, 8, 10]),
+            ("7#9#5", &[0, 3, 4, 8, 10]),
+            ("7b5b9", &[0, 1, 4, 6, 10]),
+            ("7b9#11", &[0, 1, 4, 6, 7, 10]),
+            ("sus2", &[0, 2, 7]),
+            ("sus4", &[0, 5, 7]),
+            ("7sus4", &[0, 5, 7, 10]),
+            ("9sus4", &[0, 2, 5, 7, 10]),
+            ("dim", &[0, 3, 6]),
+            ("dim7", &[0, 3, 6, 9]),
+            ("m7b5", &[0, 3, 6, 10]),
+            ("aug", &[0, 4, 8]),
+            ("aug7", &[0, 4, 8, 10]),
+            ("maj7#5", &[0, 4, 8, 11]),
+        ];
+        // every chord the funnel offers is checked here
+        for (_, list) in FINDER_FAMILIES.iter() {
+            for (_, suffix) in list.iter() {
+                assert!(want.iter().any(|w| w.0 == *suffix), "no expected notes for C{}", suffix);
+            }
+        }
+        let mut wrong = Vec::new();
+        for (suffix, notes) in want {
+            let name = format!("C{}", suffix);
+            match chord_notes(&name) {
+                Some(c) => {
+                    let mut got: Vec<i32> = c.pcs.iter().map(|p| p.rem_euclid(12)).collect();
+                    got.sort();
+                    got.dedup();
+                    if got != notes.to_vec() {
+                        wrong.push(format!("{}: got {:?}, want {:?}", name, got, notes));
+                    }
+                }
+                None => wrong.push(format!("{}: not read", name)),
+            }
+        }
+        assert!(wrong.is_empty(), "{:#?}", wrong);
+    }
 
     #[test]
     fn chords_have_the_right_notes() {

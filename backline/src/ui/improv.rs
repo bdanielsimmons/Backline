@@ -195,7 +195,6 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
             plain("PROMETHEUS  (R 2 3 #4 6 \u{266D}7)", &[0, 2, 4, 6, 9, 10], &[0, 4, 10, 18], format!("SCRIABIN'S MYSTIC CHORD: OVER {}7(#11) AND {}13(#11)", n(0), n(0))),
             plain("TRITONE  (R \u{266D}2 3 \u{266D}5 5 \u{266D}7)", &[0, 1, 4, 6, 7, 10], &[0, 4, 7, 10], format!("TWO MAJOR TRIADS A TRITONE APART: OVER {}7(\u{266D}9 #11) - THE SUB INSIDE", n(0))),
             plain("AUGMENTED  (R #2 3 5 #5 7)", &[0, 3, 4, 7, 8, 11], &[0, 4, 8, 11], format!("TWO AUGMENTED TRIADS: OVER {}MAJ7#5 - SYMMETRIC, EVERY MAJOR 3RD", n(0))),
-            plain("RAGA KAFI HEXATONIC  (R 2 \u{266D}3 4 5 \u{266D}7)", &[0, 2, 3, 5, 7, 10], &[0, 3, 7, 10], format!("NO 6TH, NO TROUBLE: OVER {}M7 AND {}M11", n(0), n(0))),
         ],
         // four notes: the Coltrane cells as scales, sparse and strong
         6 => vec![
@@ -470,14 +469,9 @@ impl App {
             }
         }
         crate::views::dim_line(ui, &ex_about.to_uppercase(), 1.0, pal().ink2);
-        const OVER: [&str; 4] =
-            ["NOTHING - JUST THE LINE", "DRONE - THE ROOT HELD", "CHORD - STRUMMED EVERY BAR", "BAND - DRUMS, BASS, COMPING"];
-        if let Some(i) = crate::choice_line(ui, "pent_over", "OVER", &OVER, self.pn_back as usize, 300.0) {
-            self.pn_back = i as u8;
-        }
         // what the line is played over: the scale's chord
         let chord: Vec<i32> = sc.chord.iter().map(|x| 48 + root.rem_euclid(12) + x).collect();
-        self.ln_backing = Some((self.pn_back, chord));
+        self.ln_backing = Some((self.ln_over, chord));
         let key = format!("small:{}:{}:{}:{}:{}:{}", self.pn_fam, sc_i, nps, self.pn_box, self.pn_ex, self.pn_string);
         self.line_player(ui, acts, &notes, &key);
         let lit_i = self.seq_now("line");
@@ -641,20 +635,8 @@ impl App {
 
 // ------------------------------------------------------------------ SUPERIMPOSE
 
-/// The chords to play over: name, its notes from the root.
-const SI_CHORDS: [(&str, &[i32]); 8] = [
-    ("MAJ7", &[0, 4, 7, 11]),
-    ("7", &[0, 4, 7, 10]),
-    ("7ALT  (\u{266D}9 #9 #11 \u{266D}13)", &[0, 4, 10, 13, 15, 18, 20]),
-    ("7#11  (LYDIAN DOMINANT)", &[0, 4, 7, 10, 14, 18]),
-    ("M7", &[0, 3, 7, 10]),
-    ("M7\u{266D}5", &[0, 3, 6, 10]),
-    ("M(MAJ7)", &[0, 3, 7, 11]),
-    ("MAJ7#11", &[0, 4, 7, 11, 14, 18]),
-];
-
 /// The shapes that can go over a chord: name, notes from its own root.
-const SI_SHAPES: [(&str, &[i32]); 13] = [
+pub(crate) const SI_SHAPES: [(&str, &[i32]); 13] = [
     ("MINOR PENTATONIC", &[0, 3, 5, 7, 10]),
     ("MAJOR PENTATONIC", &[0, 2, 4, 7, 9]),
     ("MAJOR TRIAD", &[0, 4, 7]),
@@ -669,6 +651,88 @@ const SI_SHAPES: [(&str, &[i32]); 13] = [
     ("DIM7", &[0, 3, 6, 9]),
     ("MINOR 6TH PENTATONIC", &[0, 3, 5, 7, 9]),
 ];
+
+/// The scales a chord can be heard in, the usual first: name, steps.
+const SI_SCALES: [(&str, [i32; 8], usize); 20] = [
+    ("IONIAN (MAJOR)", [0, 2, 4, 5, 7, 9, 11, 0], 7),
+    ("LYDIAN (#11)", [0, 2, 4, 6, 7, 9, 11, 0], 7),
+    ("MIXOLYDIAN", [0, 2, 4, 5, 7, 9, 10, 0], 7),
+    ("LYDIAN DOMINANT (#11)", [0, 2, 4, 6, 7, 9, 10, 0], 7),
+    ("ALTERED (\u{266D}9 #9 #11 \u{266D}13)", [0, 1, 3, 4, 6, 8, 10, 0], 7),
+    ("HALF-WHOLE DIMINISHED (\u{266D}9 #9 #11 13)", [0, 1, 3, 4, 6, 7, 9, 10], 8),
+    ("WHOLE TONE (9 #11 #5)", [0, 2, 4, 6, 8, 10, 0, 0], 6),
+    ("PHRYGIAN DOMINANT (\u{266D}9 \u{266D}13)", [0, 1, 4, 5, 7, 8, 10, 0], 7),
+    ("MIXOLYDIAN \u{266D}6 (\u{266D}13)", [0, 2, 4, 5, 7, 8, 10, 0], 7),
+    ("DORIAN", [0, 2, 3, 5, 7, 9, 10, 0], 7),
+    ("AEOLIAN (NATURAL MINOR)", [0, 2, 3, 5, 7, 8, 10, 0], 7),
+    ("PHRYGIAN (\u{266D}9)", [0, 1, 3, 5, 7, 8, 10, 0], 7),
+    ("LOCRIAN NATURAL 9", [0, 2, 3, 5, 6, 8, 10, 0], 7),
+    ("LOCRIAN", [0, 1, 3, 5, 6, 8, 10, 0], 7),
+    ("MELODIC MINOR", [0, 2, 3, 5, 7, 9, 11, 0], 7),
+    ("HARMONIC MINOR", [0, 2, 3, 5, 7, 8, 11, 0], 7),
+    ("WHOLE-HALF DIMINISHED", [0, 2, 3, 5, 6, 8, 9, 11], 8),
+    ("LYDIAN AUGMENTED (#11 #5)", [0, 2, 4, 6, 8, 9, 11, 0], 7),
+    ("HARMONIC MAJOR (\u{266D}13)", [0, 2, 4, 5, 7, 8, 11, 0], 7),
+    ("AUGMENTED (SYMMETRIC)", [0, 3, 4, 7, 8, 11, 0, 0], 6),
+];
+
+/// The scales that fit a chord (its notes from the root): every note of the chord in the scale - except a dominant's
+/// 5th, which the altered, whole-tone and diminished sounds change. Indexes into SI_SCALES, the usual first.
+fn si_scales_for(chord: &[i32]) -> Vec<usize> {
+    let dominant = chord.contains(&4) && chord.contains(&10);
+    let mut fits: Vec<usize> = (0..SI_SCALES.len())
+        .filter(|i| {
+            let (_, steps, n) = SI_SCALES[*i];
+            let s = &steps[..n];
+            chord.iter().all(|c| s.contains(&c.rem_euclid(12)) || (dominant && c.rem_euclid(12) == 7))
+        })
+        .collect();
+    // the standard choice first: whole-half for a diminished 7th, whole tone for an augmented triad or a 7#5,
+    // Lydian augmented for a maj7#5, half-whole for a 7b9 (with no b13)
+    let has = |x: i32| chord.contains(&x);
+    let first: Option<&str> = if has(3) && has(6) && has(9) && !has(4) {
+        Some("WHOLE-HALF")
+    } else if has(4) && has(8) && has(11) {
+        Some("LYDIAN AUGMENTED")
+    } else if has(4) && has(8) && !has(7) {
+        Some("WHOLE TONE")
+    } else if dominant && has(1) && !has(8) {
+        Some("HALF-WHOLE")
+    } else {
+        None
+    };
+    // and a scale with both 3rds (b3 and 3) is never the usual one over a minor chord (nor one with a b3 over a
+    // major chord that isn't a dominant): those go after the rest
+    let minor = has(3) && !has(4);
+    let major = has(4) && !has(3) && !has(10);
+    let clash = |i: usize| {
+        let s = &SI_SCALES[i].1[..SI_SCALES[i].2];
+        (minor && s.contains(&4)) || (major && s.contains(&3))
+    };
+    fits.sort_by_key(|i| (first.map_or(true, |f| !SI_SCALES[*i].0.starts_with(f)), clash(*i)));
+    fits
+}
+
+/// Every shape on every note that fits inside the scale, best first: the ones that add the chord's colours
+/// (tensions) while still touching its 3rd or 7th lead; one that only restates the chord comes last. At most 14.
+/// (shape, its root from the chord's root).
+pub(crate) fn si_auto(chord: &[i32], scale: &[i32]) -> Vec<(usize, i32)> {
+    let mut found: Vec<(i32, usize, i32)> = Vec::new();
+    for (k, (_, notes)) in SI_SHAPES.iter().enumerate() {
+        for off in 0..12 {
+            let pcs: Vec<i32> = notes.iter().map(|x| (x + off).rem_euclid(12)).collect();
+            if !pcs.iter().all(|p| scale.contains(p)) {
+                continue;
+            }
+            let tensions = pcs.iter().filter(|p| !chord.contains(p)).count() as i32;
+            let guide = pcs.iter().any(|p| chord.iter().any(|c| (*c == 3 || *c == 4 || *c == 10 || *c == 11) && c == p)) as i32;
+            let score = tensions * 2 + guide * 3 + if notes.len() == 5 { 1 } else { 0 } - if tensions == 0 { 6 } else { 0 };
+            found.push((score, k, off));
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    found.into_iter().take(14).map(|(_, k, o)| (k, o)).collect()
+}
 
 /// The usual choices over each chord: (shape, its root from the chord's root, why).
 fn si_suggestions(quality: usize) -> Vec<(usize, i32, &'static str)> {
@@ -727,7 +791,7 @@ fn si_suggestions(quality: usize) -> Vec<(usize, i32, &'static str)> {
         // m(maj7)
         6 => vec![
             (2, 7, "MAJOR TRIAD FROM THE 5TH: 5 7 9"),
-            (2, 2, "MAJOR TRIAD A STEP UP: 9 #11 13 - MELODIC MINOR"),
+            (3, 2, "MINOR TRIAD A STEP UP: 9 11 13 - MELODIC MINOR"),
             (4, 3, "AUGMENTED TRIAD FROM THE \u{266D}3: \u{266D}3 5 7"),
             (0, 0, "MINOR PENTATONIC ON THE ROOT, LANDING ON THE MAJOR 7TH"),
         ],
@@ -750,16 +814,65 @@ impl App {
         if let Some(pc) = Self::note_row(ui, "CHORD ROOT", self.si_root, sharps) {
             self.si_root = pc;
         }
-        let qn: Vec<&str> = SI_CHORDS.iter().map(|c| c.0).collect();
-        let q = (self.si_quality as usize).min(SI_CHORDS.len() - 1);
-        if let Some(i) = crate::choice_line(ui, "si_q", "CHORD", &qn, q, 260.0) {
-            self.si_quality = i as u8;
+        // the chord, as in FIND A CHORD: its kind, then which
+        let fams: Vec<&str> = theory::FINDER_FAMILIES.iter().map(|f| f.0).collect();
+        let fam = (self.si_fam as usize).min(fams.len() - 1);
+        if let Some(i) = crate::choice_line(ui, "si_fam", "KIND", &fams, fam, 200.0) {
+            self.si_fam = i as u8;
+            self.si_chord = 0;
+            self.si_scale = 0;
             self.si_pick = 0;
         }
-        let q = (self.si_quality as usize).min(SI_CHORDS.len() - 1);
+        let fam = (self.si_fam as usize).min(fams.len() - 1);
+        let list = theory::FINDER_FAMILIES[fam].1;
         let root = self.si_root.rem_euclid(12);
-        let chord: Vec<i32> = SI_CHORDS[q].1.iter().map(|x| x.rem_euclid(12)).collect();
-        let chord_name = format!("{}{}", theory::note_name(root, sharps), SI_CHORDS[q].0.split("  ").next().unwrap_or(""));
+        let labels: Vec<String> = list.iter().map(|(l, _)| format!("{}{}", theory::note_name(root, sharps), l)).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        let ch = (self.si_chord as usize).min(list.len() - 1);
+        if let Some(i) = crate::choice_line(ui, "si_chord", "CHORD", &labels, ch, 200.0) {
+            self.si_chord = i as u8;
+            self.si_scale = 0;
+            self.si_pick = 0;
+        }
+        let ch = (self.si_chord as usize).min(list.len() - 1);
+        let suffix = list[ch].1;
+        let chord_name = format!("{}{}", theory::note_name(root, sharps), suffix);
+        let chord: Vec<i32> = match theory::chord_notes(&chord_name) {
+            Some(n) => {
+                let mut v: Vec<i32> = n.pcs.iter().map(|p| (p - n.root).rem_euclid(12)).collect();
+                v.sort();
+                v.dedup();
+                v
+            }
+            None => vec![0, 4, 7],
+        };
+        // the chord's notes as they are (for naming each note over it: #11, \u{266D}13...)
+        let chord_abs: Vec<i32> = chord.iter().map(|x| (root + x).rem_euclid(12)).collect();
+        // the scale it is heard in: every one that fits, the usual first
+        let fits = si_scales_for(&chord);
+        let scale_names: Vec<&str> = fits.iter().map(|i| SI_SCALES[*i].0).collect();
+        let sc = (self.si_scale as usize).min(fits.len().saturating_sub(1));
+        if !fits.is_empty() {
+            if let Some(i) = crate::choice_line(ui, "si_scale", "SCALE", &scale_names, sc, 300.0) {
+                self.si_scale = i as u8;
+                self.si_pick = 0;
+            }
+        }
+        let sc = (self.si_scale as usize).min(fits.len().saturating_sub(1));
+        let scale: Vec<i32> = fits.get(sc).map_or(chord.clone(), |i| SI_SCALES[*i].1[..SI_SCALES[*i].2].to_vec());
+        // the hand-picked tips (with why) for the chords that have them, in their usual scale; the 7's altered too
+        let curated: Option<usize> = match (suffix, sc) {
+            ("maj7", 0) => Some(0),
+            ("7", 0) => Some(1),
+            ("7", _) if fits.get(sc).map(|i| SI_SCALES[*i].0.starts_with("ALTERED")).unwrap_or(false) => Some(2),
+            ("7#11", 0) => Some(3),
+            ("m7", 0) => Some(4),
+            ("m7b5", 0) => Some(5),
+            ("m(maj7)", 0) => Some(6),
+            ("maj7#11", 0) => Some(7),
+            _ => None,
+        };
+        let q = curated.unwrap_or(0);
         if let Some(i) = crate::choice_line(
             ui,
             "si_any",
@@ -786,7 +899,18 @@ impl App {
             }
             ((self.si_kind as usize).min(SI_SHAPES.len() - 1), self.si_kroot as i32, String::new())
         } else {
-            let sug = si_suggestions(q);
+            let mut sug: Vec<(usize, i32, &'static str)> = match curated {
+                Some(c) => si_suggestions(c),
+                None => Vec::new(),
+            };
+            for (k, o) in si_auto(&chord, &scale) {
+                if !sug.iter().any(|s| s.0 == k && s.1 == o) {
+                    sug.push((k, o, ""));
+                }
+            }
+            if sug.is_empty() {
+                sug.push((1, 0, ""));
+            }
             let names: Vec<String> =
                 sug.iter().map(|(k, o, _)| format!("{} {}", theory::note_name(root + o, sharps), SI_SHAPES[*k].0)).collect();
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
@@ -795,7 +919,28 @@ impl App {
                 self.si_pick = i as u8;
             }
             let pick = (self.si_pick as usize).min(sug.len() - 1);
-            (sug[pick].0, sug[pick].1, sug[pick].2.to_string())
+            // the tip, or what the shape adds over the chord
+            let why = if !sug[pick].2.is_empty() {
+                sug[pick].2.to_string()
+            } else {
+                let (k, o) = (sug[pick].0, sug[pick].1);
+                let pcs: Vec<i32> = SI_SHAPES[k].1.iter().map(|x| (root + o + x).rem_euclid(12)).collect();
+                let names: Vec<&str> = pcs.iter().map(|p| crate::fretboard::degree_in(*p, root, &chord_abs).0).collect();
+                let adds: Vec<&str> = pcs
+                    .iter()
+                    .filter(|p| !chord.contains(&((*p - root).rem_euclid(12))))
+                    .map(|p| crate::fretboard::degree_in(*p, root, &chord_abs).0)
+                    .collect();
+                format!(
+                    "{} ON THE {}: {}{}",
+                    SI_SHAPES[k].0,
+                    crate::fretboard::degree_in((root + o).rem_euclid(12), root, &chord_abs).0,
+                    names.join(" "),
+                    if adds.is_empty() { " - THE CHORD ITSELF".to_string() } else { format!(" - ADDS {}", adds.join(" ")) }
+                )
+            };
+            let _ = q;
+            (sug[pick].0, sug[pick].1, why)
         };
         let shape_root = (root + off).rem_euclid(12);
         // the shape's notes spelled in its own key (a D triad is D F# A, whatever the chord)
@@ -815,7 +960,7 @@ impl App {
                 ("TENSION", Color32::from_rgb(95, 168, 211))
             }
         };
-        let deg = |pc: i32| -> String { crate::fretboard::degree_in(pc, root, &chord).0.to_string() };
+        let deg = |pc: i32| -> String { crate::fretboard::degree_in(pc, root, &chord_abs).0.to_string() };
         section_header(ui, &format!("{} {} OVER {}", theory::note_name(shape_root, sharps), SI_SHAPES[kind].0, chord_name));
         if !why.is_empty() {
             crate::views::dim_line(ui, &why, 1.0, pal().ink2);
@@ -883,14 +1028,9 @@ impl App {
 
         // ---- play it over the chord
         ui.add_space(6.0);
-        const OVER: [&str; 4] =
-            ["NOTHING - JUST THE LINE", "DRONE - THE ROOT HELD", "CHORD - STRUMMED EVERY BAR", "BAND - DRUMS, BASS, COMPING"];
-        if let Some(i) = crate::choice_line(ui, "si_over", "OVER", &OVER, self.si_back as usize, 300.0) {
-            self.si_back = i as u8;
-        }
-        let voiced: Vec<i32> = SI_CHORDS[q].1.iter().take(4).map(|x| 48 + root + x).collect();
-        self.ln_backing = Some((self.si_back, voiced));
-        let key = format!("si:{}:{}:{}:{}:{}", root, q, kind, off, self.si_any);
+        let voiced: Vec<i32> = chord.iter().take(4).map(|x| 48 + root + x).collect();
+        self.ln_backing = Some((self.ln_over, voiced));
+        let key = format!("si:{}:{}:{}:{}:{}", root, suffix, kind, off, self.si_any);
         self.line_player(ui, acts, &notes, &key);
         let lit_i = self.seq_now("line");
         crate::lines_ui::line_score(ui, acts, &notes, self.ln_sub as usize, sharps, lit_i, Some(tab));
@@ -1422,6 +1562,34 @@ pub(crate) fn neck_view(ui: &mut egui::Ui, dots: &[NeckDot], lit: Option<Spot>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scales_and_shapes_over_any_chord() {
+        let names = |c: &[i32]| si_scales_for(c).iter().map(|i| SI_SCALES[*i].0).collect::<Vec<_>>();
+        let dom = names(&[0, 4, 7, 10]);
+        assert!(dom[0].starts_with("MIXOLYDIAN"), "{:?}", dom);
+        assert!(dom.iter().any(|n| n.starts_with("ALTERED")) && dom.iter().any(|n| n.starts_with("WHOLE TONE")), "{:?}", dom);
+        assert!(names(&[0, 4, 7, 11]).iter().any(|n| n.starts_with("LYDIAN AUGMENTED")) == false);
+        assert!(names(&[0, 4, 8, 11]).iter().any(|n| n.starts_with("LYDIAN AUGMENTED")));
+        assert!(names(&[0, 3, 6, 9])[0].starts_with("WHOLE-HALF"));
+        assert!(names(&[0, 4, 8])[0].starts_with("WHOLE TONE"));
+        assert!(names(&[0, 4, 8, 10])[0].starts_with("WHOLE TONE"));
+        assert!(names(&[0, 4, 8, 11])[0].starts_with("LYDIAN AUGMENTED"));
+        assert!(names(&[0, 1, 4, 7, 10])[0].starts_with("HALF-WHOLE"));
+        assert!(names(&[0, 3, 6, 10])[0].starts_with("LOCRIAN NATURAL 9"));
+        assert!(names(&[0, 3, 7, 10])[0].starts_with("DORIAN"));
+        // every shape suggested sits inside its scale, and something is always suggested
+        for chord in [vec![0, 4, 7, 11], vec![0, 4, 7, 10], vec![0, 3, 6, 9], vec![0, 4, 8, 11], vec![0, 3, 7, 9]] {
+            for i in si_scales_for(&chord) {
+                let scale = &SI_SCALES[i].1[..SI_SCALES[i].2];
+                let sug = si_auto(&chord, scale);
+                assert!(!sug.is_empty(), "{:?} {}", chord, SI_SCALES[i].0);
+                for (k, o) in sug {
+                    assert!(SI_SHAPES[k].1.iter().all(|x| scale.contains(&(x + o).rem_euclid(12))));
+                }
+            }
+        }
+    }
 
     #[test]
     fn every_family_lays_out_on_the_neck() {

@@ -248,8 +248,6 @@ pub const SCALE_FAMILIES: [(&str, &[(&str, &[i32], &str)]); 4] = [
             ("Whole-half diminished", &[0, 2, 3, 5, 6, 8, 9, 11], "Whole step, half step: diminished 7 chords."),
             ("Augmented", &[0, 3, 4, 7, 8, 11], "Minor 3rd, half step: two augmented triads a half step apart."),
             ("Chromatic", &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "Every note."),
-            ("Major pentatonic", &[0, 2, 4, 7, 9], "Five notes, no half steps."),
-            ("Minor pentatonic", &[0, 3, 5, 7, 10], "The same five notes from the 6th."),
         ],
     ),
     (
