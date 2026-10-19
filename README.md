@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- SCALE HARMONY in CHORDS - every chord a scale makes, its mode, a grip, what to solo with (triad pairs too) and a vamp the band loops
 - ARPEGGIOS in LINES - a chord's notes inside its scale, in the same positions as SCALES, played every way round and through a tune
 - CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
 - PENTATONICS & MORE - pentatonic, hexatonic (triad pairs), diminished and chromatic options, with exercises
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - No internet? Backline opens as usual with your Tidal likes and plays what's on this computer
 - Tidal reconnects by itself when the internet is back
 - Star your loops - a gig coming up, a part not to forget - and show only the starred ones
-- Filter and sort your saved loops: newest, name, time spent or song
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
