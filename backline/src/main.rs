@@ -29,6 +29,8 @@ mod tuning;
 mod api;
 #[path = "data/cache.rs"]
 mod cache;
+#[path = "data/canon.rs"]
+mod canon;
 #[path = "data/chart.rs"]
 mod chart;
 #[path = "data/genskin.rs"]
@@ -100,6 +102,8 @@ mod prefs;
 mod reading;
 #[path = "ui/record.rs"]
 mod record_ui;
+#[path = "ui/routine.rs"]
+mod routine;
 #[path = "ui/skin.rs"]
 mod skin;
 #[path = "ui/tools.rs"]
@@ -294,6 +298,16 @@ enum Action {
     RecLast(bool),
     /// play a take back (its id; you alone rather than the mix)
     RecPlay(i64, bool),
+    /// ROUTINE: this tune is the week's; a step opened; a step done (or undone) today
+    RoutineTune(String),
+    RoutineGo(u8),
+    RoutineDone(u8),
+    /// TRAINER: through 12 keys (true) or faster
+    TrainerKeys(bool),
+    /// the song's file, selected in the file manager
+    ShowFile(i64),
+    /// a file of yours that is no longer on disk: out of every list
+    FileGone(i64),
     /// ALL TAKES: open or close it; delete a take (asked first)
     TakesPanel(bool),
     TakeDelete(i64),
@@ -759,6 +773,13 @@ fn goto_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, tidal: bool)
     if menu_item(ui, if tidal { "Key and BPM..." } else { "Edit info..." }) {
         acts.push(Action::EditInfo(t.id, t.title.clone(), t.artist.clone()));
         ui.close_menu();
+    }
+    // a file of yours, or a Tidal song stored on this computer: see the file itself
+    if !tidal || cache::has(t.id) {
+        if menu_item(ui, "Show in Explorer") {
+            acts.push(Action::ShowFile(t.id));
+            ui.close_menu();
+        }
     }
     if !tidal {
         return;
@@ -2508,6 +2529,12 @@ struct App {
     edit_info: Option<(i64, String, String)>,
     /// EDIT INFO for a file: its album and its file name (renamed on disk when changed)
     edit_extra: (String, String),
+    /// DIARY: which page (0 diary, 1 routine, 2 listening, 3 masters); LISTENING on gospel
+    diary_tab: u8,
+    listen_gospel: bool,
+    /// TRAINER: after the passes, up a 4th (through 12 keys) rather than faster; keys done so far
+    trainer_keys: bool,
+    keys_done: u32,
     /// ALL TAKES open; a take asked about before it is deleted
     takes_open: bool,
     take_ask: Option<i64>,
@@ -3202,6 +3229,10 @@ impl App {
             edit_info: None,
             edit_kb: (String::new(), String::new()),
             edit_extra: (String::new(), String::new()),
+            diary_tab: 0,
+            listen_gospel: false,
+            trainer_keys: false,
+            keys_done: 0,
             takes_open: false,
             take_ask: None,
             neck_zoom: 1.0,
@@ -3696,6 +3727,10 @@ impl App {
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
             Ok("diary") => app.sec = Sec::Diary,
+            Ok("routine") => {
+                app.sec = Sec::Diary;
+                app.diary_tab = 1;
+            }
             Ok("analyzer") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 1;
@@ -4464,6 +4499,18 @@ impl App {
             }
         }
         let Some(t) = self.queue.get(i).cloned() else { return };
+        // a file of yours that was deleted or moved: out of the lists, and on to the next song
+        if let Some(Src::File(p)) = self.srcmap.get(&t.id) {
+            if !p.exists() {
+                let name = format!("{} - {}", t.artist, t.title);
+                self.apply(Action::FileGone(t.id));
+                self.set_note(&format!("GONE FROM DISK, REMOVED: {}", name.to_uppercase()));
+                if i < self.queue.len() {
+                    self.play_index(i);
+                }
+                return;
+            }
+        }
         self.q_manual = if next_in_line { self.q_manual.saturating_sub(1) } else { 0 };
         self.cur = Some(i);
         self.on_track_change(&t);

@@ -209,6 +209,26 @@ impl App {
 
     // ------------------------------------------------------------ start-up
     pub(crate) fn init_store(&mut self) {
+        // files deleted or moved since last time are gone from the lists (a drive not plugged in keeps its files:
+        // only a file whose folder is there but the file is not)
+        let gone: Vec<i64> = self
+            .store
+            .files
+            .iter()
+            .filter(|e| {
+                let p = std::path::Path::new(&e.src);
+                !p.exists() && p.parent().is_some_and(|d| d.exists())
+            })
+            .map(|e| e.id)
+            .collect();
+        for id in gone {
+            self.file_gone(id);
+        }
+        let n = self.store.takes.len();
+        self.store.takes.retain(|t| std::path::Path::new(&t.path).exists());
+        if self.store.takes.len() != n {
+            self.store_dirty = true;
+        }
         let mut vs: Vec<Version> = Vec::new();
         vs.extend(self.store.files.iter().map(|e| e.to_version()));
         vs.extend(self.store.yt.iter().map(|e| e.to_version()));
@@ -512,6 +532,26 @@ impl App {
             return;
         }
         self.passes = 0;
+        if self.trainer_keys {
+            // up a 4th each time, kept within half an octave either way; the cycle comes home after 12
+            self.keys_done += 1;
+            if self.keys_done >= 12 {
+                self.keys_done = 0;
+                self.trainer = false;
+                self.semis = 0;
+                self.sync_loop();
+                self.set_note("ALL 12 KEYS - NICE WORK");
+            } else {
+                let mut s = self.semis + 500;
+                if s > 600 {
+                    s -= 1200;
+                }
+                self.semis = s;
+                self.sync_loop();
+                self.set_note(&format!("UP A 4TH: KEY {} OF 12", self.keys_done + 1));
+            }
+            return;
+        }
         if self.speed < 100 {
             self.speed = (self.speed + self.trainer_step).min(100);
             self.sync_loop();
@@ -807,6 +847,54 @@ impl App {
         }
         self.store_dirty = true;
         new
+    }
+
+    /// A file of yours that is no longer on disk: out of the file list, likes, playlists, tunes and the queue
+    /// (its loops and notes stay, in case it comes back under the same path).
+    fn file_gone(&mut self, id: i64) {
+        self.store.files.retain(|e| e.id != id);
+        self.store.hearts.retain(|e| e.id != id);
+        for p in &mut self.store.playlists {
+            p.items.retain(|v| v.id != id);
+        }
+        for t in &mut self.store.tunes {
+            t.versions.retain(|v| v.id != id);
+        }
+        self.store.recent.retain(|(v, _)| v.id != id);
+        let was = self.cur.and_then(|c| self.queue.get(c).map(|t| t.id));
+        Arc::make_mut(&mut self.queue).retain(|t| t.id != id);
+        if let Some(q) = self.orig_queue.as_mut() {
+            q.retain(|t| t.id != id);
+        }
+        if was == Some(id) {
+            self.cur = None;
+        } else if let Some(c) = self.cur {
+            self.cur = self.queue.iter().position(|t| Some(t.id) == was).or(Some(c.min(self.queue.len().saturating_sub(1))));
+        }
+        self.srcmap.remove(&id);
+        self.store_dirty = true;
+        self.serial += 1;
+    }
+
+    /// The song's file, selected in the file manager: a file of yours, or a Tidal song stored here.
+    fn show_file(&mut self, id: i64) {
+        let path = match self.srcmap.get(&id) {
+            Some(Src::File(p)) => Some(p.clone()),
+            _ => cache::file_of(id),
+        };
+        let Some(path) = path.filter(|p| p.exists()) else {
+            self.set_note("NOT ON THIS COMPUTER");
+            return;
+        };
+        #[cfg(windows)]
+        let r = std::process::Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
+        #[cfg(target_os = "macos")]
+        let r = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+        #[cfg(not(any(windows, target_os = "macos")))]
+        let r = std::process::Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).spawn();
+        if let Err(e) = r {
+            self.set_err(format!("Couldn't open the file manager: {}", e));
+        }
     }
 
     /// Each part's level, with a muted part at 0.
@@ -1726,7 +1814,7 @@ impl App {
         }
     }
 
-    fn new_tune_named(&mut self, name: &str) -> usize {
+    pub(crate) fn new_tune_named(&mut self, name: &str) -> usize {
         if let Some(i) = self.find_tune(name) {
             return i;
         }
@@ -1848,6 +1936,89 @@ impl App {
 
     pub(crate) fn apply_extra(&mut self, a: Action) {
         match a {
+            Action::TrainerKeys(on) => {
+                self.trainer_keys = on;
+                self.keys_done = 0;
+                self.passes = 0;
+                if on && !self.trainer {
+                    self.trainer = true;
+                    self.practice = true;
+                }
+                self.set_note(if on {
+                    "EVERY FEW PASSES THE LOOP GOES UP A 4TH, THROUGH ALL 12 KEYS"
+                } else {
+                    "EVERY FEW PASSES THE SPEED GOES UP"
+                });
+            }
+            Action::RoutineTune(name) => {
+                let i = self.new_tune_named(&name);
+                self.store.routine_tune = self.store.tunes[i].name.clone();
+                self.store.routine_since = store::today_str();
+                self.store.routine_count += 1;
+                self.store_dirty = true;
+                if self.store.tunes[i].chart.trim().is_empty() {
+                    self.apply(Action::FindChart(i, None));
+                }
+                self.apply(Action::OpenTune(Some(i)));
+                self.set_note(&format!("THIS WEEK: {}", name.to_uppercase()));
+            }
+            Action::RoutineDone(k) => {
+                let date = store::today_str();
+                let list = self.store.routine_done.entry(date).or_default();
+                if list.contains(&k) {
+                    list.retain(|x| *x != k);
+                } else {
+                    list.push(k);
+                }
+                self.store_dirty = true;
+            }
+            Action::RoutineGo(k) => {
+                let tune = self.find_tune(&self.store.routine_tune.clone());
+                match k {
+                    0 | 1 | 2 => {
+                        self.sec = Sec::Tunes;
+                        if let Some(i) = tune {
+                            self.apply(Action::OpenTune(Some(i)));
+                            self.rtab = 1;
+                        }
+                        if k == 0 {
+                            self.set_note("PLAY THE RECORD AND LOOP THE HEAD");
+                        } else if k == 1 {
+                            self.practice = true;
+                            self.set_note("THE MELODY BY EAR - THEN IN TWO OTHER KEYS");
+                        } else {
+                            if !self.band_on && tune.is_some() {
+                                self.band_start();
+                            }
+                            self.set_note("COMP THE CHANGES WITH THE BAND");
+                        }
+                    }
+                    3 => {
+                        self.practice = true;
+                        self.more = true;
+                        self.mtab = 0;
+                        self.apply(Action::TrainerKeys(true));
+                        self.set_note("LOOP A LICK FROM THE RECORD: EVERY FEW PASSES IT GOES UP A 4TH");
+                    }
+                    4 => {
+                        self.practice = true;
+                        self.more = true;
+                        self.mtab = 4;
+                        self.rec_tune = tune.map(|i| i as u32 + 1).unwrap_or(0);
+                        self.rec_band = true;
+                        if let Some(i) = tune {
+                            self.apply(Action::OpenTune(Some(i)));
+                        }
+                        self.set_note("PRESS REC, THEN THREE CHORUSES");
+                    }
+                    _ => {
+                        self.takes_open = true;
+                        self.set_note("THIS WEEK'S TAKES - ONE THING TO FIX, INTO THE DIARY");
+                    }
+                }
+            }
+            Action::ShowFile(id) => self.show_file(id),
+            Action::FileGone(id) => self.file_gone(id),
             Action::RecToggle => self.rec_toggle(),
             Action::RecLast(keep) => self.rec_last(keep),
             Action::RecPlay(id, dry) => self.take_play(id, dry),

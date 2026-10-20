@@ -538,6 +538,18 @@ pub struct Store {
     pub loop_groups: Option<Vec<String>>,
     /// RECORD: your takes, newest last
     pub takes: Vec<Take>,
+    /// ROUTINE: the tune of the week, the day it was picked, how many have been picked (the kinds take turns),
+    /// jazz or gospel, tunes skipped, the steps done each day, each step's minutes, steps turned off
+    pub routine_tune: String,
+    pub routine_since: String,
+    pub routine_count: u32,
+    pub routine_gospel: bool,
+    pub skipped_tunes: Vec<String>,
+    pub routine_done: HashMap<String, Vec<u8>>,
+    pub routine_mins: Vec<u32>,
+    pub routine_off: Vec<u8>,
+    /// LISTENING: close listens per record ("artist - album")
+    pub listened: HashMap<String, u32>,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).
@@ -698,7 +710,7 @@ pub fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (yy as i32, m, d)
 }
 
-#[cfg(test)]
+/// "2026-10-20" as days since 1970 (None when it is not a date).
 pub fn parse_date(s: &str) -> Option<i64> {
     let mut it = s.split('-');
     let y = it.next()?.parse::<i32>().ok()?;

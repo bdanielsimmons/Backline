@@ -2778,6 +2778,16 @@ impl App {
     pub(crate) fn diary_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
+        if let Some(i) = tab_row(ui, &["DIARY", "ROUTINE", "LISTENING", "MASTERS"], self.diary_tab as usize) {
+            self.diary_tab = i as u8;
+        }
+        ui.add_space(6.0);
+        match self.diary_tab {
+            1 => return self.routine_view(ui, acts),
+            2 => return self.listening_view(ui, acts),
+            3 => return self.masters_view(ui),
+            _ => {}
+        }
         let today = store::today_days();
         if self.diary_sel == 0 {
             self.diary_sel = today;
@@ -3981,6 +3991,21 @@ impl App {
                     }
                     if self.trainer {
                         lcd_box(ui, &format!("PASS {}/{}", self.passes, self.trainer_n), 100.0, pal().ink);
+                        if self.trainer_keys {
+                            lcd_box(ui, &format!("KEY {}/12", self.keys_done + 1), 90.0, pal().ink);
+                        }
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    label(ui, "THEN", 60.0);
+                    if retro_btn(ui, "FASTER", !self.trainer_keys).tip("After the passes, the speed goes up").clicked() {
+                        acts.push(Action::TrainerKeys(false));
+                    }
+                    if retro_btn(ui, "UP A 4TH - 12 KEYS", self.trainer_keys)
+                        .tip("After the passes, the loop moves up a 4th: a lick from the record, in every key, by ear")
+                        .clicked()
+                    {
+                        acts.push(Action::TrainerKeys(true));
                     }
                 });
                 ui.horizontal_wrapped(|ui| {

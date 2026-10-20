@@ -49,6 +49,11 @@ pub fn path_for(id: i64) -> Option<PathBuf> {
     None
 }
 
+/// The stored file of a track, if there is one (to show it in the file manager).
+pub fn file_of(id: i64) -> Option<PathBuf> {
+    path_for(id).filter(|p| p.exists())
+}
+
 pub fn get(id: i64) -> Option<Vec<u8>> {
     let p = path_for(id)?;
     match std::fs::read(&p) {
