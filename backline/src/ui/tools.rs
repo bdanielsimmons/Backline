@@ -81,6 +81,10 @@ pub const F_LOOPS_FILTER: u32 = 81;
 /// the pitch, typed (semitones like +0.25, or cents like -30c)
 pub const F_PITCH: u32 = 82;
 pub const F_INFO_KEY: u32 = 57;
+pub const F_INFO_ALBUM: u32 = 90;
+pub const F_INFO_FILE: u32 = 91;
+/// the tag of each take (plus its index)
+pub const F_TAKE_TAG: u32 = 2000;
 pub const F_INFO_BPM: u32 = 58;
 
 impl App {

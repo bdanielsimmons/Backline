@@ -16,6 +16,8 @@ mod intro;
 mod media;
 #[path = "audio/player.rs"]
 mod player;
+#[path = "audio/record.rs"]
+mod record;
 #[path = "audio/stems.rs"]
 mod stems;
 #[path = "audio/tour_song.rs"]
@@ -96,6 +98,8 @@ mod player_win;
 mod prefs;
 #[path = "ui/reading.rs"]
 mod reading;
+#[path = "ui/record.rs"]
+mod record_ui;
 #[path = "ui/skin.rs"]
 mod skin;
 #[path = "ui/tools.rs"]
@@ -284,6 +288,15 @@ enum Action {
     Open(Card),
     /// follow (true) or unfollow an artist on Tidal: their id
     Follow(String, bool),
+    /// RECORD: start a take, or stop and keep it
+    RecToggle,
+    /// the last take, not listened to yet: keep it (true) or delete it, then start the new one
+    RecLast(bool),
+    /// play a take back (its id; you alone rather than the mix)
+    RecPlay(i64, bool),
+    /// ALL TAKES: open or close it; delete a take (asked first)
+    TakesPanel(bool),
+    TakeDelete(i64),
     /// an artist's bio opened in full (true) or back to its first lines: their id
     BioOpen(String, bool),
     /// a track's album, artist or radio
@@ -2493,6 +2506,11 @@ struct App {
     seq_play: Option<(Instant, f32, String, usize)>,
     /// the song whose info is being edited: its id, the title and the artist as typed
     edit_info: Option<(i64, String, String)>,
+    /// EDIT INFO for a file: its album and its file name (renamed on disk when changed)
+    edit_extra: (String, String),
+    /// ALL TAKES open; a take asked about before it is deleted
+    takes_open: bool,
+    take_ask: Option<i64>,
     /// key and BPM being typed in the edit info panel
     edit_kb: (String, String),
     /// which skin groups are open on the BACKLINE page (ORIGINAL, RETRO ORIGINAL, WINAMP)
@@ -2515,6 +2533,17 @@ struct App {
     chart_live: bool,
     chart_pick: Option<usize>,
     mtab: u8,
+    /// RECORD: the sound coming in while a take runs, when it started, the input picked, the inputs found
+    rec_buf: Option<Arc<std::sync::Mutex<record::InBuf>>>,
+    rec_t0: Option<Instant>,
+    rec_dev: Option<String>,
+    rec_devs: Vec<String>,
+    /// the tune the take goes with (0 = free play, else the tune's index + 1); the band starts with it
+    rec_tune: u32,
+    rec_band: bool,
+    /// the last take (its mixed version's id) and whether it has been listened to; KEEP / DELETE asked
+    rec_last: Option<(i64, bool)>,
+    rec_ask: bool,
     /// Diary: month shown (year, month; 0 = this month) and the day picked (days since 1970; 0 = today)
     diary_ym: (i32, u32),
     diary_sel: i64,
@@ -3172,6 +3201,9 @@ impl App {
             wa_groups_open: [true, false],
             edit_info: None,
             edit_kb: (String::new(), String::new()),
+            edit_extra: (String::new(), String::new()),
+            takes_open: false,
+            take_ask: None,
             neck_zoom: 1.0,
             ghost_alpha: 0.7,
             an_pick: None,
@@ -3185,6 +3217,14 @@ impl App {
             chart_live: false,
             chart_pick: None,
             mtab: 0,
+            rec_buf: None,
+            rec_t0: None,
+            rec_dev: None,
+            rec_devs: Vec::new(),
+            rec_tune: 0,
+            rec_band: true,
+            rec_last: None,
+            rec_ask: false,
             diary_ym: (0, 0),
             diary_sel: 0,
             mt: band::Metro::default(),
@@ -3626,6 +3666,11 @@ impl App {
                     app.play_index(0);
                 }
                 app.wv_zoom = 6.0;
+            }
+            Ok("record") => {
+                app.practice = true;
+                app.more = true;
+                app.mtab = 4;
             }
             Ok("lists") => app.sec = Sec::Lists,
             // the library's ARTISTS tab (BACKLINE_OPEN=artist opens an artist's page once the library is in: Msg::Page)
@@ -4805,6 +4850,13 @@ impl App {
                     m.key.map_or(String::new(), |k| meta::key_short(k).to_string()),
                     m.bpm.map_or(String::new(), |b| b.to_string()),
                 );
+                self.edit_extra = match self.store.files.iter().find(|e| e.id == id) {
+                    Some(e) => (
+                        e.album.clone(),
+                        std::path::Path::new(&e.src).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                    ),
+                    None => (String::new(), String::new()),
+                };
                 self.edit_info = Some((id, title, artist));
                 self.ed.id = 0;
             }
@@ -6023,6 +6075,7 @@ impl eframe::App for App {
         self.credits_overlay(ctx);
         self.art_preview_overlay(ctx);
         self.edit_info_panel(ctx);
+        self.takes_panel(ctx);
         self.skin_loading_panel(ctx);
         self.viz_panel(ctx);
         self.share_panel(ctx, &mut acts);

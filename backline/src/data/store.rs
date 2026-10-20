@@ -129,6 +129,7 @@ impl Store {
                             src: v.src.clone(),
                             title: v.title.clone(),
                             artist: v.artist.clone(),
+                            album: String::new(),
                             dur: v.dur,
                             cover: v.cover.clone(),
                         });
@@ -415,8 +416,41 @@ pub struct Ext {
     pub src: String,
     pub title: String,
     pub artist: String,
+    pub album: String,
     pub dur: f32,
     pub cover: String,
+}
+
+/// A take you recorded (RECORD): you over what Backline played, and you alone, as WAVs under takes/.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct Take {
+    /// the mixed file's id (as a file track) and path; the file of you alone
+    pub id: i64,
+    pub path: String,
+    pub dry: String,
+    /// the tune it went with ("" for free play), when ("2026-10-20 1435"), how long, and a tag of yours
+    pub tune: String,
+    pub stamp: String,
+    pub secs: f32,
+    pub tag: String,
+}
+
+impl Take {
+    /// The take as a song to play: the mix, or you alone.
+    pub fn version(&self, dry: bool) -> Version {
+        let src = if dry { self.dry.clone() } else { self.path.clone() };
+        Version {
+            kind: "file".to_string(),
+            id: if dry { hash_id(&format!("file:{}", src)) } else { self.id },
+            src,
+            title: format!("TAKE {}{}", self.stamp, if dry { " (YOU ALONE)" } else { "" }),
+            artist: "YOU".to_string(),
+            album: if self.tune.is_empty() { "FREE PLAY".to_string() } else { self.tune.clone() },
+            dur: self.secs,
+            ..Default::default()
+        }
+    }
 }
 
 impl Ext {
@@ -426,7 +460,7 @@ impl Ext {
             title: self.title.clone(),
             artist: self.artist.clone(),
             artists: Vec::new(),
-            album: String::new(),
+            album: self.album.clone(),
             cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
             qid: 0,
@@ -440,6 +474,7 @@ impl Ext {
             src: self.src.clone(),
             title: self.title.clone(),
             artist: self.artist.clone(),
+            album: self.album.clone(),
             cover: self.cover.clone(),
             dur: self.dur,
             ..Default::default()
@@ -501,6 +536,8 @@ pub struct Store {
     pub custom_grips: HashMap<String, Vec<[Option<u8>; 6]>>,
     /// your loop groups (None until you change them: the starting ones)
     pub loop_groups: Option<Vec<String>>,
+    /// RECORD: your takes, newest last
+    pub takes: Vec<Take>,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).

@@ -908,7 +908,7 @@ const MIX_RATE: u32 = 44100;
 
 /// Everything the recording kept, laid on one timeline from `start` for `secs` seconds: the song where it played
 /// (with its pauses), the chords, lines and the band where they played. Stereo, 44.1 kHz.
-fn mix(r: &crate::player::RecBuf, start: std::time::Instant, secs: f64) -> Vec<i16> {
+pub(crate) fn mix(r: &crate::player::RecBuf, start: std::time::Instant, secs: f64) -> Vec<i16> {
     let n = (secs * MIX_RATE as f64) as usize;
     let mut acc = vec![0i32; n * 2];
     for p in &r.pieces {
@@ -949,7 +949,7 @@ fn mix(r: &crate::player::RecBuf, start: std::time::Instant, secs: f64) -> Vec<i
 }
 
 /// A 16-bit PCM WAV file.
-fn wav(data: &[i16], rate: u32, ch: u16) -> Vec<u8> {
+pub(crate) fn wav(data: &[i16], rate: u32, ch: u16) -> Vec<u8> {
     let mut v = Vec::with_capacity(44 + data.len() * 2);
     let bytes = (data.len() * 2) as u32;
     v.extend_from_slice(b"RIFF");

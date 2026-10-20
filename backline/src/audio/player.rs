@@ -922,6 +922,11 @@ pub struct RecBuf {
 /// Start keeping the sound (and mute the speakers).
 pub fn rec_start() {
     MUTED.store(true, Ordering::Relaxed);
+    rec_start_heard();
+}
+
+/// Start keeping the sound, still heard (recording yourself over it).
+pub fn rec_start_heard() {
     *REC.lock().unwrap_or_else(|e| e.into_inner()) = Some(RecBuf { pieces: Vec::new() });
     REC_ON.store(true, Ordering::Relaxed);
 }

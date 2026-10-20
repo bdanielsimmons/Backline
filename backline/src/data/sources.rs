@@ -87,13 +87,15 @@ pub fn ext_for_file(path: &Path) -> Ext {
         None => (parent, stem.clone()),
     };
     // the file's own tags, when it has them, name it better than its file name
-    if let Some((a, t)) = tag_names(path) {
+    let mut album = String::new();
+    if let Some((a, t, al)) = tag_names(path) {
         if !t.is_empty() {
             title = t;
         }
         if !a.is_empty() {
             artist = a;
         }
+        album = al;
     }
     let src = path.to_string_lossy().to_string();
     Ext {
@@ -103,16 +105,21 @@ pub fn ext_for_file(path: &Path) -> Ext {
         src,
         title,
         artist,
+        album,
         cover: String::new(),
     }
 }
 
-/// The artist and title in a file's tags.
-fn tag_names(path: &Path) -> Option<(String, String)> {
+/// The artist, title and album in a file's tags.
+fn tag_names(path: &Path) -> Option<(String, String, String)> {
     use lofty::prelude::*;
     let tagged = lofty::read_from_path(path).ok()?;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
-    Some((tag.artist().map(|s| s.to_string()).unwrap_or_default(), tag.title().map(|s| s.to_string()).unwrap_or_default()))
+    Some((
+        tag.artist().map(|s| s.to_string()).unwrap_or_default(),
+        tag.title().map(|s| s.to_string()).unwrap_or_default(),
+        tag.album().map(|s| s.to_string()).unwrap_or_default(),
+    ))
 }
 
 /// A file's cover picture: the one inside it (its tags), else a cover image in its folder
@@ -347,6 +354,7 @@ fn parse_entries(bytes: &[u8]) -> Vec<Ext> {
                 .map(|s| s.to_string())
                 .or_else(|| slug_meta(url).map(|m| m.0))
                 .unwrap_or_else(|| "SoundCloud".to_string()),
+            album: String::new(),
             dur: v["duration"].as_f64().unwrap_or(0.0) as f32,
             cover,
         });
@@ -475,6 +483,7 @@ pub fn yt_list(url: &str) -> Result<(String, Vec<Ext>), String> {
             src: vid.to_string(),
             title: v["title"].as_str().unwrap_or("YouTube clip").to_string(),
             artist: v["channel"].as_str().or_else(|| v["uploader"].as_str()).unwrap_or("YouTube").replace(" - Topic", ""),
+            album: String::new(),
             dur: v["duration"].as_f64().unwrap_or(0.0) as f32,
             cover: format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", vid),
         });
@@ -552,6 +561,7 @@ pub fn yt_info(vid: &str) -> Result<Ext, String> {
         src: vid.to_string(),
         title,
         artist,
+        album: String::new(),
         dur: v["duration"].as_f64().unwrap_or(0.0) as f32,
         cover: if vid.starts_with("http") {
             v["thumbnail"].as_str().unwrap_or("").to_string()

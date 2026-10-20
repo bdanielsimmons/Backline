@@ -346,6 +346,10 @@ impl App {
                 ("BPM", crate::tools::F_INFO_BPM, bpm, "e.g. 120"),
             ];
             if !tidal {
+                if is_file {
+                    rows.insert(0, ("FILE NAME", crate::tools::F_INFO_FILE, &mut self.edit_extra.1, "The file's name on disk"));
+                    rows.insert(0, ("ALBUM", crate::tools::F_INFO_ALBUM, &mut self.edit_extra.0, "Album"));
+                }
                 rows.insert(0, ("ARTIST", crate::tools::F_INFO_ARTIST, artist, "Artist"));
                 rows.insert(0, ("TITLE", crate::tools::F_INFO_TITLE, title, "Song title"));
             }
@@ -365,7 +369,7 @@ impl App {
                 if tidal {
                     "Only for you, on this computer: Tidal's own info stays as it is. Empty both to go back to Tidal's."
                 } else if is_file {
-                    "Renamed everywhere in Backline, and written into the file itself so other players see it too. Key and BPM stay in Backline."
+                    "Renamed everywhere in Backline, and written into the file itself so other players see it too. A new file name renames the file on disk. Key and BPM stay in Backline."
                 } else {
                     "Renamed in your lists, playlists, tunes and the queue. Tidal's own album and search pages keep Tidal's names."
                 },

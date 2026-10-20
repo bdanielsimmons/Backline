@@ -27,6 +27,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Now Playing (big cover, lyrics) | `ui/album_view.rs` |
 | Floating tools: focus timer, metronome, band, number boxes, field ids `F_*` | `ui/tools.rs` |
 | Tidal artist pages: FOLLOW / RADIO (`Action::Follow`, `api.follow_artist`), the bio (`api::parse_bio`, `bio_view` in main.rs), NEW FROM ARTISTS YOU FOLLOW in the library's ARTISTS tab (`api.followed_new`, Tidal's v2 feed) | `data/api.rs`, `main.rs` |
+| RECORD (practice panel tab): your input via cpal (`audio/record.rs`), mixed with what the player kept (`tour::mix`, `player::rec_start_heard`) into WAVs under takes/; takes live in `store.takes` (not as tune recordings), ALL TAKES panel; EDIT INFO for files has ALBUM and FILE NAME (rename on disk, `file_moved` migrates the id) | `audio/record.rs`, `ui/record.rs`, `extras.rs` (`rec_toggle`, `save_info`) |
 | CHORDS: find, analyzer, voicings, passing chords (tabs in three groups; `chords_tab` numbers stay fixed) | `ui/chords.rs`; triads/moves `ui/triads.rs`; clusters `ui/clusters.rs` |
 | CHORDS tab SCALE HARMONY: the chords of a parent scale (major, melodic/harmonic minor, harmonic major) as cards, what to solo with over each (`si_auto` shapes, triad pairs), a vamp sent to the band via `prac_chart` | `ui/harmony.rs` |
 | LINES: Slonimsky, scales, the line player (`line_player`: one row - play, loop, tempo, feel, OVER from the shared `ln_over`, favorite; `line_score`) | `ui/lines.rs` (UI), `data/lines.rs` (patterns) |
@@ -67,7 +68,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
 - `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops groups prog news mini mine yt diary
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
-  fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists.
+  fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record.
 - CHORD MELODIES only: `BACKLINE_CM_SCROLL=<px>` opens the bars scrolled down; `BACKLINE_CM_PICK=<kind>` opens the
   first move of that kind (its index in `KINDS`) in the panel.
 - Unit tests: `cargo test --release` in `backline/`.

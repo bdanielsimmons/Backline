@@ -657,16 +657,35 @@ impl App {
     /// A song's new title and artist (files, YouTube, SoundCloud): everywhere Backline keeps it (your lists,
     /// liked songs, playlists, tunes, the queue, where you left off), and in the file's own tags for your files.
     pub(crate) fn save_info(&mut self, id: i64, title: String, artist: String) {
+        let mut id = id;
         let (title, artist) = (title.trim().to_string(), artist.trim().to_string());
         if title.is_empty() {
             return;
         }
+        // a file: its album too, and a new file name renames it on disk (the file keeps its place in Backline)
+        let (album, new_name) = std::mem::take(&mut self.edit_extra);
         let mut file: Option<String> = None;
+        if let Some(e) = self.store.files.iter().find(|e| e.id == id).cloned() {
+            let old = PathBuf::from(&e.src);
+            let want = new_name.trim();
+            if !want.is_empty() && Some(want) != old.file_name().and_then(|n| n.to_str()) {
+                let mut want = want.to_string();
+                if let (false, Some(ext)) = (want.contains('.'), old.extension().and_then(|x| x.to_str())) {
+                    want = format!("{}.{}", want, ext);
+                }
+                let new_path = old.with_file_name(&want);
+                match std::fs::rename(&old, &new_path) {
+                    Ok(()) => id = self.file_moved(id, &new_path),
+                    Err(err) => self.set_err(format!("Couldn't rename the file: {}", err)),
+                }
+            }
+        }
         for list in [&mut self.store.files, &mut self.store.yt, &mut self.store.sc, &mut self.store.hearts] {
             for e in list.iter_mut().filter(|e| e.id == id) {
                 e.title = title.clone();
                 e.artist = artist.clone();
                 if e.kind == "file" {
+                    e.album = album.clone();
                     file = Some(e.src.clone());
                 }
             }
@@ -679,6 +698,9 @@ impl App {
             if v.id == id {
                 v.title = title.clone();
                 v.artist = artist.clone();
+                if v.kind == "file" {
+                    v.album = album.clone();
+                }
             }
         };
         for p in &mut self.store.playlists {
@@ -694,6 +716,9 @@ impl App {
             if t.id == id {
                 t.title = title.clone();
                 t.artist = artist.clone();
+                if file.is_some() {
+                    t.album = album.clone();
+                }
             }
         };
         Arc::make_mut(&mut self.queue).iter_mut().for_each(fix_track);
@@ -707,10 +732,81 @@ impl App {
         if let Some(path) = file {
             let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
             std::thread::spawn(move || {
-                let _ = tx.send(Msg::TagsSaved(write_tags(&path, &title, &artist)));
+                let _ = tx.send(Msg::TagsSaved(write_tags(&path, &title, &artist, &album)));
                 ctx.request_repaint();
             });
         }
+    }
+
+    /// A file of yours moved or renamed: its id (made from its path) changes, and everything that was kept under
+    /// the old one - the file entry, likes, loops, bookmarks, key and tempo, playlists, tunes, the queue - follows.
+    fn file_moved(&mut self, old: i64, new_path: &std::path::Path) -> i64 {
+        let src = new_path.to_string_lossy().to_string();
+        let new = store::hash_id(&format!("file:{}", src));
+        if new == old {
+            return old;
+        }
+        self.srcmap.insert(new, Src::File(new_path.to_path_buf()));
+        for list in [&mut self.store.files, &mut self.store.hearts] {
+            for e in list.iter_mut().filter(|e| e.id == old) {
+                e.id = new;
+                e.src = src.clone();
+            }
+        }
+        let fix = |v: &mut store::Version| {
+            if v.id == old {
+                v.id = new;
+                v.src = src.clone();
+            }
+        };
+        for p in &mut self.store.playlists {
+            p.items.iter_mut().for_each(fix);
+        }
+        for t in &mut self.store.tunes {
+            t.versions.iter_mut().for_each(fix);
+        }
+        for (v, _) in &mut self.store.recent {
+            fix(v);
+        }
+        if let Some(l) = self.store.last.as_mut() {
+            fix(&mut l.version);
+        }
+        if let Some(mut v) = self.store.songs.remove(&old) {
+            fix(&mut v);
+            self.store.songs.insert(new, v);
+        }
+        for m in [&mut self.store.sections].into_iter() {
+            if let Some(v) = m.remove(&old) {
+                m.insert(new, v);
+            }
+        }
+        if let Some(v) = self.store.marks.remove(&old) {
+            self.store.marks.insert(new, v);
+        }
+        if let Some(v) = self.store.bpm.remove(&old) {
+            self.store.bpm.insert(new, v);
+        }
+        if let Some(v) = self.store.meta.remove(&old) {
+            self.store.meta.insert(new, v);
+        }
+        if let Some(v) = self.loops.remove(&old) {
+            self.loops.insert(new, v);
+        }
+        let fix_track = |t: &mut Track| {
+            if t.id == old {
+                t.id = new;
+            }
+        };
+        Arc::make_mut(&mut self.queue).iter_mut().for_each(fix_track);
+        if let Some(q) = self.orig_queue.as_mut() {
+            q.iter_mut().for_each(fix_track);
+        }
+        let _ = std::fs::rename(wave_path(old), wave_path(new));
+        if let Some(e) = self.edit_info.as_mut().filter(|e| e.0 == old) {
+            e.0 = new;
+        }
+        self.store_dirty = true;
+        new
     }
 
     /// Each part's level, with a muted part at 0.
@@ -1639,8 +1735,128 @@ impl App {
         self.store.tunes.len() - 1
     }
 
+    /// RECORD: a take starts (the player keeps what it plays, the input comes in) or stops - then you alone and you
+    /// over what played are written as WAVs under takes/, and added to the tune as recordings.
+    fn rec_toggle(&mut self) {
+        if self.rec_buf.is_none() {
+            // the last take not listened to yet: ask first
+            if self.rec_last.is_some_and(|l| !l.1) && !self.rec_ask {
+                self.rec_ask = true;
+                return;
+            }
+            self.rec_ask = false;
+            crate::player::rec_start_heard();
+            self.rec_buf = Some(crate::record::start(self.rec_dev.clone()));
+            self.rec_t0 = Some(Instant::now());
+            if self.rec_band && !self.band_on {
+                if let Some(i) = (self.rec_tune as usize).checked_sub(1) {
+                    self.chart_pick = Some(i);
+                }
+                self.band_start();
+            }
+            return;
+        }
+        crate::record::stop();
+        let buf = self.rec_buf.take();
+        let t0 = self.rec_t0.take().unwrap_or_else(Instant::now);
+        let secs = t0.elapsed().as_secs_f64();
+        let kept = crate::player::rec_take();
+        if self.rec_band && self.band_on {
+            self.band_stop();
+        }
+        let (rate, samples, started) = match buf.as_ref().map(|b| b.lock().unwrap_or_else(|e| e.into_inner())) {
+            Some(b) => (b.rate, b.samples.clone(), b.started),
+            None => (44100, Vec::new(), None),
+        };
+        api::log(&format!("take stopped: {:.1} s, {} samples in at {} Hz", secs, samples.len(), rate));
+        if samples.len() < rate as usize / 2 {
+            self.set_note("NOTHING CAME IN - CHECK THE INPUT");
+            return;
+        }
+        let you = crate::record::resample(&samples, rate, 44100);
+        let back = kept.map(|r| crate::tour::mix(&r, t0, secs)).unwrap_or_default();
+        let offset = started.map(|s| (s.saturating_duration_since(t0).as_secs_f64() * 44100.0) as i64).unwrap_or(0);
+        let mixed = crate::record::over(&you, &back, offset);
+        // the files, named by when and what
+        let tune_i = (self.rec_tune as usize).checked_sub(1).filter(|i| *i < self.store.tunes.len());
+        let tune_name = tune_i.map(|i| self.store.tunes[i].name.clone()).unwrap_or_else(|| "Free play".to_string());
+        let (y, mo, d, h, mi, _) = crate::store::now_local();
+        let stamp = format!("{:04}-{:02}-{:02} {:02}{:02}", y, mo, d, h, mi);
+        let dir = api::config_dir().join("takes");
+        let _ = std::fs::create_dir_all(&dir);
+        let safe: String = tune_name.chars().map(|c| if c.is_alphanumeric() || c == ' ' { c } else { '-' }).collect();
+        let p_mix = dir.join(format!("{} {}.wav", stamp, safe));
+        let p_you = dir.join(format!("{} {} (you alone).wav", stamp, safe));
+        if let Err(e) = std::fs::write(&p_mix, crate::tour::wav(&mixed, 44100, 2))
+            .and_then(|_| std::fs::write(&p_you, crate::tour::wav(&you, 44100, 1)))
+        {
+            self.set_note(&format!("COULDN'T SAVE THE TAKE: {}", e));
+            return;
+        }
+        // kept on its own list (not among the tune's recordings)
+        let path = p_mix.to_string_lossy().to_string();
+        let id = store::hash_id(&format!("file:{}", path));
+        self.store.takes.push(store::Take {
+            id,
+            path,
+            dry: p_you.to_string_lossy().to_string(),
+            tune: tune_i.map(|_| tune_name.clone()).unwrap_or_default(),
+            stamp,
+            secs: you.len() as f32 / 44100.0,
+            tag: String::new(),
+        });
+        self.store_dirty = true;
+        self.rec_last = Some((id, false));
+        api::log(&format!("take kept: {}", p_mix.display()));
+        self.set_note(&format!("TAKE KEPT WITH {}", tune_name.to_uppercase()));
+    }
+
+    /// The last take, kept or deleted, then the new take starts.
+    fn rec_last(&mut self, keep: bool) {
+        if let (false, Some((id, _))) = (keep, self.rec_last) {
+            self.take_delete(id);
+        }
+        self.rec_last = None;
+        self.rec_ask = false;
+        self.rec_toggle();
+    }
+
+    /// A take and its two files, gone (the player lets go of it first if it is playing).
+    fn take_delete(&mut self, id: i64) {
+        let Some(i) = self.store.takes.iter().position(|t| t.id == id) else { return };
+        let t = self.store.takes.remove(i);
+        if self.cur_track().map(|c| c.id) == Some(id) {
+            self.player.send(Cmd::Stop);
+        }
+        for p in [&t.path, &t.dry] {
+            let _ = std::fs::remove_file(p);
+        }
+        self.take_ask = None;
+        self.store_dirty = true;
+    }
+
+    /// A take played back, with the practice tools.
+    fn take_play(&mut self, id: i64, dry: bool) {
+        let Some(t) = self.store.takes.iter().find(|t| t.id == id).cloned() else { return };
+        if let Some(l) = self.rec_last.as_mut().filter(|l| l.0 == id) {
+            l.1 = true;
+        }
+        let v = t.version(dry);
+        self.register(&v);
+        self.play_saved(&v, None);
+    }
+
     pub(crate) fn apply_extra(&mut self, a: Action) {
         match a {
+            Action::RecToggle => self.rec_toggle(),
+            Action::RecLast(keep) => self.rec_last(keep),
+            Action::RecPlay(id, dry) => self.take_play(id, dry),
+            Action::TakesPanel(open) => {
+                self.takes_open = open;
+                self.take_ask = None;
+                self.ed.id = 0;
+            }
+            Action::TakeDelete(id) => self.take_delete(id),
             Action::Section(s) => {
                 if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines) {
                     self.last_practice = s;
@@ -2378,8 +2594,17 @@ impl App {
                 }
                 let typed = self.sec_name.trim().to_string();
                 let list = self.store.sections.entry(t.id).or_default();
-                if list.iter().any(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05) {
-                    self.set_note("THIS LOOP IS ALREADY SAVED");
+                // the same loop again: a new name renames it, no name just says so
+                if let Some(s) = list.iter_mut().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05) {
+                    if typed.is_empty() || typed.eq_ignore_ascii_case(&s.name) {
+                        let n = s.name.to_uppercase();
+                        self.set_note(&format!("THIS LOOP IS ALREADY SAVED AS {}", n));
+                    } else {
+                        s.name = typed.clone();
+                        self.sec_name.clear();
+                        self.store_dirty = true;
+                        self.set_note(&format!("RENAMED: {}", typed.to_uppercase()));
+                    }
                     return;
                 }
                 let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
@@ -3155,7 +3380,7 @@ mod tests {
         let path = dir.join("song.wav");
         std::fs::write(&path, crate::band::wav(&vec![0i16; 4410])).unwrap();
         let p = path.to_string_lossy().to_string();
-        write_tags(&p, "New Title", "New Artist").unwrap();
+        write_tags(&p, "New Title", "New Artist", "New Album").unwrap();
         let back = lofty::read_from_path(&p).unwrap();
         let tag = back.primary_tag().unwrap();
         assert_eq!(tag.title().as_deref(), Some("New Title"));
@@ -3219,7 +3444,7 @@ mod tempo_tests {
 
 /// Write a title and an artist into an audio file's own tags (ID3, Vorbis comments, MP4 atoms... whatever the file
 /// uses; a tag is added when it has none).
-fn write_tags(path: &str, title: &str, artist: &str) -> Result<String, String> {
+fn write_tags(path: &str, title: &str, artist: &str, album: &str) -> Result<String, String> {
     use lofty::prelude::*;
     let mut tagged = lofty::read_from_path(path).map_err(|e| e.to_string())?;
     if tagged.primary_tag().is_none() {
@@ -3229,6 +3454,11 @@ fn write_tags(path: &str, title: &str, artist: &str) -> Result<String, String> {
     let tag = tagged.primary_tag_mut().ok_or("no tag")?;
     tag.set_title(title.to_string());
     tag.set_artist(artist.to_string());
+    if album.trim().is_empty() {
+        tag.remove_album();
+    } else {
+        tag.set_album(album.to_string());
+    }
     tag.save_to_path(path, lofty::config::WriteOptions::default()).map_err(|e| e.to_string())?;
     Ok(std::path::Path::new(path).file_name().map_or(path.to_string(), |n| n.to_string_lossy().to_string()))
 }

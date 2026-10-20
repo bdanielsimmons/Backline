@@ -3549,7 +3549,7 @@ impl App {
 
         // ---- the panel's tabs: the loop and speed tools first, then the bigger tools (TRAINER, PITCH & EAR, STEMS)
         let cur = if self.more { self.mtab as usize + 1 } else { 0 };
-        if let Some(i) = tab_row(ui, &["LOOP & SPEED", "TRAINER", "PITCH & EAR", "STEMS", "BOOKMARKS"], cur) {
+        if let Some(i) = tab_row(ui, &["LOOP & SPEED", "TRAINER", "PITCH & EAR", "STEMS", "BOOKMARKS", "RECORD"], cur) {
             self.more = i > 0;
             if i > 0 {
                 self.mtab = (i - 1) as u8;
@@ -3656,7 +3656,22 @@ impl App {
         row_mark(ui, "SPEEDROW", speed_top);
         ui.add_space(10.0);
 
-        // ---- saved loops for this track
+        // ---- saved loops for this track: which one is looping now (or that it isn't saved yet)
+        if let (Some(a), Some(b), Some(id)) = (self.loop_a, self.loop_b, tid) {
+            let saved = self
+                .store
+                .sections
+                .get(&id)
+                .and_then(|l| l.iter().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05))
+                .map(|s| s.name.to_uppercase());
+            let what = match (&saved, self.loop_on) {
+                (Some(n), true) => format!("LOOPING: {}", n),
+                (Some(n), false) => format!("LOOP SET: {} (OFF)", n),
+                (None, true) => "LOOPING: UNSAVED - NAME IT AND SAVE LOOP TO KEEP IT".to_string(),
+                (None, false) => "LOOP SET, OFF - UNSAVED".to_string(),
+            };
+            dim_line(ui, &what, 1.0, if saved.is_some() { pal().ink } else { pal().ink2 });
+        }
         ui.horizontal_wrapped(|ui| {
             // the save button's real width; if the name box cannot keep a usable size, the button drops to the next line
             let bw = 10.0 + 18.0 + 8.0 + text_w("SAVE LOOP", 2.0) + 10.0;
@@ -3918,6 +3933,10 @@ impl App {
         let tid = self.cur_track().map(|t| t.id);
         if self.mtab == 3 {
             self.bookmarks_tab(ui, acts);
+            return;
+        }
+        if self.mtab == 4 {
+            self.record_tab(ui, acts);
             return;
         }
         match self.mtab {
