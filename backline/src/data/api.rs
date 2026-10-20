@@ -10,6 +10,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub type Res<T> = Result<T, String>;
 
 const API: &str = "https://api.tidal.com/v1";
+/// The library's row of what is new from the artists you follow.
+pub const NEW_FROM_FOLLOWED: &str = "New from artists you follow";
 const AUTH: &str = "https://auth.tidal.com/v1/oauth2";
 // Public client credentials as published in the open-source `tidalapi` library.
 // Tidal rotates these occasionally. Override without recompiling by creating
@@ -183,6 +185,57 @@ pub struct Card {
     pub image: String,
 }
 
+/// A piece of an artist's bio: its words, and the artist or album they link to, if any.
+#[derive(Clone)]
+pub struct BioBit {
+    pub text: String,
+    pub link: Option<Card>,
+}
+
+/// Tidal's bio text cut into plain words and links: `[wimpLink artistId="1"]Name[/wimpLink]` (or albumId) becomes
+/// a link to that artist or album; line breaks start a new line.
+pub fn parse_bio(text: &str) -> Vec<BioBit> {
+    let text = text.replace("<br/>", "\n").replace("<br />", "\n").replace("<br>", "\n");
+    let mut out = Vec::new();
+    let mut rest = text.as_str();
+    while let Some(i) = rest.find("[wimpLink ") {
+        if i > 0 {
+            out.push(BioBit { text: rest[..i].to_string(), link: None });
+        }
+        let after = &rest[i..];
+        let (Some(close), Some(end)) = (after.find(']'), after.find("[/wimpLink]")) else { break };
+        if end < close {
+            break;
+        }
+        let attrs = &after[..close];
+        let name = after[close + 1..end].to_string();
+        let id_of = |k: &str| {
+            attrs.find(k).map(|p| {
+                attrs[p + k.len()..]
+                    .trim_start_matches(['=', '"', '\\'])
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                    .collect::<String>()
+            })
+        };
+        let link = match (id_of("artistId"), id_of("albumId")) {
+            (Some(id), _) if !id.is_empty() => {
+                Some(Card { kind: Kind::Artist, id, title: name.clone(), subtitle: "Artist".to_string(), image: String::new() })
+            }
+            (_, Some(id)) if !id.is_empty() => {
+                Some(Card { kind: Kind::Album, id, title: name.clone(), subtitle: String::new(), image: String::new() })
+            }
+            _ => None,
+        };
+        out.push(BioBit { text: name, link });
+        rest = &after[end + "[/wimpLink]".len()..];
+    }
+    if !rest.is_empty() {
+        out.push(BioBit { text: rest.to_string(), link: None });
+    }
+    out
+}
+
 #[derive(Clone, Default)]
 pub struct Page {
     pub title: String,
@@ -196,6 +249,11 @@ pub struct Page {
     pub library: bool,
     /// an artist's page: the picture is shown round
     pub artist: bool,
+    /// an artist's page: their id, their bio (empty when Tidal has none), their radio, and whether you follow them
+    pub artist_id: String,
+    pub bio: Vec<BioBit>,
+    pub radio: Option<Card>,
+    pub following: bool,
     /// Total number of liked songs on Tidal (only set on the library page).
     pub total: usize,
 }
@@ -655,7 +713,8 @@ impl Api {
                 q.push(("countryCode", country.as_str()));
             }
             let t0 = std::time::Instant::now();
-            let r = match self.http.get(format!("{}{}", API, path)).bearer_auth(&tok).query(&q).send() {
+            let url = if path.starts_with("https://") { path.to_string() } else { format!("{}{}", API, path) };
+            let r = match self.http.get(url).bearer_auth(&tok).query(&q).send() {
                 Ok(r) => r,
                 Err(e) => {
                     log(&format!("GET {} failed to send: {}", path, e));
@@ -837,6 +896,66 @@ impl Api {
         }
     }
 
+    /// The ids of the artists you follow.
+    pub fn followed_artists(&self) -> Res<Vec<String>> {
+        let v = self.get(&format!("/users/{}/favorites/ids", self.uid()), &[])?;
+        Ok(arr(&v["ARTIST"])
+            .iter()
+            .filter_map(|x| x.as_str().map(str::to_string).or_else(|| x.as_i64().map(|n| n.to_string())))
+            .collect())
+    }
+
+    /// Follow (true) or unfollow (false) an artist on Tidal.
+    pub fn follow_artist(&self, id: &str, on: bool) -> Res<()> {
+        guard()?;
+        let _ = self.get(&format!("/artists/{}", id), &[])?; // a fresh login first, as any request
+        let (tok, country, uid) = {
+            let s = self.session.lock().unwrap();
+            (s.access_token.clone(), s.country.clone(), s.user_id)
+        };
+        let base = format!("{}/users/{}/favorites/artists", API, uid);
+        let r = if on {
+            self.http
+                .post(&base)
+                .bearer_auth(&tok)
+                .query(&[("countryCode", country.as_str())])
+                .form(&[("artistIds", id), ("onArtifactNotFound", "SKIP")])
+                .send()
+        } else {
+            self.http.delete(format!("{}/{}", base, id)).bearer_auth(&tok).query(&[("countryCode", country.as_str())]).send()
+        };
+        let r = r.map_err(e2s)?;
+        let st = r.status();
+        log(&format!("{} follow artist {} -> {}", if on { "POST" } else { "DELETE" }, id, st.as_u16()));
+        if st.is_success() {
+            Ok(())
+        } else {
+            let t = r.text().unwrap_or_default();
+            log(&format!("  error body: {}", t.chars().take(300).collect::<String>()));
+            Err(format!("{}: {}", st.as_u16(), t.chars().take(120).collect::<String>()))
+        }
+    }
+
+    /// What is new from the artists you follow (Tidal's activity feed): their new albums and singles, newest first.
+    pub fn followed_new(&self) -> Res<Vec<Card>> {
+        let uid = self.uid().to_string();
+        let v = self.get(
+            "https://api.tidal.com/v2/feed/activities",
+            &[("userId", uid.as_str()), ("locale", "en_US"), ("deviceType", "BROWSER")],
+        )?;
+        let mut out = Vec::new();
+        for a in arr(&v["activities"]) {
+            let al = &a["followableActivity"]["album"];
+            if let Some(mut c) = parse_card(al) {
+                // just the main artist, so the title has room
+                c.subtitle = arr(&al["artists"]).first().and_then(|x| x["name"].as_str()).unwrap_or("").to_string();
+                out.push(c);
+            }
+        }
+        out.truncate(30);
+        Ok(out)
+    }
+
     /// Like (true) or unlike (false) a track.
     pub fn set_liked(&self, id: i64, like: bool) -> Res<()> {
         guard()?;
@@ -918,6 +1037,11 @@ impl Api {
             let c = cards_from(&items);
             if !c.is_empty() {
                 p.rows.push(("Artists".to_string(), c));
+            }
+        }
+        if let Ok(c) = self.followed_new() {
+            if !c.is_empty() {
+                p.rows.push((NEW_FROM_FOLLOWED.to_string(), c));
             }
         }
         if p.tracks.is_empty() && p.rows.is_empty() {
@@ -1221,6 +1345,24 @@ impl Api {
                         p.image = main.image;
                     }
                 }
+                p.artist_id = c.id.clone();
+                // their bio (most artists have one; a 404 means none)
+                if let Ok(b) = self.get(&format!("/artists/{}/bio", c.id), &[]) {
+                    p.bio = parse_bio(b["text"].as_str().unwrap_or(""));
+                }
+                // their radio: Tidal's mix of music like theirs
+                if let Ok(a) = self.get(&format!("/artists/{}", c.id), &[]) {
+                    if let Some(mix) = a["mixes"]["ARTIST_MIX"].as_str() {
+                        p.radio = Some(Card {
+                            kind: Kind::Mix,
+                            id: mix.to_string(),
+                            title: format!("{} radio", p.title),
+                            subtitle: "Artist radio".to_string(),
+                            image: p.image.clone(),
+                        });
+                    }
+                }
+                p.following = self.followed_artists().map(|ids| ids.contains(&c.id)).unwrap_or(false);
             }
             Kind::Mix => {
                 let v = self.get("/pages/mix", &[("mixId", c.id.as_str()), ("deviceType", "BROWSER")])?;
@@ -1435,6 +1577,18 @@ mod tests {
         assert_eq!(times, vec![1.0, 5.0, 12.5, 60.0]);
         let words: Vec<&str> = l.iter().map(|x| x.1.as_str()).collect();
         assert_eq!(words, vec!["first and again", "tight", "second", "first and again"]);
+    }
+
+    #[test]
+    fn bio_links_become_cards() {
+        let b = parse_bio("Guitarist [wimpLink artistId=\"14068\"]Pat Metheny[/wimpLink] cut [wimpLink albumId=\"149753588\"]Bright Size Life[/wimpLink].<br/>Next.");
+        let texts: Vec<&str> = b.iter().map(|x| x.text.as_str()).collect();
+        assert_eq!(texts, ["Guitarist ", "Pat Metheny", " cut ", "Bright Size Life", ".\nNext."]);
+        let a = b[1].link.as_ref().unwrap();
+        assert!(a.kind == Kind::Artist && a.id == "14068" && a.title == "Pat Metheny");
+        let al = b[3].link.as_ref().unwrap();
+        assert!(al.kind == Kind::Album && al.id == "149753588");
+        assert!(b[0].link.is_none());
     }
 
     #[test]

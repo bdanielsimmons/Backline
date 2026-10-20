@@ -162,6 +162,8 @@ enum Msg {
     /// transcriptions brought in: the names, or what went wrong
     CmImported(Result<Vec<String>, String>),
     Page(Page, bool),
+    /// an artist followed or unfollowed (their id, followed now?, how it went)
+    Followed(String, bool, Result<(), String>),
     MoreTracks(u64, Vec<Track>),
     Err(String),
     Audio(u64, i64, Vec<u8>),
@@ -280,6 +282,10 @@ enum Tab {
 
 enum Action {
     Open(Card),
+    /// follow (true) or unfollow an artist on Tidal: their id
+    Follow(String, bool),
+    /// an artist's bio opened in full (true) or back to its first lines: their id
+    BioOpen(String, bool),
     /// a track's album, artist or radio
     GoTo(i64, GoTo),
     /// show who made a track (id, "artist - title")
@@ -1644,6 +1650,15 @@ fn page_view(
                     acts.push(Action::RefreshLibrary);
                 }
                 ui.add_space(6.0);
+                // new albums and singles from the artists you follow, above them
+                if key == "Artists" && filter.trim().is_empty() {
+                    if let Some((_, new)) = page.rows.iter().find(|r| r.0 == api::NEW_FROM_FOLLOWED) {
+                        section_header(ui, "NEW FROM ARTISTS YOU FOLLOW");
+                        cards_list(ui, &new[..new.len().min(8)], false, acts);
+                        ui.add_space(6.0);
+                        section_header(ui, "ARTISTS YOU FOLLOW");
+                    }
+                }
                 let mut any = false;
                 for (title, cards) in &page.rows {
                     if title == key {
@@ -1700,8 +1715,27 @@ fn page_view(
                 if !page.tracks.is_empty() {
                     play_buttons(ui, &page.tracks, acts, false);
                 }
+                if page.artist && !page.artist_id.is_empty() {
+                    ui.horizontal(|ui| {
+                        let tip =
+                            if page.following { "You follow them on Tidal - click to unfollow" } else { "Follow them on Tidal" };
+                        if retro_btn(ui, if page.following { "FOLLOWING" } else { "+ FOLLOW" }, page.following).tip(tip).clicked()
+                        {
+                            acts.push(Action::Follow(page.artist_id.clone(), !page.following));
+                        }
+                        if let Some(r) = &page.radio {
+                            if retro_btn(ui, "RADIO", false).tip("Their radio: music like theirs").clicked() {
+                                acts.push(Action::Open(r.clone()));
+                            }
+                        }
+                    });
+                }
             });
         });
+        if !page.bio.is_empty() {
+            ui.add_space(4.0);
+            bio_view(ui, &page.bio, &page.artist_id, acts);
+        }
     } else {
         title_line(ui, &page.title, 3.0, pal().ink);
     }
@@ -1722,6 +1756,80 @@ fn page_view(
         cards_list(ui, cards, true, acts);
     }
     ui.add_space(20.0);
+}
+
+/// An artist's bio: two lines, then VIEW MORE (underlined) for the rest. The artists and albums it names are links.
+fn bio_view(ui: &mut egui::Ui, bits: &[api::BioBit], id: &str, acts: &mut Vec<Action>) {
+    const SHORT: usize = 2;
+    let key = egui::Id::new(("bio_open", id.to_string()));
+    let open = ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+    let (px, lh) = (2.0, 18.0);
+    // as wide as what can be seen (the panel can be wider than its visible part)
+    let seen = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x);
+    let w = (seen - 24.0).max(160.0);
+    let space = text_w(" ", px);
+    // the words laid out in lines: (x, line, word, link)
+    let mut words: Vec<(f32, usize, &str, Option<&Card>)> = Vec::new();
+    let (mut x, mut line) = (0.0_f32, 0usize);
+    for b in bits {
+        // a piece that runs straight on from the last (the comma after a link) gets no space before it
+        if x > 0.0 && !b.text.starts_with(char::is_whitespace) {
+            x -= space;
+        }
+        for (k, part) in b.text.split('\n').enumerate() {
+            if k > 0 && x > 0.0 {
+                line += 1;
+                x = 0.0;
+            }
+            for word in part.split_whitespace() {
+                let ww = text_w(word, px);
+                if x > 0.0 && x + ww > w {
+                    line += 1;
+                    x = 0.0;
+                }
+                words.push((x, line, word, b.link.as_ref()));
+                x += ww + space;
+            }
+        }
+    }
+    let lines = words.last().map_or(0, |w| w.1 + 1);
+    let shown = if open { lines } else { lines.min(SHORT) };
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w + 16.0, shown as f32 * lh), Sense::hover());
+    let p = ui.painter().clone();
+    for (i, (wx, wl, word, link)) in words.iter().enumerate() {
+        if *wl >= shown {
+            break;
+        }
+        let pos = Pos2::new(rect.min.x + 8.0 + wx, rect.min.y + (*wl as f32 + 0.5) * lh);
+        let col = if link.is_some() { pal().bar_txt } else { pal().ink2 };
+        let ww = ptext(&p, pos, Align::Min, word, px, col);
+        if let Some(c) = link {
+            let r = Rect::from_min_size(Pos2::new(pos.x, pos.y - lh / 2.0), Vec2::new(ww, lh));
+            let resp =
+                ui.interact(r, ui.id().with(("bio_link", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.hovered() {
+                p.line_segment([Pos2::new(r.min.x, pos.y + 7.0), Pos2::new(r.max.x, pos.y + 7.0)], Stroke::new(1.0_f32, col));
+            }
+            if resp.clicked() {
+                acts.push(Action::Open((*c).clone()));
+            }
+        }
+    }
+    if lines > SHORT {
+        let label = if open { "VIEW LESS" } else { "VIEW MORE" };
+        let tw = text_w(label, px);
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(tw + 16.0, lh), Sense::click());
+        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let col = if resp.hovered() { pal().ink } else { pal().ink2 };
+        let at = Pos2::new(r.min.x + 8.0, r.center().y);
+        ptext(&p, at, Align::Min, label, px, col);
+        p.line_segment([Pos2::new(at.x, at.y + 7.0), Pos2::new(at.x + tw, at.y + 7.0)], Stroke::new(1.0_f32, col));
+        // (set after the frame, so a page drawn twice in one frame cannot open and shut it again)
+        if resp.clicked() {
+            acts.push(Action::BioOpen(id.to_string(), !open));
+        }
+    }
+    ui.add_space(4.0);
 }
 
 fn push_tracks(p: &mut Arc<Page>, v: &[Track]) {
@@ -3520,6 +3628,11 @@ impl App {
                 app.wv_zoom = 6.0;
             }
             Ok("lists") => app.sec = Sec::Lists,
+            // the library's ARTISTS tab (BACKLINE_OPEN=artist opens an artist's page once the library is in: Msg::Page)
+            Ok("artists") => {
+                app.sec = Sec::Tidal;
+                app.lib_tab = Tab::Artists;
+            }
             Ok("recent") => {
                 app.sec = Sec::Tidal;
                 app.lib_tab = Tab::Recent;
@@ -4050,9 +4163,26 @@ impl App {
                         }
                         self.fwd.clear();
                     }
+                    let library = p.library;
                     self.page = Some(Arc::new(p));
                     self.serial += 1;
                     self.loading = false;
+                    // a test copy: an artist's page once the library is in (Pat Metheny, or BACKLINE_ARTIST=<id>)
+                    static ARTIST_SHOWN: AtomicBool = AtomicBool::new(false);
+                    if library
+                        && std::env::var("BACKLINE_OPEN").as_deref() == Ok("artist")
+                        && !ARTIST_SHOWN.swap(true, Ordering::Relaxed)
+                    {
+                        let id = std::env::var("BACKLINE_ARTIST").unwrap_or_else(|_| "14068".to_string());
+                        let card = Card {
+                            kind: Kind::Artist,
+                            id,
+                            title: String::new(),
+                            subtitle: "Artist".to_string(),
+                            image: String::new(),
+                        };
+                        self.load(true, move |a| a.open(&card));
+                    }
                 }
                 Msg::Media(k) => match k {
                     1 => self.apply(Action::Toggle),
@@ -4097,6 +4227,41 @@ impl App {
                     self.loading = false;
                     self.set_err(e);
                 }
+                Msg::Followed(id, on, r) => match r {
+                    Ok(()) => {
+                        // the artist's page shows it, and the library's ARTISTS list follows along
+                        let mut card: Option<Card> = None;
+                        if let Some(p) = self.page.as_mut().filter(|p| p.artist_id == id) {
+                            let p = Arc::make_mut(p);
+                            p.following = on;
+                            card = Some(Card {
+                                kind: Kind::Artist,
+                                id: id.clone(),
+                                title: p.title.clone(),
+                                subtitle: "Artist".to_string(),
+                                image: p.image.clone(),
+                            });
+                        }
+                        if let Some(lp) = self.lib_page.as_mut() {
+                            let lp = Arc::make_mut(lp);
+                            match lp.rows.iter_mut().find(|r| r.0 == "Artists") {
+                                Some(row) => {
+                                    row.1.retain(|c| c.id != id);
+                                    if let (true, Some(c)) = (on, card.clone()) {
+                                        row.1.insert(0, c);
+                                    }
+                                }
+                                None => {
+                                    if let (true, Some(c)) = (on, card) {
+                                        lp.rows.push(("Artists".to_string(), vec![c]));
+                                    }
+                                }
+                            }
+                        }
+                        self.set_note(if on { "FOLLOWING ON TIDAL" } else { "UNFOLLOWED" });
+                    }
+                    Err(e) => self.set_err(format!("Couldn't {} on Tidal: {}", if on { "follow" } else { "unfollow" }, e)),
+                },
                 Msg::Audio(g, id, bytes) => {
                     if g == self.play_gen {
                         let n = bytes.len();
@@ -4607,6 +4772,17 @@ impl App {
             Action::Open(c) => {
                 self.sec = Sec::Tidal;
                 self.load(true, move |a| a.open(&c))
+            }
+            Action::BioOpen(id, open) => {
+                self.ctx.data_mut(|d| d.insert_temp(egui::Id::new(("bio_open", id)), open));
+            }
+            Action::Follow(id, on) => {
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = api.follow_artist(&id, on);
+                    let _ = tx.send(Msg::Followed(id, on, r));
+                    ctx.request_repaint();
+                });
             }
             Action::GoTo(id, to) => {
                 self.sec = Sec::Tidal;
