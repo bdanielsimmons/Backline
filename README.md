@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- FOLLOW and RADIO on artist pages, their bio (VIEW MORE for the rest, names you can click), and new releases from artists you follow in your ARTISTS tab
 - SCALE HARMONY in CHORDS - every chord a scale makes, its mode, a grip, what to solo with (triad pairs too) and a vamp the band loops
 - ARPEGGIOS in LINES - a chord's notes inside its scale, in the same positions as SCALES, played every way round and through a tune
 - CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Go offline - only what's on this computer, nothing goes out to the internet - and back online in one click
 - No internet? Backline opens as usual with your Tidal likes and plays what's on this computer
 - Tidal reconnects by itself when the internet is back
-- Star your loops - a gig coming up, a part not to forget - and show only the starred ones
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
