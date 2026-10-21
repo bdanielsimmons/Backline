@@ -7,6 +7,26 @@ on:
     paths-ignore: ['**.md', '.github/release_notes.py', 'android/**', '.github/workflows/android.yml']
   workflow_dispatch:
 jobs:
+  # the Mac-only paths (yt-dlp's folder build, the stems runtime) on a real Mac: they don't compile on Windows
+  mac-test:
+    name: mac test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Remember compiled dependencies between builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "backline -> target"
+          cache-on-failure: true
+      - name: Unit tests
+        working-directory: backline
+        run: cargo test --release
+      - name: yt-dlp and stems on a Mac
+        working-directory: backline
+        env:
+          BACKLINE_HOME: ${{ runner.temp }}/backline-home
+        run: cargo test --release -- --ignored --nocapture --test-threads 1 smoke
   build:
     name: ${{ matrix.os_name }} ${{ matrix.flavor }}
     runs-on: ${{ matrix.runner }}

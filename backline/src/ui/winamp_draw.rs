@@ -400,7 +400,7 @@ pub(crate) enum FontSrc {
     Web(&'static str, f32),
 }
 
-pub(crate) const PL_FONTS: [(&str, FontSrc); 13] = [
+pub(crate) const PL_FONTS: [(&str, FontSrc); 14] = [
     ("THE SKIN'S OWN", FontSrc::Skin),
     ("TAHOMA", FontSrc::Sys("tahoma")),
     ("MS SANS SERIF", FontSrc::Sys("microsoft sans serif")),
@@ -414,6 +414,7 @@ pub(crate) const PL_FONTS: [(&str, FontSrc); 13] = [
     ("PRESS START 2P", FontSrc::Web("ofl/pressstart2p/PressStart2P-Regular.ttf", 8.0)),
     ("JERSEY 10", FontSrc::Web("ofl/jersey10/Jersey10-Regular.ttf", 12.0)),
     ("MICRO 5", FontSrc::Web("ofl/micro5/Micro5-Regular.ttf", 10.0)),
+    ("LEXEND", FontSrc::Web("ofl/lexend/Lexend%5Bwght%5D.ttf", 12.0)),
 ];
 
 /// Windows' list of installed fonts: family name (lower case, e.g. "arial narrow", "trebuchet ms italic") to file.
@@ -436,32 +437,93 @@ pub(crate) fn installed_fonts() -> &'static HashMap<String, std::path::PathBuf> 
         if !cfg!(windows) {
             return map;
         }
-        let key = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
-        for root in ["HKLM", "HKCU"] {
-            let Ok(out) = std::process::Command::new("reg").args(["query", &format!("{}\\{}", root, key)]).output() else {
+        // read straight from the registry (not with reg.exe: starting that fails on some PCs)
+        for (name, file) in registry_fonts() {
+            let file = file.trim();
+            let lower = file.to_ascii_lowercase();
+            // only outline fonts can be drawn (the old .fon bitmap ones cannot)
+            if !(lower.ends_with(".ttf") || lower.ends_with(".otf") || lower.ends_with(".ttc")) {
                 continue;
+            }
+            let path = if file.contains('\\') {
+                std::path::PathBuf::from(file)
+            } else {
+                std::path::Path::new("C:\\Windows\\Fonts").join(file)
             };
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                let Some((name, file)) = line.split_once("REG_SZ") else { continue };
-                let file = file.trim();
-                let lower = file.to_ascii_lowercase();
-                // only outline fonts can be drawn (the old .fon bitmap ones cannot)
-                if !(lower.ends_with(".ttf") || lower.ends_with(".otf") || lower.ends_with(".ttc")) {
-                    continue;
-                }
-                let path = if file.contains('\\') {
-                    std::path::PathBuf::from(file)
-                } else {
-                    std::path::Path::new("C:\\Windows\\Fonts").join(file)
-                };
-                let name = name.trim().trim_end_matches("(TrueType)").trim_end_matches("(OpenType)").trim();
-                for n in name.split(" & ") {
-                    map.entry(n.trim().to_ascii_lowercase()).or_insert_with(|| path.clone());
-                }
+            let name = name.trim().trim_end_matches("(TrueType)").trim_end_matches("(OpenType)").trim();
+            for n in name.split(" & ") {
+                map.entry(n.trim().to_ascii_lowercase()).or_insert_with(|| path.clone());
             }
         }
         map
     })
+}
+
+/// The installed fonts as Windows lists them (machine-wide, then yours): (name, file).
+#[cfg(windows)]
+fn registry_fonts() -> Vec<(String, String)> {
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn RegOpenKeyExW(key: isize, sub: *const u16, opts: u32, sam: u32, out: *mut isize) -> i32;
+        fn RegEnumValueW(
+            key: isize,
+            index: u32,
+            name: *mut u16,
+            name_len: *mut u32,
+            reserved: *mut u32,
+            kind: *mut u32,
+            data: *mut u8,
+            data_len: *mut u32,
+        ) -> i32;
+        fn RegCloseKey(key: isize) -> i32;
+    }
+    const KEY_READ: u32 = 0x20019;
+    // HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER
+    let roots = [0x8000_0002u32 as i32 as isize, 0x8000_0001u32 as i32 as isize];
+    let sub: Vec<u16> = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts".encode_utf16().chain([0]).collect();
+    let mut out = Vec::new();
+    for root in roots {
+        let mut key: isize = 0;
+        if unsafe { RegOpenKeyExW(root, sub.as_ptr(), 0, KEY_READ, &mut key) } != 0 {
+            continue;
+        }
+        let mut name = vec![0u16; 16384];
+        let mut data = vec![0u8; 8192];
+        for index in 0u32.. {
+            let (mut nlen, mut dlen, mut kind) = (name.len() as u32, data.len() as u32, 0u32);
+            let r = unsafe {
+                RegEnumValueW(
+                    key,
+                    index,
+                    name.as_mut_ptr(),
+                    &mut nlen,
+                    std::ptr::null_mut(),
+                    &mut kind,
+                    data.as_mut_ptr(),
+                    &mut dlen,
+                )
+            };
+            // 259: no more values
+            if r == 259 {
+                break;
+            }
+            // text values only (REG_SZ, REG_EXPAND_SZ); one too long for the buffers is skipped
+            if r != 0 || !(kind == 1 || kind == 2) {
+                continue;
+            }
+            let n = String::from_utf16_lossy(&name[..nlen as usize]);
+            let wide: Vec<u16> = data[..dlen as usize].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let f = String::from_utf16_lossy(&wide).trim_end_matches('\0').to_string();
+            out.push((n, f));
+        }
+        unsafe { RegCloseKey(key) };
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn registry_fonts() -> Vec<(String, String)> {
+    Vec::new()
 }
 
 /// A font installed on this computer, by the name a skin gives (Windows' font list first, then the usual files
@@ -830,5 +892,13 @@ mod tests {
             }
             assert_eq!(widths.len(), 1, "even stems at {} px: {:?}", size, widths);
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_fonts_read_from_the_registry() {
+        let fonts = registry_fonts();
+        assert!(fonts.len() > 20, "only {} fonts", fonts.len());
+        assert!(installed_fonts().contains_key("arial"), "no arial");
     }
 }

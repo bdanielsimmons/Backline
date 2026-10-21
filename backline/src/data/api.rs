@@ -1377,6 +1377,22 @@ impl Api {
     }
 
     /// Another artist profile with exactly this name and a picture (Tidal keeps duplicates for some credits).
+    /// An album found by artist and title (the closest match Tidal has), and its songs.
+    pub fn find_album(&self, artist: &str, album: &str) -> Res<Vec<Track>> {
+        let q = format!("{} {}", artist, album);
+        let v = self.get("/search", &[("query", q.as_str()), ("limit", "10"), ("types", "ALBUMS")])?;
+        let cards: Vec<Card> = cards_from(arr(&v["albums"]["items"])).into_iter().filter(|c| c.kind == Kind::Album).collect();
+        let want = album.to_lowercase();
+        let first_word = artist.split_whitespace().next().unwrap_or("").to_lowercase();
+        let best = cards
+            .iter()
+            .find(|c| c.title.to_lowercase() == want && c.subtitle.to_lowercase().contains(&first_word))
+            .or_else(|| cards.iter().find(|c| c.title.to_lowercase().starts_with(&want)))
+            .or_else(|| cards.first())
+            .ok_or_else(|| format!("{} - {} not found on Tidal", artist, album))?;
+        Ok(self.open(best)?.tracks)
+    }
+
     fn same_name_artist(&self, name: &str, not_id: &str) -> Option<Card> {
         let v = self.get("/search", &[("query", name), ("limit", "10"), ("types", "ARTISTS")]).ok()?;
         cards_from(arr(&v["artists"]["items"]))

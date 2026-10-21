@@ -627,10 +627,7 @@ impl App {
         }
         // everything you keep (MY TRACKS, LISTS), then each source on its own
         // each source, then a bar, then everything you keep (MY TRACKS, LISTS)
-        let mut items: Vec<(Sec, &str)> = Vec::new();
-        if !self.offline {
-            items.push((Sec::Tidal, "TIDAL"));
-        }
+        let mut items: Vec<(Sec, &str)> = vec![(Sec::Tidal, "TIDAL")];
         items.extend([
             (Sec::Files, "FILES"),
             (Sec::Sc, "SOUNDCLOUD"),
@@ -1301,7 +1298,16 @@ impl App {
             } else {
                 pal().ink2
             };
-            para(ui, &self.yt_msg.clone(), col);
+            let n = crate::sources::YT_READ.load(std::sync::atomic::Ordering::Relaxed);
+            let msg = if self.yt_busy && self.yt_msg.starts_with("READING THE PLAYLIST") && n > 0 {
+                format!("READING THE PLAYLIST... {} SO FAR", n)
+            } else {
+                self.yt_msg.clone()
+            };
+            if self.yt_busy {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+            }
+            para(ui, &msg, col);
         }
         // a playlist open: its own page (back to the rest with the arrow)
         if self.yt_cur.is_some() && !self.yt_results.is_empty() {
@@ -2074,6 +2080,48 @@ impl App {
     }
 
     // ---------------------------------------------------------------- TUNES
+    /// TUNES > RECOMMENDED: the tunes that get called, by kind (jazz or gospel). Click one to see its chart on the
+    /// lead sheet - it only becomes one of yours with + MY TUNES.
+    fn recommended_tunes(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        para(ui, "The tunes that get called at sessions, by kind - a mix of kinds keeps you ready for anything. Click one to see its chart on the right; + MY TUNES keeps it.", pal().ink2);
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "JAZZ", !self.tunes_gospel).clicked() {
+                self.tunes_gospel = false;
+            }
+            if retro_btn(ui, "GOSPEL", self.tunes_gospel).clicked() {
+                self.tunes_gospel = true;
+            }
+        });
+        let kinds = if self.tunes_gospel { crate::canon::GOSPEL_TUNES } else { crate::canon::SESSION_TUNES };
+        let showing = self.prac_chart.as_ref().map(|c| c.0.clone());
+        for (kind, list) in kinds.iter() {
+            section_header(ui, kind);
+            for (name, who) in list.iter() {
+                let mine = self.find_tune(name).is_some();
+                let on = showing.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name));
+                ui.horizontal_wrapped(|ui| {
+                    if retro_btn(ui, &name.to_uppercase(), on).tip(format!("{} - its chart on the lead sheet", who)).clicked() {
+                        acts.push(Action::PreviewTune(name.to_string()));
+                    }
+                    if mine {
+                        label(ui, "IN YOUR TUNES", 0.0);
+                    } else if retro_btn(ui, "+ MY TUNES", false).tip("Keep it in your repertoire").clicked() {
+                        acts.push(Action::AddRecommended(name.to_string()));
+                    }
+                    if self.store.routine_set.get(*kind).is_some_and(|s| s.eq_ignore_ascii_case(name)) {
+                        label(ui, "IN YOUR SET", 0.0);
+                    } else if retro_btn(ui, "MY SET", false)
+                        .tip("The tune you are working on for this kind (DIARY > ROUTINE)")
+                        .clicked()
+                    {
+                        acts.push(Action::SetTune(kind.to_string(), name.to_string()));
+                    }
+                });
+            }
+        }
+        ui.add_space(20.0);
+    }
+
     pub(crate) fn tunes_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         if let Some(i) = self.tune_open {
             if i < self.store.tunes.len() && self.pick.is_none() {
@@ -2095,6 +2143,14 @@ impl App {
             ui.add_space(6.0);
         } else {
             title_line(ui, "TUNES", 3.0, pal().ink);
+            if let Some(i) = tab_row(ui, &["YOUR TUNES", "RECOMMENDED"], self.tunes_tab as usize) {
+                self.tunes_tab = i as u8;
+            }
+            ui.add_space(4.0);
+            if self.tunes_tab == 1 {
+                self.recommended_tunes(ui, acts);
+                return;
+            }
             title_line(ui, &format!("{} tunes - your repertoire", self.store.tunes.len()), 2.0, pal().ink2);
             ui.add_space(4.0);
         }
@@ -2123,7 +2179,34 @@ impl App {
         if !self.store.tunes.is_empty() {
             table_header(ui, "TUNE", "RECORDINGS", "PRACTICED", false);
         }
-        for (i, t) in self.store.tunes.iter().enumerate() {
+        // your tunes under the kind each is (a blues, rhythm changes, a ballad...): the kind it has in your set, else
+        // the kind the session lists give it, else OTHER; the ones in your set marked
+        let kinds: Vec<&str> = crate::canon::SESSION_TUNES.iter().chain(crate::canon::GOSPEL_TUNES.iter()).map(|k| k.0).collect();
+        let kind_of = |name: &str| -> Option<&str> {
+            if let Some((k, _)) = self.store.routine_set.iter().find(|(_, v)| v.eq_ignore_ascii_case(name)) {
+                return kinds.iter().copied().find(|x| x == k);
+            }
+            crate::canon::SESSION_TUNES
+                .iter()
+                .chain(crate::canon::GOSPEL_TUNES.iter())
+                .find(|(_, l)| l.iter().any(|(n, _)| n.eq_ignore_ascii_case(name)))
+                .map(|k| k.0)
+        };
+        let mut order: Vec<(Option<&str>, usize)> =
+            self.store.tunes.iter().enumerate().map(|(i, t)| (kind_of(&t.name), i)).collect();
+        let rank = |k: &Option<&str>| k.map_or(usize::MAX, |k| kinds.iter().position(|x| *x == k).unwrap_or(usize::MAX - 1));
+        order.sort_by_key(|(k, i)| (rank(k), *i));
+        if self.store.tunes.iter().any(|t| self.store.routine_set.values().any(|v| v.eq_ignore_ascii_case(&t.name))) {
+            crate::views::dim_line(ui, "* = IN YOUR SET (DIARY > ROUTINE)", 1.0, pal().dim);
+        }
+        let mut last: Option<Option<&str>> = None;
+        for (kind, i) in order {
+            if last != Some(kind) {
+                section_header(ui, kind.unwrap_or("OTHER"));
+                last = Some(kind);
+            }
+            let t = &self.store.tunes[i];
+            let in_set = self.store.routine_set.values().any(|v| v.eq_ignore_ascii_case(&t.name));
             let mins = self.store.tune_secs(&t.name) / 60;
             let r = list_row(
                 ui,
@@ -2131,8 +2214,9 @@ impl App {
                 None,
                 || {
                     format!(
-                        "[{}] {}",
+                        "[{}] {}{}",
                         "#".repeat(t.status.min(3) as usize + 1) + &"-".repeat(3 - t.status.min(3) as usize),
+                        if in_set { "* " } else { "" },
                         t.name
                     )
                 },

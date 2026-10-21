@@ -20,7 +20,14 @@ pub const NAMES: [&str; 4] = ["DRUMS", "BASS", "OTHER", "VOCALS"];
 const FILES: [&str; 4] = ["drums", "bass", "other", "vocals"];
 
 const MODEL_URL: &str = "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs_fp16weights.onnx";
-const RUNTIME_URL: &str = "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-win-x64-1.22.0.zip";
+/// The ONNX Runtime for this system (Windows: a .zip; Mac, both chips: a .tgz; Linux: a .tgz).
+const RUNTIME_URL: &str = if cfg!(windows) {
+    "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-win-x64-1.22.0.zip"
+} else if cfg!(target_os = "macos") {
+    "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-osx-universal2-1.22.0.tgz"
+} else {
+    "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz"
+};
 
 const SEG: usize = 343_980; // 7.8 s at 44.1 kHz
 const OVERLAP: usize = SEG / 4;
@@ -52,7 +59,13 @@ pub fn dir() -> PathBuf {
 }
 
 fn dll_path() -> PathBuf {
-    dir().join("onnxruntime.dll")
+    dir().join(if cfg!(windows) {
+        "onnxruntime.dll"
+    } else if cfg!(target_os = "macos") {
+        "libonnxruntime.dylib"
+    } else {
+        "libonnxruntime.so"
+    })
 }
 
 fn model_path() -> PathBuf {
@@ -61,7 +74,7 @@ fn model_path() -> PathBuf {
 
 /// Runtime and model are both on disk.
 pub fn tool_ready() -> bool {
-    dll_path().exists() && model_path().exists() && cfg!(windows)
+    dll_path().exists() && model_path().exists()
 }
 
 pub fn stems_dir(id: i64) -> PathBuf {
@@ -144,8 +157,35 @@ fn download_file(url: &str, dest: &Path, label: &str, min_len: u64) -> Result<()
 
 /// One-time setup: the ONNX Runtime library and the Demucs model.
 pub fn download_tool() -> Result<(), String> {
-    if !cfg!(windows) {
-        return Err("stem separation is only set up for Windows".to_string());
+    if !dll_path().exists() && !cfg!(windows) {
+        // Mac / Linux: a .tgz holding lib/libonnxruntime.<version>.dylib (or .so.<version>) - the real file, not
+        // the links to it
+        let tgz = dir().join("onnxruntime.tgz");
+        download_file(RUNTIME_URL, &tgz, "DOWNLOADING RUNTIME", 1_000_000)?;
+        set_stage("UNPACKING RUNTIME");
+        let f = std::fs::File::open(&tgz).map_err(|e| e.to_string())?;
+        let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(f));
+        let mut found = false;
+        for entry in ar.entries().map_err(|e| e.to_string())? {
+            let mut e = entry.map_err(|e| e.to_string())?;
+            if !e.header().entry_type().is_file() {
+                continue;
+            }
+            let name = e.path().map_err(|e| e.to_string())?.to_string_lossy().to_string();
+            let file = name.rsplit('/').next().unwrap_or("");
+            if name.contains("/lib/") && file.starts_with("libonnxruntime.") && (file.ends_with(".dylib") || file.contains(".so"))
+            {
+                let mut data = Vec::new();
+                e.read_to_end(&mut data).map_err(|e| e.to_string())?;
+                std::fs::write(dll_path(), data).map_err(|e| e.to_string())?;
+                found = true;
+                break;
+            }
+        }
+        let _ = std::fs::remove_file(&tgz);
+        if !found {
+            return Err("the runtime library was not in the download".to_string());
+        }
     }
     if !dll_path().exists() {
         let zip_path = dir().join("onnxruntime.zip");
@@ -383,4 +423,19 @@ pub fn mix_wav(st: &Stems, on: [bool; 4]) -> Vec<u8> {
         out.extend_from_slice(&(sum.clamp(-32768, 32767) as i16).to_le_bytes());
     }
     out
+}
+
+/// The stem tool on a real machine - run by the Mac test on GitHub (`-- --ignored smoke`).
+#[cfg(test)]
+mod smoke {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn smoke_stems_runtime_downloads_and_loads() {
+        download_tool().expect("stem tool download");
+        assert!(tool_ready(), "runtime or model missing after the download");
+        init_runtime().expect("the runtime loads");
+        println!("stems runtime loaded from {}", dll_path().display());
+    }
 }

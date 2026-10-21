@@ -1,188 +1,126 @@
-//! DIARY > ROUTINE, LISTENING and MASTERS: the spine of a practice week. One tune at a time, listened to, learned
-//! by ear, played with the band, a lick through every key, a solo recorded - each step a button that opens the
-//! right tool with the right settings. The lists live in data/canon.rs.
+//! DIARY > ROUTINE, LISTENING and MASTERS. ROUTINE: your set (one tune of each kind you are working on - a blues,
+//! rhythm changes, a ballad...) and suggestions for a session with how to do each in Backline. The lists live in
+//! data/canon.rs.
 
 use super::*;
 use crate::canon;
 
-/// The steps of a day: (name, what to do, minutes, a key for the day's done-list).
-pub(crate) const STEPS: [(&str, &str, u32); 6] = [
-    ("LISTEN TO THE RECORD", "Loop the head on the reference recording. Twice through, nothing in your hands.", 5),
-    ("MELODY BY EAR", "Play the melody from the record, no sheet. Then in two other keys.", 10),
-    (
-        "CHANGES WITH THE BAND",
-        "Comp the changes with the band, then arpeggios through them. Shells on the 6th and 5th strings.",
-        10,
-    ),
-    (
-        "ONE LICK THROUGH 12 KEYS",
-        "Loop 4 to 8 bars you love from the record. The trainer moves it up a 4th every few passes; play along by ear.",
-        10,
-    ),
-    ("SOLO, RECORDED", "Three choruses over the band, recorded. Don't listen back today.", 10),
-    ("LISTEN BACK", "Sunday: hear this week's takes. Write one thing to fix in the diary.", 10),
+/// What to practise, and how to do it here: (what, how in Backline). A checkbox each, for today.
+pub(crate) const SUGGESTIONS: [(&str, &str); 7] = [
+    ("LISTEN BEFORE YOU PLAY", "Play a recording of a tune from your set (click the tune, then a recording in TUNES), and loop the head with A and B in the practice panel. Twice through, guitar down."),
+    ("LEARN THE MELODY BY EAR", "Slow the loop in the practice panel (SPEED, pitch unchanged) until you can play along without the sheet. Then PITCH & EAR up a 4th and find it again."),
+    ("PLAY THE CHANGES WITH THE BAND", "Click a tune in your set: its chart goes on the right. PLAY BAND on the lead sheet and comp shells, then run arpeggios (LINES > ARPEGGIOS, through a tune)."),
+    ("ONE LICK THROUGH 12 KEYS", "Loop 4 to 8 bars you love from a record. TRAINER > THEN: UP A 4TH moves it every few passes; play it back in each key by ear."),
+    ("RECORD A SOLO", "PRACTICE panel > RECORD, WITH THE BAND on: three choruses. Don't listen back today."),
+    ("LISTEN BACK (ONCE A WEEK)", "ALL TAKES in the RECORD tab: hear the week's takes, and write one thing to fix with LOG PRACTICE in the diary."),
+    ("LISTEN TO A RECORD", "DIARY > LISTENING: one album, start to finish, close."),
 ];
 
 impl App {
-    /// The tune of the week's index in TUNES, if it is there.
-    fn routine_tune_i(&self) -> Option<usize> {
-        let name = self.store.routine_tune.trim();
-        if name.is_empty() {
-            return None;
-        }
-        self.find_tune(name)
-    }
-
-    /// The next tune from the session list (jazz or gospel): kinds in turn, so the weeks vary; one you have not
-    /// marked READY and have not skipped.
-    pub(crate) fn routine_next_name(&self) -> Option<String> {
-        let kinds = if self.store.routine_gospel { canon::GOSPEL_TUNES } else { canon::SESSION_TUNES };
-        let ready = |n: &str| self.find_tune(n).is_some_and(|i| self.store.tunes[i].status >= 2);
-        let skipped = |n: &str| self.store.skipped_tunes.iter().any(|s| s.eq_ignore_ascii_case(n));
-        let start = self.store.routine_count as usize;
-        for k in 0..kinds.len() {
-            let (_, list) = kinds[(start + k) % kinds.len()];
-            if let Some((name, _)) =
-                list.iter().find(|(n, _)| !ready(n) && !skipped(n) && !n.eq_ignore_ascii_case(&self.store.routine_tune))
-            {
-                return Some(name.to_string());
-            }
-        }
-        None
-    }
-
+    /// ROUTINE: your set (one tune of each kind you are working on), then suggestions for a session.
     pub(crate) fn routine_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "One tune a week, the way the masters learned: listen hard, learn it by ear, play it with the band, take one lick through every key, record a solo. Each step opens the tool set up for it. Change the minutes, turn steps off, make it yours.", pal().ink2);
-        // ---- the tune of the week
-        let today = store::today_days();
-        let tune_i = self.routine_tune_i();
+        // ---- your set: one tune of each kind
+        section_header(ui, "YOUR SET");
+        para(ui, "One tune of each kind keeps you ready for any session: a blues, rhythm changes, a ballad... Pick one in each row; click its name to see the chart on the right.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "TUNE OF THE WEEK", 150.0);
-            if self.store.routine_tune.is_empty() {
-                crate::views::label(ui, "NONE YET - PRESS NEXT", 0.0);
-            } else {
-                let days = store::parse_date(&self.store.routine_since).map(|d| today - d + 1).unwrap_or(1);
-                title_line(ui, &format!("{}   (DAY {})", self.store.routine_tune.to_uppercase(), days.max(1)), 2.5, pal().ink);
+            if retro_btn(ui, "JAZZ", !self.store.routine_gospel).clicked() {
+                self.store.routine_gospel = false;
+                self.store_dirty = true;
             }
-        });
-        ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "NEXT", false).tip("The next session tune, a different kind each week").clicked() {
-                if let Some(n) = self.routine_next_name() {
-                    acts.push(Action::RoutineTune(n));
-                }
-            }
-            if !self.store.routine_tune.is_empty()
-                && retro_btn(ui, "SKIP IT", false).tip("Not this one: it won't come up again").clicked()
-            {
-                let n = self.store.routine_tune.clone();
-                self.store.skipped_tunes.push(n);
-                if let Some(next) = self.routine_next_name() {
-                    acts.push(Action::RoutineTune(next));
-                }
-            }
-            let kinds = if self.store.routine_gospel { canon::GOSPEL_TUNES } else { canon::SESSION_TUNES };
-            let labels: Vec<String> =
-                kinds.iter().flat_map(|(k, l)| l.iter().map(move |(n, _)| format!("{}: {}", k, n))).collect();
-            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-            let mut pick = vec!["PICK ONE..."];
-            pick.extend(labels.iter().copied());
-            if let Some(i) = dropdown(ui, "rt_pick", "", &pick, 0, 160.0) {
-                if i > 0 {
-                    let n = labels[i - 1].split_once(": ").map(|x| x.1).unwrap_or(labels[i - 1]).to_string();
-                    acts.push(Action::RoutineTune(n));
-                }
-            }
-            let mut mine = vec!["FROM MY TUNES..."];
-            let names: Vec<String> = self.store.tunes.iter().map(|t| t.name.clone()).collect();
-            mine.extend(names.iter().map(String::as_str));
-            if let Some(i) = dropdown(ui, "rt_mine", "", &mine, 0, 160.0) {
-                if i > 0 {
-                    acts.push(Action::RoutineTune(names[i - 1].clone()));
-                }
-            }
-            if retro_btn(ui, if self.store.routine_gospel { "GOSPEL" } else { "JAZZ" }, false)
-                .tip("Which list NEXT draws from")
-                .clicked()
-            {
-                self.store.routine_gospel = !self.store.routine_gospel;
+            if retro_btn(ui, "GOSPEL", self.store.routine_gospel).clicked() {
+                self.store.routine_gospel = true;
                 self.store_dirty = true;
             }
         });
-        if let Some(i) = tune_i {
-            if self.store.tunes[i].chart.trim().is_empty() {
-                crate::views::dim_line(ui, "NO CHART YET - OPEN THE TUNE AND FIND ONE, OR TYPE IT", 1.0, pal().dim);
+        let kinds = if self.store.routine_gospel { canon::GOSPEL_TUNES } else { canon::SESSION_TUNES };
+        let showing =
+            self.prac_chart.as_ref().map(|c| c.0.clone()).or_else(|| self.chart_tune().map(|i| self.store.tunes[i].name.clone()));
+        let mut covered = 0;
+        for (kind, list) in kinds.iter() {
+            let picked = self.store.routine_set.get(*kind).cloned().filter(|s| !s.is_empty());
+            if picked.is_some() {
+                covered += 1;
             }
-        }
-
-        // ---- today's steps
-        ui.add_space(6.0);
-        let date = store::date_str(today);
-        let sunday = store::weekday(today) == "SUN";
-        let done: Vec<u8> = self.store.routine_done.get(&date).cloned().unwrap_or_default();
-        if self.store.routine_mins.len() != STEPS.len() {
-            self.store.routine_mins = STEPS.iter().map(|s| s.2).collect();
-        }
-        let mut n_done = 0;
-        let mut n_on = 0;
-        let mut total = 0;
-        for (k, (name, about, _)) in STEPS.iter().enumerate() {
-            let off = self.store.routine_off.contains(&(k as u8));
-            if k == 5 && !sunday && !off {
-                // listening back is a Sunday thing
-                continue;
-            }
-            let is_done = done.contains(&(k as u8));
-            if !off {
-                n_on += 1;
-                total += self.store.routine_mins[k];
-                if is_done {
-                    n_done += 1;
-                }
-            }
-            // one row: done, the step (a button that opens its tool), its minutes (or OFF) in one small menu
             ui.horizontal_wrapped(|ui| {
-                if retro_btn_w(ui, if is_done { "DONE" } else { "  " }, 44.0, is_done).tip("Mark it done for today").clicked() {
-                    acts.push(Action::RoutineDone(k as u8));
-                }
-                if off {
-                    crate::views::label(ui, name, 0.0);
-                } else if retro_btn(ui, name, false).tip(about).clicked() {
-                    acts.push(Action::RoutineGo(k as u8));
-                }
-                const MINS: [u32; 7] = [0, 5, 10, 15, 20, 30, 45];
-                let items: Vec<String> =
-                    MINS.iter().map(|m| if *m == 0 { "OFF".to_string() } else { format!("{} MIN", m) }).collect();
-                let items: Vec<&str> = items.iter().map(String::as_str).collect();
-                let cur = if off { 0 } else { MINS.iter().position(|m| *m == self.store.routine_mins[k]).unwrap_or(2) };
-                if let Some(i) = dropdown(ui, &format!("rt_min{}", k), "", &items, cur, 0.0) {
-                    if i == 0 {
-                        if !off {
-                            self.store.routine_off.push(k as u8);
+                crate::views::label(ui, kind, 190.0);
+                match &picked {
+                    Some(name) => {
+                        let on = showing.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name));
+                        if retro_btn(ui, &name.to_uppercase(), on).tip("Its chart on the right").clicked() {
+                            acts.push(Action::PreviewTune(name.clone()));
                         }
-                    } else {
-                        self.store.routine_off.retain(|x| *x != k as u8);
-                        self.store.routine_mins[k] = MINS[i];
                     }
-                    self.store_dirty = true;
+                    None => crate::views::label(ui, "-", 30.0),
+                }
+                // the kind's tunes; the ones already in your tunes marked
+                let mut items: Vec<String> =
+                    vec![if picked.is_some() { "CHANGE...".to_string() } else { "PICK ONE...".to_string() }];
+                items.extend(
+                    list.iter().map(|(n, _)| if self.find_tune(n).is_some() { format!("{}  *", n) } else { n.to_string() }),
+                );
+                if picked.is_some() {
+                    items.push("NONE".to_string());
+                }
+                let items: Vec<&str> = items.iter().map(String::as_str).collect();
+                if let Some(i) = dropdown(ui, &format!("set_{}", kind), "", &items, 0, 0.0) {
+                    if i > 0 {
+                        let name = if i <= list.len() { list[i - 1].0.to_string() } else { String::new() };
+                        acts.push(Action::SetTune(kind.to_string(), name));
+                    }
                 }
             });
-            if !off {
-                crate::views::dim_line(ui, &about.to_uppercase(), 1.0, pal().ink2);
-            }
         }
-        ui.add_space(4.0);
-        crate::views::dim_line(ui, &format!("{} OF {} DONE TODAY   -   ABOUT {} MINUTES", n_done, n_on, total), 1.0, pal().ink);
         crate::views::dim_line(
             ui,
-            "THE FOCUS TIMER (TOMATO, TOP RIGHT OF PRACTICE) KEEPS EACH STEP TO ITS MINUTES.",
+            &format!("{} OF {} KINDS IN YOUR SET   -   * = ALREADY IN YOUR TUNES", covered, kinds.len()),
             1.0,
-            pal().dim,
+            pal().ink,
         );
+
+        // ---- suggestions for a session, with how to do each here
+        ui.add_space(8.0);
+        section_header(ui, "A SESSION");
+        para(
+            ui,
+            "Ideas for today, taken from how the masters practised (see MASTERS). Do what you have time for; tick what you did.",
+            pal().ink2,
+        );
+        let date = store::today_str();
+        let done: Vec<u8> = self.store.routine_done.get(&date).cloned().unwrap_or_default();
+        for (k, (what, how)) in SUGGESTIONS.iter().enumerate() {
+            let ticked = done.contains(&(k as u8));
+            ui.horizontal(|ui| {
+                let w = ui.available_width() - 34.0;
+                ui.vertical(|ui| {
+                    ui.set_width(w);
+                    title_line(ui, what, 2.0, if ticked { pal().ink2 } else { pal().ink });
+                    para(ui, how, pal().ink2);
+                });
+                // the checkbox, on the right
+                let (r, resp) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::click());
+                let p = ui.painter();
+                p.rect_stroke(r.shrink(2.0), 2.0, Stroke::new(1.5_f32, if resp.hovered() { pal().ink } else { pal().ink2 }));
+                if ticked {
+                    p.line_segment(
+                        [Pos2::new(r.min.x + 5.0, r.center().y), Pos2::new(r.center().x - 1.0, r.max.y - 5.0)],
+                        Stroke::new(2.0_f32, pal().ink),
+                    );
+                    p.line_segment(
+                        [Pos2::new(r.center().x - 1.0, r.max.y - 5.0), Pos2::new(r.max.x - 4.0, r.min.y + 4.0)],
+                        Stroke::new(2.0_f32, pal().ink),
+                    );
+                }
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Did it today").clicked() {
+                    acts.push(Action::RoutineDone(k as u8));
+                }
+            });
+        }
+        ui.add_space(20.0);
     }
 
     /// LISTENING: records by kind, jazz or gospel; a click finds the album on Tidal; LISTENED counts it.
     pub(crate) fn listening_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Close listening was half of how the masters practised: a few records, over and over. Click one to find it on Tidal; LISTENED keeps count.", pal().ink2);
+        para(ui, "Close listening was half of how the masters practised: a few records, over and over. Click one to play it; each play is counted.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "JAZZ", !self.listen_gospel).clicked() {
                 self.listen_gospel = false;
@@ -191,22 +129,59 @@ impl App {
                 self.listen_gospel = true;
             }
         });
+        if !self.listen_gospel && retro_btn(ui, "GUITARISTS ONLY", self.listen_guitar).clicked() {
+            self.listen_guitar = !self.listen_guitar;
+        }
         let kinds = if self.listen_gospel { canon::LISTEN_GOSPEL } else { canon::LISTEN_JAZZ };
-        for (kind, list) in kinds.iter() {
-            section_header(ui, kind);
-            for (artist, album) in list.iter() {
+        let guitar = self.listen_guitar && !self.listen_gospel;
+        let playing_album = self.cur_track().map(|t| t.album.to_lowercase());
+        for (era, list) in kinds.iter() {
+            let shown: Vec<&(&str, &str)> =
+                list.iter().filter(|(a, _)| !guitar || canon::GUITARISTS.iter().any(|g| a.contains(g))).collect();
+            if shown.is_empty() {
+                continue;
+            }
+            section_header(ui, era);
+            for (artist, album) in shown {
                 let key = format!("{} - {}", artist, album);
                 let n = self.store.listened.get(&key).copied().unwrap_or(0);
-                ui.horizontal_wrapped(|ui| {
-                    if retro_btn(ui, &key.to_uppercase(), false).tip("Find it on Tidal").clicked() {
-                        acts.push(Action::Search(format!("{} {}", artist, album)));
-                    }
-                    let lab = if n == 0 { "LISTENED".to_string() } else { format!("LISTENED x{}", n) };
-                    if retro_btn(ui, &lab, n > 0).tip("One more close listen").clicked() {
-                        *self.store.listened.entry(key.clone()).or_insert(0) += 1;
-                        self.store_dirty = true;
-                    }
-                });
+                // a row like a song's: click it to play the record
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::click());
+                let on = playing_album.as_deref().is_some_and(|a| a.starts_with(&album.to_lowercase()));
+                let p = ui.painter();
+                if resp.hovered() || on {
+                    p.rect_filled(r, 0.0, pal().sel);
+                }
+                let y = r.center().y;
+                let w = r.width();
+                crate::font::ptext_fit(
+                    p,
+                    Pos2::new(r.min.x + 8.0, y),
+                    Align::Min,
+                    &artist.to_uppercase(),
+                    2.0,
+                    w * 0.38,
+                    pal().ink2,
+                );
+                crate::font::ptext_fit(
+                    p,
+                    Pos2::new(r.min.x + 8.0 + w * 0.4, y),
+                    Align::Min,
+                    &album.to_uppercase(),
+                    2.0,
+                    w * 0.48,
+                    pal().ink,
+                );
+                if n > 0 {
+                    ptext(p, Pos2::new(r.max.x - 8.0, y), Align::Max, &format!("{}x", n), 1.0, pal().dim);
+                }
+                if resp
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .tip("Play it (from Tidal) - each play counts as a listen")
+                    .clicked()
+                {
+                    acts.push(Action::PlayRecord(artist.to_string(), album.to_string()));
+                }
             }
         }
         ui.add_space(20.0);

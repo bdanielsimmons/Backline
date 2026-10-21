@@ -548,6 +548,8 @@ pub struct Store {
     pub routine_done: HashMap<String, Vec<u8>>,
     pub routine_mins: Vec<u32>,
     pub routine_off: Vec<u8>,
+    /// ROUTINE: your set - the tune you are working on for each kind ("BLUES" -> "Blue Monk")
+    pub routine_set: HashMap<String, String>,
     /// LISTENING: close listens per record ("artist - album")
     pub listened: HashMap<String, u32>,
 }
@@ -710,7 +712,7 @@ pub fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (yy as i32, m, d)
 }
 
-/// "2026-10-20" as days since 1970 (None when it is not a date).
+#[cfg(test)]
 pub fn parse_date(s: &str) -> Option<i64> {
     let mut it = s.split('-');
     let y = it.next()?.parse::<i32>().ok()?;

@@ -1612,8 +1612,32 @@ impl App {
                     self.fill_details(&name, &w);
                 }
             }
+            Msg::RecordFound(key, r) => match r {
+                Ok(tracks) if !tracks.is_empty() => {
+                    *self.store.listened.entry(key.clone()).or_insert(0) += 1;
+                    self.store_dirty = true;
+                    self.apply(Action::Play(tracks, 0));
+                    self.set_note(&format!("LISTENING: {}", key.to_uppercase()));
+                }
+                Ok(_) => self.set_note(&format!("{}: NO SONGS ON TIDAL", key.to_uppercase())),
+                Err(e) => self.set_note(&e.to_uppercase()),
+            },
             Msg::Chart(name, r) => {
                 self.chart_busy = false;
+                // a recommended tune being looked at: its chart on the lead sheet, not one of your tunes
+                if self.find_tune(&name).is_none() && self.preview_tune.as_deref() == Some(name.as_str()) {
+                    match r {
+                        Ok((chart, _, _)) => {
+                            self.prac_chart = Some((name.to_uppercase(), chart));
+                            self.chart_sel = None;
+                            self.chart_tr = 0;
+                            self.rtab = 1;
+                            self.chart_sugg.clear();
+                        }
+                        Err((e, _)) => self.set_note(&format!("NO CHART FOR {}: {}", name.to_uppercase(), e.to_uppercase())),
+                    }
+                    return;
+                }
                 let Some(i) = self.find_tune(&name) else { return };
                 match r {
                     Ok((chart, key, composer)) => {
@@ -1950,17 +1974,65 @@ impl App {
                     "EVERY FEW PASSES THE SPEED GOES UP"
                 });
             }
-            Action::RoutineTune(name) => {
+            Action::PreviewTune(name) => {
+                if let Some(i) = self.find_tune(&name) {
+                    // one of yours: its own chart
+                    self.apply(Action::OpenTune(Some(i)));
+                    self.rtab = 1;
+                    if self.store.tunes[i].chart.trim().is_empty() {
+                        self.apply(Action::FindChart(i, None));
+                    }
+                    return;
+                }
+                if self.chart_busy {
+                    return;
+                }
+                self.chart_busy = true;
+                self.preview_tune = Some(name.clone());
+                self.set_note(&format!("LOOKING UP {}", name.to_uppercase()));
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = sources::find_chart(&name);
+                    let _ = tx.send(Msg::Chart(name, r));
+                    ctx.request_repaint();
+                });
+            }
+            Action::PlayRecord(artist, album) => {
+                let key = format!("{} - {}", artist, album);
+                self.set_note(&format!("FINDING {}", key.to_uppercase()));
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = api.find_album(&artist, &album);
+                    let _ = tx.send(Msg::RecordFound(key, r));
+                    ctx.request_repaint();
+                });
+            }
+            Action::AddRecommended(name) => {
                 let i = self.new_tune_named(&name);
-                self.store.routine_tune = self.store.tunes[i].name.clone();
-                self.store.routine_since = store::today_str();
-                self.store.routine_count += 1;
-                self.store_dirty = true;
-                if self.store.tunes[i].chart.trim().is_empty() {
+                if self.prac_chart.as_ref().is_some_and(|c| c.0.eq_ignore_ascii_case(&name)) {
+                    // the chart already on show comes with it
+                    if let Some((_, c)) = self.prac_chart.take() {
+                        self.store.tunes[i].chart = c;
+                    }
+                } else if self.store.tunes[i].chart.trim().is_empty() {
                     self.apply(Action::FindChart(i, None));
                 }
-                self.apply(Action::OpenTune(Some(i)));
-                self.set_note(&format!("THIS WEEK: {}", name.to_uppercase()));
+                self.store_dirty = true;
+                self.set_note(&format!("ADDED TO YOUR TUNES: {}", name.to_uppercase()));
+            }
+            Action::SetTune(kind, name) => {
+                // picked for your set: one of your tunes now (learning), its chart looked up
+                if name.is_empty() {
+                    self.store.routine_set.remove(&kind);
+                } else {
+                    let i = self.new_tune_named(&name);
+                    if self.store.tunes[i].chart.trim().is_empty() {
+                        self.apply(Action::FindChart(i, None));
+                    }
+                    self.store.routine_set.insert(kind.clone(), self.store.tunes[i].name.clone());
+                    self.set_note(&format!("{}: {}", kind, name.to_uppercase()));
+                }
+                self.store_dirty = true;
             }
             Action::RoutineDone(k) => {
                 let date = store::today_str();
@@ -1971,51 +2043,6 @@ impl App {
                     list.push(k);
                 }
                 self.store_dirty = true;
-            }
-            Action::RoutineGo(k) => {
-                let tune = self.find_tune(&self.store.routine_tune.clone());
-                match k {
-                    0 | 1 | 2 => {
-                        self.sec = Sec::Tunes;
-                        if let Some(i) = tune {
-                            self.apply(Action::OpenTune(Some(i)));
-                            self.rtab = 1;
-                        }
-                        if k == 0 {
-                            self.set_note("PLAY THE RECORD AND LOOP THE HEAD");
-                        } else if k == 1 {
-                            self.practice = true;
-                            self.set_note("THE MELODY BY EAR - THEN IN TWO OTHER KEYS");
-                        } else {
-                            if !self.band_on && tune.is_some() {
-                                self.band_start();
-                            }
-                            self.set_note("COMP THE CHANGES WITH THE BAND");
-                        }
-                    }
-                    3 => {
-                        self.practice = true;
-                        self.more = true;
-                        self.mtab = 0;
-                        self.apply(Action::TrainerKeys(true));
-                        self.set_note("LOOP A LICK FROM THE RECORD: EVERY FEW PASSES IT GOES UP A 4TH");
-                    }
-                    4 => {
-                        self.practice = true;
-                        self.more = true;
-                        self.mtab = 4;
-                        self.rec_tune = tune.map(|i| i as u32 + 1).unwrap_or(0);
-                        self.rec_band = true;
-                        if let Some(i) = tune {
-                            self.apply(Action::OpenTune(Some(i)));
-                        }
-                        self.set_note("PRESS REC, THEN THREE CHORUSES");
-                    }
-                    _ => {
-                        self.takes_open = true;
-                        self.set_note("THIS WEEK'S TAKES - ONE THING TO FIX, INTO THE DIARY");
-                    }
-                }
             }
             Action::ShowFile(id) => self.show_file(id),
             Action::FileGone(id) => self.file_gone(id),

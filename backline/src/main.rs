@@ -162,6 +162,8 @@ const HEAD_H: f32 = 18.0;
 enum Msg {
     /// an album's or playlist's songs, fetched to queue them: (its name, the songs, next or at the end)
     CardTracks(String, Result<Vec<Track>, String>, bool),
+    /// LISTENING: a record's songs found ("artist - album"), to play
+    RecordFound(String, Result<Vec<Track>, String>),
     Code(String, String),
     LoggedIn,
     NeedLogin(String),
@@ -298,9 +300,15 @@ enum Action {
     RecLast(bool),
     /// play a take back (its id; you alone rather than the mix)
     RecPlay(i64, bool),
+    /// a tune's chart on the lead sheet: yours if it is in TUNES, else looked up and shown without adding it
+    PreviewTune(String),
+    /// LISTENING: play a record (artist, album) from Tidal
+    PlayRecord(String, String),
+    /// a recommended tune into your TUNES (its chart looked up)
+    AddRecommended(String),
     /// ROUTINE: this tune is the week's; a step opened; a step done (or undone) today
-    RoutineTune(String),
-    RoutineGo(u8),
+    /// ROUTINE: the tune you are working on for a kind (empty: none)
+    SetTune(String, String),
     RoutineDone(u8),
     /// TRAINER: through 12 keys (true) or faster
     TrainerKeys(bool),
@@ -1866,6 +1874,35 @@ fn bio_view(ui: &mut egui::Ui, bits: &[api::BioBit], id: &str, acts: &mut Vec<Ac
     ui.add_space(4.0);
 }
 
+/// The smooth fonts: Chakra Petch (or `main`, e.g. Lexend, in front of it), then the system's fonts for any
+/// character they lack.
+fn smooth_fonts(main: Option<&'static [u8]>) -> egui::FontDefinitions {
+    let mut fonts = egui::FontDefinitions::default();
+    let chakra: &'static [u8] = include_bytes!("../assets/ChakraPetch-Regular.ttf");
+    fonts.font_data.insert("chakra".to_string(), egui::FontData::from_static(chakra));
+    if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        f.insert(0, "chakra".to_string());
+    }
+    if let Some(m) = main {
+        fonts.font_data.insert("main".to_string(), egui::FontData::from_static(m));
+        if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+            f.insert(0, "main".to_string());
+        }
+    }
+    let base = main.unwrap_or(chakra);
+    for (name, bytes) in font::system_fallbacks() {
+        // sit its letters on the same baseline as the main font's
+        let tweak = font::baseline_tweak(base, bytes);
+        fonts.font_data.insert(name.clone(), egui::FontData::from_static(bytes).tweak(tweak));
+        for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            if let Some(f) = fonts.families.get_mut(&fam) {
+                f.push(name.clone());
+            }
+        }
+    }
+    fonts
+}
+
 fn push_tracks(p: &mut Arc<Page>, v: &[Track]) {
     let pg = Arc::make_mut(p);
     let have: HashSet<i64> = pg.tracks.iter().map(|t| t.id).collect();
@@ -2531,6 +2568,13 @@ struct App {
     edit_extra: (String, String),
     /// DIARY: which page (0 diary, 1 routine, 2 listening, 3 masters); LISTENING on gospel
     diary_tab: u8,
+    /// TUNES: yours (0) or the recommended ones (1), jazz or gospel; a recommended tune being looked at (its chart
+    /// goes on the lead sheet without becoming one of yours)
+    tunes_tab: u8,
+    tunes_gospel: bool,
+    /// LISTENING: guitarists only
+    listen_guitar: bool,
+    preview_tune: Option<String>,
     listen_gospel: bool,
     /// TRAINER: after the passes, up a 4th (through 12 keys) rather than faster; keys done so far
     trainer_keys: bool,
@@ -2727,28 +2771,7 @@ impl App {
         std::thread::spawn(winamp_ui::warm_fonts);
         // smooth text (the sleek skins, tooltips) in Chakra Petch: retro and techy without being pixel text
         // (SIL Open Font License, see assets/ChakraPetch-OFL.txt)
-        {
-            let mut fonts = egui::FontDefinitions::default();
-            fonts
-                .font_data
-                .insert("chakra".to_string(), egui::FontData::from_static(include_bytes!("../assets/ChakraPetch-Regular.ttf")));
-            if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-                f.insert(0, "chakra".to_string());
-            }
-            // song names in any language: the system's own fonts take any character the others lack (accented
-            // Latin, Greek and Cyrillic, Japanese, Chinese, Korean, symbols)
-            for (name, bytes) in font::system_fallbacks() {
-                // sit its letters on the same baseline as Chakra Petch's
-                let tweak = font::baseline_tweak(include_bytes!("../assets/ChakraPetch-Regular.ttf"), bytes);
-                fonts.font_data.insert(name.clone(), egui::FontData::from_static(bytes).tweak(tweak));
-                for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-                    if let Some(f) = fonts.families.get_mut(&fam) {
-                        f.push(name.clone());
-                    }
-                }
-            }
-            cc.egui_ctx.set_fonts(fonts);
-        }
+        cc.egui_ctx.set_fonts(smooth_fonts(None));
         setup_style(&cc.egui_ctx);
         let api = Api::new();
         let (tx, rx) = channel();
@@ -3230,6 +3253,10 @@ impl App {
             edit_kb: (String::new(), String::new()),
             edit_extra: (String::new(), String::new()),
             diary_tab: 0,
+            tunes_tab: 0,
+            tunes_gospel: false,
+            listen_guitar: false,
+            preview_tune: None,
             listen_gospel: false,
             trainer_keys: false,
             keys_done: 0,
@@ -3562,6 +3589,7 @@ impl App {
         app.pn_first = st["pn_first"].as_u64().unwrap_or(0).min(4) as u8;
         app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
         app.crt_glow = st["crt_glow"].as_u64().unwrap_or(4).clamp(1, 10) as u8;
+
         if let Some(a) = st["crt"].as_array() {
             for (i, v) in a.iter().take(6).enumerate() {
                 app.crt[i] = v.as_bool().unwrap_or(false);

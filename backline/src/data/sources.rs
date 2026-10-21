@@ -188,9 +188,12 @@ fn command(p: &Path) -> Command {
     c
 }
 
-/// yt-dlp next to the app, in the Backline folder, or anywhere on PATH.
+/// yt-dlp next to the app, in the Backline folder, or anywhere on PATH. (On the Mac, its folder build first.)
 pub fn ytdlp_path() -> Option<PathBuf> {
     let mut cands = vec![ytdlp_dir().join(exe_name())];
+    if cfg!(target_os = "macos") {
+        cands.insert(0, ytdlp_dir().join("yt-dlp_macos").join("yt-dlp_macos"));
+    }
     if let Ok(me) = std::env::current_exe() {
         if let Some(d) = me.parent() {
             cands.push(d.join(exe_name()));
@@ -208,8 +211,58 @@ pub fn ytdlp_path() -> Option<PathBuf> {
     None
 }
 
+/// The Mac's folder build of yt-dlp, unpacked under bin/yt-dlp_macos/ and checked to run (None: use the one-file
+/// build instead).
+#[cfg(target_os = "macos")]
+fn ytdlp_mac_folder(client: &reqwest::blocking::Client) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip";
+    let bytes = client.get(url).send().ok()?.error_for_status().ok()?.bytes().ok()?;
+    let dir = ytdlp_dir().join("yt-dlp_macos");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).ok()?;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
+    for i in 0..zip.len() {
+        let mut f = zip.by_index(i).ok()?;
+        let Some(rel) = f.enclosed_name() else { continue };
+        let out = dir.join(rel);
+        if f.is_dir() {
+            let _ = std::fs::create_dir_all(&out);
+            continue;
+        }
+        if let Some(p) = out.parent() {
+            let _ = std::fs::create_dir_all(p);
+        }
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut f, &mut data).ok()?;
+        // a link inside the folder (the zip keeps it as its target's name)
+        if f.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
+            let target = String::from_utf8_lossy(&data).to_string();
+            let _ = std::os::unix::fs::symlink(target, &out);
+            continue;
+        }
+        std::fs::write(&out, &data).ok()?;
+        let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(f.unix_mode().unwrap_or(0o755) | 0o500));
+    }
+    // the zip may hold the folder itself
+    let exe = [dir.join("yt-dlp_macos"), dir.join("yt-dlp_macos").join("yt-dlp_macos")].into_iter().find(|p| p.is_file())?;
+    let ok = command(&exe).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    if !ok {
+        let _ = std::fs::remove_dir_all(&dir);
+        return None;
+    }
+    Some(exe)
+}
+
 /// Download (or update) yt-dlp from its official GitHub release into the Backline folder.
 pub fn ytdlp_download() -> Result<PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(300)).build().map_err(|e| e.to_string())?;
+        if let Some(p) = ytdlp_mac_folder(&client) {
+            return Ok(p);
+        }
+    }
     let url = if cfg!(windows) {
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
     } else if cfg!(target_os = "macos") {
@@ -457,18 +510,35 @@ pub fn list_name(url: &str) -> String {
     }
 }
 
-/// A YouTube playlist: its name and everything in it, a quick listing without per-video requests.
+/// How many videos of the playlist being read have come in so far (shown while it reads).
+pub static YT_READ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A YouTube playlist: its name and everything in it, a quick listing without per-video requests. Read as it comes
+/// (the count shows), at most 1000 - and a YouTube Mix (list=RD...), which never ends, its first 50.
 pub fn yt_list(url: &str) -> Result<(String, Vec<Ext>), String> {
+    use std::io::BufRead;
     let exe = ytdlp_path().ok_or_else(|| "yt-dlp is not installed - press GET YT-DLP".to_string())?;
-    let out = command(&exe)
-        .args(["--no-warnings", "--flat-playlist", "--dump-json"])
+    let cap = if url.contains("list=RD") { "50" } else { "1000" };
+    let mut child = command(&exe)
+        .args(["--no-warnings", "--flat-playlist", "--dump-json", "--playlist-end", cap])
         .arg(url.trim())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
+    YT_READ.store(0, std::sync::atomic::Ordering::Relaxed);
+    let mut lines_in: Vec<String> = Vec::new();
+    if let Some(so) = child.stdout.take() {
+        for line in std::io::BufReader::new(so).lines().map_while(Result::ok) {
+            lines_in.push(line);
+            YT_READ.store(lines_in.len(), std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    let out = child.wait_with_output().map_err(|e| format!("yt-dlp: {}", e))?;
     let mut list: Vec<Ext> = Vec::new();
     let mut name = String::new();
     let mut seen = std::collections::HashSet::new();
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
+    for line in lines_in.iter() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
         if name.is_empty() {
             name = v["playlist_title"].as_str().or_else(|| v["playlist"].as_str()).unwrap_or("").to_string();
@@ -1000,5 +1070,32 @@ NumberOfEntries=1
         let (name, songs) = read_playlist_file(&dir.join("gig.pls")).unwrap();
         assert_eq!((name.as_str(), songs.len()), ("gig", 1));
         assert!(is_playlist_file(Path::new("a.M3U8")) && !is_playlist_file(Path::new("a.mp3")));
+    }
+}
+
+/// Checks that need the internet and a real machine - run by the Mac test on GitHub (`-- --ignored smoke`).
+#[cfg(test)]
+mod smoke {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn smoke_ytdlp_downloads_starts_fast_and_reads_a_playlist() {
+        let exe = ytdlp_download().expect("yt-dlp download");
+        println!("yt-dlp at {}", exe.display());
+        // a second start is the one you wait for every time: it must be quick
+        let _ = command(&exe).arg("--version").output();
+        let t0 = std::time::Instant::now();
+        let out = command(&exe).arg("--version").output().expect("yt-dlp runs");
+        let secs = t0.elapsed().as_secs_f32();
+        println!("yt-dlp {} started in {:.2} s", String::from_utf8_lossy(&out.stdout).trim(), secs);
+        assert!(out.status.success(), "yt-dlp --version failed");
+        assert!(secs < 3.0, "yt-dlp takes {:.1} s to start", secs);
+        // a playlist (YouTube may turn a cloud machine away: reported, not failed)
+        let t0 = std::time::Instant::now();
+        match yt_list("https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI") {
+            Ok((name, list)) => println!("playlist '{}': {} videos in {:.1} s", name, list.len(), t0.elapsed().as_secs_f32()),
+            Err(e) => println!("playlist not read here: {}", e),
+        }
     }
 }

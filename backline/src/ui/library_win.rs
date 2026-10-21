@@ -1027,6 +1027,16 @@ impl App {
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                 .show(ui, |ui| {
                     ui.push_id((serial, sec_i), |ui| match sec {
+                        // used without Tidal: the tab is still here, and logs you in
+                        Sec::Tidal if self.offline => {
+                            ui.add_space(10.0);
+                            title_line(ui, "TIDAL", 3.0, pal().ink);
+                            para(ui, "You are using Backline without Tidal: your files, YouTube and SoundCloud and every practice tool work. Log in to search and play Tidal's catalogue, with your liked songs, playlists and artists.", pal().ink2);
+                            if retro_btn(ui, "LOG IN WITH TIDAL", false).clicked() {
+                                acts.push(Action::Offline(false));
+                                acts.push(Action::StartLogin);
+                            }
+                        }
                         Sec::Tidal => {
                             if loading {
                                 ui.add_space(6.0);
