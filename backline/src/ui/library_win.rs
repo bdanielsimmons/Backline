@@ -1009,6 +1009,7 @@ impl App {
             let side = Rect::from_min_max(all.min + Vec2::new(0.0, 8.0), Pos2::new(all.min.x + sw, all.max.y - 6.0));
             self.side_nav(ui, side, acts);
             tour::mark("TABS", side);
+            tour::mark("APPMENU", side);
             // (a margin all round: nothing touches the window's edges)
             let main = Rect::from_min_max(Pos2::new(side.max.x + 12.0, all.min.y + 8.0), Pos2::new(all.max.x - 4.0, all.max.y));
             let mut body = ui.new_child(egui::UiBuilder::new().max_rect(main).layout(egui::Layout::top_down(Align::Min)));

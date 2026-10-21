@@ -122,13 +122,13 @@ const BASIC: &[Step] = &[
         key: "ARTBTNS",
         scene: Scene::Album,
         title: "NOW PLAYING",
-        text: "Click the cover or press A to see it big. Click a line of the lyrics to jump there. ESC takes you back.",
+        text: "Press A, or click the song under the library, to see it big. Click a line of the lyrics to jump there. ESC takes you back.",
         ..BASE
     },
     Step {
         key: "APPMENU",
-        title: "MUSIC, PRACTICE, BACKLINE",
-        text: "MUSIC has your songs. PRACTICE has your tunes and diary. BACKLINE has skins, preferences and help. CTRL+K finds any action by typing.",
+        title: "GETTING AROUND",
+        text: "MUSIC has your songs and where they come from. PRACTICE has your tunes, diary and tools. SETTINGS has skins, preferences and help. CTRL+K finds any action by typing.",
         ..BASE
     },
     Step {
@@ -143,7 +143,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHIP",
         scene: Scene::PracticeOff,
         title: "PRACTICE MODE",
-        text: "Tools for learning music from recordings. Click PRACTICE or press P to turn them on.",
+        text: "Tools for learning music from recordings. Press P, or click the lit switch, to turn them on.",
         ..BASE
     },
     Step {
@@ -245,7 +245,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "TABS",
         scene: Scene::Practice,
         title: "13. KEEP TRACK",
-        text: "PRACTICE holds your TUNES and a DIARY of what you practiced. DONE puts everything back.",
+        text: "PRACTICE lists your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
         ..BASE
     },
 ];
