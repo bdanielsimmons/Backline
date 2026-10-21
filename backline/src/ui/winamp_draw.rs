@@ -856,7 +856,8 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         let ordinal = {
             // (and plural: "7THS" reads 7ths)
             let o = core.strip_suffix('S').filter(|o| o.ends_with("TH")).unwrap_or(core);
-            o.len() > 2
+            o.is_ascii()
+                && o.len() > 2
                 && o[..o.len() - 2].chars().all(|c| c.is_ascii_digit())
                 && matches!(&o[o.len() - 2..], "ST" | "ND" | "RD" | "TH")
         };
@@ -1127,6 +1128,7 @@ mod tests {
         assert_eq!(display_case("GET YT-DLP"), "Get yt-dlp");
         assert_eq!(display_case("I-IV-V"), "I-IV-V");
         assert_eq!(display_case("7THS"), "7ths");
+        assert_eq!(display_case("B♭7 OVER E♭"), "B♭7 Over E♭");
         assert_eq!(caps_words("Triads, then 7THS."), "Triads, then 7ths.");
         assert_eq!(as_title(|| display_case("UP A 4TH - 12 KEYS").into_owned()), "Up a 4th - 12 Keys");
         assert_eq!(as_title(|| display_case("GET STEMS TOOL (170 MB)").into_owned()), "Get Stems Tool (170 MB)");
