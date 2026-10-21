@@ -23,10 +23,15 @@ jobs:
         working-directory: backline
         run: cargo test --release
       - name: yt-dlp and stems on a Mac
+        if: always()
         working-directory: backline
         env:
           BACKLINE_HOME: ${{ runner.temp }}/backline-home
-        run: cargo test --release -- --ignored --nocapture --test-threads 1 smoke
+        # judged by the results: the stems runtime crashes as the test program winds down on a Mac (the app
+        # itself leaves without that wind-down)
+        run: |
+          cargo test --release -- --ignored --nocapture --test-threads 1 smoke 2>&1 | tee smoke.log || true
+          grep -q "test result: ok. 2 passed" smoke.log
   build:
     name: ${{ matrix.os_name }} ${{ matrix.flavor }}
     runs-on: ${{ matrix.runner }}

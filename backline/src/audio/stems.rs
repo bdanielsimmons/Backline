@@ -217,7 +217,11 @@ pub fn download_tool() -> Result<(), String> {
     Ok(())
 }
 
+/// The runtime has been loaded in this run (on a Mac it must not be unloaded at exit: see main).
+pub static LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn init_runtime() -> Result<(), String> {
+    LOADED.store(true, std::sync::atomic::Ordering::Relaxed);
     static INIT: OnceLock<Result<(), String>> = OnceLock::new();
     INIT.get_or_init(|| {
         let p = dll_path();

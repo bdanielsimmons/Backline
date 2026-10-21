@@ -6311,6 +6311,15 @@ fn main() -> eframe::Result<()> {
             ))
             .show();
     }
+    // the stems runtime on a Mac crashes while the program winds down ("quit unexpectedly"), after everything is
+    // saved: once it has been used, leave without that wind-down
+    #[cfg(target_os = "macos")]
+    if stems::LOADED.load(Ordering::Relaxed) {
+        extern "C" {
+            fn _exit(code: i32) -> !;
+        }
+        unsafe { _exit(if r.is_ok() { 0 } else { 1 }) }
+    }
     r
 }
 
