@@ -477,6 +477,9 @@ impl App {
             "QUEUE"
         };
         window_deco(ui, ui.max_rect(), title);
+        // nothing in the window (the lead sheet's mixer at its foot) spills over the window under it
+        let clip = ui.max_rect().expand2(Vec2::new(14.0, 30.0)).intersect(ui.clip_rect());
+        ui.set_clip_rect(Rect::from_min_max(clip.min, Pos2::new(clip.max.x, ui.max_rect().max.y + 6.0)));
         if self.right_header(ui, acts) {
             return;
         }

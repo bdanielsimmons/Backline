@@ -805,16 +805,31 @@ pub(crate) fn caps_words(text: &str) -> String {
     out.join(" ")
 }
 
+thread_local! {
+    static TITLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Labels drawn inside `f` (buttons, tabs) read in Title Case however many words they have ("Pick Up Where I Left
+/// Off"), unless they are a sentence.
+pub(crate) fn as_title<R>(f: impl FnOnce() -> R) -> R {
+    let before = TITLE.with(|c| c.replace(true));
+    let r = f();
+    TITLE.with(|c| c.set(before));
+    r
+}
+
 pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
     if !text.chars().any(|c| c.is_uppercase()) || text.chars().any(|c| c.is_lowercase()) {
         return std::borrow::Cow::Borrowed(text);
     }
-    const KEEP: [&str; 24] = [
+    const KEEP: [&str; 27] = [
         "EQ", "PL", "BPM", "YT", "OK", "DJ", "CD", "ID", "TV", "AI", "MP3", "WAV", "MIDI", "A-B", "II", "III", "IV", "VI", "VII",
-        "PDF", "USB", "UK", "US", "BACKLINE",
+        "PDF", "USB", "UK", "US", "BACKLINE", "MB", "KB", "GB",
     ];
     let words: Vec<&str> = text.split(' ').collect();
-    let title = words.iter().filter(|w| !w.is_empty()).count() <= 4;
+    let n = words.iter().filter(|w| !w.is_empty()).count();
+    let sentence = text.contains(|c: char| matches!(c, '.' | ',' | ';' | '?' | '!')) && !text.ends_with("...");
+    let title = n <= 4 || (TITLE.with(|c| c.get()) && !sentence && n <= 8);
     let mut out = String::with_capacity(text.len());
     let mut first = true;
     for (i, w) in words.iter().enumerate() {
@@ -831,13 +846,28 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         let letter_name = core.chars().count() == 1
             && (next.is_empty() || matches!(next, "AND" | "OR" | "-" | "&") || matches!(prev, "AND" | "OR" | "TO" | "&" | "-"));
         // names spelled their own way
-        const NAMES: [(&str, &str); 4] =
-            [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal")];
+        const NAMES: [(&str, &str); 5] =
+            [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal"), ("YT-DLP", "yt-dlp")];
+        // roman numerals of a progression ("I-IV-V", "II-V-I") stay as they are
+        let roman = !core.is_empty()
+            && core.split('-').all(|p| !p.is_empty() && p.chars().all(|c| matches!(c, 'I' | 'V' | 'X')))
+            && core.contains('-');
+        // an ordinal ("4TH", "2ND") reads 4th
+        let ordinal = core.len() > 2
+            && core[..core.len() - 2].chars().all(|c| c.is_ascii_digit())
+            && matches!(&core[core.len() - 2..], "ST" | "ND" | "RD" | "TH");
         // small words stay small inside a title ("Set A and B", "Pick One of Each")
-        const SMALL: [&str; 14] = ["A", "AN", "AND", "OR", "OF", "TO", "IN", "ON", "AT", "THE", "FOR", "WITH", "BY", "FROM"];
+        const SMALL: [&str; 15] =
+            ["A", "AN", "AND", "OR", "OF", "TO", "IN", "ON", "AT", "THE", "FOR", "WITH", "BY", "FROM", "AS"];
         if let Some((_, name)) = NAMES.iter().find(|(caps, _)| *caps == core) {
             out.push_str(&w.replacen(core, name, 1));
-        } else if w.chars().any(|c| c.is_ascii_digit()) || KEEP.contains(&core) || (letter_name && !first) {
+        } else if core == "I" || w.starts_with("I'") || w.starts_with("I\u{2019}") {
+            // the word "I" (I'M, I'LL...) is always a capital
+            out.push('I');
+            out.push_str(&w[1..].to_lowercase());
+        } else if ordinal {
+            out.push_str(&w.to_lowercase());
+        } else if roman || w.chars().any(|c| c.is_ascii_digit()) || KEEP.contains(&core) || (letter_name && !first) {
             out.push_str(w);
         } else if title && !first && SMALL.contains(&core) {
             out.push_str(&w.to_lowercase());
@@ -865,6 +895,10 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         }
         if !core.is_empty() {
             first = false;
+        }
+        // a new sentence after a full stop, question or exclamation mark starts with a capital
+        if w.ends_with(['.', '?', '!']) && !w.ends_with("...") {
+            first = true;
         }
     }
     std::borrow::Cow::Owned(out)
@@ -1083,6 +1117,18 @@ mod tests {
         assert_eq!(display_case("EQ"), "EQ");
         assert_eq!(display_case("1 OF 10 KINDS IN YOUR SET"), "1 of 10 kinds in your set");
         assert_eq!(display_case("Already mixed"), "Already mixed");
+        assert_eq!(display_case("PICK UP WHERE I LEFT OFF"), "Pick up where I left off");
+        assert_eq!(as_title(|| display_case("PICK UP WHERE I LEFT OFF").into_owned()), "Pick Up Where I Left Off");
+        assert_eq!(display_case("I'M HERE"), "I'm Here");
+        assert_eq!(display_case("GET YT-DLP"), "Get yt-dlp");
+        assert_eq!(display_case("I-IV-V"), "I-IV-V");
+        assert_eq!(as_title(|| display_case("UP A 4TH - 12 KEYS").into_owned()), "Up a 4th - 12 Keys");
+        assert_eq!(as_title(|| display_case("GET STEMS TOOL (170 MB)").into_owned()), "Get Stems Tool (170 MB)");
+        assert_eq!(display_case("SAVE AS A MOVE"), "Save as a Move");
+        assert_eq!(
+            display_case("DELETE THIS GROUP? ITS LOOPS STAY, WITH NO GROUP"),
+            "Delete this group? Its loops stay, with no group"
+        );
         assert_eq!(caps_words("Click one; + MY TUNES keeps it at 120 BPM."), "Click one; + My Tunes keeps it at 120 BPM.");
         assert_eq!(caps_words("No book? MADE-UP LINES works"), "No book? Made-Up Lines works");
         assert_eq!(display_case("PLAY A TRACK TO START"), "Play a track to start");

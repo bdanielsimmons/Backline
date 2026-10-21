@@ -5635,6 +5635,8 @@ impl App {
                     self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
                     self.set_note("PRACTICE MODE");
                 } else {
+                    // just listening: the song at its own speed again
+                    self.speed = 100;
                     self.set_note("LISTENING MODE");
                 }
                 self.sync_loop();
@@ -6136,7 +6138,28 @@ impl eframe::App for App {
                         });
                 }
                 // the equalizer docks under the player: the skin's at the player's own scale, or Backline's
-                let eq_h = eq_fit.unwrap_or(if self.wa_art.is_some() { 116.0 * s + 44.0 + 60.0 } else { 340.0 });
+                let eq_h = eq_fit.unwrap_or(match (skin_k, self.wa_art.is_some()) {
+                    // a skin's stack: the equalizer at the deck's own size, its frame and preset cards round it
+                    (Some(k), _) => 116.0 * k + 44.0 + 60.0,
+                    (None, true) => 116.0 * s + 44.0 + 60.0,
+                    _ => 340.0,
+                });
+                // a skin's stack: deck, equalizer and practice panel never leave the playlist less than a few songs
+                // (the practice panel gives way, then the equalizer)
+                let (practice_h, eq_h) = if skin_k.is_some() && !focus_skin && !self.queue_hidden {
+                    // the playlist's frame (58 skin pixels tall) and four songs
+                    let k = skin_k.unwrap_or(1.0);
+                    let min_pl = 58.0 * k + 4.0 * 13.0 * k.min(2.0) + 8.0;
+                    let eq_now = if self.show_eq { eq_h } else { 0.0 };
+                    let mut p = practice_h;
+                    if self.practice {
+                        p = p.min((screen.height() - player_h - eq_now - min_pl).max(160.0));
+                    }
+                    let e = if self.show_eq { eq_h.min((screen.height() - player_h - p - min_pl).max(120.0)) } else { eq_h };
+                    (p, e)
+                } else {
+                    (practice_h, eq_h)
+                };
                 if self.queue_hidden {
                     // PL off: no queue, the player fills the column (the practice panel under it); with the equalizer
                     // open, the player keeps its size and the equalizer sits right under it, as with the queue
@@ -6251,7 +6274,19 @@ impl eframe::App for App {
                     let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
                     match splitter(ctx, "split_p", r, false) {
                         Some(Some(py)) => {
-                            self.prac_h = (screen.max.y - py).clamp(220.0, (screen.height() * 0.6).max(220.0));
+                            let most = if skin_k.is_some() {
+                                // a skin's stack: never past the playlist's few songs
+                                (screen.height()
+                                    - player_h
+                                    - if self.show_eq { eq_h } else { 0.0 }
+                                    - 58.0 * self.stack_k
+                                    - 4.0 * 13.0 * self.stack_k.min(2.0)
+                                    - 8.0)
+                                    .max(160.0)
+                            } else {
+                                (screen.height() * 0.6).max(220.0)
+                            };
+                            self.prac_h = (screen.max.y - py).clamp(220.0, most);
                             self.dirty = true;
                         }
                         Some(None) => {

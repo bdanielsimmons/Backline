@@ -266,7 +266,11 @@ impl App {
                 Pos2::new(cx - tw * 0.5 - 18.0, y0 - 20.0 * k),
                 Pos2::new(cx + tw * 0.5 + 18.0, y0 + 46.0 * k),
             );
-            p.rect_filled(plate, Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }), plate_col);
+            p.rect_filled(
+                plate,
+                Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }),
+                plate_col,
+            );
             ptext_fit(&p, Pos2::new(cx, y0), Align::Center, &tr.title, 3.0 * k, w, ink);
             ptext_fit(&p, Pos2::new(cx, y0 + 30.0 * k), Align::Center, &sub, 2.0 * k, w, ink.gamma_multiply(0.85));
             // right-click: text size and colour
@@ -300,7 +304,11 @@ impl App {
         // ---- lyrics
         if lyrics_on {
             let ly = Rect::from_min_max(Pos2::new(area.min.x + area.width() * 0.5 + 10.0, area.min.y), area.max);
-            p.rect_filled(ly, Rounding::same(if crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }), Color32::from_black_alpha(150));
+            p.rect_filled(
+                ly,
+                Rounding::same(if crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }),
+                Color32::from_black_alpha(150),
+            );
             p.rect_stroke(ly, Rounding::same(0.0), Stroke::new(2.0_f32, pal().trim));
             let cp = p.with_clip_rect(ly.shrink(4.0));
             let lh = 38.0;
@@ -546,7 +554,11 @@ impl App {
             // practice mode: the loop tools on the left, the speed on the right, in the band along the top
             let strip =
                 Rect::from_min_size(Pos2::new(full.min.x + 28.0, full.min.y + 12.0), Vec2::new(full.width() - 56.0, strip_h));
-            p.rect_filled(strip, Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 8.0 } else { 0.0 }), Color32::from_black_alpha(120));
+            p.rect_filled(
+                strip,
+                Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 8.0 } else { 0.0 }),
+                Color32::from_black_alpha(120),
+            );
             tour::mark("ARTPRACTICE", strip);
             let both = self.loop_a.is_some() && self.loop_b.is_some();
             let ab = format!(

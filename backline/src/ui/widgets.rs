@@ -84,7 +84,9 @@ pub(crate) fn ibtn(ui: &mut egui::Ui, icon: &[&str], text: &str, on: bool) -> eg
     let o = Pos2::new((rect.min.x + 10.0 * sc).round(), (rect.center().y - icon.len() as f32 * ip / 2.0 + dy).round());
     pixmap(ui.painter(), o, ip, icon, pal().ink);
     let tx = o.x + icon[0].len() as f32 * ip + 8.0 * sc;
-    ui_text(ui.painter(), Pos2::new(tx, rect.center().y + dy), Align::Min, text, 2.0, rect.max.x - tx - 4.0, pal().ink);
+    winamp_ui::as_title(|| {
+        ui_text(ui.painter(), Pos2::new(tx, rect.center().y + dy), Align::Min, text, 2.0, rect.max.x - tx - 4.0, pal().ink)
+    });
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -533,7 +535,7 @@ pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<
         } else {
             crate::winamp::readable(pal().ink2, pal().lcd.lerp_to_gamma(pal().beige, 0.3), 4.5)
         };
-        ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col);
+        winamp_ui::as_title(|| ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col));
         if resp.clicked() {
             hit = Some(*i);
         }
@@ -670,12 +672,14 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
     if winamp_ui::chrome_on() && active {
         let rad = (rect.height() / 2.0).min(14.0);
         ui.painter().rect_filled(rect, rad, pal().ink);
-        ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().lcd);
+        winamp_ui::as_title(|| ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().lcd));
         return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     }
     raised_h(ui.painter(), rect, down, resp.hovered());
     let dy = if down { 1.0 } else { 0.0 };
-    ui_text(ui.painter(), rect.center() + Vec2::new(0.0, dy), Align::Center, text, 2.0, rect.width() - 8.0, pal().ink);
+    winamp_ui::as_title(|| {
+        ui_text(ui.painter(), rect.center() + Vec2::new(0.0, dy), Align::Center, text, 2.0, rect.width() - 8.0, pal().ink)
+    });
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
