@@ -540,7 +540,7 @@ impl App {
                 self.trainer = false;
                 self.semis = 0;
                 self.sync_loop();
-                self.set_note("ALL 12 KEYS - NICE WORK");
+                self.set_note("ALL 12 KEYS DONE. NICE WORK");
             } else {
                 let mut s = self.semis + 500;
                 if s > 600 {
@@ -556,7 +556,7 @@ impl App {
             self.speed = (self.speed + self.trainer_step).min(100);
             self.sync_loop();
             if self.speed >= 100 {
-                self.set_note("FULL SPEED - NICE WORK");
+                self.set_note("FULL SPEED. NICE WORK");
             } else {
                 self.set_note(&format!("SPEED UP: {}%", self.speed));
             }
@@ -1219,7 +1219,7 @@ impl App {
                 let mut kinds: Vec<&str> = sources::AUDIO_EXT.to_vec();
                 kinds.extend(["m3u", "m3u8", "pls"]);
                 rfd::FileDialog::new()
-                    .set_title("Add audio files (or playlist files)")
+                    .set_title("Add audio files or playlist files")
                     .add_filter("Audio and playlists", &kinds)
                     .pick_files()
                     .unwrap_or_default()
@@ -1286,16 +1286,16 @@ impl App {
         let mut note =
             format!("IMPORTED: {} NEW LOOPS, {} NEW PLAYLISTS, {} SONGS ADDED TO PLAYLISTS", t.loops, t.playlists, t.items);
         if t.relinked > 0 {
-            note += &format!(" - {} FILES MATCHED TO YOURS", t.relinked);
+            note += &format!(". {} FILES MATCHED TO YOURS", t.relinked);
         }
         if t.missing > 0 {
-            note += &format!(" - {} FILES AREN'T ON THIS COMPUTER (ADD THEM IN FILES, THEN IMPORT AGAIN)", t.missing);
+            note += &format!(". {} FILES AREN'T ON THIS COMPUTER. ADD THEM IN MY FILES, THEN IMPORT AGAIN", t.missing);
         }
         if t.tidal > 0 && !self.api.has_token() {
-            note += &format!(" - {} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal);
+            note += &format!(". {} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal);
         }
         if newer {
-            note += " - MADE BY A NEWER BACKLINE: UPDATE TO BRING IN EVERYTHING";
+            note += ". IT WAS MADE BY A NEWER BACKLINE, SO UPDATE TO BRING IN EVERYTHING";
         }
         self.set_note(&note);
     }
@@ -1345,13 +1345,13 @@ impl App {
                 self.apply(Action::SetDevice(picked));
                 self.out_device = keep;
                 if bt_gone {
-                    self.set_note(&format!("{} DISCONNECTED - PAUSED", was.to_uppercase()));
+                    self.set_note(&format!("{} DISCONNECTED, SO PLAYBACK PAUSED", was.to_uppercase()));
                 } else {
                     self.set_note(&format!("NOW PLAYING THROUGH {}", now.to_uppercase()));
                 }
             }
             Msg::ShareSaved(r) => match r {
-                Ok(p) => self.set_note(&format!("SAVED: {} - OPEN IT IN BACKLINE ON THE OTHER COMPUTER (IMPORT)", p)),
+                Ok(p) => self.set_note(&format!("SAVED: {}. IMPORT IT IN BACKLINE ON THE OTHER COMPUTER", p)),
                 Err(e) => self.set_err(format!("EXPORT: {}", e)),
             },
             Msg::ShareIn(Ok(s)) => self.share_view = Some((true, s)),
@@ -1480,7 +1480,7 @@ impl App {
                 self.sc_busy = false;
                 match r {
                     Ok(list) => {
-                        self.sc_msg = format!("{} PLAYLISTS - CLICK ONE TO OPEN IT", list.len());
+                        self.sc_msg = format!("{} PLAYLISTS. CLICK ONE TO OPEN IT", list.len());
                         self.sc_sets = list;
                     }
                     Err(e) => {
@@ -1581,7 +1581,7 @@ impl App {
             Msg::Stems(_, r) => {
                 self.stem_busy = 0;
                 match r {
-                    Ok(()) => self.set_note("STEMS READY - USE THE STEMS ROW IN MORE"),
+                    Ok(()) => self.set_note("STEMS READY. USE THEM IN THE STEMS TAB"),
                     Err(e) if e == "cancelled" => self.set_note("SPLIT CANCELLED"),
                     Err(e) => self.set_err(format!("STEMS FAILED: {}", e)),
                 }
@@ -1589,7 +1589,7 @@ impl App {
             Msg::StemTool(r) => {
                 self.stem_busy = 0;
                 match r {
-                    Ok(()) => self.set_note("STEM TOOL READY - NOW SPLIT A TRACK"),
+                    Ok(()) => self.set_note("STEM TOOL READY. NOW SPLIT A TRACK"),
                     Err(e) => self.set_err(format!("STEM TOOL DOWNLOAD FAILED: {}", e)),
                 }
             }
@@ -1673,9 +1673,9 @@ impl App {
                 }
                 Ok(None) => {
                     self.upd_note = if crate::update::build() == 0 {
-                        "This copy has no build number (not made by the release workflow), so updates are off.".to_string()
+                        "Updates are off. This copy has no build number, so it wasn't made by the release workflow.".to_string()
                     } else {
-                        "Checked just now: you have the newest build.".to_string()
+                        "Checked just now. You have the newest build.".to_string()
                     };
                 }
                 Err(e) => {
@@ -1757,17 +1757,17 @@ impl App {
                             format!("THIS TRACK IS {} CENTS {} OF A440", c.abs(), if c > 0 { "SHARP" } else { "FLAT" })
                         };
                         if let Some(k) = crate::meta::get(id).and_then(|i| i.key) {
-                            how += &format!(" - KEY: {}", crate::meta::key_long(k).to_uppercase());
+                            how += &format!(". KEY: {}", crate::meta::key_long(k).to_uppercase());
                         }
                         self.set_note(&how);
                     }
-                    _ => self.set_note("COULD NOT TELL - TOO LITTLE PITCHED MUSIC TO MEASURE"),
+                    _ => self.set_note("COULDN'T TELL. THERE IS TOO LITTLE PITCHED MUSIC TO MEASURE"),
                 }
             }
             Msg::UpdateStaged(r) => match r {
                 Ok(()) => {
                     self.upd_state = 2;
-                    self.set_note("UPDATE READY - CLICK THE BAR AT THE TOP");
+                    self.set_note("UPDATE READY. CLICK THE BAR AT THE TOP");
                 }
                 Err(e) => {
                     api::log(&format!("update download: {}", e));
@@ -1793,12 +1793,12 @@ impl App {
                         self.beat_failed.remove(&id);
                         self.beat = Some((id, period, phase));
                         self.mt_gen += 1;
-                        self.set_note(&format!("FOUND THE BEAT: {:.0} BPM - NOW TURN ON LOCK", 60.0 / period));
+                        self.set_note(&format!("FOUND THE BEAT: {:.0} BPM. NOW TURN ON LOCK", 60.0 / period));
                     }
                     None => {
                         self.beat_failed.insert(id);
                         self.mt_gen += 1;
-                        self.set_note("NO STEADY BEAT FOUND - THE METRONOME KEEPS YOUR OWN TEMPO");
+                        self.set_note("NO STEADY BEAT FOUND, SO YOUR OWN TEMPO IS USED");
                     }
                 }
             }
@@ -1882,7 +1882,7 @@ impl App {
         };
         api::log(&format!("take stopped: {:.1} s, {} samples in at {} Hz", secs, samples.len(), rate));
         if samples.len() < rate as usize / 2 {
-            self.set_note("NOTHING CAME IN - CHECK THE INPUT");
+            self.set_note("NOTHING CAME IN. CHECK THE INPUT");
             return;
         }
         let you = crate::record::resample(&samples, rate, 44100);
@@ -2437,7 +2437,7 @@ impl App {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
                         api::log(&format!("update install: {}", e));
-                        self.set_note("UPDATE FAILED - IT WILL RETRY");
+                        self.set_note("UPDATE FAILED. IT WILL TRY AGAIN");
                         self.upd_state = 3;
                     }
                 }
@@ -2474,7 +2474,7 @@ impl App {
                 if on {
                     // as if there were no internet: your library as kept here, only what is on this computer
                     let _ = self.tx.send(crate::Msg::NoInternet);
-                    self.set_note("OFFLINE MODE - ONLY WHAT'S ON THIS COMPUTER. GO ONLINE TO BRING TIDAL BACK");
+                    self.set_note("OFFLINE MODE: ONLY WHAT'S ON THIS COMPUTER. GO ONLINE TO BRING TIDAL BACK");
                 } else {
                     self.set_note("GOING ONLINE...");
                     let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
@@ -2632,7 +2632,7 @@ impl App {
                     None => return,
                 };
                 if vs.is_empty() {
-                    self.set_note("NO VERSIONS YET - ADD ONE FIRST");
+                    self.set_note("NO RECORDINGS YET. ADD ONE FIRST");
                     return;
                 }
                 for v in &vs {
@@ -2915,7 +2915,7 @@ impl App {
                 self.passes = 0;
                 if self.trainer {
                     self.practice = true;
-                    self.set_note(&format!("EVERY {} LOOPS THE SPEED GOES UP {}%", self.trainer_n, self.trainer_step));
+                    self.set_note(&format!("EVERY {} PASSES THE SPEED GOES UP {}%", self.trainer_n, self.trainer_step));
                 } else {
                     self.set_note("SPEED TRAINER OFF");
                 }
@@ -2951,7 +2951,7 @@ impl App {
                     _ => 0,
                 };
                 if self.count_in > 0 && self.bpm == 0 {
-                    self.set_note("COUNT-IN NEEDS A TEMPO - TAP IT OR SET BPM");
+                    self.set_note("THE COUNT-OFF NEEDS A TEMPO. TAP IT OR SET THE BPM");
                 }
                 self.sync_loop();
             }
@@ -3094,7 +3094,7 @@ impl App {
                     return;
                 };
                 self.stem_busy = 2;
-                self.set_note("SPLITTING - KEEP PRACTICING, IT TAKES A FEW MINUTES");
+                self.set_note("SPLITTING. KEEP PRACTICING, IT TAKES A FEW MINUTES");
                 let id = t.id;
                 // the stored copy, or (not stored: storing tracks is off, or it never finished) the track fetched
                 // again for the split
@@ -3177,7 +3177,7 @@ impl App {
                     self.pomo_was = self.pomo;
                     self.pomo = 4;
                     self.pomo_end = None;
-                    self.set_note("FOCUS TIMER HELD - CONTINUE WHEN READY");
+                    self.set_note("FOCUS TIMER PAUSED. CONTINUE WHEN READY");
                 } else if self.pomo == 4 {
                     self.pomo = self.pomo_was.clamp(1, 2);
                     self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_left.max(1)));
@@ -3195,7 +3195,7 @@ impl App {
                     self.pomo_n = if self.pomo == 3 { self.pomo_n + 1 } else { 1 };
                     self.pomo = 1;
                     self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_focus as u64 * 60));
-                    self.set_note(&format!("FOCUS {} OF {} - ONE THING AT A TIME", self.pomo_n, self.pomo_cycles));
+                    self.set_note(&format!("FOCUS {} OF {}. ONE THING AT A TIME", self.pomo_n, self.pomo_cycles));
                 }
                 self.pomo_flash = None;
             }
@@ -3277,16 +3277,16 @@ impl App {
             if self.pomo_n >= self.pomo_cycles {
                 self.pomo = 0;
                 self.pomo_end = None;
-                self.set_note(&format!("ALL {} FOCUS BLOCKS DONE - GOOD WORK", self.pomo_cycles));
+                self.set_note(&format!("ALL {} FOCUS BLOCKS DONE. GOOD WORK", self.pomo_cycles));
             } else {
                 self.pomo = 2;
                 self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_break as u64 * 60));
-                self.set_note(&format!("REST FOR {} MIN. STRETCH, WATER.", self.pomo_break));
+                self.set_note(&format!("REST FOR {} MIN. STRETCH AND HAVE SOME WATER", self.pomo_break));
             }
         } else {
             self.pomo = 3;
             self.pomo_end = None;
-            self.set_note(&format!("REST OVER - START FOCUS {} OF {} WHEN READY", self.pomo_n + 1, self.pomo_cycles));
+            self.set_note(&format!("REST OVER. START FOCUS {} OF {} WHEN READY", self.pomo_n + 1, self.pomo_cycles));
         }
     }
 

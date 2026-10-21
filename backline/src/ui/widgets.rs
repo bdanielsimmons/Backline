@@ -196,6 +196,20 @@ pub(crate) fn raised_h(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
         }
         _ => {}
     }
+    // with a skin worn: a pill, flat, a fine edge
+    if winamp_ui::chrome_on() {
+        let rad = (r.height() / 2.0).min(14.0);
+        let fill = if down {
+            pal().beige_dk
+        } else if hover {
+            pal().beige
+        } else {
+            pal().beige.lerp_to_gamma(pal().lcd, 0.35)
+        };
+        p.rect_filled(r, rad, fill);
+        p.rect_stroke(r, rad, Stroke::new(1.0_f32, if hover { pal().beige_lt } else { pal().beige_h }));
+        return;
+    }
     let (hi, lo) = if down { (pal().beige_dk, pal().beige_lt) } else { (pal().beige_lt, pal().beige_dk) };
     let face = if down {
         pal().sel
@@ -445,95 +459,188 @@ pub(crate) fn logo(ui: &mut egui::Ui) {
 }
 
 /// Folder-style tabs with a baseline; the open tab joins the panel below. Returns the clicked tab.
-pub(crate) fn tab_row(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
+/// Tabs as one joined strip of segments (a skin worn): the one you are on pressed in and lit. "|" in `items`
+/// starts a new strip beside the last. Returns the clicked one.
+pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
     let h = 26.0 * font::ui_scale();
     let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h + 6.0), Sense::hover());
-    let t = thick(2.0);
-    let base = row.max.y - 4.0;
-    fill_rect(ui.painter(), Rect::from_min_max(Pos2::new(row.min.x, base), Pos2::new(row.max.x, base + t)), pal().edge);
-    let (mut x, mut hit) = (row.min.x + 4.0, None);
-    // too many tabs for the width: tighten the padding first, then squeeze them evenly (the text shrinks to fit)
-    let avail = (row.width() - 8.0).max(60.0);
-    let gaps = 3.0 * items.len().saturating_sub(1) as f32;
-    let total = |pad: f32| items.iter().map(|n| text_w(n, 2.0) + pad).sum::<f32>() + gaps;
-    let mut pad = 24.0;
-    while pad > 10.0 && total(pad) > avail {
-        pad -= 2.0;
-    }
-    let shrink = (avail / total(pad)).min(1.0);
+    let pad = 22.0;
+    let gap = 10.0;
+    // (the brand's name, spelled as a word among the others)
+    let items: Vec<&str> = items.iter().map(|s| if *s == "BACKLINE" { "Backline" } else { *s }).collect();
+    let items = &items[..];
+    let total: f32 = items.iter().map(|s| if *s == "|" { gap } else { text_w(s, 2.0) + pad }).sum();
+    let shrink = ((row.width() - 4.0) / total).min(1.0);
+    let p = ui.painter().clone();
+    // the strips: runs of items between the bars
+    let mut x = row.min.x + 2.0;
+    let mut hit = None;
+    let mut runs: Vec<(f32, f32)> = Vec::new();
+    let mut run_start = x;
+    let mut cells: Vec<(usize, Rect)> = Vec::new();
     for (i, name) in items.iter().enumerate() {
+        if *name == "|" {
+            runs.push((run_start, x));
+            x += gap * shrink;
+            run_start = x;
+            continue;
+        }
         let w = (text_w(name, 2.0) + pad) * shrink;
-        let on = i == cur;
-        let r = Rect::from_min_max(
-            Pos2::new(x, if on { row.min.y } else { row.min.y + 5.0 }),
-            Pos2::new(x + w, base + if on { t } else { 0.0 }),
-        );
-        let resp = ui
-            .interact(r, ui.id().with(("tab", items.join("|"), i)), Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        let p = ui.painter();
-        if style() != 0 {
-            let r = Rect::from_min_max(r.min + Vec2::new(0.0, if on { 0.0 } else { 1.0 }), Pos2::new(r.max.x, r.max.y - 2.0));
-            if style() == 1 {
-                if on || resp.hovered() {
-                    raised_h(p, r, false, on);
-                } else {
-                    rfill(p, r, 6.0, pal().beige_dk);
+        cells.push((i, Rect::from_min_max(Pos2::new(x, row.min.y + 3.0), Pos2::new(x + w, row.min.y + 3.0 + h))));
+        x += w;
+    }
+    runs.push((run_start, x));
+    for (a, b) in &runs {
+        if b > a {
+            let strip = Rect::from_min_max(Pos2::new(*a, row.min.y + 3.0), Pos2::new(*b, row.min.y + 3.0 + h));
+            rgrad(&p, strip, 3.0, pal().lcd.lerp_to_gamma(pal().beige, 0.4), pal().lcd.lerp_to_gamma(pal().beige, 0.15));
+        }
+    }
+    for (n, (i, r)) in cells.iter().enumerate() {
+        let resp =
+            ui.interact(*r, ui.id().with(("seg", *i, items[*i])), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let on = *i == cur;
+        if on {
+            p.rect_filled(r.shrink(1.0), 2.0, pal().lcd);
+            // lit: an accent line along its foot
+            p.rect_filled(
+                Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.max.y - 3.0), Pos2::new(r.max.x - 4.0, r.max.y - 1.0)),
+                1.0,
+                pal().bar_txt,
+            );
+            // pressed in: a shadow along its top
+            p.rect_filled(
+                Rect::from_min_size(r.min + Vec2::new(1.0, 1.0), Vec2::new(r.width() - 2.0, 2.0)),
+                0.0,
+                Color32::from_black_alpha(160),
+            );
+        } else if resp.hovered() {
+            p.rect_filled(r.shrink(1.0), 2.0, Color32::from_white_alpha(14));
+        }
+        // a dividing line before it, unless it starts a strip
+        let starts = n == 0 || cells[n - 1].1.max.x < r.min.x - 0.5;
+        if !starts {
+            p.line_segment(
+                [Pos2::new(r.min.x, r.min.y + 1.0), Pos2::new(r.min.x, r.max.y - 1.0)],
+                Stroke::new(1.0_f32, pal().edge),
+            );
+        }
+        // (the strip is in the panel colour: the words take the colour made to read on it)
+        let col = if on {
+            pal().bar_txt
+        } else if resp.hovered() {
+            pal().ink
+        } else {
+            crate::winamp::readable(pal().ink2, pal().lcd.lerp_to_gamma(pal().beige, 0.3), 4.5)
+        };
+        ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col);
+        if resp.clicked() {
+            hit = Some(*i);
+        }
+    }
+    for (a, b) in &runs {
+        if b > a {
+            let strip = Rect::from_min_max(Pos2::new(*a, row.min.y + 3.0), Pos2::new(*b, row.min.y + 3.0 + h));
+            rline(&p, strip, 3.0, 1.0, pal().edge);
+        }
+    }
+    hit
+}
+
+pub(crate) fn tab_row(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
+    if winamp_ui::chrome_on() {
+        return segments(ui, items, cur);
+    }
+    font::keep_caps(|| {
+        let h = 26.0 * font::ui_scale();
+        let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h + 6.0), Sense::hover());
+        let t = thick(2.0);
+        let base = row.max.y - 4.0;
+        fill_rect(ui.painter(), Rect::from_min_max(Pos2::new(row.min.x, base), Pos2::new(row.max.x, base + t)), pal().edge);
+        let (mut x, mut hit) = (row.min.x + 4.0, None);
+        // too many tabs for the width: tighten the padding first, then squeeze them evenly (the text shrinks to fit)
+        let avail = (row.width() - 8.0).max(60.0);
+        let gaps = 3.0 * items.len().saturating_sub(1) as f32;
+        let total = |pad: f32| items.iter().map(|n| text_w(n, 2.0) + pad).sum::<f32>() + gaps;
+        let mut pad = 24.0;
+        while pad > 10.0 && total(pad) > avail {
+            pad -= 2.0;
+        }
+        let shrink = (avail / total(pad)).min(1.0);
+        for (i, name) in items.iter().enumerate() {
+            let w = (text_w(name, 2.0) + pad) * shrink;
+            let on = i == cur;
+            let r = Rect::from_min_max(
+                Pos2::new(x, if on { row.min.y } else { row.min.y + 5.0 }),
+                Pos2::new(x + w, base + if on { t } else { 0.0 }),
+            );
+            let resp = ui
+                .interact(r, ui.id().with(("tab", items.join("|"), i)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let p = ui.painter();
+            if style() != 0 {
+                let r = Rect::from_min_max(r.min + Vec2::new(0.0, if on { 0.0 } else { 1.0 }), Pos2::new(r.max.x, r.max.y - 2.0));
+                if style() == 1 {
+                    if on || resp.hovered() {
+                        raised_h(p, r, false, on);
+                    } else {
+                        rfill(p, r, 6.0, pal().beige_dk);
+                    }
+                } else if on {
+                    rfill(p, r, 7.0, pal().btn_face);
+                } else if resp.hovered() {
+                    rfill(p, r, 7.0, pal().beige_h);
                 }
-            } else if on {
-                rfill(p, r, 7.0, pal().btn_face);
-            } else if resp.hovered() {
-                rfill(p, r, 7.0, pal().beige_h);
+                let col = if on && style() == 2 {
+                    pal().bar_txt
+                } else if on {
+                    pal().ink
+                } else {
+                    pal().ink2
+                };
+                ptext_fit(p, r.center(), Align::Center, name, 2.0, w - 8.0, col);
+                if resp.clicked() {
+                    hit = Some(i);
+                }
+                x += w + 3.0;
+                continue;
             }
-            let col = if on && style() == 2 {
-                pal().bar_txt
-            } else if on {
-                pal().ink
-            } else {
-                pal().ink2
-            };
-            ptext_fit(p, r.center(), Align::Center, name, 2.0, w - 8.0, col);
+            // in the skin's colours (a piece of its title bar would bring its stripes through the words)
+            {
+                fill_rect(
+                    p,
+                    r,
+                    if on {
+                        pal().beige_lt
+                    } else if resp.hovered() {
+                        pal().beige_h
+                    } else {
+                        pal().beige_dk
+                    },
+                );
+                fill_rect(p, Rect::from_min_size(r.min, Vec2::new(r.width(), t)), pal().edge);
+                fill_rect(p, Rect::from_min_size(r.min, Vec2::new(t, r.height())), pal().edge);
+                fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::new(t, r.height())), pal().edge);
+                // chipped top corners
+                fill_rect(p, Rect::from_min_size(r.min, Vec2::splat(t)), pal().beige);
+                fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::splat(t)), pal().beige);
+            }
+            ui_text(
+                p,
+                Pos2::new(r.center().x, r.min.y + (base - r.min.y) / 2.0 + 1.0),
+                Align::Center,
+                name,
+                2.0,
+                w - 8.0,
+                if on { pal().ink } else { pal().ink2 },
+            );
             if resp.clicked() {
                 hit = Some(i);
             }
             x += w + 3.0;
-            continue;
         }
-        // in the skin's colours (a piece of its title bar would bring its stripes through the words)
-        {
-            fill_rect(
-                p,
-                r,
-                if on {
-                    pal().beige_lt
-                } else if resp.hovered() {
-                    pal().beige_h
-                } else {
-                    pal().beige_dk
-                },
-            );
-            fill_rect(p, Rect::from_min_size(r.min, Vec2::new(r.width(), t)), pal().edge);
-            fill_rect(p, Rect::from_min_size(r.min, Vec2::new(t, r.height())), pal().edge);
-            fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::new(t, r.height())), pal().edge);
-            // chipped top corners
-            fill_rect(p, Rect::from_min_size(r.min, Vec2::splat(t)), pal().beige);
-            fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::splat(t)), pal().beige);
-        }
-        ui_text(
-            p,
-            Pos2::new(r.center().x, r.min.y + (base - r.min.y) / 2.0 + 1.0),
-            Align::Center,
-            name,
-            2.0,
-            w - 8.0,
-            if on { pal().ink } else { pal().ink2 },
-        );
-        if resp.clicked() {
-            hit = Some(i);
-        }
-        x += w + 3.0;
-    }
-    hit
+        hit
+    })
 }
 
 /// Small pixel check box with a label. Returns the click.
@@ -560,6 +667,12 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
     let w = (w * font::ui_scale()).max(text_w(text, 2.0) + 16.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let down = resp.is_pointer_button_down_on() || active;
+    if winamp_ui::chrome_on() && active {
+        let rad = (rect.height() / 2.0).min(14.0);
+        ui.painter().rect_filled(rect, rad, pal().ink);
+        ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().lcd);
+        return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
     raised_h(ui.painter(), rect, down, resp.hovered());
     let dy = if down { 1.0 } else { 0.0 };
     ui_text(ui.painter(), rect.center() + Vec2::new(0.0, dy), Align::Center, text, 2.0, rect.width() - 8.0, pal().ink);
@@ -572,31 +685,91 @@ pub(crate) fn retro_btn(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Re
     retro_btn_w(ui, text, w, active)
 }
 
+/// A heading in small spaced capitals with an accent line under it (a skin worn): `px` the text size. Returns how
+/// wide it came out.
+pub(crate) fn spaced_caps(p: &egui::Painter, at: Pos2, text: &str, px: f32, col: Color32) -> f32 {
+    font::keep_caps(|| {
+        let up = text.to_uppercase();
+        let gap = 1.6 * px;
+        let mut x = at.x;
+        for ch in up.chars() {
+            let s = ch.to_string();
+            // drawn twice, a hair apart: a little weight, as a bold face would
+            ptext(p, Pos2::new(x, at.y), Align::Min, &s, px, col);
+            let w = ptext(p, Pos2::new(x + 0.6, at.y), Align::Min, &s, px, col);
+            x += w + gap;
+        }
+        let w = (x - gap - at.x).max(0.0);
+        p.rect_filled(Rect::from_min_size(Pos2::new(at.x, at.y + 5.0 * px + 4.0), Vec2::new(w, 2.0)), 0.0, pal().bar_txt);
+        w
+    })
+}
+
 pub(crate) fn section_header(ui: &mut egui::Ui, text: &str) {
-    ui.add_space(6.0);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 20.0), Sense::hover());
-    fill_rect(ui.painter(), rect, pal().edge);
-    ui_text(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, text, 2.0, rect.width() - 16.0, pal().trim);
+    if winamp_ui::chrome_on() {
+        ui.add_space(8.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
+        spaced_caps(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 9.0), text, 1.4, pal().ink);
+        return;
+    }
+    font::keep_caps(|| {
+        ui.add_space(6.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 20.0), Sense::hover());
+        fill_rect(ui.painter(), rect, pal().edge);
+        ui_text(
+            ui.painter(),
+            Pos2::new(rect.min.x + 8.0, rect.center().y),
+            Align::Min,
+            text,
+            2.0,
+            rect.width() - 16.0,
+            pal().trim,
+        );
+    })
 }
 
 /// Thin sub-heading bar used inside the queue.
 pub(crate) fn mini_header(ui: &mut egui::Ui, text: &str) {
-    let w = ui.available_width();
-    let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, HEAD_H));
-    if !ui.is_rect_visible(probe) {
-        ui.allocate_space(Vec2::new(w, HEAD_H));
-        return;
-    }
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, HEAD_H), Sense::hover());
-    fill_rect(ui.painter(), rect, pal().groove);
-    ptext(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, text, 1.0, pal().bar_txt);
+    font::keep_caps(|| {
+        let w = ui.available_width();
+        let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, HEAD_H));
+        if !ui.is_rect_visible(probe) {
+            ui.allocate_space(Vec2::new(w, HEAD_H));
+            return;
+        }
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, HEAD_H), Sense::hover());
+        if winamp_ui::chrome_on() {
+            spaced_caps(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 4.0), text, 1.1, pal().ink2);
+            return;
+        }
+        fill_rect(ui.painter(), rect, pal().groove);
+        ptext(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, text, 1.0, pal().bar_txt);
+    })
 }
 
 /// One piece of text in a list row: the skin's playlist font when a Winamp skin is on, Backline's pixel font
 /// otherwise; cut to fit `max_w`. Returns how wide it came out.
 pub(crate) fn row_text(p: &egui::Painter, pos: Pos2, align: Align, text: &str, max_w: f32, col: Color32) -> f32 {
     if winamp_ui::chrome_on() {
-        winamp_ui::sans_text(p, pos, align, text, ROW_H * 0.7 * font::ui_scale(), max_w, col)
+        // smooth text (Inter), cut with "..." to fit
+        let font = egui::FontId::proportional((ROW_H * 0.62 * font::ui_scale()).max(11.0));
+        let fits = |s: &str| p.layout_no_wrap(s.to_string(), font.clone(), col).size().x <= max_w;
+        let mut s = text.to_string();
+        if !fits(&s) {
+            while !s.is_empty() && !fits(&format!("{}...", s)) {
+                s.pop();
+            }
+            s = format!("{}...", s.trim_end());
+        }
+        let g = p.layout_no_wrap(s, font, col);
+        let w = g.size().x;
+        let x = match align {
+            Align::Min => pos.x,
+            Align::Center => pos.x - w / 2.0,
+            Align::Max => pos.x - w,
+        };
+        p.galley(Pos2::new(x, pos.y - g.size().y / 2.0), g, col);
+        w
     } else {
         ptext(p, pos, align, &fit(text, 2.0, max_w), 2.0, col)
     }
@@ -781,12 +954,91 @@ pub(crate) fn lcd_box(ui: &mut egui::Ui, text: &str, w: f32, col: Color32) {
 
 /// Wrapped paragraph in the list well.
 pub(crate) fn para(ui: &mut egui::Ui, text: &str, col: Color32) {
+    if winamp_ui::chrome_on() {
+        // a warning is shown whole; an explanation is one quiet line, the rest under the pointer
+        if col == pal().ink2 {
+            about_line(ui, text);
+        } else {
+            note_box(ui, text, col);
+        }
+        return;
+    }
     let w = ui.available_width() - 20.0;
     for line in wrap(text, 2.0, w) {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
         ptext(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, &line, 2.0, col);
     }
     ui.add_space(6.0);
+}
+
+/// An explanation kept out of the way (a skin worn): an "i" and its first sentence on one dim line; the whole of it
+/// shows when the pointer is over it.
+fn about_line(ui: &mut egui::Ui, text: &str) {
+    let text = winamp_ui::caps_words(text);
+    let first = text
+        .char_indices()
+        .find(|(i, c)| matches!(c, '.' | '?' | '!') && text[i + 1..].starts_with(' ') && *i > 12)
+        .map_or(text.as_str(), |(i, _)| &text[..i + 1]);
+    let px = 1.5;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 10.0), Sense::hover());
+    let p = ui.painter();
+    let hot = resp.hovered();
+    let col = if hot { pal().ink } else { pal().ink2 };
+    ptext_fit(p, Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, first, px, rect.width() - 12.0, col);
+    if first.len() < text.len() {
+        resp.on_hover_ui(|ui| {
+            ui.set_max_width(420.0);
+            ui.label(text.as_str());
+        });
+    }
+}
+
+/// A paragraph as a note (a skin worn): a box with an accent edge; its first sentence, in white, is the title and the
+/// rest follows dimmer.
+fn note_box(ui: &mut egui::Ui, text: &str, col: Color32) {
+    let text = winamp_ui::caps_words(text);
+    let w = (ui.available_width() - 8.0).min(820.0 * font::ui_scale());
+    let (px_x, px_y) = (14.0, 9.0);
+    let tw = w - 2.0 * px_x - 3.0;
+    let lh = (font::text_px(2.0) * 1.4).round();
+    // the first sentence (a full stop, question or exclamation mark, then a space)
+    let cut = text
+        .char_indices()
+        .find(|(i, c)| matches!(c, '.' | '?' | '!') && text[i + 1..].starts_with(' ') && *i > 12)
+        .map(|(i, _)| i + 1);
+    let (head, rest) = match cut {
+        Some(i) => (text[..i].trim(), text[i..].trim()),
+        None => ("", text.trim()),
+    };
+    let hl = if head.is_empty() { Vec::new() } else { wrap(head, 2.0, tw) };
+    let bl = if rest.is_empty() { Vec::new() } else { wrap(rest, 2.0, tw) };
+    let gap = if hl.is_empty() || bl.is_empty() { 0.0 } else { 4.0 };
+    let h = 2.0 * px_y + (hl.len() + bl.len()) as f32 * lh + gap;
+    ui.add_space(2.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+    let rect = Rect::from_min_max(Pos2::new(rect.min.x + 4.0, rect.min.y), rect.max);
+    let p = ui.painter();
+    p.rect_filled(rect, 4.0, pal().lcd.lerp_to_gamma(pal().beige, 0.3));
+    p.rect_filled(
+        Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())),
+        egui::Rounding { nw: 2.0, sw: 2.0, ne: 0.0, se: 0.0 },
+        pal().bar_txt,
+    );
+    let x = rect.min.x + 3.0 + px_x;
+    let mut y = rect.min.y + px_y + lh / 2.0;
+    // (a warning keeps its own colour throughout)
+    let (hc, bc) = if col == pal().ink2 { (pal().ink, pal().ink2) } else { (col, col) };
+    for line in &hl {
+        ptext(p, Pos2::new(x, y), Align::Min, line, 2.0, hc);
+        ptext(p, Pos2::new(x + 0.5, y), Align::Min, line, 2.0, hc);
+        y += lh;
+    }
+    y += gap;
+    for line in &bl {
+        ptext(p, Pos2::new(x, y), Align::Min, line, 2.0, if hl.is_empty() && col == pal().ink2 { pal().ink } else { bc });
+        y += lh;
+    }
+    ui.add_space(8.0);
 }
 
 /// Break a long unbroken string (a file path) into lines that fit.
@@ -809,10 +1061,18 @@ pub(crate) fn chunk(text: &str, px: f32, w: f32) -> Vec<String> {
 
 /// Single heading line, shortened with "..." if it doesn't fit.
 pub(crate) fn title_line(ui: &mut egui::Ui, text: &str, px: f32, col: Color32) {
-    let h = 7.0 * spx(px) + 10.0;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
-    let t = fit(text, px, rect.width() - 4.0);
-    ui_text(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, &t, px, rect.width() - 4.0, col);
+    if winamp_ui::chrome_on() && px >= 2.5 && text.chars().any(|c| c.is_alphabetic()) && !text.chars().any(|c| c.is_lowercase()) {
+        ui.add_space(4.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
+        spaced_caps(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 12.0), text, 1.9, col);
+        return;
+    }
+    font::keep_caps(|| {
+        let h = 7.0 * spx(px) + 10.0;
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
+        let t = fit(text, px, rect.width() - 4.0);
+        ui_text(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, &t, px, rect.width() - 4.0, col);
+    })
 }
 
 // -------------------------------------------------------------------- misc
@@ -857,6 +1117,16 @@ pub(crate) fn label(ui: &mut egui::Ui, text: &str, w: f32) {
 }
 
 pub(crate) fn dim_line(ui: &mut egui::Ui, text: &str, px: f32, col: egui::Color32) {
+    if winamp_ui::chrome_on() && px <= 1.0 {
+        let px = 1.5;
+        let hint = col == pal().dim;
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 8.0), Sense::hover());
+        let x = rect.min.x + 6.0;
+        let cy = rect.center().y;
+        let col = if hint { pal().ink2 } else { col };
+        ptext_fit(ui.painter(), Pos2::new(x, cy), Align::Min, &winamp_ui::caps_words(text), px, rect.max.x - x - 6.0, col);
+        return;
+    }
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 6.0), Sense::hover());
     ptext_fit(ui.painter(), Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, text, px, rect.width() - 12.0, col);
 }

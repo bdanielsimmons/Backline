@@ -240,10 +240,10 @@ impl App {
         if self.cl_view < 4 {
             ui.horizontal_wrapped(|ui| {
                 crate::views::label(ui, "CLUSTER", 90.0);
-                if retro_btn(ui, "SEMITONE", self.cl_semi).tip("Two notes a half step apart: they rub (red)").clicked() {
+                if retro_btn(ui, "SEMITONE", self.cl_semi).tip("Two notes a half step apart. They rub (red).").clicked() {
                     self.cl_semi = true;
                 }
-                if retro_btn(ui, "TONE", !self.cl_semi).tip("Two notes a whole step apart: they shimmer (blue)").clicked() {
+                if retro_btn(ui, "TONE", !self.cl_semi).tip("Two notes a whole step apart. They shimmer (blue).").clicked() {
                     self.cl_semi = false;
                 }
                 ui.add_space(14.0);
@@ -317,7 +317,7 @@ impl App {
                 if retro_btn_w(ui, "HEAR", bw, false).clicked() {
                     acts.push(Action::PlayNotes(notes.clone()));
                 }
-                let tip = if saved.is_some() { "In MY CHORDS - click to take it out" } else { "Keep it in MY CHORDS" };
+                let tip = if saved.is_some() { "In MY CHORDS. Click to take it out." } else { "Keep it in MY CHORDS" };
                 if !remove
                     && retro_btn_w(ui, if saved.is_some() { "SAVED" } else { "SAVE" }, bw, saved.is_some()).tip(tip).clicked()
                 {
@@ -512,7 +512,7 @@ impl App {
             para(
                 ui,
                 &format!(
-                    "No scale holds {} and {} over {}: as the {} and {} of a chord on {} they rub against it rather than colour it. It can still be played as a passing sound, but no chord name fits it.",
+                    "No scale holds {} and {} over {}. As the {} and {} of a chord on {}, they rub against it rather than colour it. You can still play it as a passing sound, but no chord name fits.",
                     n(pair[0]),
                     n(pair[1]),
                     n(bass),
@@ -530,7 +530,7 @@ impl App {
 
     /// SCALES: a parent scale written out with its clusters named, then one mode at a time with its grips.
     fn cl_scales(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Every scale has notes a step apart. Those pairs are its clusters. All seven modes of a scale share the same pairs, so the same two notes colour seven different chords, one for each mode's root. Pick a scale, then a mode.", pal().ink2);
+        para(ui, "Every scale has notes a step apart: those pairs are its clusters. All seven modes share the same pairs, so the same two notes colour seven different chords, one on each mode's root. Pick a scale, then a mode.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
         let parents: Vec<String> = theory::PARENT_MODES.iter().map(|p| p.0.to_uppercase()).collect();
@@ -602,7 +602,7 @@ impl App {
         section_header(
             ui,
             &format!(
-                "{} {}  ({} {})   -   {}",
+                "{} {}  ({} {}):   {}",
                 theory::note_name(root, sharps),
                 modes[m].to_uppercase(),
                 theory::note_name(key, sharps),
@@ -637,7 +637,7 @@ impl App {
 
     /// FIXED CLUSTER: one cluster held while the bass walks under it.
     fn cl_fixed_cluster(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Hold two notes and walk the bass under them, a half step at a time. Each bass makes the same two notes different degrees, so each one is a different chord. X: no scale holds them over that bass.", pal().ink2);
+        para(ui, "Hold two notes and walk the bass under them, a half step at a time. Each bass turns the same two notes into different degrees, so each is a different chord. X means no scale holds them over that bass.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         let col = self.cl_col();
         let pair = [self.cl_low, (self.cl_low + self.cl_gap()).rem_euclid(12)];
@@ -677,7 +677,7 @@ impl App {
 
     /// FIXED BASS: one bass held while the cluster walks over it.
     fn cl_fixed_bass(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Hold the bass and walk the two notes up over it, a half step at a time. Each spot is a different pair of degrees over the same root, so a different chord type.", pal().ink2);
+        para(ui, "Hold the bass and walk the two notes up over it, a half step at a time. Each spot is a different pair of degrees over the same root, and so a different chord type.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         let gap = self.cl_gap();
         if let Some(pc) = self.note_picker(ui, "cl_bass2", "THE BASS", self.cl_bass, &[(self.cl_bass, CL_BASS)], &[]) {
@@ -723,7 +723,7 @@ impl App {
     /// IN A TUNE: the changes of the open tune (or typed ones), each chord with the modes it can come from and the
     /// clusters each gives - and played through in time.
     fn cl_tune(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Clusters in a real tune. Pick a chord: it shows the modes it can come from and the clusters each one gives. A chord can come from more than one scale (Dm7b5 is D Locrian from Eb major, or D Locrian Nat 9 from F melodic minor), and each gives different clusters.", pal().ink2);
+        para(ui, "Clusters in a real tune. Pick a chord to see the modes it can come from and the clusters each one gives. A chord can come from more than one scale: Dm7b5 is D Locrian from Eb major, or D Locrian natural 9 from F melodic minor. Each gives different clusters.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         let (title, changes) = self.practice_changes(ui);
         if changes.is_empty() {
@@ -753,7 +753,7 @@ impl App {
                 ui,
                 acts,
                 "COMP THROUGH THE CHANGES",
-                "Every chord in turn with a cluster voicing, two beats each at the band's tempo",
+                "Each chord in turn as a cluster voicing, two beats each at the band's tempo",
                 "cl",
                 || comp.iter().map(|c| c.1.clone()).collect(),
                 120.0 / bpm,
@@ -788,7 +788,7 @@ impl App {
             section_header(
                 ui,
                 &format!(
-                    "{}  -  {} {}  ({} {})",
+                    "{}:  {} {}  ({} {})",
                     chord,
                     theory::note_name(root, sharps),
                     modes[m].to_uppercase(),
@@ -798,7 +798,7 @@ impl App {
             );
             let pairs = theory::mode_clusters(&scale, m, root, step);
             if pairs.is_empty() {
-                crate::views::dim_line(ui, "THIS MODE HAS NO CLUSTER OF THIS KIND - TRY THE OTHER", 1.0, pal().dim);
+                crate::views::dim_line(ui, "THIS MODE HAS NO CLUSTER OF THIS KIND. TRY THE OTHER.", 1.0, pal().dim);
             }
             for pair in pairs.into_iter().take(2) {
                 let ex: Vec<i32> = cn.pcs.iter().copied().filter(|p| !pair.contains(p) && *p != cn.root).collect();
@@ -810,7 +810,7 @@ impl App {
     /// BUILD: lay a voicing down on the neck. It is named, its clusters coloured, written out, and can be kept.
     /// Below, a start: pick a cluster shape (semitone and tone steps) and a bass, and take one of its grips to the neck.
     fn cl_build(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Make your own. Click frets on the neck (left of the nut is the open string, click again to lift it). Notes a step apart light up as clusters: red a semitone, blue a tone. Save the ones you like to MY CHORDS.", pal().ink2);
+        para(ui, "Build your own cluster voicing on the neck. Click a fret to place a note; left of the nut is the open string, and a second click lifts it. Notes a step apart light up: red for a semitone, blue for a tone. Save the ones you like to MY CHORDS.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         let notes = grip_notes(&self.cb_frets);
         let pcs: Vec<i32> = notes.iter().map(|m| m.rem_euclid(12)).collect();
@@ -915,7 +915,7 @@ impl App {
 
         // ---- a start: a cluster shape over a bass, and its grips
         section_header(ui, "NEED A START? PICK A SHAPE");
-        para(ui, "A cluster is notes stacked a step apart: H a semitone (bite), W a tone (air). Pick how many notes and the steps, where it starts and the bass. Then take a grip to the neck with EDIT.", pal().ink2);
+        para(ui, "A cluster is notes stacked a step apart. H is a semitone (bite), W a tone (air). Pick how many notes, the steps, the starting note and the bass. Then take a grip to the neck with EDIT.", pal().ink2);
         let size = self.cb_size.clamp(2, 5) as usize;
         ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, "NOTES", 150.0);
@@ -962,7 +962,7 @@ impl App {
         }
         let sb = self.cl_bass;
         if Self::fits(sb, &spcs) == 0 {
-            para(ui, "X: no scale holds all of these over this bass. Move the bass (the keys with x won't work either) or switch a step. Three semitones in a row fit none of them.", pal().red);
+            para(ui, "No scale holds all of these over this bass. Move the bass (keys marked x won't work either) or switch a step. Three semitones in a row fit no scale.", pal().red);
         }
         let mut all = vec![sb];
         for p in &spcs {
@@ -973,7 +973,7 @@ impl App {
         let cn = theory::ChordNotes { root: sb, bass: sb, pcs: all, named: Vec::new() };
         let grips = theory::guitar_shapes(&cn, &theory::STANDARD);
         if grips.is_empty() {
-            para(ui, "No grip in one hand-span for this one. Spread it out: bass on the 6th or 5th string, the cluster on higher strings, open strings taking some of its notes.", pal().ink2);
+            para(ui, "No grip in one hand-span for this one. Spread it out: bass on the 6th or 5th string, the cluster on higher strings, and open strings taking some of its notes.", pal().ink2);
         } else {
             let sp = self.chord_sp;
             let shape_col = if self.cb_steps[..size - 1].iter().any(|s| *s) { CL_SEMI } else { CL_TONE };

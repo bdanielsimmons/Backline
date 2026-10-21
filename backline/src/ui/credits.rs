@@ -47,7 +47,7 @@ impl App {
             ui.add_space(4.0);
             let bw = ui.available_width();
             for (id, name) in list {
-                if retro_btn_w(ui, &name.to_uppercase(), bw, false).clicked() {
+                if retro_btn_w(ui, &crate::font::as_label(&name), bw, false).clicked() {
                     picked = Some(Card {
                         kind: Kind::Artist,
                         id: id.to_string(),
@@ -268,7 +268,7 @@ impl App {
                             let at = ui.cursor().min + Vec2::new(0.0, 13.0);
                             crate::ptext_fit(ui.painter(), at, egui::Align::Min, &title, 2.0, side - 50.0, pal().ink);
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if crate::Tip::tip(retro_btn_w(ui, "X", 30.0, false), "Close  (ESC)").clicked() {
+                                if crate::Tip::tip(retro_btn_w(ui, "X", 30.0, false), "Close (ESC)").clicked() {
                                     close = true;
                                 }
                             });
@@ -308,7 +308,7 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width(320.0);
                         title_line(ui, "PUTTING ON THE SKIN", 2.0, egui::Color32::from_rgb(240, 240, 236));
-                        crate::views::dim_line(ui, &name.to_uppercase(), 1.0, egui::Color32::from_gray(190));
+                        crate::views::dim_line(ui, &crate::font::as_label(&name), 1.0, egui::Color32::from_gray(190));
                         ui.add_space(6.0);
                         // a bar that sweeps back and forth
                         let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
@@ -367,11 +367,11 @@ impl App {
             para(
                 ui,
                 if tidal {
-                    "Only for you, on this computer: Tidal's own info stays as it is. Empty both to go back to Tidal's."
+                    "This stays on this computer and Tidal's own info is not changed. Empty both boxes to go back to Tidal's."
                 } else if is_file {
-                    "Renamed everywhere in Backline, and written into the file itself so other players see it too. A new file name renames the file on disk. Key and BPM stay in Backline."
+                    "The new names show everywhere in Backline. They are also written into the file, so other players see them. A new file name renames the file on disk. Key and BPM stay in Backline."
                 } else {
-                    "Renamed in your lists, playlists, tunes and the queue. Tidal's own album and search pages keep Tidal's names."
+                    "The new names show in your lists, playlists, tunes and the queue. Tidal's own album and search pages keep Tidal's names."
                 },
                 pal().ink2,
             );

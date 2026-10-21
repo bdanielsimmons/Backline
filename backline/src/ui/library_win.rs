@@ -68,7 +68,7 @@ impl App {
         if !self.search_focus && self.ed.id == F_SEARCH {
             self.ed.id = 0;
         }
-        let o = crate::views::field(ui, &mut self.ed, F_SEARCH, &mut self.search, rect, "Search Tidal...", false);
+        let o = crate::views::field(ui, &mut self.ed, F_SEARCH, &mut self.search, rect, "Search Tidal", false);
         self.search_focus = self.ed.id == F_SEARCH;
         if o.enter {
             acts.push(Action::Search(self.search.clone()));
@@ -151,7 +151,7 @@ impl App {
                     }
                     // + : save the curve you have
                     let (card, r) = ui.allocate_exact_size(Vec2::new(card_h, card_h), Sense::click());
-                    let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Save this curve as a preset of your own");
+                    let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Save this curve as a preset of your own.");
                     inset(ui.painter(), card, if r.hovered() || self.eq_naming { pal().sel } else { pal().lcd });
                     let c = card.center();
                     let st = Stroke::new(2.0_f32, pal().ink);
@@ -201,7 +201,7 @@ impl App {
                         crate::tools::F_EQ_NAME,
                         &mut self.eq_name,
                         rect,
-                        "My curve...",
+                        "My curve",
                         false,
                     );
                     save = o.enter || retro_btn_w(ui, "SAVE", 70.0, false).clicked();
@@ -255,7 +255,7 @@ impl App {
         // the close button, in the title strip
         let xr = Rect::from_min_size(Pos2::new(inner.max.x - 34.0, inner.min.y - 26.0), Vec2::new(30.0, 22.0));
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(xr), |ui| {
-            if retro_btn_w(ui, "X", 30.0, false).tip("Close the equalizer").clicked() {
+            if retro_btn_w(ui, "X", 30.0, false).tip("Close the equalizer.").clicked() {
                 self.show_eq = false;
             }
         });
@@ -301,7 +301,7 @@ impl App {
                 changed = true;
             }
             if retro_btn_w(ui, "AUTO", 64.0, self.eq_auto)
-                .tip("Remember the EQ for each song and bring it back when it plays")
+                .tip("Remembers the EQ for each song and brings it back when it plays.")
                 .clicked()
             {
                 self.eq_auto = !self.eq_auto;
@@ -405,7 +405,7 @@ impl App {
             ptext(&p, Pos2::new(cx, rect.max.y - 8.0), Align::Center, LABELS[i], 1.0, pal().ink2);
         }
         ui.add_space(4.0);
-        para(ui, "Drag a slider; double-click resets it. Range is +/- 12 dB.", pal().dim);
+        para(ui, "Drag a slider, or double-click it to reset. The range is +/- 12 dB.", pal().dim);
         if changed {
             self.apply_eq();
             self.eq_remember();
@@ -482,7 +482,7 @@ impl App {
                     let on = museum.as_ref().is_some_and(|w| w.0 == md5);
                     ui.horizontal(|ui| {
                         ui.add_space(24.0);
-                        let tip = if fav { "Take it out of your favourites" } else { "Take it off this list" };
+                        let tip = if fav { "Take it out of your favourites." } else { "Take it off this list." };
                         if retro_btn_w(ui, "X", 24.0, false).tip(tip).clicked() {
                             acts.push(if fav { Action::WaFav(md5.clone(), name.clone()) } else { Action::WaForget(md5.clone()) });
                         }
@@ -511,13 +511,13 @@ impl App {
             title_line(ui, "BACKLINE", 3.0, pal().ink);
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "PREFERENCES", false).tip("Updates, sound output, the opening sound, size, keys").clicked() {
+                if retro_btn(ui, "PREFERENCES", false).tip("Updates, sound output, the opening sound, size and keys.").clicked() {
                     acts.push(Action::TogglePrefs);
                 }
-                if retro_btn(ui, "WHAT'S NEW", false).tip("What changed in this version and the few before it").clicked() {
+                if retro_btn(ui, "WHAT'S NEW", false).tip("What changed in this version and the few before it.").clicked() {
                     acts.push(Action::News);
                 }
-                if retro_btn(ui, "HELP AND TOURS", false).tip("Every key and tip, and the guided tours (F1)").clicked() {
+                if retro_btn(ui, "HELP AND TOURS", false).tip("Every key and tip, and the guided tours  (F1)").clicked() {
                     acts.push(Action::ToggleHelp);
                 }
             });
@@ -527,7 +527,7 @@ impl App {
             ui.horizontal(|ui| {
                 if self.offline {
                     if retro_btn(ui, "LOG IN TO TIDAL", false)
-                        .tip("Add your Tidal account - everything else keeps working")
+                        .tip("Add your Tidal account. Everything else works without it.")
                         .clicked()
                     {
                         acts.push(Action::Offline(false));
@@ -542,12 +542,12 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 crate::views::label(ui, "OLD SCREEN", 120.0);
                 const FX: [(&str, &str); 6] = [
-                    ("SCANLINES", "The dark lines between a CRT's rows of light"),
-                    ("TUBE EDGES", "The corners darker, as the glass curves away"),
-                    ("GHOST SEGMENTS", "The unlit 8s of the time readout, faintly there behind the digits (Winamp skins)"),
-                    ("BURN-IN", "The player's name worn into the glass behind the scrolling title (Winamp skins)"),
-                    ("GLOW", "The lit digits and the title bleed light round themselves, as phosphor does (Winamp skins)"),
-                    ("AFTERGLOW", "A changed digit lingers and fades; the moving title leaves a trail (Winamp skins)"),
+                    ("SCANLINES", "The dark lines between a CRT's rows of light."),
+                    ("TUBE EDGES", "Darker corners, where the glass curves away."),
+                    ("GHOST SEGMENTS", "The unlit 8s of the time readout, faint behind the digits (Winamp skins)."),
+                    ("BURN-IN", "The player's name worn into the glass behind the scrolling title (Winamp skins)."),
+                    ("GLOW", "The lit digits and the title glow, as phosphor does (Winamp skins)."),
+                    ("AFTERGLOW", "A changed digit lingers and fades, and the moving title leaves a trail (Winamp skins)."),
                 ];
                 for (i, (n, tip)) in FX.iter().enumerate() {
                     if crate::check_box(ui, n, self.crt[i]).tip(*tip).clicked() {
@@ -569,7 +569,7 @@ impl App {
                         self.crt_glow = (self.crt_glow + 1).min(10);
                         self.dirty = true;
                     }
-                    crate::views::dim_line(ui, "1 FAINT - 4 AS MADE - 10 BLAZING", 1.0, pal().dim);
+                    crate::views::dim_line(ui, "1 FAINT, 4 AS MADE, 10 BLAZING", 1.0, pal().dim);
                 });
             }
             ui.add_space(6.0);
@@ -586,7 +586,7 @@ impl App {
         // played here, by day
         section_header(ui, "PLAYED IN BACKLINE");
         if self.store.recent.is_empty() {
-            dim_line(ui, "NOTHING YET - SONGS SHOW UP HERE AS YOU PLAY THEM", 1.0, pal().dim);
+            dim_line(ui, "NOTHING YET. SONGS SHOW UP HERE AS YOU PLAY THEM", 1.0, pal().dim);
         }
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         let day = |at: u64| -> &'static str {
@@ -630,7 +630,7 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     // your favourites: kept for good, until you take them off
                     if !favs.is_empty() {
-                        let fd = retro_btn(ui, "FAVOURITES  v", true).tip("Your favourite skins");
+                        let fd = retro_btn(ui, "FAVOURITES  v", true).tip("Your favourite skins.");
                         let fmenu = ui.id().with("wa_favs");
                         if fd.clicked() {
                             ui.memory_mut(|m| m.toggle_popup(fmenu));
@@ -640,7 +640,7 @@ impl App {
                             ui.set_min_width(260.0);
                             for (md5, name) in favs.clone() {
                                 ui.horizontal(|ui| {
-                                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it out of your favourites").clicked() {
+                                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it out of your favourites.").clicked() {
                                         acts.push(Action::WaFav(md5.clone(), name.clone()));
                                     }
                                     let on = worn_now.as_deref() == Some(md5.as_str());
@@ -660,7 +660,7 @@ impl App {
                     if self.wa_recent.is_empty() {
                         return;
                     }
-                    let dd = retro_btn(ui, "WORN LATELY  v", true).tip("Skins you wore lately");
+                    let dd = retro_btn(ui, "WORN LATELY  v", true).tip("Skins you wore lately.");
                     let menu = ui.id().with("worn_lately");
                     if dd.clicked() {
                         ui.memory_mut(|m| m.toggle_popup(menu));
@@ -670,7 +670,7 @@ impl App {
                         ui.set_min_width(260.0);
                         for (md5, name) in self.wa_recent.clone() {
                             ui.horizontal(|ui| {
-                                if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list").clicked() {
+                                if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list.").clicked() {
                                     acts.push(Action::WaForget(md5.clone()));
                                 }
                                 let on = worn_now.as_deref() == Some(md5.as_str());
@@ -695,7 +695,7 @@ impl App {
                 para(ui, &format!("WEARING: {}", name.to_uppercase()), pal().ink);
                 let fav = self.wa_favs.iter().any(|f| f.0 == md5);
                 if retro_btn(ui, if fav { "* FAVOURITE" } else { "+ FAVOURITE" }, fav)
-                    .tip(if fav { "In your favourites - click to take it out" } else { "Keep this skin in your favourites" })
+                    .tip(if fav { "In your favourites. Click to take it out." } else { "Keep this skin in your favourites." })
                     .clicked()
                 {
                     acts.push(Action::WaFav(md5.clone(), name.clone()));
@@ -716,13 +716,13 @@ impl App {
                 crate::tools::F_WINAMP,
                 &mut self.wa_q,
                 rect,
-                "Search skins (zelda, metal, anime...)",
+                "Search skins (zelda, metal, anime)",
                 false,
             );
             if o.enter || retro_btn_w(ui, "GO", go_w, false).clicked() {
                 acts.push(Action::WaSearch);
             }
-            if retro_btn_w(ui, "BEST", 70.0, false).tip("The museum's favourites").clicked() {
+            if retro_btn_w(ui, "BEST", 70.0, false).tip("The museum's favourites.").clicked() {
                 self.wa_q.clear();
                 acts.push(Action::WaSearch);
             }
@@ -743,7 +743,7 @@ impl App {
                         let (cell, r) = ui.allocate_exact_size(Vec2::new(cw, ch + 22.0), Sense::click());
                         let r = r
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .tip(format!("{}  (click to wear it, right-click to favourite it)", s.name));
+                            .tip(format!("{}. Click to wear it, right-click to make it a favourite.", s.name));
                         let fav = self.wa_favs.iter().any(|f| f.0 == s.md5);
                         r.context_menu(|ui| {
                             if menu_item(ui, if fav { "Remove from favourites" } else { "Add to favourites" }) {
@@ -815,7 +815,7 @@ impl App {
             if retro_btn(ui, "CLEAR ALL", false).clicked() {
                 acts.push(Action::ClearCache);
             }
-            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems (frees disk space)").clicked() {
+            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems to free disk space.").clicked() {
                 acts.push(Action::StemClear);
             }
             if retro_btn(ui, "CLOSE", false).clicked() {
@@ -833,8 +833,12 @@ impl App {
         ui.add_space(8.0);
         para(ui, &format!("{} tracks stored, {} used", n, cache::fmt_size(bytes)), pal().ink);
         para(ui, &format!("Separated stems use {}", cache::fmt_size(stems::stems_size())), pal().ink2);
-        para(ui, "A check mark in any list means that track is stored on this computer: it starts instantly and plays with no internet.", pal().ink2);
-        para(ui, "Looping and slow-down always play from the stored copy. Loops, speed and seeks stay on this PC - Backline never reports plays to Tidal, so your listening statistics are untouched.", pal().ink2);
+        para(
+            ui,
+            "A check mark means the track is stored on this computer. It starts instantly and plays with no internet.",
+            pal().ink2,
+        );
+        para(ui, "Looping and slow-down always play from the stored copy. Loops, speed and seeks stay on this PC. Backline never reports plays to Tidal, so your listening statistics are untouched.", pal().ink2);
     }
 
     /// The BACKLINE menu, next to HOME and LIBRARY: skins (and Winamp skins), preferences, help, storage, the log.
@@ -844,6 +848,25 @@ impl App {
         ui.set_min_width(240.0);
         let before = acts.len();
         let mut done = false;
+        // what the player's chips do, for a skin's deck (it has none)
+        if self.wa_art.is_some() && !self.mini {
+            if menu_item(ui, "Now Playing (the song big)") {
+                acts.push(Action::ToggleArt);
+            }
+            if PRACTICE
+                && menu_item(ui, if self.practice { "Just listen (practice tools off)" } else { "Practice (loop, slow down)" })
+            {
+                acts.push(Action::TogglePractice);
+            }
+            if PRACTICE && menu_item(ui, if self.focus_mode { "Focus  (on)" } else { "Focus (hide the lists)" }) {
+                acts.push(Action::ToggleFocus);
+            }
+            if menu_item(ui, if self.wa_guide { "Button guide  (on)" } else { "Button guide (name each button)" }) {
+                self.wa_guide = !self.wa_guide;
+                self.dirty = true;
+            }
+            ui.add_space(4.0);
+        }
         // the window: keep it on top, the mini player and back
         if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline (only what's on this computer)" }) {
             acts.push(Action::GoOffline(!self.go_offline));
@@ -889,16 +912,314 @@ impl App {
         done || acts.len() != before
     }
 
+    /// The now-playing bar (a skin worn): the cover, the song and who, a heart, how far in - in the skin's colours.
+    /// Click it for NOW PLAYING.
+    fn now_bar(&mut self, ui: &mut egui::Ui, bar: Rect, tr: &crate::api::Track, acts: &mut Vec<Action>) {
+        let id = ui.id().with("now_bar");
+        let resp = ui
+            .interact(bar, id, Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .tip("Now Playing: the song big  (A)");
+        let p = ui.painter().clone();
+        inset(&p, bar, pal().lcd);
+        if resp.hovered() {
+            p.rect_filled(bar.shrink(2.0), 0.0, pal().row_sel);
+        }
+        let cover = Rect::from_min_size(bar.min + Vec2::new(6.0, 6.0), Vec2::splat(bar.height() - 12.0));
+        if tr.cover.is_empty() {
+            crate::paint_page_art(ui, &mut self.images, "", cover, false);
+        } else {
+            crate::paint_held(ui, &mut self.images, "now_bar", &crate::cover_url(&tr.cover, 160), cover, false);
+        }
+        let tx = cover.max.x + 10.0;
+        let heart = Rect::from_min_size(Pos2::new(bar.max.x - 30.0, bar.center().y - 10.0), Vec2::new(crate::HEART_W, 20.0));
+        // the controls, in the middle (or after the words when the bar is narrow)
+        let playing = self.cur.is_some() && !self.stopped && !self.paused;
+        let cw = 44.0;
+        let cx = bar.center().x.max(tx + 220.0).min(heart.min.x - 1.5 * cw - 20.0);
+        let mut clicked_control = false;
+        // previous, a round PLAY / PAUSE, next: smooth icons, as over the lists
+        for (n, (icon, a, tip)) in [
+            ("prev", Action::Prev, "Previous"),
+            (
+                if playing { "pause" } else { "play" },
+                if playing { Action::PauseBtn } else { Action::PlayBtn },
+                if playing { "Pause" } else { "Play" },
+            ),
+            ("skip", Action::Next, "Next"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let c = Pos2::new(cx + (n as f32 - 1.0) * cw, bar.center().y - 2.0);
+            let d = if n == 1 { 34.0 } else { 28.0 };
+            let r = Rect::from_center_size(c, Vec2::splat(d));
+            let h = ui.interact(r, id.with(("ctl", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+            if n == 1 {
+                p.circle_filled(c, d / 2.0 + if h.hovered() { 1.0 } else { 0.0 }, pal().ink);
+                let off = if playing { 0.0 } else { 1.5 };
+                crate::vicon::named(&p, Rect::from_center_size(c + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)), icon, pal().lcd);
+            } else {
+                let col = if h.hovered() { pal().ink } else { pal().ink2 };
+                crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(d * 0.55)), icon, col);
+            }
+            if h.clicked() {
+                acts.push(a);
+                clicked_control = true;
+            }
+        }
+        let room = (cx - 1.5 * cw - 12.0) - tx;
+        crate::row_text(&p, Pos2::new(tx, bar.min.y + 17.0), Align::Min, &tr.title, room, pal().bar_txt);
+        crate::row_text(&p, Pos2::new(tx, bar.min.y + 35.0), Align::Min, &tr.artists_text(), room, pal().ink2);
+        // how far in: a thin line along the foot - click or drag it to move in the song
+        let f = if tr.duration > 0.0 { (self.pos() / tr.duration).clamp(0.0, 1.0) } else { 0.0 };
+        let line = Rect::from_min_max(Pos2::new(bar.min.x + 2.0, bar.max.y - 4.0), Pos2::new(bar.max.x - 2.0, bar.max.y - 2.0));
+        let seek = ui
+            .interact(line.expand2(Vec2::new(0.0, 4.0)), id.with("seek"), Sense::click_and_drag())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let mut seeking = false;
+        if seek.clicked() || seek.dragged() {
+            if let (Some(pp), true) = (seek.interact_pointer_pos(), tr.duration > 0.0) {
+                acts.push(Action::Seek(((pp.x - line.min.x) / line.width()).clamp(0.0, 1.0) * tr.duration));
+                seeking = true;
+            }
+        }
+        if crate::draw_heart(ui, heart, self.liked.contains(&tr.id), resp.hovered(), id.with("heart")) {
+            acts.push(Action::ToggleLike(tr.clone()));
+        } else if resp.clicked() && !clicked_control && !seeking {
+            acts.push(Action::ToggleArt);
+        }
+        p.rect_filled(line, 0.0, pal().dim.gamma_multiply(0.4));
+        p.rect_filled(Rect::from_min_size(line.min, Vec2::new(line.width() * f, line.height())), 0.0, pal().bar_txt);
+        if self.cur.is_some() && !self.stopped && !self.paused {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        }
+    }
+
     pub(crate) fn library_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         window_deco(ui, ui.max_rect(), "LIBRARY");
+        // a skin's deck has no title line: its chips (NOW PLAYING, the guide, online...) sit on the library's
+        if self.wa_art.is_some() && !self.mini && !crate::winamp_ui::chrome_on() {
+            self.title_chips(ui, ui.max_rect(), acts);
+        }
+        // a skin worn: the places down a list at the side (as Spotify has them), the page beside it
+        if self.wa_art.is_some() && !self.mini && crate::winamp_ui::chrome_on() {
+            let all = ui.max_rect();
+            let sw = (190.0 * font::ui_scale()).clamp(140.0, (all.width() * 0.3).max(140.0));
+            let side = Rect::from_min_max(all.min + Vec2::new(0.0, 8.0), Pos2::new(all.min.x + sw, all.max.y - 6.0));
+            self.side_nav(ui, side, acts);
+            tour::mark("TABS", side);
+            // (a margin all round: nothing touches the window's edges)
+            let main = Rect::from_min_max(Pos2::new(side.max.x + 12.0, all.min.y + 8.0), Pos2::new(all.max.x - 4.0, all.max.y));
+            let mut body = ui.new_child(egui::UiBuilder::new().max_rect(main).layout(egui::Layout::top_down(Align::Min)));
+            self.library_body(&mut body, acts, false);
+            ui.allocate_rect(all, Sense::hover());
+            return;
+        }
         logo(ui);
         ui.add_space(4.0);
+        self.library_body(ui, acts, true);
+    }
 
+    /// The places, down the side of the library (a skin worn): home, your music by where it is, the practice
+    /// tools, and Backline's own pages at the foot.
+    fn side_nav(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
+        let p = ui.painter().clone();
+        let sc = font::ui_scale();
+        p.rect_filled(r, 6.0, pal().lcd);
+        // the brand at the top
+        let gem = Rect::from_min_size(r.min + Vec2::new(12.0, 12.0), Vec2::splat(22.0 * sc));
+        crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
+        ptext(&p, Pos2::new(gem.max.x + 8.0, gem.center().y), Align::Min, "Backline", 2.2, pal().ink);
+        let gem =
+            Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 8.0 + self.window_icons(ui, r, gem.max.y + 8.0, acts)));
+
+        let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
+        let on_lib = self.page.as_ref().is_some_and(|p| p.library);
+        let here = |s: Sec| !side && self.sec == s;
+        // (icon, name, lit, what it does); no icon: a group's heading
+        let mut rows: Vec<(&str, &str, bool, u8)> = vec![
+            ("home", "Home", here(Sec::Tidal) && !on_lib && !self.offline, 1),
+            ("", "Music", false, 0),
+            ("heart", "My Tracks", here(Sec::Mine), 2),
+            ("list", "Lists", here(Sec::Lists), 3),
+            ("tidal", "Tidal", here(Sec::Tidal) && (on_lib || self.offline), 4),
+            ("folder", "Files", here(Sec::Files), 5),
+            ("cloud", "SoundCloud", here(Sec::Sc), 6),
+            ("youtube", "YouTube", here(Sec::Yt), 7),
+        ];
+        if PRACTICE {
+            rows.extend([
+                ("", "Practice", false, 0),
+                ("note", "Tunes", here(Sec::Tunes), 10),
+                ("diary", "Diary", here(Sec::Diary), 11),
+                ("loop", "Loops", here(Sec::Loops), 12),
+                ("book", "Reading", here(Sec::Reading), 13),
+                ("chords", "Chords", here(Sec::Chords), 14),
+                ("lines", "Lines", here(Sec::Lines), 15),
+                ("melody", "Chord Melodies", here(Sec::Melodies), 16),
+            ]);
+        }
+        let foot = [
+            ("gear", "Settings", side && !self.show_winamp && !self.show_log, 20u8),
+            ("skins", "Winamp Skins", self.show_winamp, 21),
+            ("log", "Log", self.show_log, 22),
+        ];
+        let top = gem.max.y + 14.0;
+        let heads = rows.iter().filter(|r| r.0.is_empty()).count() as f32;
+        let items = (rows.len() + foot.len()) as f32 - heads;
+        let rh = (28.0 * sc).min((r.max.y - top - 12.0) / (items + heads * 0.9 + 0.5)).max(16.0);
+        let mut y = top;
+        let mut hit: Option<u8> = None;
+        let row = |y: f32, (icon, name, on, key): (&str, &str, bool, u8), hit: &mut Option<u8>| {
+            let rr = Rect::from_min_size(Pos2::new(r.min.x + 6.0, y), Vec2::new(r.width() - 12.0, rh - 2.0));
+            let resp =
+                ui.interact(rr, ui.id().with(("side_nav", key)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if on {
+                p.rect_filled(rr, 5.0, pal().beige.lerp_to_gamma(pal().lcd, 0.3));
+                p.rect_filled(Rect::from_min_size(rr.min, Vec2::new(3.0, rr.height())), 1.5, pal().bar_txt);
+            } else if resp.hovered() {
+                p.rect_filled(rr, 5.0, Color32::from_white_alpha(10));
+            }
+            let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
+            let ic =
+                Rect::from_center_size(Pos2::new(rr.min.x + 18.0 * sc, rr.center().y), Vec2::splat((16.0 * sc).min(rh - 8.0)));
+            crate::vicon::named(&p, ic, icon, col);
+            let tx = rr.min.x + 36.0 * sc;
+            ptext_fit(&p, Pos2::new(tx, rr.center().y), Align::Min, name, 1.8, rr.max.x - tx - 4.0, col);
+            if resp.clicked() {
+                *hit = Some(key);
+            }
+        };
+        for it in rows {
+            if it.0.is_empty() {
+                // a group's heading: small, dim
+                y += rh * 0.3;
+                font::keep_caps(|| {
+                    ptext(&p, Pos2::new(r.min.x + 14.0, y + rh * 0.3), Align::Min, &it.1.to_uppercase(), 1.25, pal().dim)
+                });
+                y += rh * 0.6;
+                continue;
+            }
+            row(y, it, &mut hit);
+            y += rh;
+        }
+        // Backline's own pages, at the foot
+        let mut y = (r.max.y - 8.0 - foot.len() as f32 * rh).max(y + rh * 0.5);
+        p.line_segment(
+            [Pos2::new(r.min.x + 12.0, y - 6.0), Pos2::new(r.max.x - 12.0, y - 6.0)],
+            Stroke::new(1.0_f32, pal().beige_dk),
+        );
+        for it in foot {
+            row(y, it, &mut hit);
+            y += rh;
+        }
+        match hit {
+            Some(1) => acts.push(if self.offline { Action::Section(Sec::Files) } else { Action::Home }),
+            Some(2) => acts.push(Action::Section(Sec::Mine)),
+            Some(3) => acts.push(Action::Section(Sec::Lists)),
+            Some(4) => acts.push(if self.offline { Action::Section(Sec::Tidal) } else { Action::Library }),
+            Some(5) => acts.push(Action::Section(Sec::Files)),
+            Some(6) => acts.push(Action::Section(Sec::Sc)),
+            Some(7) => acts.push(Action::Section(Sec::Yt)),
+            Some(10) => acts.push(Action::Section(Sec::Tunes)),
+            Some(11) => acts.push(Action::Section(Sec::Diary)),
+            Some(12) => acts.push(Action::Section(Sec::Loops)),
+            Some(13) => acts.push(Action::Section(Sec::Reading)),
+            Some(14) => acts.push(Action::Section(Sec::Chords)),
+            Some(15) => acts.push(Action::Section(Sec::Lines)),
+            Some(16) => acts.push(Action::Section(Sec::Melodies)),
+            Some(20) => acts.push(Action::BacklinePage),
+            Some(21) => acts.push(Action::WaOpen),
+            Some(22) => acts.push(Action::ShowLog),
+            _ => {}
+        }
+    }
+
+    /// The window's own switches as a row of icons (a skin worn): online, focus, practice, the mini player, on top, the
+    /// skin's guide. Returns the row's height.
+    fn window_icons(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
+        let p = ui.painter().clone();
+        let off = self.go_offline || self.net_down;
+        let mut items: Vec<(&str, bool, String, u8)> = vec![(
+            "globe",
+            !off,
+            if self.go_offline {
+                "Offline. Only what's on this computer plays. Click to go online.".into()
+            } else if self.net_down {
+                "No internet right now. Click to stay offline.".into()
+            } else {
+                "Online. Click to go offline.".into()
+            },
+            1,
+        )];
+        if PRACTICE {
+            items.push(("focus", self.focus_mode, "Focus: just the player, your tools and the chart.".into(), 2));
+            items.push((
+                "guitar",
+                self.practice,
+                if self.practice { "Practice mode is on. Click to just listen." } else { "Practice mode: loop and slow down." }
+                    .into(),
+                3,
+            ));
+        }
+        items.push(("mini", false, "Mini player.".into(), 4));
+        items.push(("pin", self.pinned, "Keep this window on top.".into(), 5));
+        items.push(("guide", self.wa_guide, "Outline and name each of this skin's buttons.".into(), 6));
+        let d = 26.0 * font::ui_scale();
+        let mut x = r.min.x + 10.0;
+        for (icon, on, tip, key) in items {
+            let b = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(d));
+            x += d + 3.0;
+            if b.max.x > r.max.x - 6.0 {
+                break;
+            }
+            let h = ui
+                .interact(b, ui.id().with(("win_icon", key)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .tip(tip);
+            if on {
+                p.rect_filled(b, 5.0, pal().beige.lerp_to_gamma(pal().lcd, 0.3));
+            } else if h.hovered() {
+                p.rect_filled(b, 5.0, Color32::from_white_alpha(10));
+            }
+            let col = if on {
+                pal().bar_txt
+            } else if h.hovered() {
+                pal().ink
+            } else {
+                pal().ink2
+            };
+            crate::vicon::named(&p, b.shrink(d * 0.22), icon, col);
+            if key == 3 {
+                tour::mark("CHIP", b);
+            }
+            if h.clicked() {
+                match key {
+                    1 => acts.push(Action::GoOffline(!self.go_offline)),
+                    2 => acts.push(Action::ToggleFocus),
+                    3 => acts.push(Action::TogglePractice),
+                    4 => acts.push(Action::ToggleMini),
+                    5 => acts.push(Action::TogglePin),
+                    _ => {
+                        self.wa_guide = !self.wa_guide;
+                        self.dirty = true;
+                    }
+                }
+            }
+        }
+        d
+    }
+
+    /// The library's page: the places' tabs (`tabs`: when there is no side list), the search row, the page itself.
+    fn library_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, tabs: bool) {
         // which list: Tidal / my files / YouTube / tunes / diary
-        let tabs_top = ui.cursor().min.y;
-        self.section_bar(ui, acts);
-        let lr = ui.min_rect();
-        tour::mark("TABS", Rect::from_min_max(Pos2::new(lr.min.x, tabs_top), Pos2::new(lr.max.x, ui.cursor().min.y)));
+        if tabs {
+            let tabs_top = ui.cursor().min.y;
+            self.section_bar(ui, acts);
+            let lr = ui.min_rect();
+            tour::mark("TABS", Rect::from_min_max(Pos2::new(lr.min.x, tabs_top), Pos2::new(lr.max.x, ui.cursor().min.y)));
+        }
 
         // back, forward, HOME and the search box: one row
         let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
@@ -908,24 +1229,24 @@ impl App {
                 let col = if ok { pal().ink } else { pal().dim.gamma_multiply(0.6) };
                 let icon: &[&str] = if back { &IC_BACK } else { &IC_FWD };
                 let r = icon_btn_w(ui, icon, false, col, 38.0).tip(if back {
-                    "Back (mouse back button too)"
+                    "Back. The mouse back button works too."
                 } else {
-                    "Forward (mouse forward button too)"
+                    "Forward. The mouse forward button works too."
                 });
                 if r.clicked() && ok {
                     acts.push(if back { Action::Back } else { Action::Forward });
                 }
             }
             // HOME: Tidal home in MUSIC (your files when not signed in), your tunes in PRACTICE
-            if !side {
+            if !side && tabs {
                 let in_practice =
                     matches!(self.sec, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines);
                 let tip = if in_practice {
-                    "Your tunes"
+                    "Your tunes."
                 } else if self.offline {
-                    "Your files"
+                    "Your files."
                 } else {
-                    "Tidal home"
+                    "Tidal home."
                 };
                 if ibtn(ui, &IC_HOME, "HOME", false).tip(tip).clicked() {
                     if in_practice {
@@ -984,12 +1305,20 @@ impl App {
         // list well: it stops a little above the window's bottom edge, so its own border shows and the last row
         // ends inside it instead of running into the frame
         let avail = ui.available_rect_before_wrap();
-        let avail = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - 6.0));
+        let mut avail = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - 6.0));
+        // with a skin and a song: the now-playing bar along the foot (click it for NOW PLAYING)
+        if self.wa_art.is_some() && !self.mini && avail.height() > 200.0 {
+            if let Some(tr) = self.cur_track() {
+                let bar = Rect::from_min_max(Pos2::new(avail.min.x, avail.max.y - 52.0), avail.max);
+                avail.max.y = bar.min.y - 6.0;
+                self.now_bar(ui, bar, &tr, acts);
+            }
+        }
         if avail.height() < 30.0 {
             return;
         }
         inset(ui.painter(), avail, pal().lcd);
-        let area = avail.shrink(thick(3.0));
+        let area = if crate::winamp_ui::chrome_on() { avail.shrink2(Vec2::new(12.0, 8.0)) } else { avail.shrink(thick(3.0)) };
         let page = self.page.clone();
         let serial = self.serial;
         let loading = self.loading;
@@ -1031,7 +1360,7 @@ impl App {
                         Sec::Tidal if self.offline => {
                             ui.add_space(10.0);
                             title_line(ui, "TIDAL", 3.0, pal().ink);
-                            para(ui, "You are using Backline without Tidal: your files, YouTube and SoundCloud and every practice tool work. Log in to search and play Tidal's catalogue, with your liked songs, playlists and artists.", pal().ink2);
+                            para(ui, "You are using Backline without Tidal. Your files, YouTube, SoundCloud and every practice tool still work. Log in to search and play Tidal's catalogue, with your liked songs, playlists and artists.", pal().ink2);
                             if retro_btn(ui, "LOG IN WITH TIDAL", false).clicked() {
                                 acts.push(Action::Offline(false));
                                 acts.push(Action::StartLogin);
@@ -1064,12 +1393,12 @@ impl App {
                                             crate::tools::F_TIDAL_PL,
                                             &mut self.tidal_new_name,
                                             rect,
-                                            "New Tidal playlist name...",
+                                            "New Tidal playlist name",
                                             false,
                                         );
                                         if o.enter
                                             || retro_btn(ui, "+ NEW PLAYLIST", false)
-                                                .tip("Make it on your Tidal account")
+                                                .tip("Makes it on your Tidal account.")
                                                 .clicked()
                                         {
                                             acts.push(Action::TidalListNew(self.tidal_new_name.clone()));
@@ -1085,10 +1414,10 @@ impl App {
                                 // your library: a box that filters it down as you type (every word must match)
                                 if pg.library {
                                     let hint = match tab {
-                                        Tab::Tracks => "Filter your songs: title, artist or album...",
-                                        Tab::Lists => "Filter your playlists...",
-                                        Tab::Albums => "Filter your albums...",
-                                        _ => "Filter your artists...",
+                                        Tab::Tracks => "Filter by title, artist or album",
+                                        Tab::Lists => "Filter your playlists",
+                                        Tab::Albums => "Filter your albums",
+                                        _ => "Filter your artists",
                                     };
                                     self.filter_box(ui, hint);
                                 }

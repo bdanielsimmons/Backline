@@ -604,6 +604,7 @@ fn pledit(t: &Th) -> Pic {
         p.fill(0, row, 1, 20, t.edge);
         p.fill(0, row, 25, 1, t.edge);
         strip(&mut p, 26, 100);
+        p.fill(26, row, 100, 1, t.edge);
         let title = "PLAYLIST";
         let tx = 26 + (100 - text_w(title)) / 2;
         p.fill(tx - 4, row + 4, text_w(title) + 8, 12, if t.sleek { t.face_lo } else { t.face });
@@ -731,8 +732,8 @@ pub fn make(p: &Pal, look: usize) -> Vec<u8> {
         hex(current),
         hex(bg),
         hex(sel),
-        // SLEEK pairs with the Silkscreen pixel font (free, fetched once); PIXEL with Arial, Winamp's own
-        if t.sleek { "Silkscreen" } else { "Arial" }
+        // Arial, Winamp's own (the deck keeps the skin's pixel font)
+        "Arial"
     );
     files.push(("pledit.txt", pl.into_bytes()));
     // visualizer: background, dots, 16 bar colours (top to bottom), 5 for the wave, the peaks
@@ -784,7 +785,8 @@ mod tests {
                     assert!(art.sheets.iter().any(|s| s.0 == sheet), "skin {} look {} lacks {}", n, look, sheet);
                 }
                 assert!(art.vis.len() >= 24 && art.graph.len() == 19);
-                assert_eq!(art.font.as_deref(), Some(if look == 1 { "Silkscreen" } else { "Arial" }));
+                let _ = look;
+                assert_eq!(art.font.as_deref(), Some("Arial"));
             }
         }
     }

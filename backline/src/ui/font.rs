@@ -19,7 +19,10 @@ fn modern() -> bool {
 }
 
 fn mfont(px: f32) -> egui::FontId {
-    egui::FontId::proportional((px * 7.4 * ui_scale()).max(9.0))
+    // (never so small it can't be read: the little notes under things)
+    // (a skin's font - Arial and friends - reads small beside the stack at the same size: a step up)
+    let k = if crate::winamp_ui::chrome_on() { 10.0 } else { 7.4 };
+    egui::FontId::proportional((px * k * ui_scale()).max(11.0))
 }
 
 // ------------------------------------------------------------ panel scale
@@ -29,6 +32,20 @@ thread_local! {
 
 /// How much bigger (or smaller) text and controls are drawn right now: 1 normally; a panel that scales its
 /// contents with its size (the practice panel) sets it while it draws (see `with_scale`).
+/// A name as a label shows it: as written while a skin is worn (mixed case reads), in capitals otherwise.
+pub fn as_label(name: &str) -> String {
+    if crate::winamp_ui::chrome_on() {
+        name.to_string()
+    } else {
+        name.to_uppercase()
+    }
+}
+
+/// How tall text of size `px` is drawn, in points.
+pub fn text_px(px: f32) -> f32 {
+    mfont(px).size
+}
+
 pub fn ui_scale() -> f32 {
     SCALE.with(|s| s.get())
 }
@@ -342,8 +359,31 @@ fn skin_size(px: f32) -> f32 {
     (px * 8.0).max(12.0) * ui_scale()
 }
 
+/// (Text in a skin's font, drawn the skin's crisp way, is the Winamp stack's own business - see `pl_text`;
+/// everything else is smooth.)
 fn skinned() -> bool {
-    crate::winamp_ui::text_override()
+    false
+}
+
+thread_local! {
+    static KEEP_CAPS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Headings (a page's title, a section's) keep their capitals while `f` draws them.
+pub fn keep_caps<R>(f: impl FnOnce() -> R) -> R {
+    let before = KEEP_CAPS.with(|c| c.replace(true));
+    let r = f();
+    KEEP_CAPS.with(|c| c.set(before));
+    r
+}
+
+/// With a skin's frames on, a label written in capitals reads in normal case ("PICK ONE..." as "Pick One...").
+fn case(text: &str) -> std::borrow::Cow<'_, str> {
+    if crate::winamp_ui::chrome_on() && !KEEP_CAPS.with(|c| c.get()) {
+        crate::winamp_ui::display_case(text)
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
 }
 
 /// Text width for the smooth-font looks (the modern skins, or a Winamp skin's playlist font).
@@ -356,6 +396,7 @@ fn sw(text: &str, px: f32) -> f32 {
 }
 
 pub fn text_w(text: &str, px: f32) -> f32 {
+    let text = &*case(text);
     if text.contains(DRAWN) {
         return drawn_split(text).iter().map(|s| s.map_or_else(|c| drawn_w(c, px), |s| text_w(s, px))).sum();
     }
@@ -416,6 +457,7 @@ fn draw_char(p: &egui::Painter, tex: egui::TextureId, c: char, x: f32, y: f32, p
 /// Draw bitmap text. `anchor` is the left/center/right edge at the vertical center of the capitals.
 /// Returns the text width.
 pub fn ptext(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, color: Color32) -> f32 {
+    let text = &*case(text);
     if text.contains(DRAWN) {
         return ptext_drawn(p, anchor, h, text, px, color);
     }
@@ -430,7 +472,14 @@ pub fn ptext(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, col
             Align::Max => egui::Align2::RIGHT_CENTER,
         };
         // egui's default face is thin; a second pass half a pixel over gives it the weight small text needs
-        p.text(Pos2::new(anchor.x + 0.45, anchor.y + 0.5), al, text, mfont(px), color);
+        // (not over a skin's own font: Arial and friends are drawn weighty enough, a second pass smears them)
+        // (dark words on a light skin read thin too: they get it, at a lighter touch)
+        let dark = (color.r() as u32 + color.g() as u32 + color.b() as u32) < 300;
+        if !crate::winamp_ui::chrome_on() {
+            p.text(Pos2::new(anchor.x + 0.45, anchor.y + 0.5), al, text, mfont(px), color);
+        } else if dark {
+            p.text(Pos2::new(anchor.x + 0.3, anchor.y + 0.5), al, text, mfont(px), color);
+        }
         p.text(Pos2::new(anchor.x, anchor.y + 0.5), al, text, mfont(px), color);
         return w;
     }
@@ -552,6 +601,7 @@ fn ptext_drawn(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, c
 
 /// Like `ptext`, but shrinks the dot size until the text fits `max_w`.
 pub fn ptext_fit(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, max_w: f32, color: Color32) {
+    let text = &*case(text);
     if text.contains(DRAWN) {
         let mut k = px;
         while k > px * 0.5 && text_w(text, k) > max_w {

@@ -185,7 +185,7 @@ impl App {
     pub(crate) fn scale_harmony(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         para(
             ui,
-            "Stack a scale's notes on each of its degrees and you get its chords. Click one to see what to play over it.",
+            "Stack a scale's notes on each degree and you get its chords. Click one to see what to play over it.",
             pal().ink2,
         );
         // ---- the three choices, on one row
@@ -387,7 +387,7 @@ impl App {
         let solo = &solos[pick];
         let mut sorted: Vec<i32> = solo.pcs.clone();
         sorted.dedup();
-        crate::views::dim_line(ui, &solo.about.to_uppercase(), 1.0, pal().ink2);
+        crate::views::dim_line(ui, &crate::font::as_label(&solo.about), 1.0, pal().ink2);
         let named: Vec<String> = sorted.iter().map(|pc| format!("{} {}", rs(*pc), deg(*pc))).collect();
         crate::views::dim_line(ui, &named.join("   "), 1.0, pal().ink);
 
@@ -466,7 +466,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 let playing = mine && self.band_on;
                 if retro_btn(ui, if playing { "STOP THE BAND" } else { "LOOP IT WITH THE BAND" }, playing)
-                    .tip("The band plays the vamp round and round - the lead sheet opens with it")
+                    .tip("The band loops the vamp, and the lead sheet opens with it.")
                     .clicked()
                 {
                     if playing {

@@ -33,18 +33,18 @@ const ROMAN: [&str; 7] = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
 /// What to play in a position.
 const AR_EXERCISES: [(&str, &str); 9] = [
-    ("UP AND DOWN", "The arpeggio up through the position and back down: learn one shape before the next"),
-    ("DOWN AND UP", "From the top down, then back up"),
-    ("FROM THE 3RD", "Up from the lowest 3rd and back to it: the chord heard from its 3rd"),
-    ("FROM THE 5TH", "Up from the lowest 5th and back"),
-    ("FROM THE 7TH", "Up from the lowest 7th and back"),
-    ("3-5-7-9", "The arpeggio a 3rd up - 3 5 7 9: over Dm7 it is Fmaj7 - the richer sound with the 9th on top"),
+    ("UP AND DOWN", "Up through the position and back down. Learn one shape before the next."),
+    ("DOWN AND UP", "From the top down, then back up."),
+    ("FROM THE 3RD", "Up from the lowest 3rd and back. You hear the chord from its 3rd."),
+    ("FROM THE 5TH", "Up from the lowest 5th and back."),
+    ("FROM THE 7TH", "Up from the lowest 7th and back."),
+    ("3-5-7-9", "The arpeggio from the 3rd: 3 5 7 9. Over Dm7 that is Fmaj7, a richer sound with the 9th on top."),
     (
         "EVERY CHORD OF THE SCALE, ZIG-ZAG",
-        "Each chord of the scale in turn in this position: the first up, the next down, and so on",
+        "Each chord of the scale in turn, in this position. The first goes up, the next down, and so on.",
     ),
-    ("EVERY CHORD, ZIG-ZAG STARTING DOWN", "The same, the first one coming down"),
-    ("SHIFT THROUGH ALL POSITIONS", "Up and down in every position in turn, up the neck"),
+    ("EVERY CHORD, ZIG-ZAG STARTING DOWN", "The same, but the first chord comes down."),
+    ("SHIFT THROUGH ALL POSITIONS", "Up and down in each position in turn, moving up the neck."),
 ];
 
 /// A chord to arpeggiate: its root (pitch class), name, notes from the root, its 9th, and the scale it sits in
@@ -155,7 +155,7 @@ fn tune_line(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>, Vec
 impl App {
     /// ARPEGGIOS: a chord's notes inside its scale, in the scale's positions, seen and played; and through a tune.
     pub(crate) fn arpeggios(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "The bridge between the scales and the chords: a chord's own notes, picked out of the scale around it, in the same positions as SCALES. See the shape inside the scale, grip the chord, play the arpeggio every way round - then run them through a tune.", pal().ink2);
+        para(ui, "A chord's own notes, picked out of the scale around it. They sit in the same positions as SCALES. See the shape inside the scale, grip the chord and play the arpeggio every way round. Then run them through a tune.", pal().ink2);
         if let Some(i) =
             crate::choice_line(ui, "ar_src", "FROM", &["THE CHORDS OF A SCALE", "ANY CHORD"], self.ar_src as usize, 300.0)
         {
@@ -219,7 +219,7 @@ impl App {
         }
         let nth = |k: usize| by_neck[(first + k) % np];
         let shown: Vec<String> = (0..np)
-            .map(|k| format!("POSITION {}  -  {}", k + 1, about[(first + k) % np]))
+            .map(|k| format!("POSITION {}:  {}", k + 1, about[(first + k) % np]))
             .chain(std::iter::once("WHOLE NECK".to_string()))
             .collect();
         let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
@@ -251,7 +251,7 @@ impl App {
             self.ar_ex = offered[i] as u8;
         }
         let ex = self.ar_ex as usize;
-        crate::views::dim_line(ui, &AR_EXERCISES[ex].1.to_uppercase(), 1.0, pal().ink2);
+        crate::views::dim_line(ui, &crate::font::as_label(&AR_EXERCISES[ex].1), 1.0, pal().ink2);
 
         // a chord's notes in a position, low to high (`extra`: more degrees, the 9th for 3-5-7-9)
         let in_pos = |pos: &[Spot], a: &Arp, degs: &[i32]| -> Vec<Spot> {
@@ -376,7 +376,7 @@ impl App {
             }
         }
         neck_view(ui, &dots, lit);
-        crate::views::dim_line(ui, "BRIGHT: THE ARPEGGIO (BY DEGREE)   RINGS: THE REST OF THE SCALE AROUND IT", 1.0, pal().dim);
+        crate::views::dim_line(ui, "BRIGHT: THE ARPEGGIO, BY DEGREE   RINGS: THE REST OF THE SCALE", 1.0, pal().dim);
         // the piano: the chord, or the note sounding
         let keys: Vec<i32> = match lit {
             Some(s) => vec![theory::STANDARD[s.0] + s.1 as i32],
@@ -405,14 +405,14 @@ impl App {
     /// each starting near where the last ended.
     fn arpeggio_tune(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         section_header(ui, "THROUGH A TUNE");
-        para(ui, "The guide tones first: the 3rd or 7th of each chord, whichever is nearest - through a ii-V-I the 7th falls a half step to the next 3rd and the 3rd stays as the next 7th. Then the arpeggios one after another, each starting near the last. Hear it, then play it over the changes yourself.", pal().ink2);
+        para(ui, "Guide tones first, then the arpeggios, chord by chord. Each guide tone is the 3rd or 7th, whichever is nearest. Through a ii-V-I, the 7th falls a half step to the next 3rd, and the 3rd stays put as the next 7th. Each arpeggio starts near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         if changes.is_empty() {
             return;
         }
         const KINDS: [&str; 3] = [
-            "GUIDE TONES - THE 3RD OR 7TH, ONE A CHORD",
-            "ARPEGGIOS - 1 3 5 7 UP, EACH NEAR THE LAST",
+            "GUIDE TONES: THE 3RD OR 7TH, ONE A CHORD",
+            "ARPEGGIOS: 1 3 5 7 UP, EACH NEAR THE LAST",
             "3 5 7 9 UP, THEN 5 3 1 7 DOWN INTO THE NEXT",
         ];
         if let Some(i) = crate::choice_line(ui, "ar_tune", "LINE", &KINDS, (self.ar_tune as usize).min(2), 320.0) {
@@ -433,7 +433,7 @@ impl App {
                 ui,
                 acts,
                 "PLAY IT",
-                "At the band's tempo, the chord under each one's first note",
+                "Plays at the band's tempo, with the chord under each first note.",
                 "arptune",
                 || {
                     line.iter()

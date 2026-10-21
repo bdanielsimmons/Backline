@@ -221,7 +221,7 @@ impl App {
                     for j in 0..self.binds.len() {
                         if j != slot && self.binds[j] == Some(k) {
                             self.binds[j] = None;
-                            note = format!("{} was on \"{}\" - that one is now unbound.", key_label(k), CMDS[j].label);
+                            note = format!("{} was on \"{}\", so that one now has no key.", key_label(k), CMDS[j].label);
                         }
                     }
                     self.binds[slot] = Some(k);
@@ -258,7 +258,7 @@ impl App {
                             self.cache_at = std::time::Instant::now();
                         }
                         let (n, bytes) = self.cache_stats;
-                        para(ui, "Songs stream without being kept. Switch SAVING on to keep each one you play on this computer: it starts at once and plays with no internet.", pal().ink2);
+                        para(ui, "Songs stream without being kept. Turn SAVING on to keep each song you play on this computer. Saved songs start at once and play with no internet.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             if retro_btn(ui, if self.keep_cache { "SAVING: ON" } else { "SAVING: OFF" }, self.keep_cache).clicked() {
                                 acts.push(Action::ToggleKeep);
@@ -269,7 +269,7 @@ impl App {
                             if retro_btn(ui, "CLEAR SAVED SONGS", false).clicked() {
                                 acts.push(Action::ClearCache);
                             }
-                            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems (frees disk space)").clicked() {
+                            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems to free disk space.").clicked() {
                                 acts.push(Action::StemClear);
                             }
                         });
@@ -290,7 +290,7 @@ impl App {
                         let status = match self.upd_state {
                             1 => "Downloading an update...".to_string(),
                             2 => format!(
-                                "{} is downloaded. Use the bar at the top to restart, or it installs the next time you open Backline.",
+                                "{} is downloaded. Click the bar at the top to restart, or it installs the next time you open Backline.",
                                 self.upd.as_ref().map_or("An update".to_string(), |u| u.tag.clone())
                             ),
                             3 => "The last check or download failed. It will try again later.".to_string(),
@@ -301,7 +301,7 @@ impl App {
                             para(ui, &self.upd_note.clone(), pal().ink2);
                         }
                         if check_box(ui, "RESTART BY ITSELF WHEN I'M AWAY", self.auto_restart)
-                            .tip("Off by default. When on, a downloaded update restarts Backline after about 5 quiet minutes with nothing playing. When off, nothing ever restarts unless you click.")
+                            .tip("Off by default. When on, Backline restarts for a downloaded update after 5 quiet minutes with nothing playing. When off, it only restarts when you click.")
                             .clicked()
                         {
                             self.auto_restart = !self.auto_restart;
@@ -309,7 +309,7 @@ impl App {
                         }
                         para(
                             ui,
-                            "Updates are checked when the app opens and then every 6 hours, a tiny request that costs nothing when there is nothing new.",
+                            "Backline checks for updates when it opens and every 6 hours. The check is tiny and costs nothing when there is nothing new.",
                             pal().ink2,
                         );
                         if matches!(self.upd_state, 0 | 3) && retro_btn(ui, "CHECK NOW", false).clicked() {
@@ -319,7 +319,7 @@ impl App {
                         section_header(ui, "SOUND OUTPUT");
                         para(
                             ui,
-                            "Where the sound plays. Bluetooth headphones and speakers show up here once they are paired in your computer's Bluetooth settings. If the chosen one is off or unplugged, the default plays instead; if Bluetooth headphones or a speaker drop out, the music pauses.",
+                            "Choose where the sound plays. Bluetooth headphones and speakers show up here once you pair them in your computer's settings. If the chosen one is off or unplugged, the default plays instead. If Bluetooth headphones or a speaker drop out, the music pauses.",
                             pal().ink2,
                         );
                         ui.horizontal_wrapped(|ui| {
@@ -328,7 +328,7 @@ impl App {
                             }
                             for name in self.out_list.clone() {
                                 let on = self.out_device.as_deref() == Some(name.as_str());
-                                if retro_btn(ui, &name.to_uppercase(), on).clicked() && !on {
+                                if retro_btn(ui, &crate::font::as_label(&name), on).clicked() && !on {
                                     acts.push(Action::SetDevice(Some(name)));
                                 }
                             }
@@ -336,7 +336,7 @@ impl App {
 
                         section_header(ui, "QUEUE");
                         if check_box(ui, "A QUEUED SONG LEAVES THE QUEUE ONCE IT HAS PLAYED", self.q_drop)
-                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE drop out once they have played or you skip on past them. The playlist's own songs always stay. Off: they stay")
+                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE drop out once they play or you skip past them. The playlist's own songs always stay. When off, every song stays.")
                             .clicked()
                         {
                             self.q_drop = !self.q_drop;
@@ -344,7 +344,7 @@ impl App {
                         }
 
                         section_header(ui, "OPENING SOUND");
-                        para(ui, "A little sound when Backline opens: its own chime, or a short sound file of yours.", pal().ink2);
+                        para(ui, "Play a short sound when Backline opens. Pick its chime or a sound file of your own.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for (m, name) in [(0u8, "OFF"), (1, "BACKLINE CHIME"), (2, "MY FILE")] {
                                 let ok = m != 2 || self.intro_file.is_some();
@@ -355,7 +355,7 @@ impl App {
                             if retro_btn(ui, "CHOOSE FILE...", false).clicked() {
                                 acts.push(Action::Intro(3));
                             }
-                            if retro_btn(ui, "PLAY", false).tip("Hear it now").clicked() {
+                            if retro_btn(ui, "PLAY", false).tip("Hear it now.").clicked() {
                                 acts.push(Action::Intro(4));
                             }
                         });
@@ -367,7 +367,7 @@ impl App {
                         section_header(ui, "ACCESSIBILITY");
                         let safe = crate::skin::LOOP_SAFE.load(std::sync::atomic::Ordering::Relaxed);
                         if check_box(ui, "COLOUR-BLIND SAFE LOOPS", safe)
-                            .tip("Loops and their A / B markers in orange, which nearly everyone tells apart from red and green")
+                            .tip("Draws loops and their A and B markers in orange. Nearly everyone can tell orange from red and green.")
                             .clicked()
                         {
                             crate::skin::LOOP_SAFE.store(!safe, std::sync::atomic::Ordering::Relaxed);
@@ -375,7 +375,7 @@ impl App {
                         }
                         let calm = crate::skin::calm();
                         if check_box(ui, "REDUCE MOTION", calm)
-                            .tip("No spinning record, no tilting cover, no scrolling song titles")
+                            .tip("Stops the spinning record, the tilting cover and the scrolling song titles.")
                             .clicked()
                         {
                             crate::skin::CALM.store(!calm, std::sync::atomic::Ordering::Relaxed);
@@ -383,12 +383,12 @@ impl App {
                         }
                         para(
                             ui,
-                            "The HIGH CONTRAST skins (BACKLINE tab) and SIZE OF EVERYTHING below help too.",
+                            "The HIGH CONTRAST skins in the BACKLINE tab help too, and so does SIZE OF EVERYTHING below.",
                             pal().ink2,
                         );
 
                         section_header(ui, "CHORDS");
-                        para(ui, "How strong the faint rings are that show the rest of a chord on the guitar neck.", pal().ink2);
+                        para(ui, "Set how strong the faint rings are. They show the rest of a chord on the guitar neck.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for (lab, a) in [("SUBTLE", 0.3f32), ("MEDIUM", 0.55), ("STRONG", 0.8), ("FULL", 1.0)] {
                                 if retro_btn(ui, lab, (self.ghost_alpha - a).abs() < 0.05).clicked() {
@@ -399,7 +399,7 @@ impl App {
                         });
 
                         section_header(ui, "SIZE OF EVERYTHING");
-                        para(ui, "Makes buttons and text bigger or smaller. Ctrl and + / - (Cmd on a Mac) does the same.", pal().ink2);
+                        para(ui, "Make buttons and text bigger or smaller. CTRL and + or - does the same (CMD on a Mac).", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             let now = (ctx.zoom_factor() * 100.0).round() as i32;
                             for pct in [90, 100, 115, 130, 150, 175] {
@@ -411,8 +411,8 @@ impl App {
                         });
 
                         section_header(ui, "KEYBOARD SHORTCUTS");
-                        para(ui, "Ctrl+K (Cmd+K on a Mac) opens the command palette: type any action and press ENTER.", pal().ink2);
-                        para(ui, "Click a key, then press the new one. ESC cancels. Giving a key to something else unbinds the old one.", pal().ink2);
+                        para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette. Type any action and press ENTER.", pal().ink2);
+                        para(ui, "Click a key, then press the new one. ESC cancels. Each key does one job, so a new job clears the old one.", pal().ink2);
                         if !self.bind_note.is_empty() {
                             para(ui, &self.bind_note.clone(), pal().ink);
                         }

@@ -288,9 +288,42 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             Color32::from_black_alpha(190),
         );
         sans_text(p, at, Align::Min, &label, size, outer.width() * 0.5, Color32::from_gray(235));
+        round_corners(p, outer, true);
         let _ = text;
         true
     })
+}
+
+/// Round a window's top (or bottom) corners: outside each quarter circle the app's background again, a dark edge
+/// along the curve - so windows end softly and meet cleanly.
+pub(crate) fn round_corners(p: &egui::Painter, outer: Rect, top: bool) {
+    let r = 7.0_f32;
+    let bg = crate::pal().app_bg;
+    let cy = if top { outer.min.y + r } else { outer.max.y - r };
+    let dir = if top { -1.0 } else { 1.0 };
+    let arc = |cx: f32, side: f32| -> Vec<Pos2> {
+        (0..=8)
+            .map(|i| {
+                let a = i as f32 / 8.0 * std::f32::consts::FRAC_PI_2;
+                Pos2::new(cx + side * r * a.cos(), cy + dir * r * a.sin())
+            })
+            .collect()
+    };
+    let mut mesh = egui::Mesh::default();
+    for (cx, side) in [(outer.min.x + r, -1.0_f32), (outer.max.x - r, 1.0)] {
+        let corner = Pos2::new(cx + side * r, if top { outer.min.y } else { outer.max.y });
+        for w in arc(cx, side).windows(2) {
+            let i = mesh.vertices.len() as u32;
+            for q in [corner, w[0], w[1]] {
+                mesh.colored_vertex(q, bg);
+            }
+            mesh.add_triangle(i, i + 1, i + 2);
+        }
+    }
+    p.add(egui::Shape::mesh(mesh));
+    for (cx, side) in [(outer.min.x + r, -1.0_f32), (outer.max.x - r, 1.0)] {
+        p.add(egui::Shape::line(arc(cx, side), egui::Stroke::new(1.5_f32, Color32::from_black_alpha(220))));
+    }
 }
 
 /// The bottom of a window, finished like its top: a highlight where the frame's floor begins, the two bottom
@@ -589,6 +622,18 @@ pub(crate) fn fetch_font(choice: usize) -> Result<Vec<u8>, String> {
 /// whole pixels (so stems keep one even width instead of breaking up), and each pixel is fully on or off, like
 /// Windows text before ClearType. A font's built-in bitmaps for small sizes win when it has them, as on Windows.
 /// Lines are drawn straight at the size they show on screen, once, and kept.
+/// A font's hand-tuned pixel widths of every letter at one size (its `hdmx` table), when it has them - as Windows
+/// spaced small text. None: work them out from the outlines.
+fn hdmx_widths<'a>(font: &swash::FontRef<'a>, ppem: u8) -> Option<&'a [u8]> {
+    let d = font.table(swash::tag_from_bytes(b"hdmx"))?;
+    let n = i16::from_be_bytes([*d.get(2)?, *d.get(3)?]).max(0) as usize;
+    let rec = u32::from_be_bytes([*d.get(4)?, *d.get(5)?, *d.get(6)?, *d.get(7)?]) as usize;
+    if rec < 3 {
+        return None;
+    }
+    (0..n).map(|i| 8 + i * rec).find(|&o| d.get(o) == Some(&ppem)).and_then(|o| d.get(o + 2..o + rec))
+}
+
 pub(crate) struct PixFont {
     pub(crate) bytes: std::sync::Arc<Vec<u8>>,
     /// the font's own size (Winamp's 10 pixels for ordinary fonts, a pixel font's native size)
@@ -617,10 +662,12 @@ impl PixFont {
     pub(crate) fn glyphs(&self, s: &str, size: f32) -> Vec<(swash::GlyphId, f32)> {
         let font = self.font();
         let (map, metrics) = (font.charmap(), font.glyph_metrics(&[]).scale(size));
+        let tuned = hdmx_widths(&font, size.round() as u8);
         s.chars()
             .map(|ch| {
                 let id = map.map(ch);
-                (id, metrics.advance_width(id).round())
+                let adv = tuned.and_then(|w| w.get(id as usize)).map(|w| *w as f32);
+                (id, adv.unwrap_or_else(|| metrics.advance_width(id).round()))
             })
             .collect()
     }
@@ -660,7 +707,8 @@ impl PixFont {
                         let c = img.data[(gy * pl.width as i32 + gx) as usize];
                         // hinted outlines sit on the pixel grid; a stroke a little off it still counts (a quarter
                         // covered), so light fonts like Courier keep every stroke at small sizes
-                        if c >= if embedded { 1 } else { 64 } {
+                        // (half covered or more, as black-and-white hinting draws it - less fattens every stroke)
+                        if c >= if embedded { 1 } else { 128 } {
                             let (dx, dy) = (x + pl.left + gx, 1 + asc - pl.top + gy);
                             if dx >= 0 && dy >= 0 && (dx as usize) < w && (dy as usize) < h {
                                 px[dy as usize * w + dx as usize] = 255;
@@ -712,7 +760,7 @@ thread_local! {
 pub(crate) fn set_playlist_font(_ctx: &egui::Context, bytes: Option<Vec<u8>>, choice: usize) {
     let px = match PL_FONTS.get(choice).map(|f| &f.1) {
         Some(FontSrc::Web(_, px)) => *px,
-        _ => 10.0, // Winamp's playlist size
+        _ => 11.0, // Winamp's playlist size: 8 points at 96 dpi
     };
     PIX.with(|c| *c.borrow_mut() = bytes.and_then(|b| PixFont::new(b, px)));
 }
@@ -723,8 +771,133 @@ pub(crate) fn chrome_on() -> bool {
 }
 
 /// Whether text should take the skin's playlist font (a skin is worn and its font is ready).
+#[allow(dead_code)]
 pub(crate) fn text_override() -> bool {
     chrome_on() && PIX.with(|c| c.borrow().is_some())
+}
+
+/// A label written in capitals ("PICK ONE...", "RHYTHM CHANGES"), as it reads in an ordinary font: a short one in
+/// Title Case, a longer one as a sentence. Words with a digit (chords, times) and abbreviations stay as they are;
+/// text that has any lower case already is left alone.
+/// In a sentence, a run of words in capitals (a button's name: "+ MY TUNES keeps it") reads as a name: "+ My Tunes
+/// keeps it". Single letters and abbreviations stay.
+pub(crate) fn caps_words(text: &str) -> String {
+    let caps = |w: &str| {
+        let letters: Vec<char> = w.chars().filter(|c| c.is_alphabetic()).collect();
+        letters.len() >= 2 && letters.iter().all(|c| c.is_uppercase())
+    };
+    let words: Vec<&str> = text.split(' ').collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        if caps(words[i]) {
+            let mut j = i;
+            while j < words.len() && (caps(words[j]) || (j > i && words[j] == "&")) {
+                j += 1;
+            }
+            out.push(display_case(&words[i..j].join(" ")).into_owned());
+            i = j;
+        } else {
+            out.push(words[i].to_string());
+            i += 1;
+        }
+    }
+    out.join(" ")
+}
+
+pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.chars().any(|c| c.is_uppercase()) || text.chars().any(|c| c.is_lowercase()) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    const KEEP: [&str; 24] = [
+        "EQ", "PL", "BPM", "YT", "OK", "DJ", "CD", "ID", "TV", "AI", "MP3", "WAV", "MIDI", "A-B", "II", "III", "IV", "VI", "VII",
+        "PDF", "USB", "UK", "US", "BACKLINE",
+    ];
+    let words: Vec<&str> = text.split(' ').collect();
+    let title = words.iter().filter(|w| !w.is_empty()).count() <= 4;
+    let mut out = String::with_capacity(text.len());
+    let mut first = true;
+    for (i, w) in words.iter().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        if w.is_empty() {
+            continue;
+        }
+        let core = w.trim_matches(|c: char| !c.is_alphanumeric());
+        // a single letter: a note or a loop end ("A AND B", "TO B") stays a capital; otherwise it is the word "a"
+        let next = words.get(i + 1).copied().unwrap_or("");
+        let prev = if i > 0 { words[i - 1] } else { "" };
+        let letter_name = core.chars().count() == 1
+            && (next.is_empty() || matches!(next, "AND" | "OR" | "-" | "&") || matches!(prev, "AND" | "OR" | "TO" | "&" | "-"));
+        // names spelled their own way
+        const NAMES: [(&str, &str); 4] =
+            [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal")];
+        // small words stay small inside a title ("Set A and B", "Pick One of Each")
+        const SMALL: [&str; 14] = ["A", "AN", "AND", "OR", "OF", "TO", "IN", "ON", "AT", "THE", "FOR", "WITH", "BY", "FROM"];
+        if let Some((_, name)) = NAMES.iter().find(|(caps, _)| *caps == core) {
+            out.push_str(&w.replacen(core, name, 1));
+        } else if w.chars().any(|c| c.is_ascii_digit()) || KEEP.contains(&core) || (letter_name && !first) {
+            out.push_str(w);
+        } else if title && !first && SMALL.contains(&core) {
+            out.push_str(&w.to_lowercase());
+        } else {
+            let mut up = title || first;
+            let mut after_apos = false;
+            for c in w.chars() {
+                if c.is_alphabetic() {
+                    if up && !after_apos {
+                        out.extend(c.to_uppercase());
+                        up = false;
+                    } else {
+                        out.extend(c.to_lowercase());
+                    }
+                    after_apos = false;
+                } else {
+                    after_apos = c == APOS;
+                    // a new part after a dash or slash ("UP-TEMPO") starts high again in a title
+                    if title && (c == '-' || c == '/') {
+                        up = true;
+                    }
+                    out.push(c);
+                }
+            }
+        }
+        if !core.is_empty() {
+            first = false;
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+const APOS: char = '\u{27}';
+
+/// A line of the playlist in its font as Winamp drew it: at the font's own size (11 pixels for an ordinary font, a
+/// pixel font's native one), every pixel `k` points square - a whole number of screen pixels - so the stack's text
+/// grows with the stack, crisp. Cut with "..." to `max_w`; `pos` is the left / centre / right middle point. Returns
+/// how wide it came out.
+pub(crate) fn pl_text(p: &egui::Painter, pos: Pos2, align: Align, text: &str, k: f32, max_w: f32, col: Color32) -> f32 {
+    // the skin's own font, 11 skin pixels - Windows' 8 points - tall
+    let font = egui::FontId::new(11.0 * k, egui::FontFamily::Name("skin".into()));
+    let fits = |s: &str| p.layout_no_wrap(s.to_string(), font.clone(), col).size().x <= max_w;
+    let mut s = text.to_string();
+    if !fits(&s) {
+        while !s.is_empty() && !fits(&format!("{}...", s)) {
+            s.pop();
+        }
+        s = format!("{}...", s.trim_end());
+    }
+    let g = p.layout_no_wrap(s, font, col);
+    let w = g.size().x;
+    let x = match align {
+        Align::Min => pos.x,
+        Align::Center => pos.x - w / 2.0,
+        Align::Max => pos.x - w,
+    };
+    let ppp = font::ppp();
+    let snap = |v: f32| (v * ppp).round() / ppp;
+    p.galley(Pos2::new(snap(x), snap(pos.y - g.size().y / 2.0)), g, col);
+    w
 }
 
 /// How wide a line comes out in the playlist font at `size`.
@@ -900,5 +1073,20 @@ mod tests {
         let fonts = registry_fonts();
         assert!(fonts.len() > 20, "only {} fonts", fonts.len());
         assert!(installed_fonts().contains_key("arial"), "no arial");
+    }
+
+    #[test]
+    fn capitals_read_as_words() {
+        assert_eq!(display_case("PICK ONE..."), "Pick One...");
+        assert_eq!(display_case("BILLIE'S BOUNCE"), "Billie's Bounce");
+        assert_eq!(display_case("UP-TEMPO"), "Up-Tempo");
+        assert_eq!(display_case("EQ"), "EQ");
+        assert_eq!(display_case("1 OF 10 KINDS IN YOUR SET"), "1 of 10 kinds in your set");
+        assert_eq!(display_case("Already mixed"), "Already mixed");
+        assert_eq!(caps_words("Click one; + MY TUNES keeps it at 120 BPM."), "Click one; + My Tunes keeps it at 120 BPM.");
+        assert_eq!(caps_words("No book? MADE-UP LINES works"), "No book? Made-Up Lines works");
+        assert_eq!(display_case("PLAY A TRACK TO START"), "Play a track to start");
+        assert_eq!(display_case("SET A AND B"), "Set A and B");
+        assert_eq!(display_case("SOUNDCLOUD"), "SoundCloud");
     }
 }

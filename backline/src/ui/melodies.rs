@@ -45,16 +45,16 @@ const MARK_COLS: [(u8, u8, u8); 10] = [
 
 /// What each kind of move is, in a line.
 const EXPLAIN: [&str; 10] = [
-    "A II-V-I: minor 7th, dominant, home - down a 5th each time.",
+    "A II-V-I: minor 7th, dominant, then home, each a 5th down.",
     "A diminished chord a half step between two chords, leading up into the next.",
-    "A tritone sub: the dominant swapped for the one a tritone away (same 3rd and 7th), sliding down a half step home.",
+    "A tritone sub: the dominant a tritone away (same 3rd and 7th) takes its place and slides down a half step home.",
     "A chord a half step above or below the target, sliding into it.",
     "The top note held while the voices under it move.",
-    "The bass walking under the chords - stepping between the roots.",
-    "A grip held while notes inside it move - the fingers that stay are the anchor (lit: the moving notes).",
-    "Every voice of one grip moves a step or less into the next chord - the shortest way between them.",
+    "The bass walks under the chords, stepping between the roots.",
+    "A grip held while notes inside it move. The fingers that stay are the anchor (the moving notes are lit).",
+    "Every voice of one grip moves a step or less into the next chord, the shortest way between them.",
     "One you kept yourself.",
-    "After the chord stab, the melody stays where the hand is - notes the grip puts in reach (lit: the melody).",
+    "After the chord stab, the melody stays where the hand is, on notes the grip puts in reach (the melody is lit).",
 ];
 
 /// The kind a move you pick yourself gets (kept at 8: the kinds after it came later).
@@ -996,11 +996,14 @@ impl App {
                     self.cm_start(&tune);
                 }
             }
-            if retro_btn(ui, "LOOP", self.cm_loop).tip("Round and round - drag across the bars below to pick which").clicked() {
+            if retro_btn(ui, "LOOP", self.cm_loop)
+                .tip("Play it round and round. Drag across the bars below to pick which.")
+                .clicked()
+            {
                 self.cm_loop = !self.cm_loop;
             }
             if retro_btn(ui, "WHOLE SONG", self.cm_from == 0 && self.cm_to + 1 >= nb)
-                .tip("Play (or loop) the whole song")
+                .tip("Play or loop the whole song.")
                 .clicked()
             {
                 self.cm_from = 0;
@@ -1047,11 +1050,11 @@ impl App {
         area.show(ui, |ui| {
             self.cm_top(ui, acts, &list);
             if self.cm_named {
-                crate::views::dim_line(ui, "THIS FILE HAS NO CHORD NAMES - THESE ARE NAMED FROM THE NOTES", 1.0, pal().dim);
+                crate::views::dim_line(ui, "THIS FILE HAS NO CHORD NAMES, SO THESE ARE NAMED FROM THE NOTES", 1.0, pal().dim);
             }
             crate::views::dim_line(
                 ui,
-                "DRAG ACROSS THE BARS TO LOOP THEM - CLICK A BEAT TO SEE IT - CLICK A COLOURED MOVE TO LOOP IT",
+                "DRAG ACROSS BARS TO LOOP THEM. CLICK A BEAT TO SEE IT, OR A COLOURED MOVE TO LOOP IT.",
                 1.0,
                 pal().dim,
             );
@@ -1118,22 +1121,22 @@ impl App {
 
     /// The top of SONGS: bringing tunes in, the tune, what is shown.
     fn cm_top(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, list: &[(std::path::PathBuf, String)]) {
-        para(ui, "Your transcriptions, bar by bar: the chord names and grips, the notes on a staff with the tab and their names. Play them at any speed, loop a few bars, click a beat to see what it is, and keep the moves you like.", pal().ink2);
+        para(ui, "Study your transcriptions bar by bar. Each shows the chord names and grips, and the notes on a staff with tab and note names. Play at any speed, loop a few bars and click a beat to see what it is. Keep the moves you like.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "IMPORT GUITAR PRO...", false)
-                .tip("Turn Guitar Pro files (.gp) into transcriptions Backline keeps - the originals aren't needed after")
+                .tip("Turn Guitar Pro files (.gp) into transcriptions Backline keeps. You won't need the originals after.")
                 .clicked()
             {
                 acts.push(Action::CmImport(false));
             }
             if retro_btn(ui, "IMPORT A TRANSCRIPTION...", false)
-                .tip("A Backline transcription file (.json) someone sent you")
+                .tip("Add a Backline transcription file (.json) someone sent you.")
                 .clicked()
             {
                 acts.push(Action::CmImport(true));
             }
             if retro_btn(ui, "OPEN FOLDER", false)
-                .tip("Where your transcriptions are kept - copy one from here to send it")
+                .tip("Open the folder your transcriptions are kept in. Copy one from here to send it.")
                 .clicked()
             {
                 let d = transcription::dir();
@@ -1146,7 +1149,7 @@ impl App {
             }
         });
         if list.is_empty() {
-            para(ui, "No transcriptions yet. IMPORT GUITAR PRO... turns .gp files into ones Backline keeps.", pal().ink2);
+            para(ui, "No transcriptions yet. Use IMPORT GUITAR PRO... to add your .gp files.", pal().ink2);
             return;
         }
         let names: Vec<&str> = list.iter().map(|l| l.1.as_str()).collect();
@@ -1168,7 +1171,7 @@ impl App {
                 }
             }
             if crate::check_box(ui, "MOVES SPOTTED", self.cm_marks)
-                .tip("A soft colour over the beats where Backline spots a move - click one to loop it")
+                .tip("Show a soft colour over the beats where Backline spots a move. Click one to loop it.")
                 .clicked()
             {
                 self.cm_marks = !self.cm_marks;
@@ -1187,7 +1190,7 @@ impl App {
             let gone = self.cm_hidden.iter().filter(|h| h.0 == title).count();
             if gone > 0
                 && retro_btn(ui, &format!("BRING BACK {} REMOVED", gone), false)
-                    .tip("The moves you removed from this tune")
+                    .tip("Bring back the moves you removed from this tune.")
                     .clicked()
             {
                 self.cm_hidden.retain(|h| h.0 != title);
@@ -1260,7 +1263,7 @@ impl App {
                 // a saved move plays its own beats; the song's beats play as the song does (with LOOP)
                 let playing = if saved.is_some() { self.cm_mplay.is_some() } else { self.cm_play.is_some() };
                 if retro_btn(ui, if playing { "STOP" } else { "PLAY" }, playing)
-                    .tip("Play it (round and round with LOOP)")
+                    .tip("Play it. Turn on LOOP to go round and round.")
                     .clicked()
                 {
                     if playing {
@@ -1288,20 +1291,20 @@ impl App {
                         self.cm_start(tune);
                     }
                 }
-                if retro_btn_w(ui, "<", 30.0, false).tip("Step back a beat").clicked() {
+                if retro_btn_w(ui, "<", 30.0, false).tip("Step back a beat.").clicked() {
                     step = Some(-1);
                 }
                 if retro_btn_w(ui, ">", 30.0, false)
-                    .tip("Step on a beat: hear it, see it lit on the staff and the neck")
+                    .tip("Step on a beat. Hear it and see it lit on the staff and the neck.")
                     .clicked()
                 {
                     step = Some(1);
                 }
-                if retro_btn(ui, "LOOP", self.cm_loop).tip("Round and round").clicked() {
+                if retro_btn(ui, "LOOP", self.cm_loop).tip("Play it round and round.").clicked() {
                     self.cm_loop = !self.cm_loop;
                 }
                 if saved.is_none()
-                    && retro_btn(ui, "SAVE AS A MOVE", false).tip("Keep it in MOVES (and marked on the song)").clicked()
+                    && retro_btn(ui, "SAVE AS A MOVE", false).tip("Keep it in MOVES. It stays marked on the song too.").clicked()
                 {
                     let kind = picked_mark.map_or(MY_OWN, |m| m.0);
                     let name = match picked_mark {
@@ -1320,10 +1323,10 @@ impl App {
                     });
                     transcription::save_moves(&self.cm_moves);
                     self.cm_mark = None;
-                    self.set_note("KEPT IN MOVES - MARKED ON THE SONG TOO");
+                    self.set_note("KEPT IN MOVES, AND MARKED ON THE SONG");
                 }
                 if let Some(i) = saved {
-                    if retro_btn(ui, "FORGET THIS MOVE", false).tip("Take it out of your moves").clicked() {
+                    if retro_btn(ui, "FORGET THIS MOVE", false).tip("Take it out of your moves.").clicked() {
                         if i < self.cm_moves.len() {
                             self.cm_moves.remove(i);
                             transcription::save_moves(&self.cm_moves);
@@ -1332,7 +1335,7 @@ impl App {
                     }
                 } else if let Some(m) = picked_mark {
                     if retro_btn(ui, "REMOVE THIS MOVE", false)
-                        .tip("Not one you want marked: gone from this tune (BRING BACK under MOVES returns it)")
+                        .tip("Stop marking this move on this tune. BRING BACK under MOVES returns it.")
                         .clicked()
                     {
                         // one you kept: forgotten; one Backline spotted: hidden
@@ -1354,7 +1357,7 @@ impl App {
                     }
                 }
                 if retro_btn(ui, "ANALYZER", false)
-                    .tip("The first beat in the chord analyzer: every name it has, the piano")
+                    .tip("Open the first beat in the chord analyzer, with every name it has and the piano.")
                     .clicked()
                 {
                     let mut frets = [None; 6];
@@ -1367,7 +1370,7 @@ impl App {
                     self.chords_tab = 1;
                     acts.push(Action::Section(Sec::Chords));
                 }
-                if retro_btn_w(ui, "X", 28.0, false).tip("Close (the loop stays)").clicked() {
+                if retro_btn_w(ui, "X", 28.0, false).tip("Close this. The loop stays.").clicked() {
                     close = true;
                 }
             });
@@ -1418,7 +1421,7 @@ impl App {
                             ptext(ui.painter(), r.center(), Align::Center, ">", 1.5, if st.target { col } else { pal().ink2 });
                         }
                         let (r, resp) = ui.allocate_exact_size(Vec2::new(bw, 116.0 * sc), Sense::click());
-                        let resp = resp.on_hover_text("Hear it, and see it on the neck");
+                        let resp = resp.on_hover_text("Hear it and see it on the neck.");
                         if resp.clicked() {
                             self.cm_step = Some((from, i));
                             let ev: Vec<(usize, i32, f32, f32)> =
@@ -2214,7 +2217,7 @@ impl App {
     // ------------------------------------------------------------------ MOVES
 
     fn cm_moves_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "The moves you kept from your transcriptions. Click one to see it, play it, hear it in another key, star the ones to work on. In SONGS, the coloured strips over the bars are moves Backline spots - click one to keep it.", pal().ink2);
+        para(ui, "Here are the moves you kept from your transcriptions. Click one to see it, play it or hear it in another key. Star the ones to work on. In SONGS, the coloured strips over the bars are moves Backline spots. Click one to keep it.", pal().ink2);
         let _ = acts;
         // the moves kept
         ui.add_space(8.0);
@@ -2247,7 +2250,7 @@ impl App {
                 continue;
             }
             ui.horizontal(|ui| {
-                if retro_btn_w(ui, if m.star { "*" } else { " " }, 26.0, m.star).tip("Star it").clicked() {
+                if retro_btn_w(ui, if m.star { "*" } else { " " }, 26.0, m.star).tip("Star it to work on.").clicked() {
                     star = Some(i);
                 }
                 if retro_btn_w(ui, "PLAY", 60.0, false).clicked() {

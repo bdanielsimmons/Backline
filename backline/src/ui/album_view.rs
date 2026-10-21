@@ -266,7 +266,7 @@ impl App {
                 Pos2::new(cx - tw * 0.5 - 18.0, y0 - 20.0 * k),
                 Pos2::new(cx + tw * 0.5 + 18.0, y0 + 46.0 * k),
             );
-            p.rect_filled(plate, Rounding::same(if style() != 0 { 10.0 } else { 0.0 }), plate_col);
+            p.rect_filled(plate, Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }), plate_col);
             ptext_fit(&p, Pos2::new(cx, y0), Align::Center, &tr.title, 3.0 * k, w, ink);
             ptext_fit(&p, Pos2::new(cx, y0 + 30.0 * k), Align::Center, &sub, 2.0 * k, w, ink.gamma_multiply(0.85));
             // right-click: text size and colour
@@ -300,7 +300,7 @@ impl App {
         // ---- lyrics
         if lyrics_on {
             let ly = Rect::from_min_max(Pos2::new(area.min.x + area.width() * 0.5 + 10.0, area.min.y), area.max);
-            p.rect_filled(ly, Rounding::same(0.0), Color32::from_black_alpha(150));
+            p.rect_filled(ly, Rounding::same(if crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }), Color32::from_black_alpha(150));
             p.rect_stroke(ly, Rounding::same(0.0), Stroke::new(2.0_f32, pal().trim));
             let cp = p.with_clip_rect(ly.shrink(4.0));
             let lh = 38.0;
@@ -310,13 +310,13 @@ impl App {
             let mut scroll = self.lyric_scroll;
             let mut msg: Option<&str> = None;
             match &self.lyrics {
-                None => msg = Some("Lyrics appear here"),
+                None => msg = Some("Lyrics show here"),
                 Some(l) => {
                     let same = track.as_ref().map(|t| t.id) == Some(l.id);
                     if !same || l.status == 0 {
                         msg = Some("Loading lyrics...");
                     } else if l.status == 2 {
-                        msg = Some("No lyrics for this track");
+                        msg = Some("No lyrics for this track.");
                     } else {
                         let n = l.lines.len();
                         let idx: Option<usize> =
@@ -464,7 +464,7 @@ impl App {
                             });
                         });
                         if queue.is_empty() {
-                            para(ui, "Nothing queued. Play a song or right-click one: Add to queue.", pal().ink2);
+                            para(ui, "Nothing is queued. Play a song, or right-click one and choose ADD TO QUEUE.", pal().ink2);
                         }
                         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                             let mut rects: Vec<(usize, Rect)> = Vec::new();
@@ -546,7 +546,7 @@ impl App {
             // practice mode: the loop tools on the left, the speed on the right, in the band along the top
             let strip =
                 Rect::from_min_size(Pos2::new(full.min.x + 28.0, full.min.y + 12.0), Vec2::new(full.width() - 56.0, strip_h));
-            p.rect_filled(strip, Rounding::same(if style() != 0 { 8.0 } else { 0.0 }), Color32::from_black_alpha(120));
+            p.rect_filled(strip, Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 8.0 } else { 0.0 }), Color32::from_black_alpha(120));
             tour::mark("ARTPRACTICE", strip);
             let both = self.loop_a.is_some() && self.loop_b.is_some();
             let ab = format!(
@@ -577,7 +577,7 @@ impl App {
                             64.0,
                             Knob::Speed,
                             format!("{}%", self.speed),
-                            "Slower / faster (Down / Up keys) - or type a percent",
+                            "Slower or faster (DOWN and UP keys). You can also type a percent.",
                         );
                         for pct in [125u32, 100, 85, 70, 50] {
                             if retro_btn_w(ui, &format!("{}", pct), 44.0, self.speed == pct).clicked() {
@@ -607,7 +607,7 @@ impl App {
                     acts.push(Action::ToggleLyrics);
                 }
                 let sp = icon_btn(ui, &IC_SPEC, self.show_spec, ink)
-                    .tip("Visualizer behind the cover  (right-click: its settings, with a preview)");
+                    .tip("Visualizer behind the cover. Right-click for its settings, with a preview.");
                 if sp.clicked() {
                     acts.push(Action::ToggleSpec);
                 }
@@ -627,7 +627,7 @@ impl App {
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
             ui.horizontal(|ui| {
                 if icon_btn(ui, &IC_SHUF, self.shuffle, ink)
-                    .tip(if self.shuffle { "Shuffle is on - click to turn off" } else { "Shuffle the queue" })
+                    .tip(if self.shuffle { "Shuffle is on. Click to turn it off." } else { "Shuffle the queue" })
                     .clicked()
                 {
                     acts.push(Action::Shuffle);
@@ -636,7 +636,7 @@ impl App {
                     acts.push(Action::Prev);
                 }
                 if icon_btn(ui, if playing { &IC_PAUSE } else { &IC_PLAY }, false, ink)
-                    .tip(if playing { "Pause  (Space)" } else { "Play  (Space)" })
+                    .tip(if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" })
                     .clicked()
                 {
                     acts.push(Action::Toggle);
@@ -645,7 +645,7 @@ impl App {
                     acts.push(Action::Next);
                 }
                 let (rep_icon, rep_tip) = match self.repeat {
-                    Repeat::Off => (&IC_REP, "Repeat: off  (click for all)"),
+                    Repeat::Off => (&IC_REP, "Repeat is off  (click for all)"),
                     Repeat::All => (&IC_REP, "Repeat all  (click for one track)"),
                     Repeat::One => (&IC_REP1, "Repeat this track  (click to turn off)"),
                 };
@@ -676,7 +676,7 @@ impl App {
                     let (sr, vr) = ui.allocate_exact_size(Vec2::new(100.0, bh()), Sense::click_and_drag());
                     let vr = vr
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip(format!("Volume {}%  (drag, or scroll over it)", (self.volume * 100.0).round()));
+                        .tip(format!("Volume {}%  (drag or scroll over it)", (self.volume * 100.0).round()));
                     let g = Rect::from_center_size(sr.center(), Vec2::new(sr.width(), 8.0));
                     let knob_w = 10.0;
                     let kx = g.min.x + (g.width() - knob_w) * self.volume;
@@ -713,7 +713,7 @@ impl App {
                     }
                 }
                 let ob =
-                    icon_btn(ui, &IC_OUT, self.out_device.is_some(), ink).tip("Sound output: speakers, headphones, Bluetooth...");
+                    icon_btn(ui, &IC_OUT, self.out_device.is_some(), ink).tip("Sound output: speakers, headphones or Bluetooth");
                 self.output_popup(ui, &ob, acts);
                 ui.add_space(14.0);
                 if icon_btn(ui, &IC_MENU, self.art_queue, ink).tip("The queue: what plays next").clicked() {
@@ -724,8 +724,9 @@ impl App {
                 {
                     acts.push(Action::TogglePractice);
                 }
-                let sb = retro_btn(ui, &crate::tools::speed_label(self.speed), self.speed != 100)
-                    .tip("Speed (pitch stays): click for the next one, right-click to pick or type any  (Up / Down keys)");
+                let sb = retro_btn(ui, &crate::tools::speed_label(self.speed), self.speed != 100).tip(
+                    "Speed, with the pitch kept. Click for the next one, or right-click to pick or type any  (UP and DOWN keys)",
+                );
                 if sb.clicked() {
                     acts.push(Action::Speed(crate::tools::next_speed(self.speed)));
                 }
@@ -736,7 +737,7 @@ impl App {
             &p,
             Pos2::new(full.max.x - 30.0, full.max.y - 14.0),
             Align::Max,
-            "Click the cover: record    Right-click it: border    Esc close    F fullscreen    L lyrics    H like    Space play/pause",
+            "Click the cover: record    Right-click it: border    ESC close    F fullscreen    L lyrics    H like    SPACE play/pause",
             1.0,
             pal().dim,
         );

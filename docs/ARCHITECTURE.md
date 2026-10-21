@@ -23,6 +23,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Practice logic (sources, tunes, loops, diary, trainer, stems, metronome, playlists) | `extras.rs` |
 | Practice screens (FILES / YT / SC / TUNES / DIARY / LOOPS lists, practice panel, lead sheet) | `ui/views.rs` |
 | Library window, sign-in, Tidal search box, EQ dock, presets | `ui/library_win.rs` |
+| With a skin: side list of places (`side_nav`), window switch icons (`window_icons`), now-playing bar (`now_bar`), page body (`library_body`) | `ui/library_win.rs` |
 | Player window, title buttons, queue | `ui/player_win.rs` |
 | Now Playing (big cover, lyrics) | `ui/album_view.rs` |
 | Floating tools: focus timer, metronome, band, number boxes, field ids `F_*` | `ui/tools.rs` |
@@ -39,6 +40,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Music theory (chord notes, names, grips, scales) | `data/theory.rs` |
 | Neck and piano drawings | `ui/fretboard.rs` (shared with the phone app) |
 | Drawing kit (buttons, tabs, LCD, dropdowns, check boxes, list rows) | `ui/widgets.rs`; text `ui/font.rs` |
+| Skinned look: pill buttons (`raised_h`), joined tabs (`segments`), spaced-capital headings (`spaced_caps`), one-line explanations with hover (`para` -> `about_line`); line icons by name `ui/vicon.rs` `named`; reading text in Inter (`assets/Inter-Regular.ttf`), playlist in the skin's font (family "skin", `smooth_fonts` in main.rs); casing `display_case` / `caps_words` in `ui/winamp_draw.rs` |
 | Text box (select, Ctrl+A, copy/paste) | `field()` in `ui/views.rs` |
 | Skins: palettes `ui/skin.rs`; Backline-drawn Winamp looks `data/genskin.rs`; real Winamp skins `data/winamp.rs` (load, fix-ups), `ui/winamp_draw.rs` (sprites, plates), `ui/winamp_ui.rs` (main window, EQ) |
 | Audio engine (decode, loop, speed, pitch, EQ, output devices) | `audio/player.rs`, `audio/decode.rs` |

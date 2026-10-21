@@ -13,14 +13,14 @@ const ITEMS: &[(&str, &str, bool)] = &[
     ("Previous song", "prev", false),
     ("Like the current song", "like", false),
     ("Mode: library (all three windows)", "mode1", false),
-    ("Mode: player (just the player and queue)", "mode2", false),
-    ("Mode: now playing (big cover / album art, lyrics, visualizer)", "mode3", false),
+    ("Mode: player (the player and queue)", "mode2", false),
+    ("Mode: now playing (big cover, album art, lyrics, visualizer)", "mode3", false),
     ("Mode: mini player", "mode4", false),
     ("Full screen on / off", "full", false),
     ("Lyrics on / off", "lyrics", false),
     ("Visualizer on / off", "spec", false),
     ("Next skin", "skin", false),
-    ("Equalizer: show / hide", "eq", false),
+    ("Equalizer show / hide", "eq", false),
     ("Equalizer on / off", "eq_on", false),
     ("Equalizer preset: flat", "eq_flat", false),
     ("Equalizer preset: bass", "eq_bass", false),
@@ -99,9 +99,9 @@ impl App {
         let cur = self.mode();
         let tips = [
             ("LIBRARY", 82.0, Cmd::ModeLibrary, "Library, player and queue side by side"),
-            ("PLAYER", 74.0, Cmd::ModePlayer, "Just the player and the queue"),
+            ("PLAYER", 74.0, Cmd::ModePlayer, "The player and the queue"),
             ("ALBUM", 68.0, Cmd::ModeAlbum, "Big cover, lyrics and the visualizer"),
-            ("MINI", 56.0, Cmd::ModeMini, "A small always-handy player window"),
+            ("MINI", 56.0, Cmd::ModeMini, "A small player window that stays handy"),
         ];
         ui.horizontal_wrapped(|ui| {
             for (i, (name, w, cmd, tip)) in tips.iter().enumerate() {
@@ -362,7 +362,7 @@ impl App {
                         }
                     }
                     ui.add_space(4.0);
-                    crate::para(ui, "ENTER runs it   UP / DOWN choose   ESC closes", pal().ink2);
+                    crate::para(ui, "ENTER runs it, UP and DOWN choose, ESC closes.", pal().ink2);
                 });
             });
         if let Some(id) = run.or(clicked) {

@@ -99,21 +99,21 @@ fn degree_name(pc: i32, root: i32) -> &'static str {
 
 /// The exercises: (id, name, what it does); some only for some scales.
 const EXERCISES: [(u8, &str, &str); 15] = [
-    (0, "UP & DOWN", "The box up and down: say each note's degree as you play it"),
-    (1, "4-NOTE SEQUENCE", "Four up, back three, four up again - then the same coming down"),
-    (2, "3-NOTE SEQUENCE", "Three up, back two, three up again - then the same coming down"),
-    (3, "SKIP ONE", "Skip a note, come back one: wider intervals, an open sound"),
-    (4, "SKIP TWO", "Skip two notes: wider still"),
-    (5, "ONE STRING", "The scale along one string, up the neck and back - play it with one finger, then with slides"),
-    (6, "TWO STRINGS", "The scale on two strings up the neck, position by position - try double stops"),
-    (7, "CONNECT TWO POSITIONS", "Up this position, down the next one along: the change of position on each string"),
-    (8, "ALTERNATE THE TRIADS", "One triad, then the other, through their inversions up the position and back down"),
-    (9, "COLTRANE CELLS", "Four-note cells (1 2 3 5, or 1 b3 4 5 over minor) from the root, then from the 5th, up and back"),
-    (10, "COLTRANE FROM THE 5TH", "The same cells starting on the 5th and the 9th: a brighter colour over the chord"),
-    (11, "APPROACH FROM BELOW", "Each note of the position reached from a half step below - then from above coming down"),
-    (12, "ENCLOSURES", "Each target note enclosed: the scale note above, the half step below, then the target"),
-    (13, "CHROMATIC PASSING", "Every whole step and wider filled in chromatically: a line that never stops moving"),
-    (14, "SKIP ONE (DOWN FIRST)", "The skips coming down first, then back up"),
+    (0, "UP & DOWN", "The box up and down. Say each note's degree as you play it."),
+    (1, "4-NOTE SEQUENCE", "Four up, back three, four up again. Then the same coming down."),
+    (2, "3-NOTE SEQUENCE", "Three up, back two, three up again. Then the same coming down."),
+    (3, "SKIP ONE", "Skip a note, come back one. Wider intervals, an open sound."),
+    (4, "SKIP TWO", "Skip two notes. Wider still."),
+    (5, "ONE STRING", "The scale along one string, up the neck and back. Play it with one finger, then with slides."),
+    (6, "TWO STRINGS", "The scale on two strings up the neck, position by position. Try double stops."),
+    (7, "CONNECT TWO POSITIONS", "Up this position, down the next one along. It drills the shift on each string."),
+    (8, "ALTERNATE THE TRIADS", "One triad, then the other, through their inversions up the position and back down."),
+    (9, "COLTRANE CELLS", "Four-note cells (1 2 3 5, or 1 b3 4 5 over minor) from the root, then the 5th, up and back."),
+    (10, "COLTRANE FROM THE 5TH", "The same cells from the 5th and the 9th. A brighter colour over the chord."),
+    (11, "APPROACH FROM BELOW", "Each note of the position from a half step below. Then from above, coming down."),
+    (12, "ENCLOSURES", "Each target note enclosed: the scale note above, the half step below, then the target."),
+    (13, "CHROMATIC PASSING", "Every whole step or wider filled in chromatically. A line that never stops moving."),
+    (14, "SKIP ONE (DOWN FIRST)", "The skips coming down first, then back up."),
 ];
 
 /// A scale the tab offers: its name, steps from the key, the chord it is played over, what it suits, and for a
@@ -152,38 +152,38 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
     };
     match fam {
         1 => vec![
-            pair((0, false), (2, false), &[0, 4, 7, 11, 18], format!("LYDIAN: OVER {}MAJ7#11 - ALSO {}M7 AND {}7SUS", n(0), n(9), n(2))),
+            pair((0, false), (2, false), &[0, 4, 7, 11, 18], format!("LYDIAN: OVER {}MAJ7#11, ALSO {}M7 AND {}7SUS", n(0), n(9), n(2))),
             pair((5, false), (7, false), &[0, 7, 14, 17], format!("DIATONIC, NO 3RD TO CLASH: OVER {}MAJ7, {}M7, {}7SUS, {}M7", n(0), n(2), n(7), n(9))),
-            pair((2, true), (4, true), &[0, 4, 7, 11, 14], format!("OVER {}MAJ7 AND {}7SUS - THE 9TH AND 13TH UP TOP", n(0), n(7))),
-            pair((6, false), (8, false), &[0, 4, 10, 15, 20], format!("ALTERED: OVER {}7ALT - THE {}9 #9 #11 {}13", n(0), "\u{266D}", "\u{266D}")),
+            pair((2, true), (4, true), &[0, 4, 7, 11, 14], format!("OVER {}MAJ7 AND {}7SUS, WITH THE 9TH AND 13TH UP TOP", n(0), n(7))),
+            pair((6, false), (8, false), &[0, 4, 10, 15, 20], format!("ALTERED: OVER {}7ALT, WITH THE {}9 #9 #11 {}13", n(0), "\u{266D}", "\u{266D}")),
             pair((0, false), (6, false), &[0, 4, 7, 10, 13], format!("FROM THE DIMINISHED SCALE: OVER {}7({}9 #11)", n(0), "\u{266D}")),
-            pair((0, false), (8, true), &[0, 4, 8, 11], format!("THE AUGMENTED SCALE: OVER {}MAJ7#5 - IT REPEATS EVERY MAJOR 3RD", n(0))),
+            pair((0, false), (8, true), &[0, 4, 8, 11], format!("THE AUGMENTED SCALE: OVER {}MAJ7#5. IT REPEATS EVERY MAJOR 3RD.", n(0))),
             plain("MAJOR HEXATONIC  (R 2 3 5 6 7)", &[0, 2, 4, 7, 9, 11], &[0, 4, 7, 11], format!("THE MAJOR SCALE WITHOUT ITS 4TH: OVER {}MAJ7, NOTHING TO AVOID", n(0))),
-            plain("MINOR HEXATONIC  (R 2 \u{266D}3 4 5 \u{266D}7)", &[0, 2, 3, 5, 7, 10], &[0, 3, 7, 10], format!("DORIAN WITHOUT ITS 6TH: OVER {}M7 - THE PENTATONIC WITH A 9TH", n(0))),
-            plain("WHOLE TONE", &[0, 2, 4, 6, 8, 10], &[0, 4, 8, 10], format!("OVER {}7#5 - SYMMETRIC: EVERY NOTE A WHOLE STEP APART, TWO OF THEM IN ALL", n(0))),
+            plain("MINOR HEXATONIC  (R 2 \u{266D}3 4 5 \u{266D}7)", &[0, 2, 3, 5, 7, 10], &[0, 3, 7, 10], format!("DORIAN WITHOUT ITS 6TH: OVER {}M7. THE PENTATONIC WITH A 9TH.", n(0))),
+            plain("WHOLE TONE", &[0, 2, 4, 6, 8, 10], &[0, 4, 8, 10], format!("OVER {}7#5. SYMMETRIC, EVERY NOTE A WHOLE STEP APART. THERE ARE ONLY TWO OF THEM.", n(0))),
         ],
         2 => vec![
-            plain("HALF-WHOLE", &[0, 1, 3, 4, 6, 7, 9, 10], &[0, 4, 7, 10, 13], format!("OVER {}7({}9): HALF STEP, WHOLE STEP, ROUND AND ROUND - IT REPEATS EVERY MINOR 3RD", n(0), "\u{266D}")),
-            plain("WHOLE-HALF", &[0, 2, 3, 5, 6, 8, 9, 11], &[0, 3, 6, 9], format!("OVER {}DIM7: WHOLE STEP, HALF STEP - IT REPEATS EVERY MINOR 3RD", n(0))),
+            plain("HALF-WHOLE", &[0, 1, 3, 4, 6, 7, 9, 10], &[0, 4, 7, 10, 13], format!("OVER {}7({}9): HALF STEP, WHOLE STEP, ROUND AND ROUND. IT REPEATS EVERY MINOR 3RD.", n(0), "\u{266D}")),
+            plain("WHOLE-HALF", &[0, 2, 3, 5, 6, 8, 9, 11], &[0, 3, 6, 9], format!("OVER {}DIM7: WHOLE STEP, HALF STEP. IT REPEATS EVERY MINOR 3RD.", n(0))),
         ],
         // a scale with one chromatic note added between two of its own, so a line of eighths that starts on a chord
         // tone on the beat keeps landing chord tones on the beats
         3 => vec![
-            plain("DOMINANT  (R 2 3 4 5 6 \u{266D}7 7)", &[0, 2, 4, 5, 7, 9, 10, 11], &[0, 4, 7, 10], format!("OVER {}7: THE MAJOR 7TH PASSES BETWEEN THE \u{266D}7 AND THE ROOT - DOWN FROM A CHORD TONE, CHORD TONES FALL ON THE BEATS", n(0))),
-            plain("MAJOR  (R 2 3 4 5 #5 6 7)", &[0, 2, 4, 5, 7, 8, 9, 11], &[0, 4, 7, 11], format!("OVER {}MAJ7 AND {}6: THE #5 PASSES BETWEEN THE 5TH AND 6TH - THE {}6 CHORD AND A DIMINISHED CHORD TAKING TURNS", n(0), n(0), n(0))),
-            plain("MINOR  (R 2 \u{266D}3 3 4 5 6 \u{266D}7)", &[0, 2, 3, 4, 5, 7, 9, 10], &[0, 3, 7, 10], format!("OVER {}M7: THE 3RD PASSES BETWEEN THE \u{266D}3 AND THE 4TH - DORIAN WITH ONE NOTE MORE", n(0))),
-            plain("MINOR 6  (R 2 \u{266D}3 4 5 #5 6 7)", &[0, 2, 3, 5, 7, 8, 9, 11], &[0, 3, 7, 9], format!("OVER {}M6 AND {}M(MAJ7): MELODIC MINOR WITH THE #5 PASSING - THE {}M6 CHORD AND A DIMINISHED CHORD TAKING TURNS", n(0), n(0), n(0))),
+            plain("DOMINANT  (R 2 3 4 5 6 \u{266D}7 7)", &[0, 2, 4, 5, 7, 9, 10, 11], &[0, 4, 7, 10], format!("OVER {}7: THE MAJOR 7TH PASSES BETWEEN THE \u{266D}7 AND THE ROOT. RUN DOWN FROM A CHORD TONE AND CHORD TONES FALL ON THE BEATS.", n(0))),
+            plain("MAJOR  (R 2 3 4 5 #5 6 7)", &[0, 2, 4, 5, 7, 8, 9, 11], &[0, 4, 7, 11], format!("OVER {}MAJ7 AND {}6: THE #5 PASSES BETWEEN THE 5TH AND 6TH. THE {}6 CHORD AND A DIMINISHED CHORD TAKE TURNS.", n(0), n(0), n(0))),
+            plain("MINOR  (R 2 \u{266D}3 3 4 5 6 \u{266D}7)", &[0, 2, 3, 4, 5, 7, 9, 10], &[0, 3, 7, 10], format!("OVER {}M7: THE 3RD PASSES BETWEEN THE \u{266D}3 AND THE 4TH. DORIAN WITH ONE NOTE MORE.", n(0))),
+            plain("MINOR 6  (R 2 \u{266D}3 4 5 #5 6 7)", &[0, 2, 3, 5, 7, 8, 9, 11], &[0, 3, 7, 9], format!("OVER {}M6 AND {}M(MAJ7): MELODIC MINOR WITH THE #5 PASSING. THE {}M6 CHORD AND A DIMINISHED CHORD TAKE TURNS.", n(0), n(0), n(0))),
             plain("DOMINANT 7SUS  (R 2 3 4 5 6 \u{266D}7 7)", &[0, 2, 4, 5, 7, 9, 10, 11], &[0, 5, 7, 10], format!("OVER {}7SUS: THE SAME NOTES AS THE DOMINANT ONE, THE 4TH NOW THE CHORD TONE AND THE 3RD PASSING", n(0))),
         ],
         // pentatonics from Japan, Bali, Egypt and the jazz players' own
         4 => vec![
-            plain("HIRAJOSHI  (R 2 \u{266D}3 5 \u{266D}6)", &[0, 2, 3, 7, 8], &[0, 3, 7], format!("JAPANESE: DARK AND OPEN - OVER {}M(ADD9) OR {}M6 WITH A FLAT 6TH", n(0), n(0))),
-            plain("IN SEN  (R \u{266D}2 4 5 \u{266D}7)", &[0, 1, 5, 7, 10], &[0, 5, 7, 10], format!("JAPANESE: THE KOTO'S SOUND - OVER {}7SUS4 WITH A FLAT 9TH, OR {}PHRYGIAN", n(0), n(0))),
+            plain("HIRAJOSHI  (R 2 \u{266D}3 5 \u{266D}6)", &[0, 2, 3, 7, 8], &[0, 3, 7], format!("JAPANESE, DARK AND OPEN: OVER {}M(ADD9), OR {}M6 WITH A FLAT 6TH", n(0), n(0))),
+            plain("IN SEN  (R \u{266D}2 4 5 \u{266D}7)", &[0, 1, 5, 7, 10], &[0, 5, 7, 10], format!("JAPANESE, THE KOTO'S SOUND: OVER {}7SUS4 WITH A FLAT 9TH, OR {}PHRYGIAN", n(0), n(0))),
             plain("IWATO  (R \u{266D}2 4 \u{266D}5 \u{266D}7)", &[0, 1, 5, 6, 10], &[0, 3, 6, 10], format!("JAPANESE, THE DARKEST: OVER {}M7(\u{266D}5)", n(0))),
             plain("KUMOI  (R 2 \u{266D}3 5 6)", &[0, 2, 3, 7, 9], &[0, 3, 7, 9], format!("JAPANESE, MELODIC MINOR'S PENTATONIC: OVER {}M6 AND {}M(MAJ7)", n(0), n(0))),
-            plain("PELOG  (R \u{266D}2 \u{266D}3 5 \u{266D}6)", &[0, 1, 3, 7, 8], &[0, 3, 7], format!("BALINESE GAMELAN: OVER {}PHRYGIAN - EERIE, SHIMMERING", n(0))),
-            plain("EGYPTIAN  (R 2 4 5 \u{266D}7)", &[0, 2, 5, 7, 10], &[0, 5, 7, 10], format!("SUSPENDED: NO 3RD AT ALL - OVER {}7SUS4 AND {}M11", n(0), n(0))),
-            plain("DOMINANT  (R 2 3 5 \u{266D}7)", &[0, 2, 4, 7, 10], &[0, 4, 7, 10], format!("THE 9TH CHORD AS A SCALE: OVER {}9 - NO 4TH TO AVOID", n(0))),
+            plain("PELOG  (R \u{266D}2 \u{266D}3 5 \u{266D}6)", &[0, 1, 3, 7, 8], &[0, 3, 7], format!("BALINESE GAMELAN, EERIE AND SHIMMERING: OVER {}PHRYGIAN", n(0))),
+            plain("EGYPTIAN  (R 2 4 5 \u{266D}7)", &[0, 2, 5, 7, 10], &[0, 5, 7, 10], format!("SUSPENDED, NO 3RD AT ALL: OVER {}7SUS4 AND {}M11", n(0), n(0))),
+            plain("DOMINANT  (R 2 3 5 \u{266D}7)", &[0, 2, 4, 7, 10], &[0, 4, 7, 10], format!("THE 9TH CHORD AS A SCALE: OVER {}9, NO 4TH TO AVOID", n(0))),
             plain("MINOR 6  (R \u{266D}3 4 5 6)", &[0, 3, 5, 7, 9], &[0, 3, 7, 9], format!("DORIAN'S PENTATONIC: OVER {}M6 AND {}M13", n(0), n(0))),
             plain("MAJOR \u{266D}6  (R 2 3 5 \u{266D}6)", &[0, 2, 4, 7, 8], &[0, 4, 7], format!("OVER {}7(\u{266D}13) AND {}(ADD \u{266D}6): MAJOR WITH A DARK EDGE", n(0), n(0))),
             plain("ALTERED  (R \u{266D}2 3 \u{266D}5 \u{266D}7)", &[0, 1, 4, 6, 10], &[0, 4, 6, 10], format!("OVER {}7ALT: THE \u{266D}9 AND \u{266D}5 IN A FIVE-NOTE SHAPE", n(0))),
@@ -191,21 +191,21 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
         // six-note scales beyond the major and minor hexatonics
         5 => vec![
             plain("BLUES  (R \u{266D}3 4 \u{266D}5 5 \u{266D}7)", &[0, 3, 5, 6, 7, 10], &[0, 3, 7, 10], format!("THE MINOR PENTATONIC WITH THE BLUE NOTE: OVER {}7 AND {}M7", n(0), n(0))),
-            plain("MAJOR BLUES  (R 2 \u{266D}3 3 5 6)", &[0, 2, 3, 4, 7, 9], &[0, 4, 7, 9], format!("THE MAJOR PENTATONIC WITH THE BLUE NOTE: OVER {}6 AND {}7 - COUNTRY AND GOSPEL", n(0), n(0))),
+            plain("MAJOR BLUES  (R 2 \u{266D}3 3 5 6)", &[0, 2, 3, 4, 7, 9], &[0, 4, 7, 9], format!("THE MAJOR PENTATONIC WITH THE BLUE NOTE: OVER {}6 AND {}7. COUNTRY AND GOSPEL.", n(0), n(0))),
             plain("PROMETHEUS  (R 2 3 #4 6 \u{266D}7)", &[0, 2, 4, 6, 9, 10], &[0, 4, 10, 18], format!("SCRIABIN'S MYSTIC CHORD: OVER {}7(#11) AND {}13(#11)", n(0), n(0))),
-            plain("TRITONE  (R \u{266D}2 3 \u{266D}5 5 \u{266D}7)", &[0, 1, 4, 6, 7, 10], &[0, 4, 7, 10], format!("TWO MAJOR TRIADS A TRITONE APART: OVER {}7(\u{266D}9 #11) - THE SUB INSIDE", n(0))),
-            plain("AUGMENTED  (R #2 3 5 #5 7)", &[0, 3, 4, 7, 8, 11], &[0, 4, 8, 11], format!("TWO AUGMENTED TRIADS: OVER {}MAJ7#5 - SYMMETRIC, EVERY MAJOR 3RD", n(0))),
+            plain("TRITONE  (R \u{266D}2 3 \u{266D}5 5 \u{266D}7)", &[0, 1, 4, 6, 7, 10], &[0, 4, 7, 10], format!("TWO MAJOR TRIADS A TRITONE APART: OVER {}7(\u{266D}9 #11), THE TRITONE SUB INSIDE", n(0))),
+            plain("AUGMENTED  (R #2 3 5 #5 7)", &[0, 3, 4, 7, 8, 11], &[0, 4, 8, 11], format!("TWO AUGMENTED TRIADS: OVER {}MAJ7#5. IT REPEATS EVERY MAJOR 3RD.", n(0))),
         ],
         // four notes: the Coltrane cells as scales, sparse and strong
         6 => vec![
             plain("1 2 3 5", &[0, 2, 4, 7], &[0, 4, 7], format!("COLTRANE'S CELL AS A SCALE: OVER {} AND {}MAJ7", n(0), n(0))),
-            plain("1 \u{266D}3 4 5", &[0, 3, 5, 7], &[0, 3, 7], format!("THE MINOR CELL: OVER {}M7 - THE PENTATONIC'S CORE", n(0))),
+            plain("1 \u{266D}3 4 5", &[0, 3, 5, 7], &[0, 3, 7], format!("THE MINOR CELL: OVER {}M7, THE PENTATONIC'S CORE", n(0))),
             plain("1 2 4 5", &[0, 2, 5, 7], &[0, 5, 7], format!("SUSPENDED, NO 3RD: OVER {}SUS AND {}7SUS4", n(0), n(0))),
             plain("1 3 5 \u{266D}7", &[0, 4, 7, 10], &[0, 4, 7, 10], format!("THE DOMINANT ARPEGGIO AS A SCALE: OVER {}7", n(0))),
         ],
         _ => vec![
-            plain("MINOR  (R \u{266D}3 4 5 \u{266D}7)", &PENT_MINOR, &[0, 3, 7, 10], format!("OVER {}M7 - AND OVER A {}7 OR {} BLUES", n(0), n(0), n(0))),
-            plain("MAJOR  (R 2 3 5 6)", &PENT_MAJOR, &[0, 4, 7, 9], format!("OVER {} AND {}6 - THE SAME NOTES AS {} MINOR", n(0), n(0), n(9))),
+            plain("MINOR  (R \u{266D}3 4 5 \u{266D}7)", &PENT_MINOR, &[0, 3, 7, 10], format!("OVER {}M7, AND OVER A {}7 OR {} BLUES", n(0), n(0), n(0))),
+            plain("MAJOR  (R 2 3 5 6)", &PENT_MAJOR, &[0, 4, 7, 9], format!("OVER {} AND {}6. THE SAME NOTES AS {} MINOR.", n(0), n(0), n(9))),
         ],
     }
 }
@@ -237,7 +237,7 @@ impl App {
     /// PENTATONICS & MORE: the positions of a small scale in any key - pentatonics, hexatonics (triad pairs among
     /// them), the diminished scales - with labels, the spices, and exercises to play over the scale's chord.
     pub(crate) fn pentatonics(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Small scales and how they lie on the neck, in any key. Learn one position at a time - where its roots are, which finger plays them - then see how they join up the whole neck. Pick what to play it over and hear what each one does.", pal().ink2);
+        para(ui, "Small scales and how they lie on the neck, in any key. Learn one position at a time: where its roots are and which finger plays them. Then see how the positions join up the neck. Pick what to play over and hear what each one does.", pal().ink2);
         let sharps = lines::key_sharps(self.pn_root);
         if let Some(pc) = Self::note_row(ui, "KEY", self.pn_root, sharps) {
             self.pn_root = pc;
@@ -305,8 +305,8 @@ impl App {
             self.dirty = true;
         }
         let shown: Vec<String> = (0..nb)
-            .map(|k| format!("{} {}  -  {}", word, k + 1, about[(first + k) % nb]))
-            .chain(std::iter::once(format!("WHOLE NECK  -  ALL {} TOGETHER", nb)))
+            .map(|k| format!("{} {}:  {}", word, k + 1, about[(first + k) % nb]))
+            .chain(std::iter::once(format!("WHOLE NECK: ALL {} TOGETHER", nb)))
             .collect();
         let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
         let pick = (self.pn_box as usize).min(nb);
@@ -327,7 +327,7 @@ impl App {
                     self.pn_blue = !self.pn_blue;
                 }
                 if crate::check_box(ui, "IN-BETWEEN NOTES", self.pn_between)
-                    .tip("A note between the two of the box on each string - from the scale when it fits, else chromatic. Passing tones: resolve them")
+                    .tip("Adds a note between the box's two on each string: from the scale if one fits, else chromatic. They are passing tones, so resolve them.")
                     .clicked()
                 {
                     self.pn_between = !self.pn_between;
@@ -468,7 +468,7 @@ impl App {
                 self.pn_string = i as u8;
             }
         }
-        crate::views::dim_line(ui, &ex_about.to_uppercase(), 1.0, pal().ink2);
+        crate::views::dim_line(ui, &crate::font::as_label(&ex_about), 1.0, pal().ink2);
         // what the line is played over: the scale's chord
         let chord: Vec<i32> = sc.chord.iter().map(|x| 48 + root.rem_euclid(12) + x).collect();
         self.ln_backing = Some((self.ln_over, chord));
@@ -744,54 +744,54 @@ fn si_suggestions(quality: usize) -> Vec<(usize, i32, &'static str)> {
             (1, 2, "MAJOR PENTATONIC A STEP UP: THE LYDIAN SOUND (#11)"),
             (0, 4, "MINOR PENTATONIC FROM THE 3RD: THE SAME NOTES AS THE 5TH'S MAJOR, IN MINOR SHAPES"),
             (0, 11, "MINOR PENTATONIC FROM THE 7TH: LYDIAN AGAIN (#11), BRIGHT"),
-            (8, 4, "THE M7 FROM THE 3RD: 3 5 7 9 - THE CHORD WITHOUT ITS ROOT, PLUS THE 9TH"),
+            (8, 4, "THE M7 FROM THE 3RD: 3 5 7 9, THE CHORD WITHOUT ITS ROOT PLUS THE 9TH"),
             (2, 2, "A MAJOR TRIAD A STEP UP: 9 #11 13, THE LYDIAN UPPER STRUCTURE"),
         ],
         // 7
         1 => vec![
-            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11 - A SUS FLAVOUR"),
+            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11, A SUS FLAVOUR"),
             (1, 0, "MAJOR PENTATONIC ON THE ROOT: R 9 3 5 13, SWEET"),
-            (0, 9, "MINOR PENTATONIC FROM THE 6TH: 13 R 9 3 5 - THE SAME NOTES, LAID OUT AGAIN"),
-            (9, 7, "M(MAJ7) FROM THE 5TH: 5 \u{266D}7 9 #11 - THE MELODIC MINOR, LYDIAN DOMINANT"),
-            (2, 2, "MAJOR TRIAD A STEP UP: 9 #11 13 - LYDIAN DOMINANT UPPER STRUCTURE"),
+            (0, 9, "MINOR PENTATONIC FROM THE 6TH: 13 R 9 3 5, THE SAME NOTES LAID OUT AGAIN"),
+            (9, 7, "M(MAJ7) FROM THE 5TH: 5 \u{266D}7 9 #11, FROM ITS MELODIC MINOR (LYDIAN DOMINANT)"),
+            (2, 2, "MAJOR TRIAD A STEP UP: 9 #11 13, THE LYDIAN DOMINANT UPPER STRUCTURE"),
             (1, 6, "MAJOR PENTATONIC A TRITONE AWAY: ALL THE ALTERATIONS (#11 \u{266D}13 \u{266D}7 \u{266D}9 #9)"),
-            (2, 9, "MAJOR TRIAD ON THE 6TH: 13 \u{266D}9 3 - THE DIMINISHED SOUND"),
+            (2, 9, "MAJOR TRIAD ON THE 6TH: 13 \u{266D}9 3, THE DIMINISHED SOUND"),
         ],
         // 7alt
         2 => vec![
-            (1, 6, "MAJOR PENTATONIC A TRITONE AWAY: #11 \u{266D}13 \u{266D}7 \u{266D}9 #9 - THE ALTERED SOUND"),
+            (1, 6, "MAJOR PENTATONIC A TRITONE AWAY: #11 \u{266D}13 \u{266D}7 \u{266D}9 #9, THE ALTERED SOUND"),
             (0, 3, "MINOR PENTATONIC FROM THE \u{266D}3: THE SAME NOTES, IN MINOR SHAPES"),
             (2, 8, "MAJOR TRIAD ON THE \u{266D}6: \u{266D}13 R #9"),
             (2, 6, "MAJOR TRIAD ON THE \u{266D}5: #11 \u{266D}7 \u{266D}9"),
             (9, 1, "M(MAJ7) A HALF STEP UP: THE ALTERED SCALE IS ITS MELODIC MINOR"),
-            (4, 0, "AUGMENTED TRIAD ON THE ROOT: R 3 #5 - THE WHOLE-TONE COLOUR"),
+            (4, 0, "AUGMENTED TRIAD ON THE ROOT: R 3 #5, THE WHOLE-TONE COLOUR"),
         ],
         // 7#11
         3 => vec![
             (9, 7, "M(MAJ7) FROM THE 5TH: 5 \u{266D}7 9 #11"),
             (2, 2, "MAJOR TRIAD A STEP UP: 9 #11 13"),
-            (1, 0, "MAJOR PENTATONIC ON THE ROOT: R 9 3 5 13 - ADD THE #11 AS A PASSING NOTE"),
-            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11 - THE 11 RUBS: LAND ON #11 INSTEAD"),
+            (1, 0, "MAJOR PENTATONIC ON THE ROOT: R 9 3 5 13. ADD THE #11 AS A PASSING NOTE."),
+            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11. THE 11 RUBS, SO LAND ON #11 INSTEAD."),
         ],
         // m7
         4 => vec![
             (0, 0, "THE MINOR PENTATONIC ON THE ROOT: HOME BASE"),
-            (0, 2, "MINOR PENTATONIC A STEP UP: 9 11 5 13 R - THE DORIAN SOUND"),
-            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11 - OPEN, MODERN"),
-            (6, 3, "MAJ7 FROM THE \u{266D}3: \u{266D}3 5 \u{266D}7 9 - THE CHORD WITH ITS 9TH"),
+            (0, 2, "MINOR PENTATONIC A STEP UP: 9 11 5 13 R, THE DORIAN SOUND"),
+            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11, OPEN AND MODERN"),
+            (6, 3, "MAJ7 FROM THE \u{266D}3: \u{266D}3 5 \u{266D}7 9, THE CHORD WITH ITS 9TH"),
             (2, 10, "MAJOR TRIAD ON THE \u{266D}7: \u{266D}7 9 11"),
-            (2, 5, "MAJOR TRIAD ON THE 4TH: 11 13 R - DORIAN"),
+            (2, 5, "MAJOR TRIAD ON THE 4TH: 11 13 R, DORIAN"),
         ],
         // m7b5
         5 => vec![
             (12, 3, "MINOR 6TH PENTATONIC FROM THE \u{266D}3: \u{266D}3 \u{266D}5 \u{266D}6 \u{266D}7 R"),
-            (2, 10, "MAJOR TRIAD ON THE \u{266D}7: \u{266D}7 9 11 - LOCRIAN #2"),
+            (2, 10, "MAJOR TRIAD ON THE \u{266D}7: \u{266D}7 9 11, LOCRIAN #2"),
             (8, 3, "M7 FROM THE \u{266D}3: \u{266D}3 \u{266D}5 \u{266D}7 \u{266D}9"),
         ],
         // m(maj7)
         6 => vec![
             (2, 7, "MAJOR TRIAD FROM THE 5TH: 5 7 9"),
-            (3, 2, "MINOR TRIAD A STEP UP: 9 11 13 - MELODIC MINOR"),
+            (3, 2, "MINOR TRIAD A STEP UP: 9 11 13, MELODIC MINOR"),
             (4, 3, "AUGMENTED TRIAD FROM THE \u{266D}3: \u{266D}3 5 7"),
             (0, 0, "MINOR PENTATONIC ON THE ROOT, LANDING ON THE MAJOR 7TH"),
         ],
@@ -809,7 +809,7 @@ impl App {
     /// SUPERIMPOSE: a shape over a chord - the usual choices for it, or any shape you pick - with each note marked
     /// a chord tone, a tension or a note to avoid, on the neck and the piano, and played over the chord.
     pub(crate) fn superimpose(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Play one thing over another: a pentatonic, a triad or an arpeggio from somewhere other than the chord's root. Each note shows what it is over the chord - a chord tone, a tension (colour), or a note to avoid landing on.", pal().ink2);
+        para(ui, "Play a shape from another root over the chord. It can be a pentatonic, a triad or an arpeggio. Each note shows what it is over the chord: a chord tone, a tension (colour), or a note to avoid landing on.", pal().ink2);
         let sharps = lines::key_sharps(self.si_root);
         if let Some(pc) = Self::note_row(ui, "CHORD ROOT", self.si_root, sharps) {
             self.si_root = pc;
@@ -936,7 +936,7 @@ impl App {
                     SI_SHAPES[k].0,
                     crate::fretboard::degree_in((root + o).rem_euclid(12), root, &chord_abs).0,
                     names.join(" "),
-                    if adds.is_empty() { " - THE CHORD ITSELF".to_string() } else { format!(" - ADDS {}", adds.join(" ")) }
+                    if adds.is_empty() { ", THE CHORD ITSELF".to_string() } else { format!(", ADDS {}", adds.join(" ")) }
                 )
             };
             let _ = q;
@@ -1097,7 +1097,7 @@ impl App {
     /// SCALE FINGERINGS: any scale's positions across the neck - five CAGED positions, or 2, 3 or 4 notes a string -
     /// one at a time or all at once, played, or shifted through one after another.
     pub(crate) fn fingerings(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Every position of a scale, in any key: one at a time with its fingering, or the whole neck with each position in its own colour. Then play it - the position up and down, every position in turn, or straight, in intervals and in groups from every note, until you can go anywhere in it.", pal().ink2);
+        para(ui, "Every position of a scale, in any key. See one at a time with its fingering, or the whole neck with each position in its own colour. Then play it: one position up and down, every position in turn, or in intervals and groups from every note. Keep going until you can move anywhere in it.", pal().ink2);
         let sharps = lines::key_sharps(self.pf_root);
         if let Some(pc) = Self::note_row(ui, "KEY", self.pf_root, sharps) {
             self.pf_root = pc;
@@ -1152,7 +1152,11 @@ impl App {
             // the star: one you use a lot, kept in MY SCALES
             let starred = self.pf_stars.iter().any(|s| *s == self.pf_scale);
             if crate::ibtn(ui, &crate::IC_STAR, "", starred)
-                .tip(if starred { "In MY SCALES - click to take it out" } else { "Star it: kept in MY SCALES, the first family" })
+                .tip(if starred {
+                    "In MY SCALES. Click to take it out."
+                } else {
+                    "Star it to keep it in MY SCALES, the first family."
+                })
                 .clicked()
             {
                 if starred {
@@ -1194,8 +1198,8 @@ impl App {
         // position k as numbered (0-based) -> the index into `positions`
         let nth = |k: usize| by_neck[(first + k) % np];
         let shown: Vec<String> = (0..np)
-            .map(|k| format!("POSITION {}  -  {}", k + 1, about[(first + k) % np]))
-            .chain(std::iter::once(format!("WHOLE NECK  -  ALL {} TOGETHER", np)))
+            .map(|k| format!("POSITION {}:  {}", k + 1, about[(first + k) % np]))
+            .chain(std::iter::once(format!("WHOLE NECK: ALL {} TOGETHER", np)))
             .collect();
         let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
         ui.horizontal(|ui| {
@@ -1335,7 +1339,7 @@ impl App {
         }
         if self.pf_play >= 2 {
             let pat = (self.pf_play as usize - 2).min(lines::SCALE_PATTERNS.len() - 1);
-            crate::views::dim_line(ui, &lines::SCALE_PATTERNS[pat].1.to_uppercase(), 1.0, pal().ink2);
+            crate::views::dim_line(ui, &crate::font::as_label(&lines::SCALE_PATTERNS[pat].1), 1.0, pal().ink2);
             if let Some(i) = crate::choice_line(ui, "sc_dir", "DIRECTION", &lines::DIRECTIONS, self.sc_dir, 220.0) {
                 self.sc_dir = i;
             }
@@ -1358,7 +1362,7 @@ impl App {
     /// scale and starting near where the last one ended - the way he ran them through Giant Steps and Countdown.
     fn coltrane_tune(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         section_header(ui, "COLTRANE CELLS THROUGH A TUNE");
-        para(ui, "One cell a chord, two beats each, from the chord's own scale - each starting near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
+        para(ui, "One cell a chord, two beats each, from the chord's own scale. Each cell starts near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         if changes.is_empty() {
             return;
@@ -1381,7 +1385,7 @@ impl App {
                 ui,
                 acts,
                 "PLAY IT",
-                "Eighth notes at the band's tempo, the chord under each cell",
+                "Eighth notes at the band's tempo, with the chord under each cell",
                 "coltrane",
                 || {
                     cells
@@ -1431,7 +1435,7 @@ const CT_CELLS: [(&str, &str); 3] = [
         "UP FROM THE ROOT: 1 2 3 5 OVER MAJOR AND DOMINANT, 1 B3 4 5 OVER MINOR, 1 B3 4 B5 OVER HALF-DIMINISHED",
     ),
     ("5 3 2 1 (5 4 B3 1 OVER MINOR)", "THE SAME CELLS COMING DOWN FROM THE 5TH"),
-    ("1 2 3 5 EVERYWHERE (1 2 B3 5 OVER MINOR)", "ONE SHAPE FOR EVERY CHORD - ONLY THE 3RD CHANGES"),
+    ("1 2 3 5 EVERYWHERE (1 2 B3 5 OVER MINOR)", "ONE SHAPE FOR EVERY CHORD. ONLY THE 3RD CHANGES."),
 ];
 
 /// A tune's changes as Coltrane cells: (chord, root, the chord's 3rd and 7th from its root (to hear it under the cell),

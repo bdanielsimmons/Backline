@@ -309,7 +309,7 @@ fn gospel_moves() -> Vec<MoveDef> {
     vec![
         (
             "CHURCH PLAGAL: I - IV/I - I",
-            "The amen move. The IV triad over the I bass and back: the bass holds, the top two notes rise a step and come back.",
+            "The amen move. The IV triad over the I bass and back. The bass holds while the top two notes rise a step and come back.",
             vec![
                 (0, MA, None, Strum, 2.0),
                 (5, MA, Some(0), Strum, 2.0),
@@ -406,7 +406,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "bVII - IV - I",
-            "Down from the flat seven through the IV to home: the backdoor, gospel and rock style.",
+            "Down from bVII through IV to I. The backdoor, gospel and rock style.",
             vec![(10, MA, None, Strum, 2.0), (5, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
         (
@@ -489,7 +489,7 @@ impl App {
 
     /// MAP: every inversion of a triad on a set of strings, up the neck.
     fn tr_map(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "One triad, every inversion up the neck on the strings you pick. Root position, then the 3rd on the bottom, then the 5th, and round again an octave up. Learn them on each set of strings and you can grab any triad anywhere. Click a dot to pick a shape.", pal().ink2);
+        para(ui, "One triad, every inversion up the neck on the strings you pick. Root position, then 3rd on the bottom, then 5th, and round again an octave up. Learn them on each string set and you can grab any triad anywhere. Click a dot to pick a shape.", pal().ink2);
         self.key_and_set(ui, false);
         self.quality_row(ui);
         let root = self.tr_root;
@@ -521,7 +521,7 @@ impl App {
                 0.9,
             );
             if retro_btn(ui, "WHOLE NECK", self.tr_whole)
-                .tip("Light every root, 3rd and 5th on every string, so you see how the shapes sit in the whole neck")
+                .tip("Light every root, 3rd and 5th to see how the shapes sit on the whole neck.")
                 .clicked()
             {
                 self.tr_whole = !self.tr_whole;
@@ -543,7 +543,7 @@ impl App {
                     "5TH ON THE BOTTOM"
                 };
                 let fr = g.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
-                let name = format!("{} - FRET {}", inv, fr);
+                let name = format!("{}, FRET {}", inv, fr);
                 let _ = sp;
                 let tint = |pc: i32| Some(degree(pc, root).1);
                 if self.voicing_card(ui, acts, g, root, &name, &tint, false, false) != crate::clusters::CardAct::None {
@@ -558,7 +558,7 @@ impl App {
 
     /// VOICE LEADING: changes played with triads on one set of strings, each the closest inversion to the last.
     fn tr_lead(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Type the changes (chord names, numerals like I IV V or ii, or the numbers 1-7 for the key's own triads). Each chord becomes the triad closest to the one before, on the same strings, so your hand barely moves. Blue notes move, black ones stay. The top notes make a melody of their own.", pal().ink2);
+        para(ui, "Type the changes and each chord becomes the triad nearest the last. Use chord names, numerals like I IV V or ii, or 1-7 for the key's own triads. Every triad stays on the same strings, so your hand barely moves. Blue notes move, black ones stay. The top notes make a melody of their own.", pal().ink2);
         self.key_and_set(ui, false);
         ui.horizontal_wrapped(|ui| {
             let names: Vec<&str> = POSITIONS.iter().map(|p| p.0).collect();
@@ -611,7 +611,7 @@ impl App {
         }
         let lit = self.mv_lit(ui);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "PLAY IT", lit.is_some()).tip("Two beats a chord at the band's tempo").clicked() {
+            if retro_btn(ui, "PLAY IT", lit.is_some()).tip("Two beats a chord, at the band's tempo").clicked() {
                 self.play_steps(&steps);
             }
             let tops: Vec<String> = steps
@@ -635,7 +635,7 @@ impl App {
 
     /// OVER A BASS: a triad over each of the twelve bass notes, and what chord it makes.
     fn tr_bass(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Put a triad over a different bass note and its notes turn into the colours of a bigger chord: D over C is a C lydian sound, Bb over C a C9sus, F over G the gospel IV-over-V. Pick a triad, then walk the bass under it.", pal().ink2);
+        para(ui, "Over a new bass note, a triad becomes the colours of a bigger chord. D over C is a C Lydian sound, Bb over C a C9sus, and F over G the gospel IV over V. Pick a triad, then walk the bass under it.", pal().ink2);
         self.key_and_set(ui, false);
         self.quality_row(ui);
         let root = self.tr_root;
@@ -691,7 +691,7 @@ impl App {
         }
         grips.sort_by(|a, b| centre(a).partial_cmp(&centre(b)).unwrap_or(std::cmp::Ordering::Equal));
         if grips.is_empty() {
-            para(ui, "No grip in one hand-span: play the bass on its own and the triad after it.", pal().ink2);
+            para(ui, "No grip in one hand-span. Play the bass on its own, then the triad.", pal().ink2);
             return;
         }
         crate::App::card_grid(ui, |ui| {
@@ -711,7 +711,7 @@ impl App {
         ui.add_space(4.0);
         crate::views::dim_line(
             ui,
-            "EXPERIMENTAL: HAMMER-ONS, SLIDES AND DIPS ARE MARKED, NOT EXACT - PLAY THEM YOUR WAY",
+            "EXPERIMENTAL. HAMMER-ONS, SLIDES AND DIPS ARE ROUGH MARKS, SO PLAY THEM YOUR WAY.",
             1.0,
             pal().dim,
         );
@@ -820,7 +820,7 @@ impl App {
     /// QUARTAL & CLUSTERS: McCoy Tyner style stacks of 4ths (or of 2nds) built on each note of a mode and planed
     /// through it, side-slipped a half step out and back, over a held bass if you like.
     fn mv_quartal(&mut self, ui: &mut egui::Ui) {
-        para(ui, "McCoy Tyner's sound: the root and 5th held low, chords built in 4ths (not 3rds) on top, moved up and down the mode in parallel, and slipped a half step out and back for tension. Stack 2nds instead and you get clusters that move the same way. On guitar the low strings are already tuned in 4ths - the open E A D G B is the famous So What chord.", pal().ink2);
+        para(ui, "McCoy Tyner's sound: stacks of 4ths moved in parallel through a mode. The root and 5th sit low, with chords built in 4ths (not 3rds) on top. The stack moves up and down the mode, and slips a half step out and back for tension. Stack 2nds instead and you get clusters that move the same way. On guitar the low strings are already tuned in 4ths: the open E A D G B is the famous So What chord.", pal().ink2);
         let parents: Vec<String> = theory::PARENT_MODES.iter().map(|p| p.0.to_uppercase()).collect();
         let parents: Vec<&str> = parents.iter().map(|s| s.as_str()).collect();
         ui.horizontal_wrapped(|ui| {
@@ -847,7 +847,7 @@ impl App {
             crate::views::label(ui, "STACK", 70.0);
             for (i, (n, tip)) in [
                 ("4THS", "Three notes a 4th apart"),
-                ("4THS + 3RD", "So What: two 4ths and a 3rd on top, four notes"),
+                ("4THS + 3RD", "So What style: two 4ths with a 3rd on top, four notes"),
                 ("2NDS (CLUSTER)", "Three scale notes side by side"),
             ]
             .iter()
@@ -864,7 +864,7 @@ impl App {
                     self.mv_motion = i as u8;
                 }
             }
-            if retro_btn(ui, "BASS UNDER IT", self.mv_pedal).tip("The mode's root held low, McCoy's left hand").clicked() {
+            if retro_btn(ui, "BASS UNDER IT", self.mv_pedal).tip("Hold the mode's root low, like McCoy's left hand").clicked() {
                 self.mv_pedal = !self.mv_pedal;
             }
         });
@@ -917,7 +917,7 @@ impl App {
             }
         }
         if grips.is_empty() {
-            para(ui, "No shape for this stack on these strings in one hand-span - try other strings.", pal().ink2);
+            para(ui, "No shape for this stack on these strings in one hand-span. Try other strings.", pal().ink2);
             return;
         }
         let steps: Vec<Step> = grips
@@ -929,7 +929,7 @@ impl App {
             .collect();
         self.mv_show(ui, &steps);
         if !pedal && self.mv_pedal {
-            crate::views::dim_line(ui, "THE BASS NEEDS THE 6TH OR 5TH STRING FREE - PICK HIGHER STRINGS", 1.0, pal().dim);
+            crate::views::dim_line(ui, "THE BASS NEEDS THE 6TH OR 5TH STRING FREE. PICK HIGHER STRINGS.", 1.0, pal().dim);
         }
     }
 }

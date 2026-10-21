@@ -645,7 +645,7 @@ fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, S
                 let on = museum.is_some() && worn.map_or(false, |w| &w.0 == md5);
                 ui.horizontal(|ui| {
                     // X takes it off the list
-                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list").clicked() {
+                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list.").clicked() {
                         acts.push(Action::WaForget(md5.clone()));
                     }
                     if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {
@@ -1112,7 +1112,7 @@ fn paint_vinyl(p: &egui::Painter, rect: Rect, tex: Option<egui::TextureId>, angl
 }
 
 /// A page's own picture, round for an artist; a spinning record while it loads, a still one when there is none.
-fn paint_page_art(ui: &egui::Ui, images: &mut Images, url: &str, rect: Rect, artist: bool) {
+pub(crate) fn paint_page_art(ui: &egui::Ui, images: &mut Images, url: &str, rect: Rect, artist: bool) {
     match images.get(url) {
         Some(id) => {
             let round = if artist { rect.width() * 0.5 } else { 0.0 };
@@ -1143,7 +1143,7 @@ fn cover_quad(p: &egui::Painter, cs: [Pos2; 4], id: egui::TextureId, alpha: f32)
 }
 
 /// A cover that changes smoothly: the old one stays until the new one is in, then the new fades in over it.
-fn paint_held(ui: &egui::Ui, images: &mut Images, slot: &'static str, url: &str, rect: Rect, gray: bool) {
+pub(crate) fn paint_held(ui: &egui::Ui, images: &mut Images, slot: &'static str, url: &str, rect: Rect, gray: bool) {
     let (tex, prev, f) = images.held(slot, url, gray, ui.input(|i| i.time));
     let cs = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()];
     match tex {
@@ -1216,9 +1216,9 @@ fn heart_clicked() -> bool {
 }
 
 /// A heart in `r`, clickable (like / unlike).
-fn draw_heart(ui: &egui::Ui, r: Rect, liked: bool, row_hot: bool, id: egui::Id) -> bool {
+pub(crate) fn draw_heart(ui: &egui::Ui, r: Rect, liked: bool, row_hot: bool, id: egui::Id) -> bool {
     let resp = ui.interact(r, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let resp = resp.tip(if liked { "In My Tracks - click to remove it" } else { "Add to My Tracks" });
+    let resp = resp.tip(if liked { "In MY TRACKS. Click to remove it." } else { "Add to MY TRACKS." });
     let col = if liked {
         Color32::from_rgb(235, 70, 90)
     } else if resp.hovered() {
@@ -1336,7 +1336,7 @@ fn col_header(ui: &mut egui::Ui, numbered: bool) {
             COLS_CHANGED.store(true, Ordering::Relaxed);
         }
     }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click to choose columns").context_menu(|ui| {
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click to choose columns.").context_menu(|ui| {
         for (i, name) in COL_NAMES.iter().enumerate() {
             let mark = if col_on(i) { "[x] " } else { "[ ] " };
             if menu_item(ui, &format!("{}{}", mark, name)) {
@@ -1495,6 +1495,10 @@ fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, acts: &mut Vec<Acti
 
 /// PLAY and SHUFFLE for a list; `refresh`: and REFRESH, to load it from Tidal again (your library).
 fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refresh: bool) {
+    if winamp_ui::chrome_on() {
+        play_icons(ui, tracks, acts, refresh);
+        return;
+    }
     ui.horizontal(|ui| {
         if ibtn(ui, &IC_PLAY, "PLAY", false).clicked() {
             acts.push(Action::Play(tracks.to_vec(), 0));
@@ -1502,16 +1506,89 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
         if ibtn(ui, &IC_SHUF, "SHUFFLE", false).clicked() {
             acts.push(Action::PlayShuffled(tracks.to_vec()));
         }
-        if retro_btn(ui, "PLAY NEXT", false).tip("All of these right after the song playing").clicked() {
+        if retro_btn(ui, "PLAY NEXT", false).tip("Plays all of these right after the current song.").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
         }
-        if retro_btn(ui, "ADD TO QUEUE", false).tip("All of these at the end of the queue").clicked() {
+        if retro_btn(ui, "ADD TO QUEUE", false).tip("Adds all of these to the end of the queue.").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
-        if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again").clicked() {
+        if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again.").clicked() {
             acts.push(Action::RefreshLibrary);
         }
     });
+}
+
+/// The same, a skin worn: a big round PLAY, SHUFFLE and ADD TO QUEUE as icons (names on hover), and "..." for the
+/// rest.
+fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refresh: bool) {
+    let sc = font::ui_scale();
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.add_space(4.0);
+        // PLAY: a circle in the accent colour
+        let d = 40.0 * sc;
+        let (r, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
+        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
+        let grow = if resp.hovered() { 1.0 } else { 0.0 };
+        ui.painter().circle_filled(r.center(), d / 2.0 + grow, pal().bar_txt);
+        vicon::named(
+            ui.painter(),
+            Rect::from_center_size(r.center() + Vec2::new(1.5, 0.0), Vec2::splat(d * 0.42)),
+            "play",
+            pal().lcd,
+        );
+        if resp.clicked() {
+            acts.push(Action::Play(tracks.to_vec(), 0));
+        }
+        ui.add_space(6.0);
+        let icon = |ui: &mut egui::Ui, name: &str, tip: &str| -> egui::Response {
+            let (r, resp) = ui.allocate_exact_size(Vec2::splat(34.0 * sc), Sense::click());
+            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.hovered() {
+                ui.painter().circle_filled(r.center(), r.width() / 2.0, Color32::from_white_alpha(12));
+            }
+            let col = if resp.hovered() { pal().ink } else { pal().ink2 };
+            vicon::named(ui.painter(), r.shrink(8.0 * sc), name, col);
+            resp.tip(tip)
+        };
+        if icon(ui, "shuffle", "Shuffle").clicked() {
+            acts.push(Action::PlayShuffled(tracks.to_vec()));
+        }
+        if icon(ui, "queue", "Add to queue").clicked() {
+            acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
+        }
+        let more = icon(ui, "more", "More");
+        let id = ui.id().with("list_more");
+        if more.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(id));
+        }
+        egui::popup_below_widget(ui, id, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+            ui.set_min_width(170.0 * sc);
+            if menu_item(ui, "Play next") {
+                acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
+            }
+            if menu_item(ui, "Add to queue") {
+                acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
+            }
+            if refresh && menu_item(ui, "Refresh from Tidal") {
+                acts.push(Action::RefreshLibrary);
+            }
+        });
+    });
+    ui.add_space(4.0);
+}
+
+/// A count with commas between the thousands: 5,428.
+fn commas(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Text for matching: lower case, accents off (o for ō), punctuation dropped (Monk's is monks).
@@ -1664,9 +1741,9 @@ fn page_view(
                 } else if crate::api::OFFLINE.load(Ordering::Relaxed) {
                     format!("offline: {} of {} songs are on this computer", all.len(), page.tracks.len())
                 } else if page.total > page.tracks.len() {
-                    format!("{} of {} songs loaded...", page.tracks.len(), page.total)
+                    format!("{} of {} songs loaded", commas(page.tracks.len()), commas(page.total))
                 } else {
-                    format!("{} songs", page.tracks.len())
+                    format!("{} songs", commas(page.tracks.len()))
                 };
                 title_line(ui, &sub, 2.0, pal().ink2);
                 ui.add_space(4.0);
@@ -1688,7 +1765,7 @@ fn page_view(
                 title_line(ui, name, 3.0, pal().ink);
                 ui.add_space(4.0);
                 // the same library load brings these, so the same REFRESH
-                if ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again").clicked() {
+                if ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again.").clicked() {
                     acts.push(Action::RefreshLibrary);
                 }
                 ui.add_space(6.0);
@@ -1746,7 +1823,7 @@ fn page_view(
             inset(ui.painter(), cr, pal().edge);
             paint_page_art(ui, images, &page.image, cr.shrink(2.0), false);
             if !page.image.is_empty()
-                && cresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Look at the picture big").clicked()
+                && cresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Show the picture big.").clicked()
             {
                 acts.push(Action::ArtPreview(page.image.clone(), page.title.clone(), page.artist));
             }
@@ -1760,13 +1837,13 @@ fn page_view(
                 if page.artist && !page.artist_id.is_empty() {
                     ui.horizontal(|ui| {
                         let tip =
-                            if page.following { "You follow them on Tidal - click to unfollow" } else { "Follow them on Tidal" };
+                            if page.following { "You follow them on Tidal. Click to unfollow." } else { "Follow them on Tidal." };
                         if retro_btn(ui, if page.following { "FOLLOWING" } else { "+ FOLLOW" }, page.following).tip(tip).clicked()
                         {
                             acts.push(Action::Follow(page.artist_id.clone(), !page.following));
                         }
                         if let Some(r) = &page.radio {
-                            if retro_btn(ui, "RADIO", false).tip("Their radio: music like theirs").clicked() {
+                            if retro_btn(ui, "RADIO", false).tip("Their radio: music like theirs.").clicked() {
                                 acts.push(Action::Open(r.clone()));
                             }
                         }
@@ -1876,20 +1953,26 @@ fn bio_view(ui: &mut egui::Ui, bits: &[api::BioBit], id: &str, acts: &mut Vec<Ac
 
 /// The smooth fonts: Chakra Petch (or `main`, e.g. Lexend, in front of it), then the system's fonts for any
 /// character they lack.
-fn smooth_fonts(main: Option<&'static [u8]>) -> egui::FontDefinitions {
+pub(crate) fn smooth_fonts(main: Option<&'static [u8]>) -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     let chakra: &'static [u8] = include_bytes!("../assets/ChakraPetch-Regular.ttf");
     fonts.font_data.insert("chakra".to_string(), egui::FontData::from_static(chakra));
     if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
         f.insert(0, "chakra".to_string());
     }
+    // a skin worn: its own font draws its playlist ("skin"); everything else reads in Inter, a face made for screens
+    // (a skin's Arial and friends come out ragged at these sizes without Windows' hinting)
+    let inter: &'static [u8] = include_bytes!("../assets/Inter-Regular.ttf");
+    let mut skin_fam = vec!["chakra".to_string()];
     if let Some(m) = main {
         fonts.font_data.insert("main".to_string(), egui::FontData::from_static(m));
+        fonts.font_data.insert("inter".to_string(), egui::FontData::from_static(inter));
         if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-            f.insert(0, "main".to_string());
+            f.insert(0, "inter".to_string());
         }
+        skin_fam.insert(0, "main".to_string());
     }
-    let base = main.unwrap_or(chakra);
+    let base = if main.is_some() { inter } else { chakra };
     for (name, bytes) in font::system_fallbacks() {
         // sit its letters on the same baseline as the main font's
         let tweak = font::baseline_tweak(base, bytes);
@@ -1899,7 +1982,9 @@ fn smooth_fonts(main: Option<&'static [u8]>) -> egui::FontDefinitions {
                 f.push(name.clone());
             }
         }
+        skin_fam.push(name.clone());
     }
+    fonts.families.insert(egui::FontFamily::Name("skin".into()), skin_fam);
     fonts
 }
 
@@ -2656,7 +2741,11 @@ struct App {
     band_chart: String,
     pomo_sound: bool,
     lib_frac: f32,
+    /// the stack's width with a skin worn, dragged (0: as wide as fits at a whole-pixel size)
+    stack_w: f32,
     stack_frac: f32,
+    /// the Winamp stack's size: points per skin pixel (a whole number of screen pixels)
+    stack_k: f32,
     /// the practice panel's height (drag the edge above it)
     prac_h: f32,
     /// Tidal can't be reached (no internet): when it was last tried (it is tried again now and then)
@@ -3319,6 +3408,8 @@ impl App {
             band_chart: String::new(),
             pomo_sound: false,
             lib_frac: 0.34,
+            stack_w: 0.0,
+            stack_k: 2.0,
             stack_frac: 1.0,
             prac_h: 300.0,
             net_down: false,
@@ -3577,6 +3668,9 @@ impl App {
         if st["offline"].as_bool() == Some(true) && !app.api.has_token() {
             app.offline = true;
             app.sec = Sec::Files;
+        }
+        if let Some(f) = st["stack_w"].as_f64() {
+            app.stack_w = f as f32;
         }
         if let Some(f) = st["lib_frac"].as_f64() {
             app.lib_frac = (f as f32).clamp(0.2, 0.7);
@@ -3915,6 +4009,7 @@ impl App {
             "keep_cache": self.keep_cache,
             "speed": self.speed,
             "lib_frac": self.lib_frac,
+            "stack_w": self.stack_w,
             "offline": self.offline,
             "sc_browser": sources::SC_BROWSER.load(Ordering::Relaxed),
             "stack_frac": self.stack_frac,
@@ -3967,7 +4062,7 @@ impl App {
             self.sleep_mins = 0;
             self.apply(Action::StopBtn);
             self.player.send(Cmd::Volume(self.volume * self.volume));
-            self.set_note("SLEEP TIMER - GOOD NIGHT");
+            self.set_note("SLEEP TIMER DONE. GOOD NIGHT");
         } else {
             let rem = (at - now).as_secs_f32();
             if rem < 20.0 {
@@ -4093,7 +4188,7 @@ impl App {
         if raw && self.auth == Auth::In && !self.offline && !self.net_down {
             let _ = self.tx.send(Msg::NoInternet);
         }
-        let e = if raw { "NO INTERNET - THAT NEEDS IT (SONGS KEPT ON THIS COMPUTER STILL PLAY)".to_string() } else { e };
+        let e = if raw { "NO INTERNET, AND THAT NEEDS IT. SONGS KEPT ON THIS COMPUTER STILL PLAY".to_string() } else { e };
         self.status = e;
         self.status_err = true;
     }
@@ -4159,7 +4254,7 @@ impl App {
     fn after_login(&mut self) {
         if self.net_down {
             self.net_down = false;
-            self.set_note("BACK ONLINE - TIDAL IS HERE AGAIN");
+            self.set_note("BACK ONLINE. TIDAL IS HERE AGAIN");
         }
         self.auth = Auth::In;
         self.offline = false;
@@ -4207,7 +4302,7 @@ impl App {
                 Msg::NeedLogin(e) => {
                     self.auth = Auth::LoggedOut;
                     self.login_err = if crate::api::no_internet(&e) {
-                        "NO INTERNET RIGHT NOW. USE WITHOUT TIDAL: YOUR FILES, YOUTUBE AND SOUNDCLOUD SONGS YOU KEPT, LOOPS AND ALL THE PRACTICE TOOLS WORK. LOG IN WHEN YOU'RE ONLINE".to_string()
+                        "NO INTERNET RIGHT NOW. PRESS USE WITHOUT TIDAL: YOUR FILES, KEPT YOUTUBE AND SOUNDCLOUD SONGS, LOOPS AND ALL THE PRACTICE TOOLS WORK. LOG IN WHEN YOU'RE ONLINE".to_string()
                     } else {
                         e
                     };
@@ -4239,9 +4334,9 @@ impl App {
                             self.page = Some(p);
                         }
                         self.set_note(if self.go_offline {
-                            "OFFLINE MODE - ONLY WHAT'S ON THIS COMPUTER"
+                            "OFFLINE MODE: ONLY WHAT'S ON THIS COMPUTER"
                         } else {
-                            "NO INTERNET - PLAYING WHAT'S ON THIS COMPUTER. TIDAL COMES BACK BY ITSELF"
+                            "NO INTERNET, SO PLAYING WHAT'S ON THIS COMPUTER. TIDAL COMES BACK BY ITSELF"
                         });
                     }
                 }
@@ -4398,14 +4493,17 @@ impl App {
                             Some(k) => {
                                 let name = self.queue[k].title.to_uppercase();
                                 self.advance_to(k);
-                                self.set_err(format!("TIDAL CAN'T BE REACHED - ON TO {}, WHICH IS ON THIS COMPUTER", name));
+                                self.set_err(format!(
+                                    "TIDAL CAN'T BE REACHED. PLAYING {} INSTEAD, WHICH IS ON THIS COMPUTER",
+                                    name
+                                ));
                             }
                             None if tidal && crate::api::no_internet(&e) => {
                                 if !self.net_down && !self.offline {
                                     let _ = self.tx.send(Msg::NoInternet);
                                 }
                                 self.set_err(
-                                    "NO INTERNET - THIS SONG ISN'T ON THIS COMPUTER YET. YOUR FILES AND KEPT SONGS (MARKED WITH A TICK) STILL PLAY"
+                                    "NO INTERNET, AND THIS SONG ISN'T ON THIS COMPUTER YET. YOUR FILES AND KEPT SONGS (MARKED WITH A TICK) STILL PLAY"
                                         .to_string(),
                                 )
                             }
@@ -5299,7 +5397,7 @@ impl App {
             Action::Shuffle => {
                 let on = !self.shuffle;
                 self.set_shuffle(on);
-                self.set_note(if on { "SHUFFLE ON - QUEUE REORDERED" } else { "SHUFFLE OFF - ORIGINAL ORDER" });
+                self.set_note(if on { "SHUFFLE ON, QUEUE REORDERED" } else { "SHUFFLE OFF, BACK TO THE ORIGINAL ORDER" });
             }
             Action::Repeat => {
                 self.repeat = match self.repeat {
@@ -5526,7 +5624,7 @@ impl App {
                 self.set_note(&if !self.keep_cache {
                     "NOT SAVING NEW TRACKS".to_string()
                 } else if n > 0 {
-                    format!("SAVING TRACKS TO DISK - KEEPING YOUR {} SONGS IN THE BACKGROUND", n)
+                    format!("SAVING TRACKS TO DISK. YOUR {} SONGS ARE KEPT IN THE BACKGROUND", n)
                 } else {
                     "SAVING TRACKS TO DISK".to_string()
                 });
@@ -5688,7 +5786,8 @@ impl eframe::App for App {
             ctx.memory_mut(|mem| mem.surrender_focus(id));
         }
         font::set_ppp(ctx.pixels_per_point());
-        font::set_modern(style() != 0);
+        // smooth text in the sleek looks, and wherever a skin's frames are on (in the skin's own font)
+        font::set_modern(style() != 0 || winamp_ui::chrome_on());
         // the mini window's size once more, after the title bar has come off
         if let Some((at, size)) = self.mini_size_at {
             if at.elapsed() > Duration::from_millis(300) {
@@ -5745,7 +5844,7 @@ impl eframe::App for App {
                     if let Some(c) = self.cur {
                         self.play_index(c);
                     }
-                    self.set_note("LOSSLESS FAILED - USING 320K AAC");
+                    self.set_note("LOSSLESS FAILED, SO USING 320K AAC");
                 } else {
                     self.stopped = true;
                     self.set_err(e);
@@ -5809,7 +5908,7 @@ impl eframe::App for App {
             let left = end.saturating_duration_since(Instant::now()).as_secs();
             title = format!("{}:{:02} {}  |  {}", left / 60, left % 60, if self.pomo == 1 { "FOCUS" } else { "REST" }, title);
         } else if self.pomo == 3 {
-            title = format!("REST OVER - NEXT FOCUS  |  {}", title);
+            title = format!("REST OVER, NEXT FOCUS  |  {}", title);
         }
         if self.pomo_end.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
@@ -5890,8 +5989,33 @@ impl eframe::App for App {
             } else {
                 let screen = ctx.screen_rect();
                 // library width is a share of the window, so it scales with it
-                let lib_w = if self.focus_mode {
+                // a worn skin: the stack (player, equalizer, playlist) the way Winamp drew it - every skin pixel a whole
+                // number of screen pixels (as large as the window has room for: 1 to 4), the column exactly that wide,
+                // the library the rest
+                let ppp = ctx.pixels_per_point();
+                let skin_k: Option<f32> = self.wa_art.is_some().then(|| {
+                    let by_w = ((screen.width() - 640.0) * ppp / 275.0).floor();
+                    let by_h = (screen.height() * 0.45 * ppp / 116.0).floor();
+                    // at most Winamp's double size (more on a high-density screen): beside the library, never a giant
+                    if self.stack_w > 0.0 {
+                        // dragged: as wide as you made it (the deck's pixels then not all the same size), the deck no
+                        // taller than half the window, the library (with its side list) at least 640 points wide
+                        let max_k = (screen.height() * 0.5 / 116.0).max(1.0);
+                        (self.stack_w / 275.0).clamp(1.0, max_k).min(((screen.width() - 640.0) / 275.0).max(1.0))
+                    } else {
+                        by_w.min(by_h).clamp(1.0, (2.0 * ppp).round().max(2.0)) / ppp
+                    }
+                });
+                if let Some(k) = skin_k {
+                    self.stack_k = k;
+                }
+                // focus with a skin: the stack keeps its place, and the big side holds the practice tools (or the
+                // song big, when just listening) instead of the lists
+                let focus_skin = self.focus_mode && skin_k.is_some();
+                let lib_w = if self.focus_mode && !focus_skin {
                     0.0
+                } else if let Some(k) = skin_k {
+                    (screen.width() - 275.0 * k).max(280.0)
                 } else {
                     (self.lib_frac * screen.width()).clamp(280.0, (screen.width() - 560.0).max(280.0))
                 };
@@ -5899,7 +6023,7 @@ impl eframe::App for App {
                 let inner_w = right_w - 28.0;
                 // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)
                 let mut practice_h =
-                    if !self.practice { 0.0 } else { self.prac_h.clamp(220.0, (screen.height() * 0.6).max(220.0)) };
+                    if !self.practice || focus_skin { 0.0 } else { self.prac_h.clamp(220.0, (screen.height() * 0.6).max(220.0)) };
                 let max_inner_h = ((screen.height() - practice_h) * 0.5 - 44.0).max(120.0);
                 let auto_s = (inner_w / 300.0).min(max_inner_h / 138.0).clamp(0.8, 3.0);
                 let mut s = if self.stack_frac >= 0.99 {
@@ -5946,9 +6070,26 @@ impl eframe::App for App {
                         s = s.min((h - base - eq_part(eq_fit) - practice_h) / per_s).max(0.4);
                     }
                 }
-                let player_h = 138.0 * s + 44.0;
+                // (a skin's deck: its own height, a little room above it, resting on the playlist)
+                let player_h = skin_k.map_or(138.0 * s + 44.0, |k| 116.0 * k);
 
-                if !self.focus_mode {
+                if focus_skin {
+                    egui::SidePanel::left("focus_side")
+                        .exact_width(lib_w)
+                        .resizable(false)
+                        .show_separator_line(false)
+                        .frame(panel_frame())
+                        .show(ctx, |ui| {
+                            let r = ui.max_rect();
+                            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r));
+                            if self.practice {
+                                self.practice_ui(&mut inner, &mut acts);
+                            } else {
+                                self.art_ui(&mut inner, &mut acts);
+                            }
+                            ui.allocate_rect(r, Sense::hover());
+                        });
+                } else if !self.focus_mode {
                     egui::SidePanel::left("library")
                         .exact_width(lib_w)
                         .resizable(false)
@@ -6013,13 +6154,20 @@ impl eframe::App for App {
                             .frame(panel_frame())
                             .show(ctx, |ui| self.eq_dock(ui));
                     }
-                    if self.practice {
+                    if self.practice && !focus_skin {
                         egui::TopBottomPanel::bottom("practice")
                             .exact_height(practice_h)
                             .resizable(false)
                             .show_separator_line(false)
                             .frame(panel_frame())
-                            .show(ctx, |ui| self.practice_ui(ui, &mut acts));
+                            .show(ctx, |ui| {
+                                // (in a child: contents taller than the panel are cut off instead of pushing the
+                                // playlist up)
+                                let r = ui.max_rect();
+                                let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r));
+                                self.practice_ui(&mut inner, &mut acts);
+                                ui.allocate_rect(r, Sense::hover());
+                            });
                     }
                     if self.show_eq {
                         // the room left under them
@@ -6043,13 +6191,20 @@ impl eframe::App for App {
                             .show(ctx, |ui| self.eq_dock(ui));
                     }
                     // the practice panel sits under the playlist, so player, equalizer and playlist stay one stack
-                    if self.practice {
+                    if self.practice && !focus_skin {
                         egui::TopBottomPanel::bottom("practice")
                             .exact_height(practice_h)
                             .resizable(false)
                             .show_separator_line(false)
                             .frame(panel_frame())
-                            .show(ctx, |ui| self.practice_ui(ui, &mut acts));
+                            .show(ctx, |ui| {
+                                // (in a child: contents taller than the panel are cut off instead of pushing the
+                                // playlist up)
+                                let r = ui.max_rect();
+                                let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r));
+                                self.practice_ui(&mut inner, &mut acts);
+                                ui.allocate_rect(r, Sense::hover());
+                            });
                     }
                     egui::CentralPanel::default().frame(panel_frame()).show(ctx, |ui| self.playlist_ui(ui, &mut acts));
                 }
@@ -6058,7 +6213,7 @@ impl eframe::App for App {
                 // above the practice panel, the panel's height
                 // the equalizer's own height: dragged at its bottom (or its top, when it sits at the bottom of the
                 // column); double-click for its size again
-                if self.show_eq {
+                if self.show_eq && skin_k.is_none() {
                     let y = screen.min.y + player_h + eq_h;
                     let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
                     match splitter(ctx, "split_eq", r, false) {
@@ -6074,7 +6229,7 @@ impl eframe::App for App {
                         None => {}
                     }
                 }
-                if !self.queue_hidden || self.show_eq {
+                if (!self.queue_hidden || self.show_eq) && skin_k.is_none() {
                     // with the equalizer open, the player's handle is between the two
                     let y = screen.min.y + player_h;
                     let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
@@ -6091,7 +6246,7 @@ impl eframe::App for App {
                         None => {}
                     }
                 }
-                if self.practice {
+                if self.practice && !focus_skin {
                     let y = screen.max.y - practice_h;
                     let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
                     match splitter(ctx, "split_p", r, false) {
@@ -6106,9 +6261,17 @@ impl eframe::App for App {
                         None => {}
                     }
                 }
-                if !self.focus_mode {
+                if !self.focus_mode || focus_skin {
                     let r = Rect::from_min_size(Pos2::new(lib_w - 7.0, screen.min.y), Vec2::new(14.0, screen.height()));
                     match splitter(ctx, "split_v", r, true) {
+                        Some(Some(x)) if skin_k.is_some() => {
+                            self.stack_w = (screen.width() - x).max(275.0);
+                            self.dirty = true;
+                        }
+                        Some(None) if skin_k.is_some() => {
+                            self.stack_w = 0.0;
+                            self.dirty = true;
+                        }
                         Some(Some(x)) => {
                             self.lib_frac = (x / screen.width()).clamp(0.2, 0.7);
                             self.dirty = true;
@@ -6306,7 +6469,7 @@ fn main() -> eframe::Result<()> {
             .set_title("Backline")
             .set_level(rfd::MessageLevel::Error)
             .set_description(format!(
-                "Backline couldn't open its window.\n\n{}\n\nTry again in a moment; if it keeps happening, restarting the computer or updating the graphics driver usually fixes it. Details are in log.txt in %APPDATA%\\backline.",
+                "Backline couldn't open its window.\n\n{}\n\nTry again in a moment. If it keeps happening, restarting the computer or updating the graphics driver usually fixes it. Details are in log.txt in %APPDATA%\\backline.",
                 e
             ))
             .show();

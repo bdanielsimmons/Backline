@@ -41,14 +41,8 @@ const POSITIONS: [(&str, u8); 9] = [
     ("9TH POSITION", 9),
     ("12TH POSITION", 12),
 ];
-const LEVELS: [&str; 6] = [
-    "1 - WHOLES, HALVES, QUARTERS",
-    "2 - + EIGHTHS",
-    "3 - + DOTTED NOTES",
-    "4 - + SYNCOPATION",
-    "5 - + TRIPLETS",
-    "6 - + SIXTEENTHS",
-];
+const LEVELS: [&str; 6] =
+    ["1: WHOLES, HALVES, QUARTERS", "2: + EIGHTHS", "3: + DOTTED NOTES", "4: + SYNCOPATION", "5: + TRIPLETS", "6: + SIXTEENTHS"];
 const BARS: [usize; 3] = [4, 8, 16];
 /// a beat is 12 units, so eighths (6), triplets (4), quarter triplets (8) and sixteenths (3) are whole numbers
 const BEAT: u16 = 12;
@@ -1391,43 +1385,43 @@ impl App {
         ui.add_space(4.0);
         let tips: &[&str] = match self.rd_guide {
             1 => &[
-                "Five minutes: warm up with yesterday's exercise at its tempo - it should feel easy now.",
-                "Ten minutes: today's new exercise. Look it over, count a bar in, play it through once without stopping, however it goes. Then fix the bars that broke, slowly, and play it through again.",
-                "Five minutes: a MADE-UP LINE in the same key and position, read once, cold. That is real sight reading - music you have never seen. The book is for learning the notes; made-up lines test them.",
-                "Last: a duet with PLAY ALONG, or mark the exercise done and write down the tempo you reached. Twenty minutes a day moves faster than two hours on Sunday.",
+                "Five minutes: warm up with yesterday's exercise at its tempo. It should feel easy now.",
+                "Ten minutes: today's new exercise. Look it over, count a bar in and play it through once without stopping, however it goes. Then fix the bars that broke, slowly, and play it through again.",
+                "Five minutes: read one line from MADE-UP LINES in the same key and position, once, cold. That is real sight reading: music you have never seen. The book teaches the notes, and made-up lines test them.",
+                "Last: play a duet with PLAY ALONG, or mark the exercise done and note the tempo you reached. Twenty minutes a day moves faster than two hours on Sunday.",
             ],
             2 => &[
-                "The open box over a note is a down-stroke, the V an up-stroke. Leavitt prints them where the picking matters - follow them exactly; they are the method.",
-                "A small number by a note is the finger (0 open string, 1 index ... 4 little finger). A number in a circle is the string. Together they tell you where on the neck it lives.",
-                "A dot over or under a note: short (staccato). A short line: hold it its full length (tenuto). The > is an accent - pick it harder. The arc with a dot (fermata): hold it as long as feels right.",
-                "Words over the staff: Ritard (slow down), a tempo (back to speed), fine (the end), D.S. al coda (back to the sign, then jump to the coda - written out here as you play it). p, mf, f under the staff: soft, medium, loud.",
-                "POS II, POS V ... marks a move to that position. F.S. is a finger stretch out of the position for one note - go back right after.",
+                "The open box over a note is a down-stroke, and the V is an up-stroke. Leavitt prints them where the picking matters. Follow them exactly, because they are the method.",
+                "A small number by a note is the finger (0 is the open string, 1 the index, up to 4 the little finger). A number in a circle is the string. Together they tell you where on the neck the note lives.",
+                "A dot over or under a note means play it short (staccato). A short line means hold it its full length (tenuto). The > is an accent, so pick it harder. The arc with a dot (fermata) means hold it as long as feels right.",
+                "Words over the staff: Ritard (slow down), a tempo (back to speed), fine (the end), D.S. al coda (back to the sign, then jump to the coda). Here a D.S. is written out the way you play it. Under the staff, p, mf and f mean soft, medium and loud.",
+                "POS II, POS V and so on mark a move to that position. F.S. is a finger stretch out of the position for one note. Go back right after.",
             ],
             3 => &[
                 "Learn your part with HEAR IT first if you have to, but then turn it off and read.",
-                "PLAY ALONG plays only the other guitar and the clicks - you play your part. It counts in a bar. If you get lost, don't stop: find beat one of the next bar and jump back in. That is the most important reading skill there is.",
+                "PLAY ALONG plays only the other guitar and the clicks, while you play your part. It counts in a bar. If you get lost, don't stop. Find beat one of the next bar and jump back in. That is the most important reading skill there is.",
                 "Then swap parts. Each duet is two lessons: the tune and the accompaniment. The 2nd part is usually the one that teaches rhythm.",
-                "BOTH STAVES shows the whole system, the way a real chart looks. Glance at the other part while you play - it trains your eye to read ahead.",
+                "BOTH STAVES shows the whole system, the way a real chart looks. Glance at the other part while you play. It trains your eye to read ahead.",
             ],
             4 => &[
                 "Too fast? Halve the tempo. Speed comes from playing it right slowly many times, not from forcing it.",
-                "One bar keeps breaking: play just that bar and the first note of the next, four times, slowly. Then the whole line again.",
-                "Lost in the rhythm: tap your foot and say the counts (1 & 2 & ...) without playing. Then play only the rhythm on one open string. Then add the notes.",
-                "Lost on the neck: turn on THE POSITION for a minute and see where the key's notes sit. Turn on SHOW TAB only to check a note you weren't sure of - then turn it off again. If the tab stays on, you are reading tab, not music.",
-                "Chord pages: say each chord's name out loud as you place it. Shapes stick when they have names.",
+                "One bar keeps breaking? Play just that bar and the first note of the next, four times, slowly. Then play the whole line again.",
+                "Lost in the rhythm? Tap your foot and say the counts (1 & 2 & and so on) without playing. Then play only the rhythm on one open string. Then add the notes.",
+                "Lost on the neck? Turn on THE POSITION for a minute to see where the key's notes sit. Turn on SHOW TAB only to check a note you weren't sure of, then turn it off again. If the tab stays on, you are reading tab, not music.",
+                "On chord pages, say each chord's name out loud as you place it. Shapes stick when they have names.",
             ],
             5 => &[
-                "Read something every day that you don't know: a lead sheet from a fake book, a Real Book head, a horn part. Read it once through at a slow tempo without stopping before you practise it.",
-                "Read ahead: while you play one bar, your eyes should already be on the next. Cover the bar you're playing with a card if your eyes keep falling back.",
-                "Read in other positions: take a book exercise you know and read it in position V or VII. Same notes, a new map.",
-                "Read rhythms on their own: clap a line of eighths, triplets and rests from any page before you play it.",
-                "Once this book is done, the same work carries on in Volume 2, in the Real Book, and in the horn and piano books - anything with notes on a staff.",
+                "Every day, read something you don't know: a lead sheet from a fake book, a Real Book head, a horn part. Read it once through at a slow tempo without stopping, before you practise it.",
+                "Read ahead. While you play one bar, your eyes should already be on the next. If your eyes keep falling back, cover the bar you're playing with a card.",
+                "Read in other positions. Take a book exercise you know and read it in position V or VII. Same notes, a new map.",
+                "Read rhythms on their own. Clap a line of eighths, triplets and rests from any page before you play it.",
+                "Once this book is done, carry on the same way with Volume 2, the Real Book, and horn and piano books. Anything with notes on a staff will do.",
             ],
             _ => &[
-                "Before you play, look it over: the key, the time, the highest and lowest notes, the hardest rhythm.",
-                "Count a bar in out loud. Play slower than you think you need to, then raise the tempo 5 at a time.",
+                "Before you play, look it over: the key, the time, the highest and lowest notes and the hardest rhythm.",
+                "Count a bar in out loud. Play slower than you think you need to, then raise the tempo by 5 at a time.",
                 "Eyes on the page, not the neck. Stay in the position: one finger per fret.",
-                "Keep going. A wrong note is fine; stopping isn't. The beat matters more than the notes.",
+                "Keep going. A wrong note is fine, but stopping isn't. The beat matters more than the notes.",
                 "A little every day beats a lot once a week. Work at your own pace and mark things done when they are.",
             ],
         };
@@ -1496,18 +1490,18 @@ impl App {
                 self.rd_retempo();
             }
             ui.add_space(10.0);
-            if retro_btn(ui, "HEAR IT", false).tip("A bar to count you in, then this part").clicked() {
+            if retro_btn(ui, "HEAR IT", false).tip("Hear a bar to count you in, then this part.").clicked() {
                 self.rd_start(mine, None, false);
             }
             if let Some(o) = other {
-                if retro_btn(ui, "HEAR BOTH", false).tip("Both guitars together").clicked() {
+                if retro_btn(ui, "HEAR BOTH", false).tip("Hear both guitars together.").clicked() {
                     self.rd_start(mine, Some(o), false);
                 }
             }
             let along_tip = if other.is_some() {
-                "The other guitar plays (and the clicks), you play your part"
+                "The other guitar and the clicks play while you play your part."
             } else {
-                "Just the clicks and the cursor - you play it"
+                "Just the clicks and the cursor. You play it."
             };
             if retro_btn(ui, "PLAY ALONG", false).tip(along_tip).clicked() {
                 self.rd_start(mine, other, true);
@@ -1518,7 +1512,7 @@ impl App {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "SHOW TAB", self.rd_tab).tip("Check yourself: where each note is played in this position").clicked()
+            if retro_btn(ui, "SHOW TAB", self.rd_tab).tip("Check yourself: see where each note is played in this position.").clicked()
             {
                 self.rd_tab = !self.rd_tab;
             }
@@ -1527,7 +1521,7 @@ impl App {
             }
             if self.rd_mode == 0
                 && retro_btn(ui, "MARKS", self.rd_marks)
-                .tip("The book's markings: fingers (plain numbers, 0 = open), strings (numbers in circles), pick strokes, accents, words")
+                .tip("Show the book's markings: fingers (plain numbers, 0 = open), strings (numbers in circles), pick strokes, accents and words.")
                 .clicked()
             {
                 self.rd_marks = !self.rd_marks;
@@ -1539,14 +1533,14 @@ impl App {
             if retro_btn_w(ui, "-", 28.0, false).clicked() {
                 self.rd_zoom = (self.rd_zoom - 0.25).max(0.75);
             }
-            if retro_btn_w(ui, &format!("{}%", (self.rd_zoom * 100.0).round()), 56.0, false).tip("Back to 100%").clicked() {
+            if retro_btn_w(ui, &format!("{}%", (self.rd_zoom * 100.0).round()), 56.0, false).tip("Back to 100%.").clicked() {
                 self.rd_zoom = 1.0;
             }
             if retro_btn_w(ui, "+", 28.0, false).clicked() {
                 self.rd_zoom = (self.rd_zoom + 0.25).min(3.0);
             }
             ui.add_space(10.0);
-            if retro_btn(ui, "THE POSITION", self.rd_map).tip("The key's notes in this position, on the neck").clicked() {
+            if retro_btn(ui, "THE POSITION", self.rd_map).tip("Show the key's notes in this position on the neck.").clicked() {
                 self.rd_map = !self.rd_map;
             }
         });
@@ -1566,17 +1560,17 @@ impl App {
             self.rd_add_book(&path);
         }
         if self.rd_book.is_empty() {
-            para(ui, "Have William Leavitt's A Modern Method for Guitar, Volume 1? Your own copy can be worked through here lesson by lesson: every exercise, solo and duet written out bar for bar, played, and ticked off as you go. The book is kept on this computer only, in a file called reading_book.txt in Backline's folder; it is never part of Backline. No book? MADE-UP LINES works the same way with fresh lines.", pal().ink2);
+            para(ui, "Work through your copy of Leavitt's Modern Method, Volume 1, lesson by lesson. Every exercise, solo and duet is written out bar for bar, played, and ticked off as you go. The book stays on this computer only, in a file called reading_book.txt in Backline's folder. It is never part of Backline. No book? MADE-UP LINES works the same way with fresh lines.", pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 if retro_btn(ui, "ADD THE BOOK FILE...", false)
-                    .tip("Pick your reading_book.txt (or drop it on the window): it is copied into Backline's folder")
+                    .tip("Pick your reading_book.txt, or drop it on the window. It is copied into Backline's folder.")
                     .clicked()
                 {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Reading book", &["txt"]).pick_file() {
                         self.rd_add_book(&path);
                     }
                 }
-                if retro_btn(ui, "LOOK AGAIN", false).tip("Read the book file again").clicked() {
+                if retro_btn(ui, "LOOK AGAIN", false).tip("Read the book file again.").clicked() {
                     self.rd_reload();
                 }
             });
@@ -1624,7 +1618,7 @@ impl App {
             let room = ui.available_width() - 2.0 * 30.0 - 4.0 * ui.spacing().item_spacing.x;
             let ch_w = if chapters.len() > 1 { (room * 0.45).clamp(140.0, 380.0) } else { 0.0 };
             let ls_w = (room - ch_w).clamp(160.0, 520.0);
-            if retro_btn_w(ui, "<", 30.0, false).tip("The page before").clicked() && self.rd_lesson > 0 {
+            if retro_btn_w(ui, "<", 30.0, false).tip("Go to the page before.").clicked() && self.rd_lesson > 0 {
                 self.rd_lesson -= 1;
                 self.rd_piece = 0;
                 self.rd_part = 0;
@@ -1645,7 +1639,8 @@ impl App {
                 self.rd_piece = 0;
                 self.rd_part = 0;
             }
-            if retro_btn_w(ui, ">", 30.0, false).tip("The next page").clicked() && self.rd_lesson + 1 < self.rd_book.len() {
+            if retro_btn_w(ui, ">", 30.0, false).tip("Go to the next page.").clicked() && self.rd_lesson + 1 < self.rd_book.len()
+            {
                 self.rd_lesson += 1;
                 self.rd_piece = 0;
                 self.rd_part = 0;
@@ -1653,7 +1648,7 @@ impl App {
         });
         ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, &format!("{} OF {} DONE", done_n, total), 120.0);
-            if retro_btn(ui, "PICK UP WHERE I LEFT OFF", false).tip("The first exercise not done yet").clicked() {
+            if retro_btn(ui, "PICK UP WHERE I LEFT OFF", false).tip("Go to the first exercise not done yet.").clicked() {
                 'find: for (li, l) in self.rd_book.iter().enumerate() {
                     for (pi, p) in l.pieces.iter().enumerate() {
                         if !self.store.reading_done.contains_key(&id(l, p)) {
@@ -1665,10 +1660,10 @@ impl App {
                     }
                 }
             }
-            if retro_btn(ui, "RELOAD", false).tip("Read the book file again (after pages are added)").clicked() {
+            if retro_btn(ui, "RELOAD", false).tip("Read the book file again after pages are added.").clicked() {
                 self.rd_reload();
             }
-            if retro_btn(ui, "REPLACE BOOK...", false).tip("Use another reading book file (a newer copy, say)").clicked() {
+            if retro_btn(ui, "REPLACE BOOK...", false).tip("Use another reading book file, such as a newer copy.").clicked() {
                 if let Some(path) = rfd::FileDialog::new().add_filter("Reading book", &["txt"]).pick_file() {
                     self.rd_add_book(&path);
                 }
@@ -1693,7 +1688,7 @@ impl App {
             for (i, p) in lesson.pieces.iter().enumerate() {
                 let done = self.store.reading_done.contains_key(&id(&lesson, p));
                 let label = format!("{}{}", p.name.to_uppercase(), if done { " *" } else { "" });
-                if retro_btn(ui, &label, self.rd_piece == i).tip(if done { "Done (*)" } else { "Not done yet" }).clicked() {
+                if retro_btn(ui, &label, self.rd_piece == i).tip(if done { "Done (*)." } else { "Not done yet." }).clicked() {
                     self.rd_piece = i;
                     self.rd_part = 0;
                     self.player.send(Cmd::StopOnce);
@@ -1707,12 +1702,15 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 crate::views::label(ui, "YOUR PART", 100.0);
                 for (i, (pn, _)) in piece.parts.iter().enumerate() {
-                    if retro_btn(ui, &pn.to_uppercase(), self.rd_part == i).clicked() {
+                    if retro_btn(ui, &crate::font::as_label(&pn), self.rd_part == i).clicked() {
                         self.rd_part = i;
                     }
                 }
                 ui.add_space(10.0);
-                if retro_btn(ui, "BOTH STAVES", self.rd_both).tip("The whole duet as systems (off: just your part)").clicked() {
+                if retro_btn(ui, "BOTH STAVES", self.rd_both)
+                    .tip("Show the whole duet as systems. Turn it off to see just your part.")
+                    .clicked()
+                {
                     self.rd_both = !self.rd_both;
                 }
             });
@@ -1750,19 +1748,22 @@ impl App {
             let done = self.store.reading_done.get(&key).cloned();
             match &done {
                 Some(d) => {
-                    if retro_btn(ui, &format!("DONE {}", d), true).tip("Click to take the mark off").clicked() {
+                    if retro_btn(ui, &format!("DONE {}", d), true).tip("Click to take the mark off.").clicked() {
                         self.store.reading_done.remove(&key);
                         self.store_dirty = true;
                     }
                 }
                 None => {
-                    if retro_btn(ui, "MARK IT DONE", false).tip("You can read it through at tempo without stopping").clicked() {
+                    if retro_btn(ui, "MARK IT DONE", false)
+                        .tip("Mark it once you can read it through at tempo without stopping.")
+                        .clicked()
+                    {
                         self.store.reading_done.insert(key.clone(), crate::store::today_str());
                         self.store_dirty = true;
                     }
                 }
             }
-            if retro_btn(ui, "NEXT", false).tip("The next exercise").clicked() {
+            if retro_btn(ui, "NEXT", false).tip("Go to the next exercise.").clicked() {
                 self.player.send(Cmd::StopOnce);
                 self.rd_play = None;
                 if self.rd_piece + 1 < lesson.pieces.len() {
@@ -1778,7 +1779,7 @@ impl App {
 
     /// MADE-UP LINES: fresh lines in a key, position and rhythm level.
     fn rd_made_up(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Read in one position, in one key, without looking at the neck. Pick the position, the key and how hard the rhythms get, then press NEW LINE. Every line is new.", pal().ink2);
+        para(ui, "Read fresh lines in one position and key, without looking at the neck. Pick the position, the key and how hard the rhythms get, then press NEW LINE. Every line is new.", pal().ink2);
         let mut changed = false;
         ui.horizontal_wrapped(|ui| {
             let keys: Vec<&str> = KEYS.iter().map(|k| k.0).collect();
@@ -1810,7 +1811,7 @@ impl App {
             self.rd_new_line();
         }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "NEW LINE", false).tip("A fresh line with these settings").clicked() {
+            if retro_btn(ui, "NEW LINE", false).tip("Make a fresh line with these settings.").clicked() {
                 self.player.send(Cmd::StopOnce);
                 self.rd_new_line();
             }
@@ -1823,7 +1824,7 @@ impl App {
         self.rd_controls(ui, &line, None);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "FINGERING", self.rd_fingering)
-                .tip("Over each note: the finger in this position (0 = open string) and the string, in a circle")
+                .tip("Show over each note the finger in this position (0 = open string) and the string, in a circle.")
                 .clicked()
             {
                 self.rd_fingering = !self.rd_fingering;

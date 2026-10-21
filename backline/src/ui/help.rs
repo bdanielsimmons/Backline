@@ -73,58 +73,54 @@ impl App {
 
 fn tour_tab(ui: &mut egui::Ui, pick: &mut Option<u8>) {
     section_header(ui, "WANT A TOUR?");
-    para(
-        ui,
-        "A short guided look at the screen, one piece at a time. About a minute. You can stop any time with ESC.",
-        pal().ink,
-    );
+    para(ui, "A one-minute guided look at the screen. It shows one piece at a time. Press ESC to stop.", pal().ink);
     ui.add_space(4.0);
     if retro_btn(ui, "TAKE THE TOUR", true).clicked() {
         *pick = Some(0);
     }
     if PRACTICE {
         ui.add_space(8.0);
-        para(ui, "The practice tools have their own tour, so they don't bury the basics. Take it when you want to loop and slow down music.", pal().ink);
+        para(ui, "The practice tools have their own tour. Take it when you want to loop and slow down music.", pal().ink);
         if retro_btn(ui, "PRACTICE TOUR", false).clicked() {
             *pick = Some(1);
         }
     }
     ui.add_space(8.0);
-    para(ui, "Prefer to read? The other tabs have the same things written out.", pal().ink2);
+    para(ui, "Prefer to read? The other tabs say the same things.", pal().ink2);
 }
 
 fn start_tab(ui: &mut egui::Ui) {
     section_header(ui, "WHAT THIS IS");
     para(
         ui,
-        "A small desktop player for Tidal, SoundCloud, YouTube and your own files, made for practicing music. The retro look is on purpose. Nothing here is required - skip to what you need.",
+        "A small player made for practicing music. It plays Tidal, SoundCloud, YouTube and your own files. The retro look is on purpose. Nothing here is required, so skip to what you need.",
         pal().ink,
     );
     section_header(ui, "THE 30-SECOND TOUR");
     points(
         ui,
         &[
-            "LEFT window = LIBRARY. The tabs at the top switch the source.",
-            "MIDDLE window = PLAYER. Play, skip, seek, volume. Click the cover to open Now Playing: the song big.",
-            "RIGHT window = QUEUE. Drag a row to reorder it.",
-            "RIGHT-CLICK almost anything: songs, the seek bar, the skin button, the visualizer.",
-            "Right-click a song for: play next, add to queue, add to a playlist, copy its link.",
+            "The left window is the LIBRARY. The tabs at the top switch the source.",
+            "The middle window is the PLAYER. Play, skip, seek and set the volume. Click the cover to see the song big.",
+            "The right window is the QUEUE. Drag a row to reorder it.",
+            "Right-click almost anything for more: songs, the seek bar, the skin button, the visualizer.",
+            "Right-click a song to choose PLAY NEXT, ADD TO QUEUE, add it to a playlist or copy its link.",
         ],
     );
     section_header(ui, "NOW PLAYING");
     para(
         ui,
-        "Click the cover or press A for the big view: large art, lyrics, a visualizer behind it. Made for listening.",
+        "Click the cover or press A for the big view. It shows large art, lyrics and a visualizer, made for listening.",
         pal().ink,
     );
     points(
         ui,
         &[
-            "L shows lyrics next to the cover. Scroll them, or click a line to jump there.",
-            "The spectrum icon turns the visualizer on and off. Right-click it for opacity, height, width, bar count, colors.",
-            "The skin button is in the view too, so you can change the look without leaving.",
+            "Press L to show lyrics next to the cover. Click a line to jump there.",
+            "The spectrum icon turns the visualizer on and off. Right-click it for size, bars and colors.",
+            "The skin button is here too, so you can change the look without leaving.",
             "In practice mode your loop shows on the seek bar. Right-click the bar to set one.",
-            "The little visualizer in the player window has its own settings - right-click it. The two don't affect each other.",
+            "The small visualizer in the player window has its own settings. Right-click it to change them.",
         ],
     );
     section_header(ui, "WHERE THE MUSIC COMES FROM");
@@ -132,25 +128,25 @@ fn start_tab(ui: &mut egui::Ui) {
         ui,
         &[
             "TIDAL: sign in with your own subscription. The sign-in stays on this computer.",
-            "SOUNDCLOUD and YT: press GET YT-DLP once (a free helper tool). Then search or paste links.",
+            "SOUNDCLOUD and YOUTUBE: press GET YT-DLP once to fetch a free helper. Then search or paste links.",
             "FILES: drag audio files or folders onto the window.",
-            "LISTS: your own playlists. Mix any of the sources in one list.",
+            "LISTS: your own playlists. One list can mix songs from every source.",
         ],
     );
     section_header(ui, "MAKE IT YOURS");
     points(
         ui,
         &[
-            "Skins are in the BACKLINE menu at the top of the library, with preferences, storage and the log.",
-            "In Now Playing: right-click the spectrum icon for bars, waveform, colors, size.",
+            "Skins, PREFERENCES, storage and the log are in the BACKLINE menu at the top of the library.",
+            "In the big view, right-click the spectrum icon for bars, waveform, colors and size.",
             "Everything saves by itself.",
         ],
     );
 }
 
 fn keys_tab(ui: &mut egui::Ui, binds: &[Option<egui::Key>], open_prefs: &mut bool) {
-    para(ui, "Keys work whenever you are not typing in a box. You can change any of them in Preferences.", pal().ink2);
-    para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette: type what you want to do and press ENTER. 1 2 3 4 switch between LIBRARY, PLAYER, ALBUM and MINI.", pal().ink);
+    para(ui, "Keys work whenever you are not typing in a box. You can change them in PREFERENCES.", pal().ink2);
+    para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette. Type what you want to do and press ENTER. The keys 1 2 3 4 switch between LIBRARY, PLAYER, ALBUM and MINI.", pal().ink);
     if retro_btn(ui, "CHANGE SHORTCUTS", false).clicked() {
         *open_prefs = true;
     }
@@ -176,15 +172,15 @@ fn keys_tab(ui: &mut egui::Ui, binds: &[Option<egui::Key>], open_prefs: &mut boo
 
 fn practice_tab(ui: &mut egui::Ui) {
     section_header(ui, "THE IDEA");
-    para(ui, "Pick a hard spot, loop it, slow it down, play it clean, then step the speed up. Turn practice mode on with the PRACTICE chip or P.", pal().ink);
+    para(ui, "Loop a hard spot, slow it down, then speed it up as it gets clean. Turn practice mode on with the PRACTICE chip or the P key.", pal().ink);
     section_header(ui, "THE FOUR TOOLS");
     points(
         ui,
         &[
-            "LOOP: [ and ] set the ends, \\ turns it on. Right-click the seek bar for more. Loops are remembered per track.",
-            "SPEED: UP / DOWN arrows, 5 percent at a time, pitch unchanged.",
-            "PITCH: semitones, or 10-cent steps. FIND TUNING lines up tracks that aren't at A440.",
-            "TIME: metronome with count-in, and a focus (pomodoro) timer for work blocks with short rests.",
+            "LOOP: [ and ] set the ends, and \\ turns it on. Right-click the seek bar for more. Each track remembers its loops.",
+            "SPEED: the UP and DOWN arrows change it 5 percent at a time. The pitch stays the same.",
+            "PITCH: move by semitones or 10-cent steps. FIND TUNING lines up tracks that aren't at A440.",
+            "TIME: a metronome with count-in, and a focus timer for work blocks with short rests.",
         ],
     );
     section_header(ui, "KEEPING TRACK");
@@ -206,13 +202,13 @@ fn about_tab(ui: &mut egui::Ui) {
         format!("Backline {} (local build)", crate::VERSION)
     };
     para(ui, &v, pal().ink);
-    para(ui, "It checks for updates by itself and installs the new version the next time you open it (or when you click the bar at the top).", pal().ink2);
+    para(ui, "Backline checks for updates by itself. It installs them the next time you open it, or when you click the bar at the top.", pal().ink2);
     section_header(ui, "WHO MADE IT");
     para(ui, "Built by Daniel Simmons.", pal().ink);
     section_header(ui, "WHY IT EXISTS");
     para(
         ui,
-        "Built for personal practice: a fast player that doesn't crash, with loops, slow-down and a calm interface that stays out of your way. Written in Rust.",
+        "Built for personal practice. It is a fast, steady player with loops, slow-down and a calm screen that stays out of your way. Written in Rust.",
         pal().ink,
     );
     section_header(ui, "PRIVACY");
@@ -221,16 +217,16 @@ fn about_tab(ui: &mut egui::Ui) {
         &[
             "Loops, speed, seeks, playlists and your diary stay on this computer.",
             "Nothing is reported to Tidal, SoundCloud or YouTube about what you play.",
-            "The one thing sent out on its own is the update check to GitHub.",
+            "The only thing sent out on its own is the update check to GitHub.",
         ],
     );
     section_header(ui, "WHERE YOUR STUFF IS");
     para(ui, &crate::api::config_dir().display().to_string(), pal().ink2);
-    para(ui, "library.json holds your tunes, loops, playlists and diary. Back that file up if you care about it.", pal().ink2);
+    para(ui, "The file library.json holds your tunes, loops, playlists and diary. Back it up to keep them safe.", pal().ink2);
     section_header(ui, "FINE PRINT");
     para(
         ui,
-        "Unofficial. Not made by or affiliated with Tidal, SoundCloud or YouTube. You need your own Tidal subscription. Using YouTube or SoundCloud through Backline may go against their terms; personal use is at your own discretion.",
+        "Backline is unofficial and not tied to Tidal, SoundCloud or YouTube. You need your own Tidal subscription. Using YouTube or SoundCloud through Backline may go against their terms. Personal use is at your own discretion.",
         pal().dim,
     );
     section_header(ui, "BUILT WITH");

@@ -83,57 +83,57 @@ const BASE: Step = Step { key: "", scene: Scene::Normal, title: "", text: "", sp
 const BASIC: &[Step] = &[
     Step {
         title: "WELCOME",
-        text: "A quick look around, with a song playing so you hear each thing work. NEXT and BACK (or the arrow keys) move along, ESC stops. Your queue and song come back at the end.",
+        text: "A quick look around, with a song playing so you hear each part work. NEXT and BACK (or the arrow keys) move along, and ESC stops. Your queue and song come back at the end.",
         ..BASE
     },
     Step {
         key: "PLAYER",
         title: "THE PLAYER",
-        text: "Play, pause, skip, seek and volume, with the song's tempo and key. Click the little screen to change the visualizer.",
+        text: "Play, pause, skip, seek and set the volume. It also shows the song's tempo and key. Click the little screen to change the visualizer.",
         ..BASE
     },
     Step {
         key: "SPEEDBTN",
         title: "SPEED",
-        text: "Now at 70%, and the pitch has not moved. Click for the next speed, right-click to pick any.",
+        text: "The song now plays at 70%, and the pitch has not moved. Click for the next speed, or right-click to pick any.",
         speed: 70,
         ..BASE
     },
     Step {
         key: "EQUALIZER",
         title: "THE EQUALIZER",
-        text: "The BASS preset is on: hear the low end come up. AUTO remembers an EQ for each song.",
+        text: "The BASS preset is on, so the low end comes up. AUTO remembers an EQ for each song.",
         eq: Some(1),
         ..BASE
     },
     Step {
         key: "LIBRARY",
         title: "THE LIBRARY",
-        text: "Everything you can play: Tidal, SoundCloud, your files, YouTube and your own lists. Click a song to play it, right-click for more.",
+        text: "Everything you can play: Tidal, SoundCloud, YouTube, your files and your own lists. Click a song to play it, or right-click for more.",
         ..BASE
     },
     Step {
         key: "QUEUE",
         title: "THE QUEUE",
-        text: "What plays next. Drag a row to reorder it, right-click to remove it or add it to a playlist.",
+        text: "This is what plays next. Drag a row to reorder it. Right-click to remove it or add it to a playlist.",
         ..BASE
     },
     Step {
         key: "ARTBTNS",
         scene: Scene::Album,
         title: "NOW PLAYING",
-        text: "Click the cover (or press A): the cover big, lyrics you can click to jump, the visualizer behind. ESC takes you back.",
+        text: "Click the cover or press A to see it big. Click a line of the lyrics to jump there. ESC takes you back.",
         ..BASE
     },
     Step {
         key: "APPMENU",
         title: "MUSIC, PRACTICE, BACKLINE",
-        text: "Your music; your tunes and practice diary; skins, preferences and help. Ctrl+K finds any action by typing.",
+        text: "MUSIC has your songs. PRACTICE has your tunes and diary. BACKLINE has skins, preferences and help. CTRL+K finds any action by typing.",
         ..BASE
     },
     Step {
         title: "THAT'S IT",
-        text: "DONE puts everything back the way you had it. The ? button has every key and tip.",
+        text: "DONE puts everything back the way you had it. The ? button lists every key and tip.",
         ..BASE
     },
 ];
@@ -143,14 +143,14 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHIP",
         scene: Scene::PracticeOff,
         title: "PRACTICE MODE",
-        text: "Tools for learning music from recordings. Click PRACTICE (or press P) to switch them on.",
+        text: "Tools for learning music from recordings. Click PRACTICE or press P to turn them on.",
         ..BASE
     },
     Step {
         key: "LOOPROW",
         scene: Scene::Practice,
         title: "1. LOOP A SPOT",
-        text: "Hear a few seconds come round again? Set A and B ([ and ] keys), then loop it (\\). SAVE LOOP keeps it with the song.",
+        text: "Loop a few seconds to hear them again. Set A and B with the [ and ] keys, then press \\ to loop. SAVE LOOP keeps it with the song.",
         ab: true,
         ..BASE
     },
@@ -158,7 +158,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "SPEEDROW",
         scene: Scene::Practice,
         title: "2. SLOW IT DOWN",
-        text: "The same loop at 85%, same pitch. Play it clean slow, then step it up.",
+        text: "The same loop at 85%, with the same pitch. Play it clean slow, then step it up.",
         ab: true,
         speed: 85,
         ..BASE
@@ -167,7 +167,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "MOREBOX",
         scene: Scene::PracticeMore(0),
         title: "3. LET IT SPEED YOU UP",
-        text: "The TRAINER plays your loop a few times, then speeds it up a little, again and again.",
+        text: "The TRAINER plays your loop a few times, then speeds it up a little. It keeps doing that.",
         ab: true,
         speed: 85,
         ..BASE
@@ -176,21 +176,21 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "MOREBOX",
         scene: Scene::PracticeMore(1),
         title: "4. FIX THE PITCH",
-        text: "Move the key, find how far the record is from A440, and tune it to your instrument.",
+        text: "Change the key, see how far the record is from A440, and tune it to your instrument.",
         ..BASE
     },
     Step {
         key: "MOREBOX",
         scene: Scene::PracticeMore(2),
         title: "5. PULL IT APART",
-        text: "STEMS splits a song into drums, bass, vocals and the rest. Play one part, or everything but it.",
+        text: "STEMS splits a song into drums, bass, vocals and the rest. Play one part alone, or everything but it.",
         ..BASE
     },
     Step {
         key: "TIMEBTNS",
         scene: Scene::Practice,
         title: "6. KEEP TIME",
-        text: "A focus timer, and a metronome that can lock to the song's own beat.",
+        text: "A focus timer, and a metronome that can lock to the song's beat.",
         ..BASE
     },
     Step {
@@ -205,7 +205,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHORDSVIEW",
         scene: Scene::Chords,
         title: "8. CHORDS",
-        text: "Any chord: its notes, grips and the scales that fit. The tabs come in three groups: FIND & NAME, SHAPES and HARMONY.",
+        text: "See any chord's notes, grips and the scales that fit. The tabs come in three groups: FIND & NAME, SHAPES and HARMONY.",
         act: 1,
         ..BASE
     },
@@ -213,7 +213,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHORDSVIEW",
         scene: Scene::Analyzer,
         title: "9. NAME A CHORD",
-        text: "Click notes on a neck or a piano and it names the chord. This one is Dm7.",
+        text: "Click notes on a neck or a piano to name the chord. This one is Dm7.",
         act: 4,
         ..BASE
     },
@@ -221,7 +221,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHORDSVIEW",
         scene: Scene::Harmony,
         title: "10. THE CHORDS OF A SCALE",
-        text: "Every chord a scale makes, with its mode and a grip: here G melodic minor. Pick one to see what to solo over it. You are hearing a triad pair, C then D.",
+        text: "See every chord a scale makes, with its mode and a grip. Here it is G melodic minor. Pick a chord to see what to solo over it. You are hearing a triad pair, C then D.",
         act: 5,
         ..BASE
     },
@@ -229,7 +229,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "LINESVIEW",
         scene: Scene::Lines,
         title: "11. LINES",
-        text: "Scales, arpeggios, pentatonics and Slonimsky's Diary in notation and tab, played alone or over the band.",
+        text: "Scales, arpeggios, pentatonics and Slonimsky's Diary in notation and tab. Play them alone or over the band.",
         act: 2,
         ..BASE
     },
@@ -237,7 +237,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "SHEET",
         scene: Scene::Sheet,
         title: "12. THE LEAD SHEET AND THE BAND",
-        text: "Every tune can have a chart, and a little band plays it at your tempo. Here: Cherokee.",
+        text: "Every tune can have a chart, and a little band plays it at your tempo. Here it is Cherokee.",
         act: 3,
         ..BASE
     },
@@ -245,7 +245,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "TABS",
         scene: Scene::Practice,
         title: "13. KEEP TRACK",
-        text: "PRACTICE holds your TUNES and a DIARY of what you practised. DONE puts everything back.",
+        text: "PRACTICE holds your TUNES and a DIARY of what you practiced. DONE puts everything back.",
         ..BASE
     },
 ];
