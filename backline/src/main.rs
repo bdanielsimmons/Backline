@@ -156,6 +156,8 @@ const NB: usize = 19;
 const WAVE_N: usize = 128;
 
 const ROW_H: f32 = 24.0;
+/// The space between things on a page, a skin worn (the rows of a table stay flush).
+const GAP: f32 = 8.0;
 const HEAD_H: f32 = 18.0;
 
 // ------------------------------------------------------------------ messages
@@ -681,12 +683,21 @@ fn list_row(
     // (taller with the library's zoom)
     let row_h = ROW_H * font::ui_scale();
     let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, row_h));
+    // rows sit flush, whatever gap the page puts between other things
+    let flush = |ui: &mut egui::Ui| {
+        let gap = ui.spacing().item_spacing.y;
+        if gap > 0.0 {
+            ui.add_space(-gap);
+        }
+    };
     if !ui.is_rect_visible(probe) {
         ui.allocate_space(Vec2::new(w, row_h));
+        flush(ui);
         return None;
     }
     let sense = if drag { Sense::click_and_drag() } else { Sense::click() };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, row_h), sense);
+    flush(ui);
     let p = ui.painter();
     let bg = if state == RowState::Playing {
         Some(pal().row_sel)
@@ -3868,6 +3879,12 @@ impl App {
                 app.ln_tab = 1;
             }
             Ok("melodies") => app.sec = Sec::Melodies,
+            Ok("sc") => app.sec = Sec::Sc,
+            Ok("tunes") => app.sec = Sec::Tunes,
+            Ok("reading") => app.sec = Sec::Reading,
+            Ok("chords") => app.sec = Sec::Chords,
+            Ok("lines") => app.sec = Sec::Lines,
+            Ok("files") => app.sec = Sec::Files,
             Ok("slonimsky") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 0;

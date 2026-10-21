@@ -1071,6 +1071,20 @@ pub(crate) fn title_line(ui: &mut egui::Ui, text: &str, px: f32, col: Color32) {
         spaced_caps(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 12.0), text, 1.9, col);
         return;
     }
+    // a line of words under a heading (a skin worn): it starts with a capital, and a button named in capitals reads
+    // as a name
+    let fixed;
+    let text = if winamp_ui::chrome_on() && text.chars().any(|c| c.is_lowercase()) {
+        let t = winamp_ui::caps_words(text);
+        let mut c = t.chars();
+        fixed = match c.next() {
+            Some(f) if f.is_lowercase() => f.to_uppercase().chain(c).collect::<String>(),
+            _ => t.clone(),
+        };
+        fixed.as_str()
+    } else {
+        text
+    };
     font::keep_caps(|| {
         let h = 7.0 * spx(px) + 10.0;
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());

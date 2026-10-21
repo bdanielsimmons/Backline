@@ -1329,7 +1329,8 @@ impl App {
         let sec = self.sec;
         let sec_i = sec as u8;
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(area), |ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
+            // (a skin worn: room between the things on a page; the song tables stay flush, list_row sees to that)
+            ui.spacing_mut().item_spacing = Vec2::new(8.0, if crate::winamp_ui::chrome_on() { GAP } else { 0.0 });
             if show_log {
                 self.log_view(ui, acts);
                 return;
