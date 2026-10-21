@@ -104,7 +104,8 @@ impl Store {
         for v in all.values() {
             match v.kind.as_str() {
                 "file" if !std::path::Path::new(&v.src).exists() => {
-                    let name = |p: &str| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_lowercase());
+                    // the file's own name, whichever system the path came from (a Mac doesn't split C:\ paths)
+                    let name = |p: &str| p.rsplit(['/', '\\']).next().filter(|n| !n.is_empty()).map(|n| n.to_lowercase());
                     let same = |e: &&Ext| {
                         (name(&e.src).is_some() && name(&e.src) == name(&v.src))
                             || (!v.title.is_empty()
