@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- With a skin, the library lists its places down the side, like Spotify
+- Play, shuffle and queue are icons, with the rest under "..."
 - DIARY > ROUTINE - a session tune a week (a different kind each time, or gospel), with daily steps that open the tool set up for them: listen, melody by ear, changes with the band, a lick through 12 keys, a recorded solo, listening back
 - RECORD in the practice panel - your interface or mic over the band, a loop or a song, a live waveform, every take kept (you over the band, and you alone) with ALL TAKES to play, tag or delete them
 - FOLLOW and RADIO on artist pages, their bio (VIEW MORE for the rest, names you can click), and new releases from artists you follow in your ARTISTS tab
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
 - PENTATONICS & MORE - pentatonic, hexatonic (triad pairs), diminished and chromatic options, with exercises
 - SUPERIMPOSE - what to play over a chord to get its colours
-- Coltrane cells in SCALES, and through a whole tune
-- Go offline - only what's on this computer, nothing goes out to the internet - and back online in one click
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
