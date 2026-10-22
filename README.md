@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Focus timer and metronome as pills in the practice window that open full panels
+- Chord grips with a capo, and movable grips grouped by root string
 - The chord engine checked against standard theory: every common chord spelling reads right, notes spelt from the root
 - Brazilian songbook in the recommended tunes: Jobim, Bonfá, Baden Powell, Edu Lobo, Milton, João Bosco, Hermeto, choro
 - With a skin, the library lists its places down the side, like Spotify
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - RECORD in the practice panel - your interface or mic over the band, a loop or a song, a live waveform, every take kept (you over the band, and you alone) with ALL TAKES to play, tag or delete them
 - FOLLOW and RADIO on artist pages, their bio (VIEW MORE for the rest, names you can click), and new releases from artists you follow in your ARTISTS tab
 - SCALE HARMONY in CHORDS - every chord a scale makes, its mode, a grip, what to solo with (triad pairs too) and a vamp the band loops
-- ARPEGGIOS in LINES - a chord's notes inside its scale, in the same positions as SCALES, played every way round and through a tune
-- CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
