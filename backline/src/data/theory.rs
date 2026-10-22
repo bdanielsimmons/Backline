@@ -626,7 +626,160 @@ pub const STANDARD: [i32; 6] = [40, 45, 50, 55, 59, 64];
 
 /// Playable guitar shapes for a chord, best first: per string a fret, or None for a string not played. Every
 /// note of the chord sounds (or all but the fifth), the chord's bass is the lowest note, within a four-fret reach.
+// ----------------------------------------------------------------- the grips jazz guitarists use
+// Each is written as the chord degree on each string, low E to high E (semitones above the root: R 0, b9 1, 9 2,
+// #9/b3 3, 3 4, 11 5, #11/b5 6, 5 7, #5/b13 8, 6/13 9, b7 10, 7 11; X a string not played), with the root the lowest
+// note. The frets come from the degrees, so a grip is right in every key by construction (and a test checks it).
+const X: i8 = -1;
+pub(crate) const GRIPS: &[(&str, [i8; 6])] = &[
+    // root on the 6th string
+    ("maj7", [0, X, 11, 4, 7, X]),
+    ("6", [0, X, 9, 4, 7, X]),
+    ("7", [0, X, 10, 4, 7, X]),
+    ("m7", [0, X, 10, 3, 7, X]),
+    ("m7b5", [0, X, 10, 3, 6, X]),
+    ("dim7", [0, X, 9, 3, 6, X]),
+    ("m6", [0, X, 9, 3, 7, X]),
+    ("mmaj7", [0, X, 11, 3, 7, X]),
+    ("9", [0, X, 10, 4, X, 2]),
+    ("maj9", [0, X, 11, 4, X, 2]),
+    ("m9", [0, X, 10, 3, X, 2]),
+    ("m11", [0, X, 10, 3, 5, X]),
+    ("13", [0, X, 10, 4, 9, X]),
+    ("13 9", [0, X, 10, 4, 9, 2]),
+    ("13b9", [0, X, 10, 4, 9, 1]),
+    ("7b9", [0, X, 10, 4, 7, 1]),
+    ("7#9", [0, X, 10, 4, X, 3]),
+    ("7#5", [0, X, 10, 4, 8, X]),
+    ("7#11", [0, X, 10, 4, 6, X]),
+    ("7sus4", [0, X, 10, 5, 7, X]),
+    // root on the 5th string
+    ("maj7", [X, 0, 7, 11, 4, X]),
+    ("6", [X, 0, 7, 9, 4, X]),
+    ("69", [X, 0, 4, 9, 2, 7]),
+    ("7", [X, 0, 7, 10, 4, X]),
+    ("m7", [X, 0, 7, 10, 3, X]),
+    ("m7b5", [X, 0, 6, 10, 3, X]),
+    ("dim7", [X, 0, 6, 9, 3, X]),
+    ("m6", [X, 0, 7, 9, 3, X]),
+    ("mmaj7", [X, 0, 7, 11, 3, X]),
+    ("9", [X, 0, 4, 10, 2, 7]),
+    ("9 no5", [X, 0, 4, 10, 2, X]),
+    ("maj9", [X, 0, 4, 11, 2, X]),
+    ("m9", [X, 0, 3, 10, 2, X]),
+    ("m11", [X, 0, X, 10, 3, 5]),
+    ("13", [X, 0, X, 10, 2, 9]),
+    ("13 3", [X, 0, 4, 10, 2, 9]),
+    ("13b9", [X, 0, 4, 10, 1, 9]),
+    ("7b9", [X, 0, 4, 10, 1, X]),
+    ("7#9", [X, 0, 4, 10, 3, X]),
+    ("7#5", [X, 0, X, 10, 4, 8]),
+    ("7#11", [X, 0, 4, 10, X, 6]),
+    ("7b9b13", [X, 0, 4, 10, 1, 8]),
+    ("7#9b13", [X, 0, 4, 10, 3, 8]),
+    ("7sus4", [X, 0, 7, 10, 5, X]),
+    ("9sus4", [X, 0, 5, 10, 2, X]),
+    // root on the 4th string
+    ("maj7", [X, X, 0, 7, 11, 4]),
+    ("6", [X, X, 0, 7, 9, 4]),
+    ("7", [X, X, 0, 7, 10, 4]),
+    ("m7", [X, X, 0, 7, 10, 3]),
+    ("m7b5", [X, X, 0, 6, 10, 3]),
+    ("dim7", [X, X, 0, 6, 9, 3]),
+    ("m6", [X, X, 0, 7, 9, 3]),
+    ("9", [X, X, 0, 4, 10, 2]),
+    ("maj9", [X, X, 0, 4, 11, 2]),
+    ("m9", [X, X, 0, 3, 10, 2]),
+    ("7b9", [X, X, 0, 4, 10, 1]),
+    ("7#9", [X, X, 0, 4, 10, 3]),
+];
+
+/// A grip's frets for this root in standard tuning, the root at fret `f0` on its string (None when it won't sit in
+/// four frets there).
+fn place_grip(degrees: &[i8; 6], root: i32, f0: i32, tuning: &[i32; 6]) -> Option<[Option<u8>; 6]> {
+    let mut out = [None; 6];
+    for (s, d) in degrees.iter().enumerate() {
+        if *d < 0 {
+            continue;
+        }
+        let pc = (root + *d as i32).rem_euclid(12);
+        let base = (pc - tuning[s]).rem_euclid(12);
+        // the fret for that note nearest the root's (a shape leans up the neck from it)
+        let f = [base - 12, base, base + 12, base + 24]
+            .into_iter()
+            .filter(|f| *f >= 0 && *f <= 17)
+            .min_by_key(|f| ((f - f0) * 2 - 1).abs())?;
+        out[s] = Some(f as u8);
+    }
+    let fretted: Vec<i32> = out.iter().flatten().map(|f| *f as i32).filter(|f| *f > 0).collect();
+    let (lo, hi) = (fretted.iter().min().copied().unwrap_or(0), fretted.iter().max().copied().unwrap_or(0));
+    if hi - lo > 3 {
+        return None;
+    }
+    // an open string only with a shape at the nut
+    if out.iter().flatten().any(|f| *f == 0) && lo > 3 {
+        return None;
+    }
+    Some(out)
+}
+
+/// The library grips that spell this chord: every note a grip plays is in the chord, and the chord's notes it leaves
+/// out are only ones a guitarist leaves out (the 5th; the 9th under a 13th). Lowest on the neck first.
+pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
+    if c.bass != c.root {
+        return Vec::new();
+    }
+    let rel: Vec<i32> = c.pcs.iter().map(|p| (p - c.root).rem_euclid(12)).collect();
+    let has = |x: i32| rel.contains(&x);
+    let mut out: Vec<(i32, [Option<u8>; 6])> = Vec::new();
+    for (_, degrees) in GRIPS {
+        let set: Vec<i32> = degrees.iter().filter(|d| **d >= 0).map(|d| *d as i32).collect();
+        if !set.iter().all(|d| has(*d)) {
+            continue;
+        }
+        let left_out: Vec<i32> = rel.iter().copied().filter(|d| !set.contains(d)).collect();
+        let ok = left_out.iter().all(|d| *d == 7 || (*d == 2 && has(9) && has(10)));
+        if !ok {
+            continue;
+        }
+        let rs = degrees.iter().position(|d| *d == 0).unwrap_or(0);
+        let f0 = (c.root - tuning[rs]).rem_euclid(12);
+        for f in [f0, f0 + 12] {
+            if f > 15 {
+                continue;
+            }
+            if let Some(g) = place_grip(degrees, c.root, f, tuning) {
+                if !out.iter().any(|(_, o)| *o == g) {
+                    out.push((f, g));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|(f, g)| (*f, g.iter().position(|x| x.is_some()).unwrap_or(0)));
+    out.into_iter().map(|(_, g)| g).collect()
+}
+
 pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
+    // the grips players use first, then what the search finds for anything they don't cover
+    // (the search only for chords the library doesn't cover: it finds odd grips beside real ones)
+    let mut out = library_grips(c, tuning);
+    if !out.is_empty() {
+        out.truncate(6);
+        return out;
+    }
+    for g in search_shapes(c, tuning) {
+        let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
+        if !out.iter().any(|o| *o == g || pos(o).abs_diff(pos(&g)) < 2) {
+            out.push(g);
+        }
+        if out.len() >= 4 {
+            break;
+        }
+    }
+    out
+}
+
+fn search_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
     let mut best: Vec<(i32, [Option<u8>; 6])> = Vec::new();
     let needed: Vec<i32> = c.pcs.clone();
     for start in 0..=10i32 {
@@ -666,6 +819,19 @@ pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> 
             // is the chord's bass
             let low = played.iter().map(|(i, f)| tuning[*i] + *f as i32).min().unwrap_or(0);
             if low.rem_euclid(12) != c.bass {
+                continue;
+            }
+            // nothing a half or whole step over the bass (Ab with an open A over it): mud, not a voicing
+            let mut sounding: Vec<i32> = played.iter().map(|(i, f)| tuning[*i] + *f as i32).collect();
+            sounding.sort();
+            if sounding.len() > 1 && sounding[1] - sounding[0] < 3 {
+                continue;
+            }
+            // the 3rd and the 7th say what the chord is: never left out
+            if [3, 4, 10, 11].iter().any(|d| {
+                let pc = (c.root + d).rem_euclid(12);
+                needed.contains(&pc) && !notes.contains(&pc)
+            }) {
                 continue;
             }
             let missing: Vec<i32> = needed.iter().copied().filter(|n| !notes.contains(n)).collect();
@@ -1437,6 +1603,117 @@ mod tests {
 
 #[cfg(test)]
 mod chord_spellings {
+    use crate::theory::{chord_notes, guitar_shapes, place_grip, GRIPS, STANDARD};
+
+    #[test]
+    #[ignore]
+    fn print_grips() {
+        for name in
+            ["A13b9", "Ab13b9", "E13b9", "B13b9", "Eb13b9", "C7", "Dm7", "G7#9", "Fmaj7", "Bbm7b5", "C6", "Cm6", "Caug", "Csus4"]
+        {
+            let c = chord_notes(name).unwrap();
+            let s: Vec<String> = guitar_shapes(&c, &STANDARD)
+                .iter()
+                .map(|g| g.iter().map(|f| f.map_or("x".to_string(), |f| f.to_string())).collect::<Vec<_>>().join("-"))
+                .collect();
+            println!("{:8} {}", name, s.join("   "));
+        }
+    }
+
+    #[test]
+    fn library_grips_are_right_in_every_key() {
+        for (name, degrees) in GRIPS {
+            let want: Vec<i32> = degrees.iter().filter(|d| **d >= 0).map(|d| *d as i32).collect();
+            let rs = degrees.iter().position(|d| *d == 0).unwrap();
+            for root in 0..12i32 {
+                let f0 = (root - STANDARD[rs]).rem_euclid(12);
+                for f in [f0, f0 + 12] {
+                    if f > 15 {
+                        continue;
+                    }
+                    let Some(g) = place_grip(degrees, root, f, &STANDARD) else { continue };
+                    // every string sounds the degree written for it
+                    for (s, d) in degrees.iter().enumerate() {
+                        match (*d, g[s]) {
+                            (-1, None) => {}
+                            (d, Some(fr)) if d >= 0 => {
+                                assert_eq!(
+                                    (STANDARD[s] + fr as i32 - root).rem_euclid(12),
+                                    d as i32,
+                                    "{} root {} string {}",
+                                    name,
+                                    root,
+                                    s
+                                )
+                            }
+                            _ => panic!("{} root {}: string {} wrong", name, root, s),
+                        }
+                    }
+                    // the root is the lowest note
+                    let low = g.iter().enumerate().filter_map(|(s, f)| f.map(|f| STANDARD[s] + f as i32)).min().unwrap();
+                    assert_eq!(low.rem_euclid(12), root, "{} root {}: bass", name, root);
+                    let _ = &want;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_grips_players_know_are_offered() {
+        let has = |name: &str, g: [Option<u8>; 6]| {
+            let c = chord_notes(name).unwrap();
+            let shapes = guitar_shapes(&c, &STANDARD);
+            assert!(shapes.contains(&g), "{}: {:?} not in {:?}", name, g, shapes);
+        };
+        let n = None;
+        // the 13b9 with the root on the 6th string: R x b7 3 13 b9
+        has("A13b9", [Some(5), n, Some(5), Some(6), Some(7), Some(6)]);
+        has("Eb13b9", [Some(11), n, Some(11), Some(12), Some(13), Some(12)]);
+        has("G13b9", [Some(3), n, Some(3), Some(4), Some(5), Some(4)]);
+        // the Hendrix chord
+        has("E7#9", [n, Some(7), Some(6), Some(7), Some(8), n]);
+        has("C7#9", [n, Some(3), Some(2), Some(3), Some(4), n]);
+        // shells and drop 3s
+        has("Cmaj7", [Some(8), n, Some(9), Some(9), Some(8), n]);
+        has("Dm7", [n, Some(5), Some(7), Some(5), Some(6), n]);
+        has("Bm7b5", [n, Some(2), Some(3), Some(2), Some(3), n]);
+        has("G13", [Some(3), n, Some(3), Some(4), Some(5), n]);
+    }
+
+    #[test]
+    fn every_offered_grip_spells_its_chord() {
+        for root in ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"] {
+            for kind in [
+                "", "m", "7", "maj7", "m7", "m7b5", "dim7", "6", "m6", "9", "m9", "maj9", "13", "7b9", "7#9", "13b9", "7#5",
+                "7#11", "7sus4",
+            ] {
+                let name = format!("{}{}", root, kind);
+                let Some(c) = chord_notes(&name) else { continue };
+                for g in guitar_shapes(&c, &STANDARD) {
+                    let notes: Vec<i32> = g.iter().enumerate().filter_map(|(s, f)| f.map(|f| STANDARD[s] + f as i32)).collect();
+                    for m in &notes {
+                        assert!(c.pcs.contains(&m.rem_euclid(12)), "{}: {:?} plays a note not in the chord", name, g);
+                    }
+                    let low = notes.iter().min().unwrap();
+                    assert_eq!(low.rem_euclid(12), c.bass, "{}: {:?} has the wrong bass", name, g);
+                    // the 3rd and the 7th, the notes that say what a chord is, are there
+                    for d in [3, 4, 10, 11] {
+                        let pc = (c.root + d).rem_euclid(12);
+                        if c.pcs.contains(&pc) {
+                            assert!(notes.iter().any(|m| m.rem_euclid(12) == pc), "{}: {:?} leaves out a guide tone", name, g);
+                        }
+                    }
+                    // nothing a half step or whole step over the bass, down low (a mud no one voices)
+                    let mut s = notes.clone();
+                    s.sort();
+                    if s.len() > 1 {
+                        assert!(s[1] - s[0] >= 3, "{}: {:?} crowds the bass", name, g);
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn added_notes_and_suspensions() {
         // an add9 has no seventh; sus2 has the 2nd; every chord of a real chart reads

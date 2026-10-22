@@ -144,6 +144,8 @@ impl App {
             let w = ui.available_width();
             let (nr, _) = ui.allocate_exact_size(Vec2::new(w, 132.0 * self.neck_zoom), Sense::hover());
             let nr = nr.shrink2(Vec2::new(4.0, 6.0));
+            let seventh = c.pcs.iter().any(|p| matches!((p - c.root).rem_euclid(12), 10 | 11));
+            SEVENTH.with(|s| s.set(seventh.then_some(c.root.rem_euclid(12))));
             neck(
                 ui,
                 Rect::from_min_max(nr.min, Pos2::new(nr.max.x, nr.max.y - 12.0)),
