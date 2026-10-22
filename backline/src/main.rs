@@ -2752,6 +2752,8 @@ struct App {
     band_chart: String,
     pomo_sound: bool,
     lib_frac: f32,
+    /// the chord finder's voicing group on show (drop 2, drop 3...)
+    voicing_tab: u8,
     /// the stack's width with a skin worn, dragged (0: as wide as fits at a whole-pixel size)
     stack_w: f32,
     stack_frac: f32,
@@ -3419,6 +3421,7 @@ impl App {
             band_chart: String::new(),
             pomo_sound: false,
             lib_frac: 0.34,
+            voicing_tab: 0,
             stack_w: 0.0,
             stack_k: 2.0,
             stack_frac: 1.0,

@@ -766,7 +766,9 @@ pub(crate) const GRIPS: &[(&str, [i8; 6])] = &[
     ("7b9b13", [0, X, 10, 4, 8, 1]),
     ("7#9b13", [0, X, 10, 4, 8, 3]),
     ("7b5b9", [X, 0, 4, 10, 1, 6]),
+    ("9sus4", [0, X, 10, 2, 5, X]),
     ("9sus4", [0, X, 10, 5, X, 2]),
+    ("9sus4", [X, 0, X, 10, 2, 5]),
 ];
 
 /// A grip's shape: per string, the fret relative to the root's (None: not played). Worked out once, mid-neck
@@ -814,13 +816,18 @@ fn place_grip(degrees: &[i8; 6], root: i32, f0: i32, tuning: &[i32; 6]) -> Optio
 /// The library grips that spell this chord: every note a grip plays is in the chord, and the chord's notes it leaves
 /// out are only ones a guitarist leaves out (the 5th; the 9th under a 13th). Lowest on the neck first.
 pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
+    library_grips_indexed(c, tuning).into_iter().map(|(_, g)| g).collect()
+}
+
+/// The library grips with each one's place in the table (GRIPS lists the grips to know first first).
+fn library_grips_indexed(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<(usize, [Option<u8>; 6])> {
     if c.bass != c.root {
         return Vec::new();
     }
     let rel: Vec<i32> = c.pcs.iter().map(|p| (p - c.root).rem_euclid(12)).collect();
     let has = |x: i32| rel.contains(&x);
-    let mut out: Vec<(i32, [Option<u8>; 6])> = Vec::new();
-    for (_, degrees) in GRIPS {
+    let mut out: Vec<(i32, usize, [Option<u8>; 6])> = Vec::new();
+    for (gi, (_, degrees)) in GRIPS.iter().enumerate() {
         let set: Vec<i32> = degrees.iter().filter(|d| **d >= 0).map(|d| *d as i32).collect();
         if !set.iter().all(|d| has(*d)) {
             continue;
@@ -830,7 +837,7 @@ pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8
         let alt = has(4) && has(10) && has(1) && has(3) && has(6) && has(8);
         let alt_ok = alt && set.contains(&4) && set.contains(&10) && set.iter().any(|d| matches!(d, 1 | 3 | 6 | 8));
         // (a guitarist leaves out the 5th, and the 9th under an 11th or a 13th)
-        let ok = alt_ok || left_out.iter().all(|d| *d == 7 || (*d == 2 && (has(9) || has(5))));
+        let ok = alt_ok || left_out.iter().all(|d| *d == 7 || (*d == 2 && (has(9) || (has(5) && (has(3) || has(4))))));
         if !ok {
             continue;
         }
@@ -838,13 +845,13 @@ pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8
         let rs = degrees.iter().position(|d| *d == 0).unwrap_or(0);
         let f0 = (c.root - tuning[rs]).rem_euclid(12);
         if let Some((f, g)) = [f0, f0 + 12].into_iter().find_map(|f| place_grip(degrees, c.root, f, tuning).map(|g| (f, g))) {
-            if !out.iter().any(|(_, o)| *o == g) {
-                out.push((f, g));
+            if !out.iter().any(|(_, _, o)| *o == g) {
+                out.push((f, gi, g));
             }
         }
     }
-    out.sort_by_key(|(f, g)| (*f, g.iter().position(|x| x.is_some()).unwrap_or(0)));
-    out.into_iter().map(|(_, g)| g).collect()
+    out.sort_by_key(|(f, _, g)| (*f, g.iter().position(|x| x.is_some()).unwrap_or(0)));
+    out.into_iter().map(|(_, i, g)| (i, g)).collect()
 }
 
 // ----------------------------------------------------------------- voicing groups (four-note chords, every way)
@@ -1001,6 +1008,48 @@ pub fn voicing_groups(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<(&'static str, V
         out.push((*name, list));
     }
     out
+}
+
+/// A chord's grips the way a chord book lays them out: the ones to know first (the main grip with the root on the 6th
+/// string and the main one on the 5th), open-position grips near the nut, and every other movable shape.
+#[derive(Clone, Debug, Default)]
+pub struct GripSections {
+    pub must: Vec<[Option<u8>; 6]>,
+    pub open: Vec<[Option<u8>; 6]>,
+    pub moveable: Vec<[Option<u8>; 6]>,
+}
+
+pub fn grip_sections(c: &ChordNotes, tuning: &[i32; 6]) -> GripSections {
+    let lib = library_grips_indexed(c, tuning);
+    let root_string = |g: &[Option<u8>; 6]| g.iter().position(|f| f.is_some()).unwrap_or(0);
+    let mut s = GripSections::default();
+    for rs in [0, 1] {
+        if let Some((_, g)) = lib.iter().filter(|(_, g)| root_string(g) == rs).min_by_key(|(i, _)| *i) {
+            s.must.push(*g);
+        }
+    }
+    // open position: grips with open strings ringing, near the nut (found by the search, held to the same rules)
+    for g in search_shapes(c, tuning) {
+        let open = g.iter().any(|f| *f == Some(0));
+        let hi = g.iter().flatten().copied().max().unwrap_or(0);
+        if open && hi <= 4 && !lib.iter().any(|(_, l)| *l == g) && s.open.len() < 3 {
+            s.open.push(g);
+        }
+    }
+    for (_, g) in &lib {
+        if !s.must.contains(g) {
+            s.moveable.push(*g);
+        }
+    }
+    // a chord the library doesn't know (a slash chord, an add11...): what the search finds is what it has
+    if lib.is_empty() {
+        for g in search_shapes(c, tuning) {
+            if !s.open.contains(&g) && s.moveable.len() < 4 {
+                s.moveable.push(g);
+            }
+        }
+    }
+    s
 }
 
 pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
@@ -2083,6 +2132,74 @@ mod chord_spellings {
 #[cfg(test)]
 mod chord_audit {
 
+    /// The whole dictionary as data (for the printed ruleset): every finder chord in C, its grips by section and its
+    /// voicing groups, each string's fret and degree. Run with --ignored, writes $BACKLINE_DICT.
+    #[test]
+    #[ignore]
+    fn dump_dictionary() {
+        use super::*;
+        let path = std::env::var("BACKLINE_DICT").unwrap_or_else(|_| "dictionary.json".into());
+        let grip = |c: &ChordNotes, g: &[Option<u8>; 6]| {
+            let strings: Vec<serde_json::Value> = g
+                .iter()
+                .enumerate()
+                .map(|(s, f)| match f {
+                    Some(f) => {
+                        let m = STANDARD[s] + *f as i32;
+                        serde_json::json!({"fret": f, "degree": crate::fretboard::degree_in(m.rem_euclid(12), c.root, &c.pcs).0})
+                    }
+                    None => serde_json::Value::Null,
+                })
+                .collect();
+            serde_json::json!(strings)
+        };
+        let mut fams = Vec::new();
+        for (fam, chords) in FINDER_FAMILIES.iter() {
+            let mut list = Vec::new();
+            for (label, suffix) in chords.iter() {
+                let name = format!("C{}", suffix);
+                let c = chord_notes(&name).unwrap();
+                let s = grip_sections(&c, &STANDARD);
+                let groups: Vec<serde_json::Value> = voicing_groups(&c, &STANDARD)
+                    .iter()
+                    .map(|(g, l)| serde_json::json!({"group": g, "voicings": l.iter().map(|v| grip(&c, &v.frets)).collect::<Vec<_>>()}))
+                    .collect();
+                list.push(serde_json::json!({
+                    "label": label, "name": name,
+                    "notes": c.named.iter().map(|(n, i)| format!("{} ({})", n, i)).collect::<Vec<_>>(),
+                    "must": s.must.iter().map(|g| grip(&c, g)).collect::<Vec<_>>(),
+                    "open": s.open.iter().map(|g| grip(&c, g)).collect::<Vec<_>>(),
+                    "moveable": s.moveable.iter().map(|g| grip(&c, g)).collect::<Vec<_>>(),
+                    "groups": groups,
+                }));
+            }
+            fams.push(serde_json::json!({"family": fam, "chords": list}));
+        }
+        std::fs::write(&path, serde_json::to_string_pretty(&fams).unwrap()).unwrap();
+    }
+
+    /// The grips to know first are the chord books' first ones (and Oolimo's MUST KNOW).
+    #[test]
+    fn must_know_grips() {
+        use super::*;
+        let must = |name: &str| grip_sections(&chord_notes(name).unwrap(), &STANDARD).must;
+        let n = None;
+        assert!(must("A9sus4").contains(&[Some(5), n, Some(5), Some(4), Some(3), n]), "{:?}", must("A9sus4"));
+        assert!(must("A13b9").contains(&[Some(5), n, Some(5), Some(6), Some(7), Some(6)]), "{:?}", must("A13b9"));
+        assert!(must("Cmaj7").contains(&[Some(8), n, Some(9), Some(9), Some(8), n]), "{:?}", must("Cmaj7"));
+        assert!(must("Dm7").contains(&[n, Some(5), Some(7), Some(5), Some(6), n]), "{:?}", must("Dm7"));
+        assert!(must("G7").contains(&[Some(3), n, Some(3), Some(4), Some(3), n]), "{:?}", must("G7"));
+        // every finder chord has something to know first, in every key
+        for (_, chords) in FINDER_FAMILIES.iter() {
+            for (_, suffix) in chords.iter() {
+                for root in ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] {
+                    let name = format!("{}{}", root, suffix);
+                    assert!(!must(&name).is_empty(), "{}: nothing to know first", name);
+                }
+            }
+        }
+    }
+
     /// Every voicing in the groups is right by its rule: four notes of the chord, the root's pitch class respected,
     /// the spacing its group's (drop 2: the 2nd voice from the top an octave down), on adjacent string sets, playable.
     #[test]
@@ -2107,7 +2224,9 @@ mod chord_audit {
                         assert!(notes.windows(2).all(|w| w[1] > w[0]), "{} {:?} crosses", name, v);
                         for d in [3, 4, 10, 11] {
                             let pc = (c.root + d).rem_euclid(12);
-                            if c.pcs.contains(&pc) && ![3, 4].contains(&d) || c.pcs.contains(&pc) && !c.pcs.contains(&((c.root + 7 - d).rem_euclid(12))) {
+                            if c.pcs.contains(&pc) && ![3, 4].contains(&d)
+                                || c.pcs.contains(&pc) && !c.pcs.contains(&((c.root + 7 - d).rem_euclid(12)))
+                            {
                             }
                         }
                         let offs: [Option<i32>; 6] = v.frets.map(|f| f.map(|f| f as i32));
@@ -2141,7 +2260,8 @@ mod chord_audit {
     fn every_grip_is_movable_and_playable() {
         use super::*;
         for (name, degrees) in GRIPS.iter() {
-            let offs = grip_offsets(degrees, &STANDARD).unwrap_or_else(|| panic!("{} {:?} won't sit in four frets", name, degrees));
+            let offs =
+                grip_offsets(degrees, &STANDARD).unwrap_or_else(|| panic!("{} {:?} won't sit in four frets", name, degrees));
             // (no thumb over the neck: every grip is four fingers, as the chord books and Oolimo give them)
             assert!(grip_fingers(&offs) <= 4, "{} {:?} needs {} fingers", name, degrees, grip_fingers(&offs));
             let rs = degrees.iter().position(|d| *d == 0).unwrap();

@@ -179,11 +179,27 @@ impl App {
             ui.add_space(6.0);
             section_header(ui, "GUITAR");
             let q = self.chord_q.trim().to_string();
-            let shapes = self.shapes_for(&q, &c);
-            if shapes.is_empty() && !self.store.custom_grips.contains_key(&grip_key(&q)) {
+            let sec = theory::grip_sections(&c, &theory::STANDARD);
+            if sec.must.is_empty()
+                && sec.open.is_empty()
+                && sec.moveable.is_empty()
+                && !self.store.custom_grips.contains_key(&grip_key(&q))
+            {
                 para(ui, "No comfortable shape in reach for this one.", pal().ink2);
             }
-            self.chord_grips(ui, acts, &grip_key(&q), &c, &shapes, false);
+            // as a chord book lays them out: the grips to know first, open position, then every movable shape
+            let key = grip_key(&q);
+            let mut first = true;
+            for (title, list) in [("Must know", &sec.must), ("Open position", &sec.open), ("Moveable", &sec.moveable)] {
+                if list.is_empty() && !(first && self.store.custom_grips.contains_key(&key)) {
+                    continue;
+                }
+                crate::views::dim_line(ui, title, 1.0, pal().ink2);
+                self.chord_grips(ui, acts, &key, &c, list, false, first);
+                first = false;
+            }
+            // the voicing groups: every inversion of the chord's four notes, string set by string set
+            self.voicing_browser(ui, acts, &c);
             if retro_btn(ui, "+ ADD MY OWN GRIP", false).tip("Lay it on the neck in CHORD ANALYZER, then save it here.").clicked()
             {
                 self.grip_for = Some((grip_key(&q), q.clone()));
@@ -419,7 +435,7 @@ impl App {
             if shapes.is_empty() && !self.store.custom_grips.contains_key(&key) {
                 para(ui, "No comfortable grip in reach for this one.", pal().ink2);
             }
-            self.chord_grips(ui, acts, &key, &c, &shapes, true);
+            self.chord_grips(ui, acts, &key, &c, &shapes, true, true);
             let mine = self.store.custom_grips.get(&key).is_some_and(|v| v.contains(&self.an_frets));
             if self.an_frets.iter().flatten().count() >= 2
                 && !mine
@@ -993,8 +1009,10 @@ impl App {
         c: &theory::ChordNotes,
         shapes: &[[Option<u8>; 6]],
         to_neck: bool,
+        with_mine: bool,
     ) {
-        let mine: Vec<[Option<u8>; 6]> = self.store.custom_grips.get(key).cloned().unwrap_or_default();
+        let mine: Vec<[Option<u8>; 6]> =
+            if with_mine { self.store.custom_grips.get(key).cloned().unwrap_or_default() } else { Vec::new() };
         if let Some((k, i)) = self.grip_ask.clone().filter(|(k, _)| k == key) {
             ui.horizontal_wrapped(|ui| {
                 crate::views::label(ui, "DELETE YOUR GRIP?", 170.0);
@@ -1060,6 +1078,59 @@ impl App {
                     self.an_frets = *g;
                 }
                 ui.add_space(10.0);
+            }
+        });
+    }
+
+    /// The voicing groups for a chord (drop 2, drop 3, drop 2 & 4, close): pick a group, see each voicing with the note
+    /// in its bass and the strings it sits on. Click one to hear it.
+    fn voicing_browser(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, c: &theory::ChordNotes) {
+        let groups = theory::voicing_groups(c, &theory::STANDARD);
+        if groups.iter().all(|g| g.1.is_empty()) {
+            return;
+        }
+        ui.add_space(6.0);
+        section_header(ui, "VOICINGS");
+        let names: Vec<&str> = groups.iter().map(|g| g.0).collect();
+        let cur = (self.voicing_tab as usize).min(names.len() - 1);
+        if let Some(i) = crate::segments(ui, &names, cur) {
+            self.voicing_tab = i as u8;
+        }
+        let list = &groups[cur].1;
+        if list.is_empty() {
+            crate::views::dim_line(ui, "None of these fit under the hand for this chord.", 1.0, pal().ink2);
+            return;
+        }
+        let (root, pcs) = (c.root, c.pcs.clone());
+        const STRING: [&str; 6] = ["6", "5", "4", "3", "2", "1"];
+        ui.horizontal_wrapped(|ui| {
+            for v in list {
+                ui.vertical(|ui| {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 140.0), Sense::click());
+                    crate::fretboard::chord_box_coloured(ui.painter(), r, &v.frets, &|m| {
+                        let (d, col) = degree_in(m, root, &pcs);
+                        (d.to_string(), col)
+                    });
+                    let bass = degree_in((root + v.bass).rem_euclid(12), root, &pcs).0;
+                    let what = format!("{} in the bass, strings {}-{}", bass, STRING[v.strings[0]], STRING[v.strings[3]]);
+                    let (lr, _) = ui.allocate_exact_size(Vec2::new(120.0, 16.0), Sense::hover());
+                    crate::font::keep_caps(|| {
+                        ptext(
+                            ui.painter(),
+                            Pos2::new(lr.min.x + 4.0, lr.center().y),
+                            Align::Min,
+                            &format!("{} bass  {}-{}", bass, STRING[v.strings[0]], STRING[v.strings[3]]),
+                            1.2,
+                            pal().ink2,
+                        )
+                    });
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(what).clicked() {
+                        let notes: Vec<i32> =
+                            v.frets.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
+                        acts.push(Action::PlayNotes(notes));
+                    }
+                });
+                ui.add_space(6.0);
             }
         });
     }
