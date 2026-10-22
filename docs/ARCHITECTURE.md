@@ -44,7 +44,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Drawing kit (buttons, tabs, LCD, dropdowns, check boxes, list rows) | `ui/widgets.rs`; text `ui/font.rs` |
 | Skinned look: pill buttons (`raised_h`), joined tabs (`segments`), spaced-capital headings (`spaced_caps`), one-line explanations with hover (`para` -> `about_line`); line icons by name `ui/vicon.rs` `named`; reading text in Inter (`assets/Inter-Regular.ttf`), playlist in the skin's font (family "skin", `smooth_fonts` in main.rs); casing `display_case` / `caps_words` in `ui/winamp_draw.rs` |
 | Text box (select, Ctrl+A, copy/paste) | `field()` in `ui/views.rs` |
-| Skins: palettes `ui/skin.rs`; Backline-drawn Winamp looks `data/genskin.rs`; real Winamp skins `data/winamp.rs` (load, fix-ups), `ui/winamp_draw.rs` (sprites, plates), `ui/winamp_ui.rs` (main window, EQ) |
+| Skins: palettes `ui/skin.rs`; Backline-drawn Winamp looks `data/genskin.rs`; real Winamp skins `data/winamp.rs` (load, fix-ups), `ui/winamp_draw.rs` (sprites, plates), `ui/winamp_ui.rs` (main window, EQ, playlist, the mini player's deck + EQ + PL stack) |
 | Audio engine (decode, loop, speed, pitch, EQ, output devices) | `audio/player.rs`, `audio/decode.rs` |
 | Synth sounds (metronome, band, chords and lines played back, count-in) | `audio/band.rs` |
 | Tidal API, offline switch, liked-songs copy | `data/api.rs` |
@@ -72,7 +72,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 
 - Test copies use a separate profile: `BACKLINE_HOME=<folder>`; they open off-screen, never take focus, and make no sound.
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
-- `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops groups prog news mini mine yt diary
+- `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops groups prog news mini mini_eq_pl mine yt diary
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
   fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine.
 - CHORD MELODIES only: `BACKLINE_CM_SCROLL=<px>` opens the bars scrolled down; `BACKLINE_CM_PICK=<kind>` opens the

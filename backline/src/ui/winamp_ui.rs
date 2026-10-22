@@ -7,6 +7,62 @@ use super::*;
 pub(crate) use crate::winamp_draw::*;
 
 impl App {
+    /// The mini player: the deck, and under it - as Winamp stacked them - the skin's own equalizer and playlist when
+    /// its EQ and PL buttons open them, all at the deck's width and scale. Without a skin (or with neither open),
+    /// just the deck.
+    pub(crate) fn mini_window(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let stack = (self.show_eq, !self.queue_hidden);
+        if self.wa_art.is_none() || stack == (false, false) {
+            self.player_window(ui, acts);
+            return;
+        }
+        let full = ui.max_rect();
+        let k = (full.width() / 275.0).max(0.5);
+        let deck = Rect::from_min_size(full.min, Vec2::new(full.width(), 116.0 * k));
+        let mut c = ui.new_child(egui::UiBuilder::new().id_salt("mini_deck").max_rect(deck));
+        self.player_window(&mut c, acts);
+        let mut y = deck.max.y;
+        if stack.0 {
+            let r = Rect::from_min_size(Pos2::new(full.min.x, y), Vec2::new(full.width(), 116.0 * k));
+            let mut c = ui.new_child(egui::UiBuilder::new().id_salt("mini_eq").max_rect(r));
+            self.winamp_eq(&mut c, r);
+            y = r.max.y;
+        }
+        if stack.1 {
+            // the rest of the window (never less than the playlist's frame while the window is still growing)
+            let r = Rect::from_min_max(Pos2::new(full.min.x, y), Pos2::new(full.max.x, full.max.y.max(y + 58.0 * k)));
+            let mut c = ui.new_child(egui::UiBuilder::new().id_salt("mini_pl").max_rect(r));
+            if self.wa_art.as_ref().is_some_and(|t| t.sheets.contains_key("pledit")) {
+                self.winamp_playlist(&mut c, r, acts);
+            } else {
+                self.playlist_ui(&mut c, acts);
+            }
+        }
+        ui.allocate_rect(full, Sense::hover());
+    }
+
+    /// The mini window's height follows its stack: the deck, then the equalizer (as tall as the deck), then the
+    /// playlist (twice that), all at the deck's scale.
+    pub(crate) fn mini_stack_size(&mut self, ctx: &egui::Context) {
+        if self.wa_art.is_none() {
+            return;
+        }
+        let want = (self.show_eq, !self.queue_hidden);
+        if want == self.mini_stack {
+            return;
+        }
+        self.mini_stack = want;
+        // the deck's width: the one just asked for when the mini player has only now come on
+        let w = self.mini_size_at.map_or(ctx.screen_rect().width(), |(_, s)| s.x);
+        let k = w / 275.0;
+        let h = 116.0 * k + if want.0 { 116.0 * k } else { 0.0 } + if want.1 { 232.0 * k } else { 0.0 };
+        let size = Vec2::new(w, h);
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        if self.mini_size_at.is_some() {
+            self.mini_size_at = Some((std::time::Instant::now(), size));
+        }
+    }
+
     /// The visualizer settings' preview of the player screen while a skin is worn: the skin's own visualizer,
     /// as large as fits in `r`. False when no skin is worn.
     pub(crate) fn skin_viz_preview(
@@ -699,11 +755,21 @@ impl App {
     pub(crate) fn winamp_eq(&mut self, ui: &mut egui::Ui, area: Rect) {
         let Some(t) = self.wa_art.take() else { return };
         let id = ui.id().with("winamp_eq");
-        let (pl, z) = sized_place(ui, area, self.eq_zoom, id.with("size"), "the equalizer");
-        if let Some(z) = z {
-            self.eq_zoom = z;
-            self.dirty = true;
-        }
+        let pl = if self.mini {
+            // the mini player's stack: right under the deck, at its width; its title bar moves the window
+            let pl = Place { o: area.min, s: area.width() / 275.0 };
+            if ui.interact(pl.r(0.0, 0.0, 275.0, 14.0), id.with("drag"), Sense::drag()).drag_started() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            pl
+        } else {
+            let (pl, z) = sized_place(ui, area, self.eq_zoom, id.with("size"), "the equalizer");
+            if let Some(z) = z {
+                self.eq_zoom = z;
+                self.dirty = true;
+            }
+            pl
+        };
         let p = ui.painter().clone();
         let mut changed = false;
         t.spr(&p, "eqmain", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
@@ -1004,6 +1070,13 @@ impl App {
         let k = if self.mini { (outer.width() / 275.0).max(0.5) } else { self.stack_k };
         let _ = ppp;
         let id = ui.id().with("winamp_playlist");
+        if self.mini {
+            // in the mini player's stack its title bar moves the window (its buttons, made after, win)
+            let bar = Rect::from_min_size(outer.min, Vec2::new(outer.width(), 20.0 * k));
+            if ui.interact(bar, id.with("drag"), Sense::drag()).drag_started() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+        }
         let piece = |src: (f32, f32, f32, f32), dst: Rect| {
             t.spr(&p, "pledit", src, dst);
         };

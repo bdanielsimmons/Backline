@@ -2161,6 +2161,11 @@ struct App {
     mini: bool,
     /// the mini window's size, asked for again a moment after going mini (the title bar coming off can change it)
     mini_size_at: Option<(Instant, Vec2)>,
+    /// the full window's equalizer and playlist (show_eq, queue_hidden) while the mini player is on: the mini starts
+    /// with both closed and opens its own, and leaving it brings these back
+    mini_saved: (bool, bool),
+    /// the skin stack the mini window was last sized for: (equalizer, playlist) under the deck
+    mini_stack: (bool, bool),
     pinned: bool,
     saved_size: Vec2,
     /// the window was maximized when the mini player came on
@@ -2991,6 +2996,8 @@ impl App {
             sleep_mins: 0,
             mini: false,
             mini_size_at: None,
+            mini_saved: (false, false),
+            mini_stack: (false, false),
             pinned: false,
             saved_size: Vec2::ZERO,
             saved_max: false,
@@ -3884,6 +3891,11 @@ impl App {
             }
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
+            Ok("mini_eq_pl") => {
+                app.apply(Action::ToggleMini);
+                app.show_eq = true;
+                app.queue_hidden = false;
+            }
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
             Ok("diary") => app.sec = Sec::Diary,
@@ -5616,6 +5628,12 @@ impl App {
                         self.ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
                     }
                     self.saved_size = self.ctx.screen_rect().size();
+                    // the full window's equalizer and playlist wait; the mini opens with neither (its EQ and PL
+                    // buttons stack the skin's own under the deck)
+                    self.mini_saved = (self.show_eq, self.queue_hidden);
+                    self.show_eq = false;
+                    self.queue_hidden = true;
+                    self.mini_stack = (false, false);
                     // the window takes the deck's own shape, at twice its pixels: a Winamp skin's main window is
                     // 275 x 116, Backline's own deck 300 x 138; plus the strip of chips along the top
                     let (deck, extra) = if self.wa_art.is_some() {
@@ -5638,6 +5656,8 @@ impl App {
                         self.apply(Action::TogglePractice);
                     }
                 } else {
+                    // the full window's equalizer and playlist as they were
+                    (self.show_eq, self.queue_hidden) = self.mini_saved;
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(980.0, 640.0)));
                     let sz = if self.saved_size.x > 100.0 { self.saved_size } else { Vec2::new(1280.0, 820.0) };
@@ -6061,9 +6081,10 @@ impl eframe::App for App {
             }
 
             if self.mini {
+                self.mini_stack_size(ctx);
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(pal().app_bg))
-                    .show(ctx, |ui| self.player_window(ui, &mut acts));
+                    .show(ctx, |ui| self.mini_window(ui, &mut acts));
             } else if self.art_view {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(pal().app_bg))
