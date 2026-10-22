@@ -200,6 +200,9 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
     }
 
     if ed.id == id {
+        // the system's text input on (accents from dead keys, other alphabets): it composes "^ e" into "ê" and hands
+        // it over as one piece
+        ui.ctx().output_mut(|o| o.ime = Some(egui::output::IMEOutput { rect, cursor_rect: rect }));
         let events = ui.input(|i| i.events.clone());
         let mut cur = ed.cur.min(chars.len());
         let mut anchor = ed.anchor.map(|a| a.min(chars.len()));
@@ -231,7 +234,7 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
                         }
                     }
                 }
-                egui::Event::Text(t) | egui::Event::Paste(t) => {
+                egui::Event::Text(t) | egui::Event::Paste(t) | egui::Event::Ime(egui::ImeEvent::Commit(t)) => {
                     // typing over a selection replaces it
                     edited |= cut(&mut chars, &mut cur, &mut anchor);
                     for c in t.chars() {

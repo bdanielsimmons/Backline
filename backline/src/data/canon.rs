@@ -138,6 +138,38 @@ pub const SESSION_TUNES: Kinds = &[
         ],
     ),
     (
+        "BRAZILIAN",
+        &[
+            ("Chega de Saudade", "Antonio Carlos Jobim"),
+            ("Samba de Uma Nota Só", "Antonio Carlos Jobim"),
+            ("Águas de Março", "Antonio Carlos Jobim"),
+            ("Dindi", "Antonio Carlos Jobim"),
+            ("Meditação", "Antonio Carlos Jobim"),
+            ("Só Danço Samba", "Antonio Carlos Jobim"),
+            ("Retrato em Branco e Preto", "Antonio Carlos Jobim"),
+            ("Samba de Orfeu", "Luiz Bonfá"),
+            ("Samba de Verão", "Marcos Valle"),
+            ("O Barquinho", "Roberto Menescal"),
+            ("Tristeza", "Haroldo Lobo"),
+            ("Canto de Ossanha", "Baden Powell"),
+            ("Berimbau", "Baden Powell"),
+            ("Samba em Prelúdio", "Baden Powell"),
+            ("Upa Neguinho", "Edu Lobo"),
+            ("Beatriz", "Edu Lobo"),
+            ("Travessia", "Milton Nascimento"),
+            ("Cravo e Canela", "Milton Nascimento"),
+            ("Nada Será Como Antes", "Milton Nascimento"),
+            ("Incompatibilidade de Gênios", "João Bosco"),
+            ("O Bêbado e a Equilibrista", "João Bosco"),
+            ("Bebê", "Hermeto Pascoal"),
+            ("Carinhoso", "Pixinguinha"),
+            ("Brasileirinho", "Waldir Azevedo"),
+            ("Tico-Tico no Fubá", "Zequinha de Abreu"),
+            ("Noites Cariocas", "Jacob do Bandolim"),
+            ("Odeon", "Ernesto Nazareth"),
+        ],
+    ),
+    (
         "MODAL",
         &[
             ("So What", "Miles Davis"),
@@ -433,6 +465,21 @@ pub const LISTEN_JAZZ: Kinds = &[
             ("Aaron Parks", "Invisible Cinema"),
         ],
     ),
+    (
+        "BRAZIL",
+        &[
+            ("João Gilberto", "Chega de Saudade"),
+            ("Stan Getz & João Gilberto", "Getz/Gilberto"),
+            ("Elis Regina & Antonio Carlos Jobim", "Elis & Tom"),
+            ("Baden Powell & Vinicius de Moraes", "Os Afro-Sambas"),
+            ("Milton Nascimento & Lô Borges", "Clube da Esquina"),
+            ("João Bosco", "Galos de Briga"),
+            ("Toninho Horta", "Terra dos Pássaros"),
+            ("Egberto Gismonti", "Dança das Cabeças"),
+            ("Hermeto Pascoal", "Slaves Mass"),
+            ("Jacob do Bandolim", "Vibrações"),
+        ],
+    ),
 ];
 
 /// The guitarists among the records (the LISTENING filter).
@@ -458,6 +505,11 @@ pub const GUITARISTS: &[&str] = &[
     "John Abercrombie",
     "John Scofield",
     "Mike Stern",
+    "João Gilberto",
+    "Baden Powell",
+    "João Bosco",
+    "Toninho Horta",
+    "Egberto Gismonti",
 ];
 
 /// Records to listen to, gospel: (era, [(artist, album)]).
