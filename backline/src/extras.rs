@@ -2547,6 +2547,10 @@ impl App {
                 self.go_offline = on;
                 crate::api::OFFLINE.store(on, std::sync::atomic::Ordering::Relaxed);
                 self.dirty = true;
+                if !on {
+                    // the covers that couldn't load offline come in now
+                    self.images.retry_failed();
+                }
                 if on {
                     // as if there were no internet: your library as kept here, only what is on this computer
                     let _ = self.tx.send(crate::Msg::NoInternet);

@@ -947,6 +947,16 @@ impl Images {
         (e.0, e.1, f)
     }
 
+    /// Back online: pictures that failed while there was no internet are tried again when next drawn.
+    fn retry_failed(&mut self) {
+        let failed: Vec<String> = self.map.iter().filter(|(_, (t, _))| t.is_none()).map(|(u, _)| u.clone()).collect();
+        for u in failed {
+            self.map.remove(&u);
+            self.requested.remove(&u);
+        }
+        self.hold.clear();
+    }
+
     /// Tried and failed (or no picture at all): nothing is coming.
     fn failed(&self, url: &str) -> bool {
         matches!(self.map.get(url), Some((None, _)))
@@ -967,6 +977,16 @@ impl Images {
     }
 }
 
+/// Where a web picture is kept on disk: a name made from its address (FNV-1a, the same every run).
+fn cover_path(url: &str) -> std::path::PathBuf {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in url.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    api::config_dir().join("covers").join(format!("{:016x}", h))
+}
+
 fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<String> {
     let (req_tx, req_rx) = channel::<String>();
     let req_rx = Arc::new(Mutex::new(req_rx));
@@ -985,9 +1005,25 @@ fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<Str
                 None => (false, url.clone()),
             };
             // a file's cover comes from the file (or its folder); the rest from the web
+            // (a picture from the web is kept on disk once fetched: covers show offline too)
             let bytes = match real.strip_prefix("file:") {
                 Some(path) => sources::file_art(std::path::Path::new(path)),
-                None => api.fetch(&real).ok(),
+                None => {
+                    let kept = cover_path(&real);
+                    match std::fs::read(&kept).ok().filter(|b| b.len() > 100) {
+                        Some(b) => Some(b),
+                        None => {
+                            let b = api.fetch(&real).ok();
+                            if let Some(b) = &b {
+                                if let Some(d) = kept.parent() {
+                                    let _ = std::fs::create_dir_all(d);
+                                }
+                                let _ = std::fs::write(&kept, b);
+                            }
+                            b
+                        }
+                    }
+                }
             };
             let img = bytes.and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
                 // covers are only ever drawn up to a few hundred pixels: kept small, not at the file's full size
@@ -4369,6 +4405,7 @@ impl App {
     fn after_login(&mut self) {
         if self.net_down {
             self.net_down = false;
+            self.images.retry_failed();
             self.set_note("BACK ONLINE. TIDAL IS HERE AGAIN");
         }
         self.auth = Auth::In;
