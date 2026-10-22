@@ -843,8 +843,14 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         // a single letter: a note or a loop end ("A AND B", "TO B") stays a capital; otherwise it is the word "a"
         let next = words.get(i + 1).copied().unwrap_or("");
         let prev = if i > 0 { words[i - 1] } else { "" };
+        // (B to G alone are always notes; A is one beside "and", "or", a dash, after a colon or before a bracket)
         let letter_name = core.chars().count() == 1
-            && (next.is_empty() || matches!(next, "AND" | "OR" | "-" | "&") || matches!(prev, "AND" | "OR" | "TO" | "&" | "-"));
+            && (matches!(core, "B" | "C" | "D" | "E" | "F" | "G")
+                || next.is_empty()
+                || next.starts_with('(')
+                || prev.ends_with(':')
+                || matches!(next, "AND" | "OR" | "-" | "&")
+                || matches!(prev, "AND" | "OR" | "TO" | "&" | "-"));
         // names spelled their own way
         const NAMES: [(&str, &str); 5] =
             [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal"), ("YT-DLP", "yt-dlp")];
@@ -1128,6 +1134,8 @@ mod tests {
         assert_eq!(display_case("GET YT-DLP"), "Get yt-dlp");
         assert_eq!(display_case("I-IV-V"), "I-IV-V");
         assert_eq!(display_case("7THS"), "7ths");
+        assert_eq!(display_case("START ON: C (AS WRITTEN)"), "Start on: C (as written)");
+        assert_eq!(display_case("START ON: A (AS WRITTEN)"), "Start on: A (as written)");
         assert_eq!(display_case("B♭7 OVER E♭"), "B♭7 Over E♭");
         assert_eq!(caps_words("Triads, then 7THS."), "Triads, then 7ths.");
         assert_eq!(as_title(|| display_case("UP A 4TH - 12 KEYS").into_owned()), "Up a 4th - 12 Keys");

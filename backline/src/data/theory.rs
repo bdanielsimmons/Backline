@@ -40,7 +40,9 @@ pub fn chord_notes(name: &str) -> Option<ChordNotes> {
         let pc = (c.root + s).rem_euclid(12);
         if !pcs.contains(&pc) {
             pcs.push(pc);
-            let degree: usize = iv.trim_start_matches(['b', '#']).parse().unwrap_or(1);
+            // (a #9 is written with the minor 3rd's letter, as players and the chord books write it: A7#9's is C,
+            // not B#)
+            let degree: usize = if iv.trim() == "#9" { 3 } else { iv.trim_start_matches(['b', '#']).parse().unwrap_or(1) };
             let n = spell_degree(&root_w, pc, degree).unwrap_or_else(|| note_name(pc, sharp).to_string());
             named.push((n, iv.to_string()));
         }
@@ -717,6 +719,56 @@ pub(crate) const GRIPS: &[(&str, [i8; 6])] = &[
     ("m9", [X, X, 0, 3, 10, 2]),
     ("7b9", [X, X, 0, 4, 10, 1]),
     ("7#9", [X, X, 0, 4, 10, 3]),
+    // ---- the rest of the chord books' standard grips, so every chord the finder offers has its root on the 6th
+    // string and on the 5th (Ted Greene, Joe Pass, the common barre and drop shapes)
+    // triads: the E, A and D barre shapes
+    ("", [0, 7, 0, 4, 7, 0]),
+    ("", [X, 0, 7, 0, 4, 7]),
+    ("", [X, X, 0, 7, 0, 4]),
+    ("m", [0, 7, 0, 3, 7, 0]),
+    ("m", [X, 0, 7, 0, 3, 7]),
+    ("m", [X, X, 0, 7, 0, 3]),
+    ("dim", [0, 6, 0, 3, X, X]),
+    ("dim", [X, 0, 6, 0, 3, X]),
+    ("aug", [0, X, 0, 4, 8, X]),
+    ("aug", [X, 0, 4, 8, 0, X]),
+    ("sus2", [0, 7, 0, 2, 7, 0]),
+    ("sus2", [X, 0, 7, 0, 2, 7]),
+    ("sus4", [0, 7, 0, 5, 7, 0]),
+    ("sus4", [X, 0, 7, 0, 5, 7]),
+    // sixths and adds
+    ("6", [X, X, 0, 7, 9, 4]),
+    ("add9", [0, 4, 7, 2, X, X]),
+    ("add9", [X, 0, 4, X, 2, 7]),
+    ("madd9", [0, 3, 7, 2, X, X]),
+    ("madd9", [X, 0, 3, X, 2, 7]),
+    ("69", [X, 0, 4, 9, 2, 7]),
+    // major sevenths and on
+    ("maj7", [0, 7, 11, 4, X, X]),
+    ("maj13", [0, X, 11, 4, 9, X]),
+    ("maj13", [X, 0, 4, 11, 2, 9]),
+    ("maj7#5", [0, X, 11, 4, 8, X]),
+    ("maj7#5", [X, 0, 8, 11, 4, X]),
+    // dominants: the barre shapes, then the altered ones
+    ("7", [0, 7, 10, 4, 7, 0]),
+    ("7", [X, 0, 7, 10, 4, 7]),
+    ("m7", [0, 7, 10, 3, 7, 0]),
+    ("m7", [X, 0, 7, 10, 3, 7]),
+    ("7b5", [X, 0, 6, 10, 4, X]),
+    ("7b5", [0, X, 10, 4, 6, X]),
+    ("13#11", [0, 6, 10, 4, 9, X]),
+    ("13#11", [X, 0, 6, 10, 4, 9]),
+    // the C and G shapes (CAGED): open C and G at the nut, and up the neck
+    ("", [X, 0, 4, 7, 0, 4]),
+    ("", [0, 4, 7, 0, 4, 0]),
+    ("m", [X, 0, 3, 7, 0, X]),
+    ("9#11", [0, X, 10, 4, 6, 2]),
+    ("9#11", [X, 0, 4, 10, 2, 6]),
+    ("7b9b13", [0, X, 10, 4, 8, 1]),
+    ("7#9b13", [0, X, 10, 4, 8, 3]),
+    ("7b5b9", [0, X, 10, 4, 6, 1]),
+    ("7b5b9", [X, 0, 4, 10, 1, 6]),
+    ("9sus4", [0, X, 10, 5, X, 2]),
 ];
 
 /// A grip's frets for this root in standard tuning, the root at fret `f0` on its string (None when it won't sit in
@@ -766,7 +818,8 @@ pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8
         // a 7alt is played as 3 and b7 with some of its altered notes, never all four (C7#9b13, C7b9b13)
         let alt = has(4) && has(10) && has(1) && has(3) && has(6) && has(8);
         let alt_ok = alt && set.contains(&4) && set.contains(&10) && set.iter().any(|d| matches!(d, 1 | 3 | 6 | 8));
-        let ok = alt_ok || left_out.iter().all(|d| *d == 7 || (*d == 2 && has(9) && has(10)));
+        // (a guitarist leaves out the 5th, and the 9th under an 11th or a 13th)
+        let ok = alt_ok || left_out.iter().all(|d| *d == 7 || (*d == 2 && (has(9) || has(5))));
         if !ok {
             continue;
         }
@@ -1402,7 +1455,9 @@ pub fn scale_names(root: &str, root_pc: i32, steps: &[i32]) -> Vec<String> {
                 // spelt as the altered chord's notes: 1 b9 #9 3 #11 b13 b7
                 match s {
                     0 => 1,
-                    1 | 3 => 2,
+                    1 => 2,
+                    // (the #9 with the minor 3rd's letter: A Bb C C# D# F G)
+                    3 => 3,
                     4 => 3,
                     6 => 4,
                     8 => 6,
@@ -1865,6 +1920,28 @@ mod chord_spellings {
 #[cfg(test)]
 mod chord_audit {
 
+    /// Every chord the finder offers, in every key, has library grips with the root on the 6th string and on the
+    /// 5th (the shapes the chord books give), each one spelling the chord.
+    #[test]
+    fn every_finder_chord_has_book_grips() {
+        use super::*;
+        let mut short = Vec::new();
+        for (_, chords) in FINDER_FAMILIES.iter() {
+            for (_, suffix) in chords.iter() {
+                for root in ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] {
+                    let name = format!("{}{}", root, suffix);
+                    let c = chord_notes(&name).unwrap_or_else(|| panic!("{} can't be read", name));
+                    let grips = library_grips(&c, &STANDARD);
+                    let on = |s: usize| grips.iter().any(|g| g.iter().position(|f| f.is_some()) == Some(s));
+                    if !(on(0) && on(1)) {
+                        short.push(format!("{} (6th: {}, 5th: {})", name, on(0), on(1)));
+                    }
+                }
+            }
+        }
+        assert!(short.is_empty(), "no grip with the root on the 6th or 5th string: {:?}", short);
+    }
+
     /// Each grip offered, played into the analyzer, is named as the chord it was offered for (its root at least, and
     /// the same notes).
     #[test]
@@ -2038,13 +2115,14 @@ mod chord_audit {
         assert_eq!(notes("Db7"), "Db F Ab Cb");
         assert_eq!(notes("F#7"), "F# A# C# E");
         assert_eq!(notes("Bb7#11"), "Bb D F Ab E");
-        assert_eq!(notes("Eb7#9"), "Eb G Bb Db F#");
+        // (the #9 with the minor 3rd's letter, as the chord books write it)
+        assert_eq!(notes("Eb7#9"), "Eb G Bb Db Gb");
         assert_eq!(notes("E7#9"), "E G# B D G");
         assert_eq!(notes("Cdim7"), "C Eb Gb A");
         assert_eq!(notes("Bm7b5"), "B D F A");
         assert_eq!(notes("C#m7"), "C# E G# B");
         assert_eq!(notes("Ebmaj7#11"), "Eb G Bb D A");
-        assert_eq!(notes("G7alt"), "G B F Ab A# C# Eb");
+        assert_eq!(notes("G7alt"), "G B F Ab Bb C# Eb");
         assert_eq!(notes("Gbmaj7"), "Gb Bb Db F");
     }
 
@@ -2165,7 +2243,7 @@ mod chord_audit {
         let j = |v: Vec<String>| v.join(" ");
         assert_eq!(j(scale_names("F#", 6, &[0, 2, 3, 5, 7, 9, 10])), "F# G# A B C# D# E");
         assert_eq!(j(scale_names("Gb", 6, &[0, 2, 4, 5, 7, 9, 11])), "Gb Ab Bb Cb Db Eb F");
-        assert_eq!(j(scale_names("C", 0, &[0, 1, 3, 4, 6, 8, 10])), "C Db D# E F# Ab Bb");
+        assert_eq!(j(scale_names("C", 0, &[0, 1, 3, 4, 6, 8, 10])), "C Db Eb E F# Ab Bb");
         assert_eq!(j(scale_names("C", 0, &[0, 1, 3, 4, 6, 7, 9, 10])), "C Db Eb E F# G A Bb");
         assert_eq!(j(scale_names("C", 0, &[0, 2, 3, 5, 6, 8, 9, 11])), "C D Eb F Gb Ab A B");
         assert_eq!(j(scale_names("C", 0, &[0, 2, 4, 6, 8, 10])), "C D E F# G# Bb");
