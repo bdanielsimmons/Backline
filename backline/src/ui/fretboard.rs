@@ -68,6 +68,8 @@ pub(crate) fn degree_in(pc: i32, root: i32, pcs: &[i32]) -> (&'static str, Color
         3 if has(4) => "#9",
         8 if has(7) => "\u{266D}13",
         9 if has(10) || has(11) => "13",
+        // a diminished 7th: its 7th is a double-flat 7th, not a 6th
+        9 if has(3) && has(6) && !has(7) => "\u{266D}\u{266D}7",
         5 if !has(3) && !has(4) => "4",
         2 if !has(3) && !has(4) && !has(10) && !has(11) => "2",
         _ => name,

@@ -210,16 +210,28 @@ impl App {
         let parent = &PARENTS[(self.hm_parent as usize).min(PARENTS.len() - 1)];
         let stack = (self.hm_stack as usize).min(2);
         let key = self.hm_key.rem_euclid(12);
-        let rs = |pc: i32| theory::note_name(pc, sharps).replace('b', "\u{266D}");
+        // each note of the scale on its own letter (A melodic minor: F# G#, not Gb Ab; D harmonic major: Bb, not A#)
+        let key_name = theory::note_name(key, sharps);
+        let scale_names: Vec<(i32, String)> = (0..7)
+            .map(|k| {
+                let pc = (key + parent.steps[k]).rem_euclid(12);
+                (pc, theory::spell_degree(key_name, pc, k + 1).unwrap_or_else(|| theory::note_name(pc, sharps).to_string()))
+            })
+            .collect();
+        let nm = |pc: i32| {
+            let pc = pc.rem_euclid(12);
+            scale_names.iter().find(|(p, _)| *p == pc).map_or_else(|| theory::note_name(pc, sharps).to_string(), |x| x.1.clone())
+        };
+        let rs = |pc: i32| nm(pc).replace('b', "\u{266D}");
 
         // ---- the seven chords: (root, notes from it, name to read, name to show)
         let chords: Vec<(i32, Vec<i32>, String, String)> = (0..7)
             .map(|d| {
                 let root = (key + parent.steps[d]).rem_euclid(12);
                 let notes = stacked(&parent.steps, d, stack);
-                let rn = theory::note_name(root, sharps);
+                let rn = nm(root);
                 match suffix_of(&notes) {
-                    Some(s) => (root, notes, format!("{}{}", rn, s), jazz_name(rn, s)),
+                    Some(s) => (root, notes, format!("{}{}", rn, s), jazz_name(&rn, s)),
                     None => {
                         let shown: Vec<String> = notes.iter().map(|x| rs(root + x)).collect();
                         (root, notes, String::new(), shown.join(" "))
@@ -365,8 +377,8 @@ impl App {
             let (sa, sb) = (stacked(&parent.steps, a, 0), stacked(&parent.steps, b, 0));
             let ta: Vec<i32> = sa.iter().map(|x| (ra + x).rem_euclid(12)).collect();
             let tb: Vec<i32> = sb.iter().map(|x| (rb + x).rem_euclid(12)).collect();
-            let na = jazz_name(theory::note_name(ra, sharps), suffix_of(&sa).unwrap_or(""));
-            let nb = jazz_name(theory::note_name(rb, sharps), suffix_of(&sb).unwrap_or(""));
+            let na = jazz_name(&nm(ra), suffix_of(&sa).unwrap_or(""));
+            let nb = jazz_name(&nm(rb), suffix_of(&sb).unwrap_or(""));
             let mut pcs = ta.clone();
             pcs.extend(tb.iter());
             solos.push(Solo {

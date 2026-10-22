@@ -361,17 +361,102 @@ pub fn count_in(beats: u32, bpm: f32) -> Vec<i16> {
 // ------------------------------------------------------------------------ chords
 pub(crate) struct Chord {
     pub(crate) root: i32,
+    /// the third (b3 3, or the suspended 2 or 4; the fifth for a chord with no third, C5)
     pub(crate) third: i32,
     pub(crate) fifth: i32,
+    /// the seventh, or the sixth of a 6 chord, or the bb7 of a dim7
     pub(crate) seventh: Option<i32>,
     /// the colour notes over the chord (b9, 13 ... - G13b9 has both), lowest first
     pub(crate) exts: Vec<i32>,
     pub(crate) bass: i32,
+    /// every note of the chord as semitones over the root (the 9ths, 11ths and 13ths an octave up), lowest first,
+    /// each with its interval name: ("b3" not "#9" in a minor chord, "#11" not "b5" when the 5th is there too)
+    pub(crate) tones: Vec<(i32, &'static str)>,
+    /// written 7alt: b9 #9 #11 b13 over the 3rd and b7 (the band voices the 3 b7 #9 b13 of it)
+    pub(crate) alt: bool,
+}
+
+/// Sharps, flats, triangles (maj7), slashed o (m7b5), circles (dim) and the minus sign, as plain letters.
+const UNICODE: [(&str, &str); 10] = [
+    ("\u{266F}", "#"),
+    ("\u{266D}", "b"),
+    ("\u{0394}", "^"),
+    ("\u{2206}", "^"),
+    ("\u{25B3}", "^"),
+    ("\u{00F8}", "h"),
+    ("\u{00D8}", "h"),
+    ("\u{00B0}", "o"),
+    ("\u{00BA}", "o"),
+    ("\u{2212}", "-"),
+];
+
+/// A chord's quality, however it is written (iReal's D-7 C^7 Bh7 Co7, the Real Book's CMA7 Cmi7, triangles and
+/// circles, C7(+9) for C7#9...), as one plain spelling: "", "m", "maj", "dim", "hdim" or "aug" for the kind of
+/// chord, a "maj" marker for a minor (or diminished, augmented) chord with a major 7th, and the rest after them.
+fn quality_parts(q: &str) -> (&'static str, bool, String) {
+    let mut s: String = q.chars().filter(|c| !matches!(c, '(' | ')' | ',' | ' ' | '[' | ']')).collect();
+    for (a, b) in UNICODE {
+        s = s.replace(a, b);
+    }
+    let low = s.to_ascii_lowercase();
+    let (head, n) = if low.starts_with("maj") {
+        ("maj", 3)
+    } else if low.starts_with("min") {
+        ("m", 3)
+    } else if low.starts_with("mi") {
+        ("m", 2)
+    } else if low.starts_with("ma") && !low.starts_with("madd") {
+        ("maj", 2)
+    } else if s.starts_with('M') || s.starts_with('^') {
+        ("maj", 1)
+    } else if s.starts_with('m') || s.starts_with('-') {
+        ("m", 1)
+    } else if low.starts_with("dim") {
+        ("dim", 3)
+    } else if s.starts_with('o') {
+        ("dim", 1)
+    } else if s.starts_with('h') {
+        ("hdim", 1)
+    } else if low.starts_with("aug") {
+        ("aug", 3)
+    } else if s.starts_with('+') {
+        ("aug", 1)
+    } else {
+        ("", 0)
+    };
+    let mut rest = s[n..].to_string();
+    // a major 7th on a minor (diminished, augmented) chord: Cm(maj7), CmMaj7, CmM7, C-^7, Cm/maj7, C+maj7
+    let mut maj = false;
+    if head != "maj" && head != "" {
+        let low = rest.to_ascii_lowercase();
+        for (w, k) in [("maj", 3), ("ma", 2)] {
+            if low.starts_with(w) {
+                rest = rest[k..].to_string();
+                maj = true;
+                break;
+            }
+        }
+        if !maj && (rest.starts_with('M') || rest.starts_with('^')) {
+            rest = rest[1..].to_string();
+            maj = true;
+        }
+    }
+    // altered notes written with + and - (C7+9, C7-9, C7-5, C7+): sharps and flats
+    let mut r = rest.replace("aug", "#5");
+    for (a, b) in [("+11", "#11"), ("+9", "#9"), ("+5", "#5"), ("+", "#5"), ("-13", "b13"), ("-9", "b9"), ("-5", "b5")] {
+        r = r.replace(a, b);
+    }
+    (head, maj, r)
 }
 
 pub(crate) fn parse_chord(c: &str) -> Option<Chord> {
+    // sharps, flats, triangles and circles as typed or pasted: C sharp, C triangle 7, C slashed-o 7, C circle 7
+    let mut c = c.to_string();
+    for (a, b) in UNICODE {
+        c = c.replace(a, b);
+    }
     // typed changes may use iReal's short spelling (D-7, C^7, Bh7, Co7): read them like Dm7, Cmaj7...
-    let c = chart::pretty_chord(c);
+    let c = chart::pretty_chord(&c);
     let mut it = c.split('/');
     let main = it.next()?;
     let (root_s, rest) = chart::split_root(main);
@@ -396,66 +481,195 @@ pub(crate) fn parse_chord(c: &str) -> Option<Chord> {
         }
         _ => rest,
     };
-    let minor = (r.starts_with('m') && !r.starts_with("maj")) || r.starts_with("dim");
-    let digits = r.chars().any(|c| c.is_ascii_digit());
-    let third = if r.contains("sus2") {
-        2
-    } else if r.contains("sus") {
-        5
-    } else if minor {
-        3
-    } else {
-        4
+    let (head, maj_mark, r) = quality_parts(r);
+    let (minor, dim, hdim, aug) = (head == "m", head == "dim", head == "hdim", head == "aug");
+    let maj7 = head == "maj" || maj_mark;
+    let mut s = r.as_str();
+    // the number: 5 6 69 7 9 11 13 (2 and 4 for add2 and sus4)
+    let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let num: &str = match digits.as_str() {
+        "" => "",
+        d if d.starts_with("69") => "69",
+        d if d.starts_with("13") => "13",
+        d if d.starts_with("11") => "11",
+        d => &d[..1],
     };
-    let fifth = if r.contains("b5") || r.starts_with("dim") {
+    s = &s[num.len()..];
+    // a "6" followed by its 9 (C6add9, C6/9 read as C69)
+    let mut sixth = matches!(num, "6" | "69");
+    let mut seventh_on = matches!(num, "7" | "9" | "11" | "13") || hdim || (maj_mark && num.is_empty());
+    // C5 is a power chord (root and fifth); the 5 of C+5 is only its #5 again
+    let mut no3 = num == "5" && head.is_empty();
+    let mut no5 = false;
+    let mut sus: Option<i32> = if num == "4" { Some(5) } else { None };
+    let mut alt = false;
+    let mut fifth = if dim || hdim {
         6
-    } else if r.contains("#5") || r.starts_with("aug") || r.contains('+') {
+    } else if aug {
         8
     } else {
         7
     };
-    let seventh = if r.starts_with("dim") && r.contains('7') {
+    // the colour notes: written ones, and the 9 a 9th/11th/13th chord carries
+    let mut exts: Vec<i32> = Vec::new();
+    let mut carried9 = false;
+    match num {
+        "9" | "69" => exts.push(14),
+        "11" => {
+            carried9 = true;
+            exts.extend([14, 17]);
+        }
+        "13" => {
+            carried9 = true;
+            exts.extend([14, 21]);
+        }
+        "2" => exts.push(2),
+        _ => {}
+    }
+    const WORDS: [&str; 30] = [
+        "sus4", "sus2", "sus", "add#11", "addb9", "add#9", "add9", "add2", "add11", "add4", "add13", "add6", "alt", "no3", "no5",
+        "omit3", "omit5", "b5", "#5", "b9", "#9", "#11", "b13", "13", "11", "9", "6", "7", "dim", "add",
+    ];
+    while !s.is_empty() {
+        let Some(w) = WORDS.iter().find(|w| s.starts_with(**w)) else {
+            // anything else is skipped (a stray letter, "maj" written twice)
+            let ch = s.chars().next().unwrap();
+            s = &s[ch.len_utf8()..];
+            continue;
+        };
+        s = &s[w.len()..];
+        match *w {
+            "sus4" | "sus" => sus = Some(5),
+            "sus2" => sus = Some(2),
+            "add9" | "9" => exts.push(14),
+            "add2" => exts.push(2),
+            "add11" | "11" => exts.push(17),
+            "add4" => exts.push(5),
+            "add13" | "13" => exts.push(21),
+            "add#11" | "#11" => exts.push(18),
+            "addb9" | "b9" => exts.push(13),
+            "add#9" | "#9" => exts.push(15),
+            "b13" => exts.push(20),
+            "add6" | "6" => {
+                if seventh_on || sixth {
+                    exts.push(21)
+                } else {
+                    sixth = true
+                }
+            }
+            "7" => seventh_on = true,
+            "alt" => alt = true,
+            "no3" | "omit3" => no3 = true,
+            "no5" | "omit5" => no5 = true,
+            "b5" => fifth = 6,
+            "#5" => fifth = 8,
+            _ => {}
+        }
+    }
+    if alt {
+        // the altered dominant: b9 #9 #11 b13 (the altered scale's notes over the 3rd and b7), no natural 5th
+        seventh_on = true;
+        exts = vec![13, 15, 18, 20];
+        fifth = 8;
+        no5 = true;
+    }
+    // an altered 9 takes the place of the 9 a 13th or 11th carries (C13b9 is 3 b7 b9 13)
+    if carried9 && (exts.contains(&13) || exts.contains(&15)) {
+        exts.retain(|e| *e != 14);
+    }
+    // a dominant 11th leaves out the 3rd, a half step under the 11 (C11 = C G Bb D F, a 9sus4)
+    let dom11 = num == "11" && !minor && !dim && !hdim && !maj7 && sus.is_none() && !no3;
+    if dom11 {
+        sus = Some(5);
+        exts.retain(|e| *e != 17);
+    }
+    let seventh = if sixth && !seventh_on {
         Some(9)
-    } else if r.contains("69") {
-        Some(9) // a 6/9 chord has the sixth, not a flat seventh
-    } else if r.contains("add") && !r.contains('7') {
-        // an added note is only that: Gadd9 is G B D A, no seventh
-        r.contains('6').then_some(9)
-    } else if r.contains("maj") || r.contains("Maj") || r.contains('^') || r.contains("ma7") {
-        digits.then_some(11)
-    } else if r.contains('7') || r.contains('9') || r.contains("11") || r.contains("13") {
-        Some(10)
-    } else if r.contains('6') {
-        Some(9)
+    } else if seventh_on {
+        Some(if dim && !maj7 {
+            9
+        } else if maj7 {
+            11
+        } else {
+            10
+        })
     } else {
         None
     };
-    // the colour notes, every one written (G13b9: the b9 and the 13; C9#11: the 9 and the #11)
-    let mut exts = Vec::new();
-    if r.contains("b9") {
-        exts.push(13);
-    }
-    if r.contains("#9") {
-        exts.push(15);
-    }
-    // a plain 9 (not b9/#9) - written, or carried by a plain 13 or 11 (C13 is 3 7 9 13, Cm11 has its 9); an
-    // altered 9 takes its place, and a b13 or #11 alone (C7b13, C7#11) carries none
-    let altered9 = r.contains("b9") || r.contains("#9");
-    let carried = !r.contains("add") && ((r.contains("13") && !r.contains("b13")) || (r.contains("11") && !r.contains("#11")));
-    if r.replace("b9", "").replace("#9", "").contains('9') || (carried && !altered9) {
-        exts.push(14);
-    }
-    if r.contains("#11") {
-        exts.push(18);
-    } else if r.contains("11") {
-        exts.push(17);
-    }
-    if r.contains("b13") {
-        exts.push(20);
-    } else if r.contains("13") {
+    // a 6 on a seventh chord (C7/6) is its 13
+    if sixth && seventh_on && seventh != Some(9) {
         exts.push(21);
     }
-    Some(Chord { root, third, fifth, seventh, exts, bass })
+    exts.sort();
+    exts.dedup();
+    let third = if let Some(x) = sus {
+        x
+    } else if no3 {
+        7
+    } else if minor || dim || hdim {
+        3
+    } else {
+        4
+    };
+    // every note with its name
+    let mut tones: Vec<(i32, &'static str)> = vec![(0, "1")];
+    if !no3 || sus.is_some() {
+        tones.push((
+            third,
+            match third {
+                2 => "2",
+                3 => "b3",
+                5 if dom11 => "11",
+                5 => "4",
+                _ => "3",
+            },
+        ));
+    }
+    if !no5 {
+        tones.push((
+            fifth,
+            match fifth {
+                6 => "b5",
+                8 => "#5",
+                _ => "5",
+            },
+        ));
+    }
+    if let Some(sv) = seventh {
+        tones.push((
+            sv,
+            match sv {
+                9 if dim && seventh_on => "bb7",
+                9 => "6",
+                10 => "b7",
+                _ => "7",
+            },
+        ));
+    }
+    for e in &exts {
+        let name = match e {
+            2 => "2",
+            5 => "4",
+            13 => "b9",
+            14 => "9",
+            15 => "#9",
+            17 => "11",
+            18 => "#11",
+            20 => "b13",
+            _ => "13",
+        };
+        if !tones.iter().any(|(t, _)| t.rem_euclid(12) == e.rem_euclid(12)) {
+            tones.push((*e, name));
+        }
+    }
+    tones.sort_by_key(|t| t.0);
+    Some(Chord { root, third, fifth, seventh, exts, bass, tones, alt })
+}
+
+/// The notes the band plays for a chord (for the tests).
+#[cfg(test)]
+pub(crate) fn voicing_of(name: &str) -> Option<Vec<i32>> {
+    parse_chord(name).map(|c| c.voicing())
 }
 
 fn bass_midi(pc: i32) -> i32 {
@@ -468,11 +682,13 @@ fn mid_midi(pc: i32) -> i32 {
 
 impl Chord {
     fn voicing(&self) -> Vec<i32> {
+        // the 3rd and 7th always, then the colour notes as written (a 7alt as 3 b7 #9 b13)
+        let exts: Vec<i32> = if self.alt { vec![15, 20] } else { self.exts.clone() };
         let mut v = vec![self.root + self.third, self.root + self.seventh.unwrap_or(self.fifth)];
-        if self.exts.is_empty() {
+        if exts.is_empty() {
             v.push(self.root + self.fifth);
         }
-        v.extend(self.exts.iter().map(|e| self.root + e));
+        v.extend(exts.iter().map(|e| self.root + e));
         if self.seventh.is_none() {
             v.push(self.root + 12);
         }

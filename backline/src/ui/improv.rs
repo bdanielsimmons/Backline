@@ -152,9 +152,9 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
     };
     match fam {
         1 => vec![
-            pair((0, false), (2, false), &[0, 4, 7, 11, 18], format!("LYDIAN: OVER {}MAJ7#11, ALSO {}M7 AND {}7SUS", n(0), n(9), n(2))),
-            pair((5, false), (7, false), &[0, 7, 14, 17], format!("DIATONIC, NO 3RD TO CLASH: OVER {}MAJ7, {}M7, {}7SUS, {}M7", n(0), n(2), n(7), n(9))),
-            pair((2, true), (4, true), &[0, 4, 7, 11, 14], format!("OVER {}MAJ7 AND {}7SUS, WITH THE 9TH AND 13TH UP TOP", n(0), n(7))),
+            pair((0, false), (2, false), &[0, 4, 7, 11, 18], format!("LYDIAN: OVER {}MAJ7#11, ALSO {}M7", n(0), n(9))),
+            pair((5, false), (7, false), &[0, 7, 14, 17], format!("DIATONIC, NO 3RD TO CLASH: OVER {}SUS, {}M7, {}7SUS, {}M7", n(0), n(2), n(7), n(9))),
+            pair((7, false), (9, true), &[0, 4, 7, 11, 14], format!("OVER {}MAJ7 AND {}M7, WITH THE 9TH AND 13TH UP TOP", n(0), n(9))),
             pair((6, false), (8, false), &[0, 4, 10, 15, 20], format!("ALTERED: OVER {}7ALT, WITH THE {}9 #9 #11 {}13", n(0), "\u{266D}", "\u{266D}")),
             pair((0, false), (6, false), &[0, 4, 7, 10, 13], format!("FROM THE DIMINISHED SCALE: OVER {}7({}9 #11)", n(0), "\u{266D}")),
             pair((0, false), (8, true), &[0, 4, 8, 11], format!("THE AUGMENTED SCALE: OVER {}MAJ7#5. IT REPEATS EVERY MAJOR 3RD.", n(0))),
@@ -786,14 +786,14 @@ fn si_suggestions(quality: usize) -> Vec<(usize, i32, &'static str)> {
         5 => vec![
             (12, 3, "MINOR 6TH PENTATONIC FROM THE \u{266D}3: \u{266D}3 \u{266D}5 \u{266D}6 \u{266D}7 R"),
             (2, 10, "MAJOR TRIAD ON THE \u{266D}7: \u{266D}7 9 11, LOCRIAN #2"),
-            (8, 3, "M7 FROM THE \u{266D}3: \u{266D}3 \u{266D}5 \u{266D}7 \u{266D}9"),
+            (9, 3, "M(MAJ7) FROM THE \u{266D}3: \u{266D}3 \u{266D}5 \u{266D}7 9"),
         ],
         // m(maj7)
         6 => vec![
             (2, 7, "MAJOR TRIAD FROM THE 5TH: 5 7 9"),
             (3, 2, "MINOR TRIAD A STEP UP: 9 11 13, MELODIC MINOR"),
             (4, 3, "AUGMENTED TRIAD FROM THE \u{266D}3: \u{266D}3 5 7"),
-            (0, 0, "MINOR PENTATONIC ON THE ROOT, LANDING ON THE MAJOR 7TH"),
+            (12, 0, "MINOR 6TH PENTATONIC ON THE ROOT: R \u{266D}3 4 5 6, MELODIC MINOR"),
         ],
         // maj7#11
         _ => vec![
@@ -952,9 +952,9 @@ impl App {
             if chord.contains(&r) {
                 ("CHORD TONE", crate::fretboard::degree(pc, root).1)
             } else if chord.contains(&((r - 1).rem_euclid(12)))
-                && !(chord.contains(&10) && chord.contains(&4) && (r == 1 || r == 3))
+                && !(chord.contains(&10) && chord.contains(&4) && (r == 1 || r == 3 || r == 8))
             {
-                // a half step above a chord tone (a dominant's \u{266D}9 and #9 are tensions)
+                // a half step above a chord tone (a dominant's \u{266D}9, #9 and \u{266D}13 are tensions)
                 ("AVOID", Color32::from_rgb(220, 70, 60))
             } else {
                 ("TENSION", Color32::from_rgb(95, 168, 211))
@@ -1448,6 +1448,8 @@ fn coltrane_cells(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>
         let root = n.root.rem_euclid(12);
         let has = |iv: i32| n.pcs.iter().any(|p| (p - root).rem_euclid(12) == iv);
         let minor = has(3) && !has(4);
+        // a sus chord has a 4th where the 3rd would be: 1 2 4 5
+        let sus = !has(3) && !has(4) && has(5);
         let half_dim = minor && has(6) && !has(7);
         let dim = half_dim && has(9) && !has(10);
         let fifth = if has(8) && !has(7) {
@@ -1458,9 +1460,21 @@ fn coltrane_cells(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>
             7
         };
         let cell: [i32; 4] = match kind {
-            2 => [0, 2, if minor { 3 } else { 4 }, fifth],
+            2 => [
+                0,
+                2,
+                if minor {
+                    3
+                } else if sus {
+                    5
+                } else {
+                    4
+                },
+                fifth,
+            ],
             _ if dim => [0, 3, 6, 9],
             _ if minor => [0, 3, 5, fifth],
+            _ if sus => [0, 2, 5, fifth],
             _ => [0, 2, 4, fifth],
         };
         let cell: Vec<i32> = if kind == 1 { cell.iter().rev().copied().collect() } else { cell.to_vec() };

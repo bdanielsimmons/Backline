@@ -1047,6 +1047,8 @@ pub fn tonic(key: &str, chart: &Chart) -> Option<i32> {
 
 /// "Dm7" in C -> "ii7", "G7" -> "V7", "Bbmaj7" -> "bVIImaj7".
 pub fn roman(chord: &str, tonic: i32) -> String {
+    // iReal's spellings read like the rest (D-7 is Dm7, Bh7 is Bm7b5)
+    let chord = pretty_chord(chord);
     let mut parts = chord.split('/');
     let main = parts.next().unwrap_or("");
     let (root, rest) = split_root(main);
@@ -1057,21 +1059,30 @@ pub fn roman(chord: &str, tonic: i32) -> String {
     };
     let rest = rest.as_str();
     let Some(ix) = note_index(root) else { return String::new() };
+    let low = rest.to_ascii_lowercase();
+    let minor_word = ["min", "mi", "m"]
+        .into_iter()
+        .find(|w| rest.starts_with(*w) && !low.starts_with("maj") && !(low.starts_with("ma") && !low.starts_with("madd")));
+    let dim = rest.starts_with("dim");
+    let minor = minor_word.is_some() || dim;
+    // a diminished chord (and a half-diminished one) on a chromatic degree is named from the degree below, the way
+    // it moves up: #Io7 (C#o7 in C), #IIo7, #IVm7b5, #Vo7; anything else from the degree above (bII7, bVImaj7)
     const DEG: [&str; 12] = ["I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII"];
-    let deg = DEG[(ix - tonic).rem_euclid(12) as usize];
-    let minor = (rest.starts_with('m') && !rest.starts_with("maj")) || rest.starts_with("dim");
+    const DEG_UP: [&str; 12] = ["I", "#I", "II", "#II", "III", "IV", "#IV", "V", "#V", "VI", "bVII", "VII"];
+    let half_dim = minor_word.is_some() && rest.contains("7b5");
+    let n = (ix - tonic).rem_euclid(12) as usize;
+    let deg = if dim || half_dim { DEG_UP[n] } else { DEG[n] };
     let tail = if let Some(t) = rest.strip_prefix("dim") {
         format!("o{}", t)
-    } else if minor {
-        rest[1..].to_string()
+    } else if let Some(w) = minor_word {
+        rest[w.len()..].to_string()
     } else {
         rest.to_string()
     };
-    let tail = tail.strip_prefix("in").map(str::to_string).unwrap_or(tail);
     // minor written out (VIm7), not as a lowercase numeral: the chart's capitals would hide it (vi7 = VI7)
     if minor && tail.to_lowercase().starts_with("maj") {
         format!("{}m({})", deg, tail)
-    } else if minor {
+    } else if minor && !dim {
         format!("{}m{}", deg, tail)
     } else {
         format!("{}{}", deg, tail)
@@ -1106,6 +1117,30 @@ mod tests {
         assert_eq!(roman("Fm7", 8), "VIm7");
         assert_eq!(roman("F7", 8), "VI7");
         assert_eq!(roman("Db/Eb", 8), "IV");
+        // every key: ii V I and the rest of the diatonic chords
+        for k in 0..12 {
+            let n = |x: i32| NAMES[(k + x).rem_euclid(12) as usize];
+            assert_eq!(roman(&format!("{}m7", n(2)), k), "IIm7");
+            assert_eq!(roman(&format!("{}7", n(7)), k), "V7");
+            assert_eq!(roman(&format!("{}maj7", n(0)), k), "Imaj7");
+            assert_eq!(roman(&format!("{}m7b5", n(11)), k), "VIIm7b5");
+            assert_eq!(roman(&format!("{}-7", n(9)), k), "VIm7");
+            assert_eq!(roman(&format!("{}^7", n(5)), k), "IVmaj7");
+            assert_eq!(roman(&format!("{}7", n(1)), k), "bII7");
+            assert_eq!(roman(&format!("{}maj7", n(8)), k), "bVImaj7");
+        }
+        // passing diminished chords go up from the degree below; the half-diminished #iv
+        assert_eq!(roman("C#dim7", 0), "#Io7");
+        assert_eq!(roman("D#o7", 0), "#IIo7");
+        assert_eq!(roman("F#m7b5", 0), "#IVm7b5");
+        assert_eq!(roman("F#h7", 0), "#IVm7b5");
+        assert_eq!(roman("G#dim7", 0), "#Vo7");
+        assert_eq!(roman("Bdim7", 0), "VIIo7");
+        assert_eq!(roman("Gb7", 0), "bV7");
+        // Real Book minor spellings
+        assert_eq!(roman("Dmi7", 0), "IIm7");
+        assert_eq!(roman("Dmin7", 0), "IIm7");
+        assert_eq!(roman("Cmadd9", 0), "Imadd9");
     }
 
     #[test]

@@ -67,7 +67,13 @@ fn diatonic(key: i32, steps: &[i32; 7], d: usize, sharps: bool) -> Arp {
     let suffix = AR_CHORDS.iter().find(|c| c.1 == tones).map_or("", |c| c.0);
     Arp {
         root,
-        name: format!("{}{}", theory::note_name(root, sharps), suffix),
+        // the root on its own letter of the scale (G melodic minor's III is Bbmaj7#5, not A#)
+        name: format!(
+            "{}{}",
+            theory::spell_degree(theory::note_name(key, sharps), root, d + 1)
+                .unwrap_or_else(|| theory::note_name(root, sharps).to_string()),
+            suffix
+        ),
         tones,
         ninth: rel(1),
         scale_root: key.rem_euclid(12),
@@ -146,7 +152,9 @@ fn tune_line(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>, Vec
             notes.iter_mut().for_each(|m| *m += 12);
         }
         last = *notes.last().unwrap_or(&last);
-        out.push((c.clone(), r, vec![third + 12, seventh.min(11) + 12], notes));
+        // the shell under it: 3rd and 7th (a triad has no 7th: its 3rd and 5th)
+        let shell_top = if seventh == 12 { fifth } else { seventh };
+        out.push((c.clone(), r, vec![third + 12, shell_top + 12], notes));
         n_done += 1;
     }
     out

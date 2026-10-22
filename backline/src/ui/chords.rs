@@ -192,10 +192,12 @@ impl App {
             }
             ui.add_space(6.0);
             section_header(ui, "SCALES THAT FIT");
+            // spelt from the chord's root as written (F# Dorian: F# G# A B C# D# E)
+            let rw = theory::written_root(&q);
             for (name, steps) in theory::scales_for(&c) {
-                let names: Vec<&str> = steps.iter().map(|s| theory::note_name(c.root + s, false)).collect();
+                let names = theory::scale_names(&rw, c.root, steps);
                 ui.horizontal(|ui| {
-                    crate::views::label(ui, &format!("{} {}", theory::note_name(c.root, false), name), 260.0);
+                    crate::views::label(ui, &format!("{} {}", names[0], name), 260.0);
                     crate::views::label(ui, &names.join(" "), 300.0);
                 });
             }
