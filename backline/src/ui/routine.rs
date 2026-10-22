@@ -53,8 +53,7 @@ impl App {
                     None => crate::views::label(ui, "-", 30.0),
                 }
                 // the kind's tunes; the ones already in your tunes marked
-                let mut items: Vec<String> =
-                    vec![if picked.is_some() { "CHANGE...".to_string() } else { "PICK ONE...".to_string() }];
+                let mut items: Vec<String> = vec![if picked.is_some() { "Change".to_string() } else { "Pick one".to_string() }];
                 items.extend(
                     list.iter().map(|(n, _)| if self.find_tune(n).is_some() { format!("{}  *", n) } else { n.to_string() }),
                 );

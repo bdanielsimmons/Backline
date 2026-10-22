@@ -788,8 +788,17 @@ impl App {
                 if room < 20.0 {
                     break;
                 }
-                ptext_fit(p, Pos2::new(x, rect.center().y), Align::Min, s, 2.0, room, *col);
-                let w = text_w(s, 2.0).min(room);
+                // (cut with "..." when it doesn't fit, at the same size as the rest of the line)
+                crate::row_text(p, Pos2::new(x, rect.center().y), Align::Min, s, room, *col);
+                let w = p
+                    .layout_no_wrap(
+                        s.to_string(),
+                        egui::FontId::proportional((crate::ROW_H * 0.62 * crate::font::ui_scale()).max(11.0)),
+                        *col,
+                    )
+                    .size()
+                    .x
+                    .min(room);
                 if i == 3 && l.version.kind == "tidal" {
                     artist = Some(Rect::from_min_size(Pos2::new(x, rect.min.y + 4.0), Vec2::new(w, rect.height() - 8.0)));
                 }
@@ -2262,7 +2271,7 @@ impl App {
         let rank = |k: &Option<&str>| k.map_or(usize::MAX, |k| kinds.iter().position(|x| *x == k).unwrap_or(usize::MAX - 1));
         order.sort_by_key(|(k, i)| (rank(k), *i));
         if self.store.tunes.iter().any(|t| self.store.routine_set.values().any(|v| v.eq_ignore_ascii_case(&t.name))) {
-            crate::views::dim_line(ui, "* = IN YOUR SET (DIARY > ROUTINE)", 1.0, pal().dim);
+            crate::views::dim_line(ui, "* is a tune in your set (Diary > Routine).", 1.0, pal().dim);
         }
         let mut last: Option<Option<&str>> = None;
         for (kind, i) in order {
@@ -2278,18 +2287,37 @@ impl App {
                 i,
                 None,
                 || {
-                    format!(
-                        "[{}] {}{}",
-                        "#".repeat(t.status.min(3) as usize + 1) + &"-".repeat(3 - t.status.min(3) as usize),
-                        if in_set { "* " } else { "" },
-                        t.name
-                    )
+                    if crate::winamp_ui::chrome_on() {
+                        // (with a skin: how well you know it is the dots drawn on the row, not text)
+                        format!("        {}{}", if in_set { "* " } else { "" }, t.name)
+                    } else {
+                        format!(
+                            "[{}] {}{}",
+                            "#".repeat(t.status.min(3) as usize + 1) + &"-".repeat(3 - t.status.min(3) as usize),
+                            if in_set { "* " } else { "" },
+                            t.name
+                        )
+                    }
                 },
-                || format!("{}\t{}", t.versions.len(), mins_text(mins * 60)),
+                || format!("{}	{}", t.versions.len(), if mins == 0 { "-".to_string() } else { mins_text(mins * 60) }),
                 RowState::Normal,
                 false,
                 false,
             );
+            if let Some(r) = r.as_ref().filter(|_| crate::winamp_ui::chrome_on()) {
+                // how well you know it: four small dots, filled up to its level
+                let lv = t.status.min(3) as usize;
+                let x0 = r.rect.min.x + 12.0;
+                for k in 0..4 {
+                    let c = Pos2::new(x0 + k as f32 * 7.0, r.rect.center().y);
+                    if k <= lv {
+                        ui.painter().circle_filled(c, 2.6, pal().bar_txt);
+                    } else {
+                        ui.painter().circle_stroke(c, 2.4, egui::Stroke::new(1.0_f32, pal().ink2));
+                    }
+                }
+            }
+            let r = r.map(|r| r.on_hover_text(COMFORT[t.status.min(3) as usize]));
             if let Some(r) = r {
                 if r.clicked() {
                     match &self.pick {
@@ -3755,10 +3783,16 @@ impl App {
             }
             divider(ui);
             // the whole loop on to the next phrase, or back to the one before (same length)
-            if crate::icon_btn_w(ui, &crate::IC_BACK, false, ink, 34.0).tip("Shift the loop back by its own length.").clicked() && both {
+            if crate::icon_btn_w(ui, &crate::IC_BACK, false, ink, 34.0).tip("Shift the loop back by its own length.").clicked()
+                && both
+            {
                 acts.push(Action::ShiftLoop(false));
             }
-            if crate::icon_btn_w(ui, &crate::IC_FWD, false, ink, 34.0).tip("Shift the loop on by its own length, to the next phrase.").clicked() && both {
+            if crate::icon_btn_w(ui, &crate::IC_FWD, false, ink, 34.0)
+                .tip("Shift the loop on by its own length, to the next phrase.")
+                .clicked()
+                && both
+            {
                 acts.push(Action::ShiftLoop(true));
             }
         });

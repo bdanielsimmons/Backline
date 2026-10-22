@@ -962,7 +962,13 @@ impl App {
         .enumerate()
         {
             let c = Pos2::new(cx + (n as f32 - 2.0) * cw, bar.center().y - 2.0);
-            let d = if n == 2 { 34.0 } else if n == 0 || n == 4 { 24.0 } else { 28.0 };
+            let d = if n == 2 {
+                34.0
+            } else if n == 0 || n == 4 {
+                24.0
+            } else {
+                28.0
+            };
             let r = Rect::from_center_size(c, Vec2::splat(d));
             let h = ui.interact(r, id.with(("ctl", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             if n == 2 {
@@ -971,7 +977,13 @@ impl App {
                 crate::vicon::named(&p, Rect::from_center_size(c + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)), icon, pal().lcd);
             } else {
                 let lit = (n == 0 && self.shuffle) || (n == 4 && rep_on);
-                let col = if lit { pal().bar_txt } else if h.hovered() { pal().ink } else { pal().ink2 };
+                let col = if lit {
+                    pal().bar_txt
+                } else if h.hovered() {
+                    pal().ink
+                } else {
+                    pal().ink2
+                };
                 crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(d * 0.6)), icon, col);
                 if lit {
                     p.circle_filled(Pos2::new(c.x, c.y + d * 0.55), 1.8, col);

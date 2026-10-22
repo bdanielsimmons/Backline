@@ -5,9 +5,7 @@ use crate::chart;
 use crate::extras::{Knob, Opt};
 use crate::font::{ptext, ptext_fit, text_w};
 use crate::views::{dim_line, field, label, F_CHART, F_IREAL};
-use crate::{
-    bh, check_box, fill_rect, inset, lcd_box, outline, pal, para, retro_btn, retro_btn_w, Action, App, Tip,
-};
+use crate::{bh, check_box, fill_rect, inset, lcd_box, outline, pal, para, retro_btn, retro_btn_w, Action, App, Tip};
 use eframe::egui::{self, Align, Color32, Pos2, Rect, Sense, Vec2};
 use std::time::{Duration, Instant};
 
@@ -221,9 +219,8 @@ impl App {
         // a click outside the open panel (and the pills), or Esc, shuts it
         if let Some(pr) = panel {
             let on_pill = |q: Pos2| [tpill, mpill, corner].iter().flatten().any(|r| r.contains(q));
-            let out = ctx.input(|i| {
-                i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|q| !pr.contains(q) && !on_pill(q))
-            });
+            let out = ctx
+                .input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|q| !pr.contains(q) && !on_pill(q)));
             let esc = self.ed.id == 0 && ctx.input(|i| i.key_pressed(egui::Key::Escape));
             if out || esc {
                 acts.push(if self.timer_open { Action::TimerPanel } else { Action::MetroPanel });
@@ -616,10 +613,11 @@ impl App {
         let split = r.min.x + r.height();
         let left = Rect::from_min_max(r.min, Pos2::new(split, r.max.y));
         let right = Rect::from_min_max(Pos2::new(split, r.min.y), r.max);
-        let lr = ui
-            .interact(left, id.with("go"), Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip(if on { "Stop the metronome." } else { "Start the metronome." });
+        let lr = ui.interact(left, id.with("go"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(if on {
+            "Stop the metronome."
+        } else {
+            "Start the metronome."
+        });
         let rr = ui
             .interact(right, id.with("open"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -666,7 +664,15 @@ impl App {
                 ui.add_space(6.0);
                 label(ui, "BPM", 36.0);
                 let s = self.mt_bpm.to_string();
-                self.num_step(ui, acts, F_BPM, 52.0, Knob::MetroBpm, s, "The metronome's own tempo. The song's tempo is set apart.");
+                self.num_step(
+                    ui,
+                    acts,
+                    F_BPM,
+                    52.0,
+                    Knob::MetroBpm,
+                    s,
+                    "The metronome's own tempo. The song's tempo is set apart.",
+                );
                 if retro_btn_w(ui, "TAP", 52.0, false).tip("Tap along with the music to find the tempo.").clicked() {
                     acts.push(Action::TapTempo);
                 }
@@ -774,7 +780,10 @@ impl App {
     /// Subdivisions, beat-volume presets and the metronome's own volume.
     fn metro_sound(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let sub = ["NO SUBDIV", "EIGHTHS", "TRIPLETS", "SIXTEENTHS"][(self.mt.sub as usize).min(3)];
-        if retro_btn_w(ui, sub, 130.0, self.mt.sub > 0).tip("Add quiet ticks between the beats. Click for the next kind.").clicked() {
+        if retro_btn_w(ui, sub, 130.0, self.mt.sub > 0)
+            .tip("Add quiet ticks between the beats. Click for the next kind.")
+            .clicked()
+        {
             acts.push(Action::Opt(Opt::Sub));
         }
         ui.horizontal_wrapped(|ui| {
@@ -787,7 +796,8 @@ impl App {
         // its own volume: louder or softer against the song, without touching the main volume
         ui.horizontal(|ui| {
             label(ui, "VOL", 36.0);
-            let (r, resp) = ui.allocate_exact_size(Vec2::new((ui.available_width() - 8.0).clamp(80.0, 180.0), bh()), Sense::click_and_drag());
+            let (r, resp) =
+                ui.allocate_exact_size(Vec2::new((ui.available_width() - 8.0).clamp(80.0, 180.0), bh()), Sense::click_and_drag());
             inset(ui.painter(), r, pal().lcd);
             let inner = r.shrink(4.0);
             let fill = Rect::from_min_size(inner.min, Vec2::new(inner.width() * self.mt_vol, inner.height()));
@@ -1105,11 +1115,18 @@ impl App {
                     if ibutton(ui, "refresh", if busy { "Looking..." } else { "Look the chart up again" }, busy).clicked() {
                         self.live_q.clear();
                     }
-                    if has && retro_btn(ui, "SAVE TO TUNES", false).tip("Keep this song as a tune, with its chart. Then you can edit it.").clicked() {
+                    if has
+                        && retro_btn(ui, "SAVE TO TUNES", false)
+                            .tip("Keep this song as a tune, with its chart. Then you can edit it.")
+                            .clicked()
+                    {
                         acts.push(Action::SaveLive);
                     }
                 }
-                if retro_btn(ui, "I-IV-V", self.chart_rn).tip("Show Roman numerals under the chords, relative to the key.").clicked() {
+                if retro_btn(ui, "I-IV-V", self.chart_rn)
+                    .tip("Show Roman numerals under the chords, relative to the key.")
+                    .clicked()
+                {
                     acts.push(Action::ToggleNumerals);
                 }
                 ui.add_space(6.0);
@@ -1124,7 +1141,8 @@ impl App {
                     None if self.chart_tr == 0 => "CONCERT".to_string(),
                     None => format!("+{}", self.chart_tr),
                 };
-                let kr = retro_btn(ui, &chip, self.chart_tr != 0).tip("The key it is shown in. Click for every key and the horn parts.");
+                let kr = retro_btn(ui, &chip, self.chart_tr != 0)
+                    .tip("The key it is shown in. Click for every key and the horn parts.");
                 let mut keys: Vec<(String, i32)> =
                     vec![("CONCERT (C)".into(), 0), ("Bb HORNS".into(), 2), ("Eb HORNS".into(), 9), ("F HORN".into(), 7)];
                 let t0 = tonic.unwrap_or(0);
@@ -1154,7 +1172,15 @@ impl App {
                 // the name takes what is left
                 let (nr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
                 crate::winamp_ui::as_title(|| {
-                    crate::ui_text(ui.painter(), Pos2::new(nr.min.x + 2.0, nr.center().y), Align::Min, &name, 3.0, nr.width() - 4.0, pal().ink)
+                    crate::ui_text(
+                        ui.painter(),
+                        Pos2::new(nr.min.x + 2.0, nr.center().y),
+                        Align::Min,
+                        &name,
+                        3.0,
+                        nr.width() - 4.0,
+                        pal().ink,
+                    )
                 });
             });
         });

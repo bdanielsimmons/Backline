@@ -745,14 +745,17 @@ impl App {
                 sb.context_menu(|ui| self.speed_menu(ui, acts));
             });
         });
-        ptext(
-            &p,
-            Pos2::new(full.max.x - 30.0, full.max.y - 14.0),
-            Align::Max,
-            "Click the cover: record    Right-click it: border    ESC close    F fullscreen    L lyrics    H like    SPACE play/pause",
-            1.0,
-            pal().dim,
-        );
+        // the keys, without a skin (with one, each button names its key on hover and the screen stays clear)
+        if !crate::winamp_ui::chrome_on() {
+            ptext(
+                &p,
+                Pos2::new(full.max.x - 30.0, full.max.y - 14.0),
+                Align::Max,
+                "Click the cover: record    Right-click it: border    ESC close    F fullscreen    L lyrics    H like    SPACE play/pause",
+                1.0,
+                pal().dim,
+            );
+        }
     }
 }
 

@@ -465,36 +465,62 @@ pub(crate) fn logo(ui: &mut egui::Ui) {
 /// starts a new strip beside the last. Returns the clicked one.
 pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
     let h = 26.0 * font::ui_scale();
-    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h + 6.0), Sense::hover());
     let pad = 22.0;
     let gap = 10.0;
     // (the brand's name, spelled as a word among the others)
     let items: Vec<&str> = items.iter().map(|s| if *s == "BACKLINE" { "Backline" } else { *s }).collect();
     let items = &items[..];
-    let total: f32 = items.iter().map(|s| if *s == "|" { gap } else { text_w(s, 2.0) + pad }).sum();
-    let shrink = ((row.width() - 4.0) / total).min(1.0);
-    let p = ui.painter().clone();
-    // the strips: runs of items between the bars
-    let mut x = row.min.x + 2.0;
-    let mut hit = None;
-    let mut runs: Vec<(f32, f32)> = Vec::new();
-    let mut run_start = x;
-    let mut cells: Vec<(usize, Rect)> = Vec::new();
+    let width = ui.available_width() - 4.0;
+    // the tabs at full size, onto as many rows as they need (never squeezed to unreadable): each row its own strip
+    let mut rows: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut used = 0.0;
     for (i, name) in items.iter().enumerate() {
         if *name == "|" {
-            runs.push((run_start, x));
-            x += gap * shrink;
-            run_start = x;
+            used += gap;
             continue;
         }
-        let w = (text_w(name, 2.0) + pad) * shrink;
-        cells.push((i, Rect::from_min_max(Pos2::new(x, row.min.y + 3.0), Pos2::new(x + w, row.min.y + 3.0 + h))));
-        x += w;
+        let w = text_w(name, 2.0) + pad;
+        // (a strip may tighten a little before a tab goes onto the next row)
+        if used + w > width / 0.86 && !rows.last().unwrap().is_empty() {
+            rows.push(Vec::new());
+            used = 0.0;
+        }
+        rows.last_mut().unwrap().push(i);
+        used += w;
     }
-    runs.push((run_start, x));
-    for (a, b) in &runs {
+    let n_rows = rows.len() as f32;
+    let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), (h + 4.0) * n_rows + 2.0), Sense::hover());
+    let p = ui.painter().clone();
+    let mut hit = None;
+    let mut runs: Vec<(f32, f32, f32)> = Vec::new();
+    let mut cells: Vec<(usize, Rect)> = Vec::new();
+    for (ri, list) in rows.iter().enumerate() {
+        let y = area.min.y + 3.0 + ri as f32 * (h + 4.0);
+        let mut x = area.min.x + 2.0;
+        let row_w: f32 = list.iter().map(|i| text_w(items[*i], 2.0) + pad).sum::<f32>()
+            + gap * list.windows(2).filter(|p| items[p[0] + 1..p[1]].contains(&"|")).count() as f32;
+        let k = (width / row_w).min(1.0);
+        let mut run_start = x;
+        let mut prev: Option<usize> = None;
+        for &i in list {
+            // a bar in the list between this one and the one before: a new strip
+            if prev.is_some_and(|p| items[p + 1..i].contains(&"|")) {
+                runs.push((run_start, x, y));
+                x += gap * k;
+                run_start = x;
+            }
+            let w = (text_w(items[i], 2.0) + pad) * k;
+            cells.push((i, Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, y + h))));
+            x += w;
+            prev = Some(i);
+        }
+        runs.push((run_start, x, y));
+    }
+    let row = area;
+    let _ = row;
+    for (a, b, y) in &runs {
         if b > a {
-            let strip = Rect::from_min_max(Pos2::new(*a, row.min.y + 3.0), Pos2::new(*b, row.min.y + 3.0 + h));
+            let strip = Rect::from_min_max(Pos2::new(*a, *y), Pos2::new(*b, *y + h));
             rgrad(&p, strip, 3.0, pal().lcd.lerp_to_gamma(pal().beige, 0.4), pal().lcd.lerp_to_gamma(pal().beige, 0.15));
         }
     }
@@ -520,7 +546,7 @@ pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<
             p.rect_filled(r.shrink(1.0), 2.0, Color32::from_white_alpha(14));
         }
         // a dividing line before it, unless it starts a strip
-        let starts = n == 0 || cells[n - 1].1.max.x < r.min.x - 0.5;
+        let starts = n == 0 || cells[n - 1].1.max.x < r.min.x - 0.5 || cells[n - 1].1.min.y != r.min.y;
         if !starts {
             p.line_segment(
                 [Pos2::new(r.min.x, r.min.y + 1.0), Pos2::new(r.min.x, r.max.y - 1.0)],
@@ -540,9 +566,9 @@ pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<
             hit = Some(*i);
         }
     }
-    for (a, b) in &runs {
+    for (a, b, y) in &runs {
         if b > a {
-            let strip = Rect::from_min_max(Pos2::new(*a, row.min.y + 3.0), Pos2::new(*b, row.min.y + 3.0 + h));
+            let strip = Rect::from_min_max(Pos2::new(*a, *y), Pos2::new(*b, *y + h));
             rline(&p, strip, 3.0, 1.0, pal().edge);
         }
     }
