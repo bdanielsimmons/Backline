@@ -2151,6 +2151,95 @@ impl App {
     }
 
     // ---------------------------------------------------------------- TUNES
+    /// While a tune name is typed: cards for the songs it could be (the recommended tunes, your own, and the songs in
+    /// your library and queue), spelled right - accents and capitals - so a name typed fast comes out right. Click one
+    /// to add it under that name, or KEEP AS TYPED.
+    fn tune_suggestions(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let typed = self.new_tune.trim().to_string();
+        // only the cards asked for (Enter or ADD), and only while that name is still in the box
+        if typed.is_empty() || TUNE_ASKED.with(|a| *a.borrow() != typed) {
+            return;
+        }
+        let found = TUNE_FOUND.with(|f| f.borrow().clone());
+        // nothing to offer, or exactly what was typed: no cards
+        if found.is_empty() || (found.len() == 1 && found[0].1 == typed) {
+            return;
+        }
+        ui.add_space(2.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(8.0, 6.0);
+            for (_, n, who) in &found {
+                let w = (text_w(n, 2.0).max(text_w(who, 1.3)) + 28.0).clamp(120.0, 300.0);
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 44.0), Sense::click());
+                let hot = resp.hovered();
+                ui.painter().rect_filled(r, 8.0, if hot { pal().beige } else { pal().beige.lerp_to_gamma(pal().lcd, 0.35) });
+                ui.painter().rect_stroke(r, 8.0, egui::Stroke::new(1.0_f32, pal().beige_h));
+                crate::font::keep_caps(|| {
+                    crate::row_text(ui.painter(), Pos2::new(r.min.x + 12.0, r.min.y + 15.0), Align::Min, n, w - 20.0, pal().ink);
+                    crate::row_text(
+                        ui.painter(),
+                        Pos2::new(r.min.x + 12.0, r.min.y + 32.0),
+                        Align::Min,
+                        who,
+                        w - 20.0,
+                        pal().ink2,
+                    );
+                });
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Add it under this name.").clicked() {
+                    self.new_tune = n.clone();
+                    TUNE_ASKED.with(|a| a.borrow_mut().clear());
+                    acts.push(Action::NewTune);
+                }
+            }
+            if retro_btn(ui, "KEEP AS TYPED", false)
+                .tip(format!("Add \"{}\" just as you typed it. (Enter does the same.)", typed))
+                .clicked()
+            {
+                TUNE_ASKED.with(|a| a.borrow_mut().clear());
+                acts.push(Action::NewTune);
+            }
+        });
+        ui.add_space(4.0);
+    }
+
+    /// The tune names closest to `typed`, best first (at most 5): (score, name, who).
+    fn tune_matches(&self, typed: &str) -> Vec<(u32, String, String)> {
+        // (name, who) from every place a tune name could come from
+        let mut pool: Vec<(String, String)> = Vec::new();
+        for kinds in [crate::canon::SESSION_TUNES, crate::canon::GOSPEL_TUNES] {
+            for (_, list) in kinds.iter() {
+                for (n, who) in list.iter() {
+                    pool.push((n.to_string(), who.to_string()));
+                }
+            }
+        }
+        for tn in &self.store.tunes {
+            pool.push((tn.name.clone(), "In your tunes".to_string()));
+        }
+        let mut songs: Vec<&crate::api::Track> = self.queue.iter().collect();
+        if let Some(pg) = &self.page {
+            songs.extend(pg.tracks.iter());
+        }
+        for tr in songs {
+            let name = crate::chart::clean_title(&tr.title);
+            if !name.is_empty() {
+                pool.push((name, tr.artists_text()));
+            }
+        }
+        // the closest first, each name once
+        let mut found: Vec<(u32, String, String)> = Vec::new();
+        for (n, who) in pool {
+            if let Some(s) = crate::filter_score(typed, &[&n]) {
+                if !found.iter().any(|f| f.1.eq_ignore_ascii_case(&n)) {
+                    found.push((s, n, who));
+                }
+            }
+        }
+        found.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.len().cmp(&b.1.len())));
+        found.truncate(5);
+        found
+    }
+
     /// TUNES > RECOMMENDED: the tunes that get called, by kind (jazz or gospel). Click one to see its chart on the
     /// lead sheet - it only becomes one of yours with + MY TUNES.
     fn recommended_tunes(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
@@ -2233,9 +2322,20 @@ impl App {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let o = field(ui, &mut self.ed, F_NEW_TUNE, &mut self.new_tune, rect, "New tune name", false);
             if o.enter || retro_btn_w(ui, "ADD", 70.0, false).clicked() {
-                acts.push(Action::NewTune);
+                // looked up once, on Enter or ADD: a better spelling shows as cards to pick from; none, and it's added
+                let typed = self.new_tune.trim().to_string();
+                let found = if typed.chars().count() >= 3 { self.tune_matches(&typed) } else { Vec::new() };
+                let exact = found.iter().any(|f| f.1 == typed);
+                if found.is_empty() || exact || TUNE_ASKED.with(|a| *a.borrow() == typed) {
+                    TUNE_ASKED.with(|a| a.borrow_mut().clear());
+                    acts.push(Action::NewTune);
+                } else {
+                    TUNE_ASKED.with(|a| *a.borrow_mut() = typed.clone());
+                    TUNE_FOUND.with(|f| *f.borrow_mut() = found);
+                }
             }
         });
+        self.tune_suggestions(ui, acts);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
         let _ =
             field(ui, &mut self.ed, F_TUNE_IREAL, &mut self.tunes_ireal, rect, "iReal Pro link or playlist (irealb://)", false);
@@ -4711,4 +4811,10 @@ fn divider(ui: &mut egui::Ui) {
         [Pos2::new(r.center().x, r.min.y + 4.0), Pos2::new(r.center().x, r.max.y - 4.0)],
         egui::Stroke::new(1.0_f32, pal().beige_lt),
     );
+}
+
+thread_local! {
+    /// The tune name looked up with Enter or ADD (its cards show while it is still in the box), and what was found.
+    static TUNE_ASKED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    static TUNE_FOUND: std::cell::RefCell<Vec<(u32, String, String)>> = const { std::cell::RefCell::new(Vec::new()) };
 }

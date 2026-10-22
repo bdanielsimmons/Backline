@@ -1125,6 +1125,20 @@ impl App {
         });
     }
 
+    /// The song's beat, worked out in the background as it starts (from the audio already here, streamed or not),
+    /// so FIND BEAT answers at once for any song.
+    pub(crate) fn start_beats(&mut self, id: i64, bytes: &[u8]) {
+        if self.beat_known.contains_key(&id) || self.is_demo(id) {
+            return;
+        }
+        let bytes = bytes.to_vec();
+        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::BeatsBg(id, band::detect_beats(bytes)));
+            ctx.request_repaint();
+        });
+    }
+
     pub(crate) fn start_wave(&mut self, id: i64, bytes: &[u8]) {
         if self.wave.0 == id && self.wave.1.is_some() {
             return;
@@ -1784,6 +1798,15 @@ impl App {
                         }
                         Err((_, sugg)) => self.chart_sugg = sugg,
                     }
+                }
+            }
+            Msg::BeatsBg(id, r) => {
+                self.beat_known.insert(id, r);
+                // FIND BEAT was pressed before it was ready: answer it now
+                if self.beat_wait == Some(id) {
+                    self.beat_wait = None;
+                    self.beat_busy = true;
+                    let _ = self.tx.send(Msg::Beats(id, r));
                 }
             }
             Msg::Beats(id, r) => {
@@ -3441,6 +3464,18 @@ impl App {
                     return;
                 }
                 self.beat_failed.remove(&t.id);
+                // worked out already as the song started (or on its way): no file needed
+                if let Some(r) = self.beat_known.get(&t.id).copied() {
+                    self.beat_busy = true;
+                    let _ = self.tx.send(Msg::Beats(t.id, r));
+                    return;
+                }
+                if self.cur.is_some() && !self.stopped {
+                    self.beat_wait = Some(t.id);
+                    self.beat_busy = true;
+                    self.set_note("LISTENING FOR THE BEAT...");
+                    return;
+                }
                 let bytes = match self.srcmap.get(&t.id) {
                     Some(Src::File(p)) => std::fs::read(p).ok(),
                     _ => cache::get(t.id),

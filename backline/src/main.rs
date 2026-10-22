@@ -225,6 +225,8 @@ enum Msg {
     Chart(String, Result<(String, String, String), (String, Vec<String>)>),
     Live(String, Result<(String, String, String), (String, Vec<String>)>),
     Beats(i64, Option<(f32, f32)>),
+    /// the beat worked out in the background as a song starts (kept for FIND BEAT)
+    BeatsBg(i64, Option<(f32, f32)>),
     /// tempo / key detected from a track's audio
     Meta(i64, meta::Info),
     /// Winamp skins found (the list, whether they add to what is shown)
@@ -2729,6 +2731,9 @@ struct App {
     frames: u32,
     mt_vis: Option<(Instant, f32, usize)>,
     beat_failed: HashSet<i64>,
+    /// each played song's beat, worked out as it starts (None: no steady beat), and the song FIND BEAT waits on
+    beat_known: HashMap<i64, Option<(f32, f32)>>,
+    beat_wait: Option<i64>,
     mt_gen: u32,
     mt_pos: (f32, Instant),
     mt_sync_at: Instant,
@@ -3404,6 +3409,8 @@ impl App {
             frames: 0,
             mt_vis: None,
             beat_failed: HashSet::new(),
+            beat_known: HashMap::new(),
+            beat_wait: None,
             mt_gen: 0,
             mt_pos: (0.0, Instant::now()),
             mt_sync_at: Instant::now(),
@@ -4522,6 +4529,7 @@ impl App {
                         crate::api::log(&format!("downloaded {} bytes for track {}", n, id));
                         self.start_wave(id, &bytes);
                         self.start_meta(id, &bytes);
+                        self.start_beats(id, &bytes);
                         self.player.send(Cmd::Play(bytes));
                         self.after_play();
                         self.set_kbps(n);
@@ -4715,6 +4723,7 @@ impl App {
                 let n = bytes.len();
                 self.start_wave(id, &bytes);
                 self.start_meta(id, &bytes);
+                self.start_beats(id, &bytes);
                 self.player.send(Cmd::Play(bytes));
                 self.after_play();
                 self.set_kbps(n);
@@ -6093,7 +6102,7 @@ impl eframe::App for App {
                 let inner_w = right_w - 28.0;
                 // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)
                 let mut practice_h =
-                    if !self.practice || focus_skin { 0.0 } else { self.prac_h.clamp(220.0, (screen.height() * 0.6).max(220.0)) };
+                    if !self.practice || focus_skin { 0.0 } else { self.prac_h.clamp(120.0, (screen.height() * 0.6).max(120.0)) };
                 let max_inner_h = ((screen.height() - practice_h) * 0.5 - 44.0).max(120.0);
                 let auto_s = (inner_w / 300.0).min(max_inner_h / 138.0).clamp(0.8, 3.0);
                 let mut s = if self.stack_frac >= 0.99 {
@@ -6127,7 +6136,7 @@ impl eframe::App for App {
                     if self.practice {
                         let room = h - base - eq_part(eq_fit) - per_s * s;
                         if practice_h > room {
-                            practice_h = room.max(220.0);
+                            practice_h = room.max(120.0);
                         }
                     }
                     if let Some(e) = eq_fit.filter(|_| self.show_eq) {
@@ -6354,7 +6363,7 @@ impl eframe::App for App {
                             } else {
                                 (screen.height() * 0.6).max(220.0)
                             };
-                            self.prac_h = (screen.max.y - py).clamp(220.0, most);
+                            self.prac_h = (screen.max.y - py).clamp(120.0, most);
                             self.dirty = true;
                         }
                         Some(None) => {

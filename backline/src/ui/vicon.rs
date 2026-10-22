@@ -428,6 +428,11 @@ pub fn named(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
                 pen.rect(x - 0.1, y - 0.06, x + 0.1, y + 0.06, 0.03);
             }
         }
+        "unlock" => {
+            pen.frame(0.18, 0.44, 0.82, 0.9, 0.06);
+            pen.line(&pen.arc(0.5, 0.3, 0.2, 180.0, 360.0));
+            pen.line(&[(0.3, 0.3), (0.3, 0.44)]);
+        }
         "lock" => {
             pen.frame(0.18, 0.44, 0.82, 0.9, 0.06);
             pen.line(&pen.arc(0.5, 0.42, 0.2, 180.0, 360.0));

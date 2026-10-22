@@ -635,46 +635,126 @@ impl App {
             });
         });
 
-        // ---- playing, in the middle
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
-            ui.horizontal(|ui| {
-                if icon_btn(ui, &IC_SHUF, self.shuffle, ink)
-                    .tip(if self.shuffle { "Shuffle is on. Click to turn it off." } else { "Shuffle the queue" })
-                    .clicked()
-                {
-                    acts.push(Action::Shuffle);
-                }
-                if icon_btn(ui, &IC_PREV, false, ink).tip("Previous").clicked() {
-                    acts.push(Action::Prev);
-                }
-                if icon_btn(ui, if playing { &IC_PAUSE } else { &IC_PLAY }, false, ink)
-                    .tip(if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" })
-                    .clicked()
-                {
-                    acts.push(Action::Toggle);
-                }
-                if icon_btn(ui, &IC_NEXT, false, ink).tip("Next").clicked() {
-                    acts.push(Action::Next);
-                }
-                let (rep_icon, rep_tip) = match self.repeat {
-                    Repeat::Off => (&IC_REP, "Repeat is off  (click for all)"),
-                    Repeat::All => (&IC_REP, "Repeat all  (click for one track)"),
-                    Repeat::One => (&IC_REP1, "Repeat this track  (click to turn off)"),
-                };
-                if icon_btn(ui, rep_icon, self.repeat != Repeat::Off, ink).tip(rep_tip).clicked() {
-                    acts.push(Action::Repeat);
-                }
-                // files and YouTube clips are not on Tidal, so there is nothing to like
-                if icon_btn(ui, &IC_HEART, liked_now, if liked_now { pal().red } else { ink })
-                    .tip(if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" })
-                    .clicked()
-                {
-                    if let Some(t) = &cur_t {
-                        acts.push(Action::ToggleLike(t.clone()));
+        // ---- playing, in the middle (a skin worn: no boxes, the symbols themselves light when on, as in the bar
+        // under the library; repeat one carries a small 1)
+        if crate::winamp_ui::chrome_on() {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 14.0;
+                    let bare = |ui: &mut egui::Ui, icon: &str, on: bool, big: bool, tip: &str| -> bool {
+                        let d = if big { 40.0 } else { 30.0 };
+                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+                        let p = ui.painter();
+                        if big {
+                            p.circle_filled(r.center(), d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 }, pal().ink);
+                            crate::vicon::named(
+                                p,
+                                Rect::from_center_size(r.center() + Vec2::new(1.5, 0.0), Vec2::splat(d * 0.42)),
+                                icon,
+                                pal().lcd,
+                            );
+                        } else {
+                            let col = if on {
+                                pal().bar_txt
+                            } else if resp.hovered() {
+                                pal().ink
+                            } else {
+                                pal().ink2
+                            };
+                            crate::vicon::named(p, r.shrink(d * 0.2), icon, col);
+                            if on {
+                                p.circle_filled(Pos2::new(r.center().x, r.max.y + 1.0), 2.0, col);
+                            }
+                        }
+                        resp.clicked()
+                    };
+                    if bare(ui, "shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }) {
+                        acts.push(Action::Shuffle);
                     }
-                }
+                    if bare(ui, "prev", false, false, "Previous") {
+                        acts.push(Action::Prev);
+                    }
+                    if bare(
+                        ui,
+                        if playing { "pause" } else { "play" },
+                        false,
+                        true,
+                        if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" },
+                    ) {
+                        acts.push(Action::Toggle);
+                    }
+                    if bare(ui, "skip", false, false, "Next") {
+                        acts.push(Action::Next);
+                    }
+                    let rep_tip = match self.repeat {
+                        Repeat::Off => "Repeat: off  (click for all)",
+                        Repeat::All => "Repeat: all  (click for this song)",
+                        Repeat::One => "Repeat: this song  (click for off)",
+                    };
+                    let before = ui.cursor().min;
+                    if bare(ui, "loop", self.repeat != Repeat::Off, false, rep_tip) {
+                        acts.push(Action::Repeat);
+                    }
+                    if self.repeat == Repeat::One {
+                        let c = before + Vec2::new(24.0, 6.0);
+                        ui.painter().circle_filled(c, 6.0, pal().bar_txt);
+                        crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, pal().lcd));
+                    }
+                    if bare(
+                        ui,
+                        "heart",
+                        liked_now,
+                        false,
+                        if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" },
+                    ) {
+                        if let Some(t) = &cur_t {
+                            acts.push(Action::ToggleLike(t.clone()));
+                        }
+                    }
+                });
             });
-        });
+        } else {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
+                ui.horizontal(|ui| {
+                    if icon_btn(ui, &IC_SHUF, self.shuffle, ink)
+                        .tip(if self.shuffle { "Shuffle is on. Click to turn it off." } else { "Shuffle the queue" })
+                        .clicked()
+                    {
+                        acts.push(Action::Shuffle);
+                    }
+                    if icon_btn(ui, &IC_PREV, false, ink).tip("Previous").clicked() {
+                        acts.push(Action::Prev);
+                    }
+                    if icon_btn(ui, if playing { &IC_PAUSE } else { &IC_PLAY }, false, ink)
+                        .tip(if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" })
+                        .clicked()
+                    {
+                        acts.push(Action::Toggle);
+                    }
+                    if icon_btn(ui, &IC_NEXT, false, ink).tip("Next").clicked() {
+                        acts.push(Action::Next);
+                    }
+                    let (rep_icon, rep_tip) = match self.repeat {
+                        Repeat::Off => (&IC_REP, "Repeat is off  (click for all)"),
+                        Repeat::All => (&IC_REP, "Repeat all  (click for one track)"),
+                        Repeat::One => (&IC_REP1, "Repeat this track  (click to turn off)"),
+                    };
+                    if icon_btn(ui, rep_icon, self.repeat != Repeat::Off, ink).tip(rep_tip).clicked() {
+                        acts.push(Action::Repeat);
+                    }
+                    // files and YouTube clips are not on Tidal, so there is nothing to like
+                    if icon_btn(ui, &IC_HEART, liked_now, if liked_now { pal().red } else { ink })
+                        .tip(if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" })
+                        .clicked()
+                    {
+                        if let Some(t) = &cur_t {
+                            acts.push(Action::ToggleLike(t.clone()));
+                        }
+                    }
+                });
+            });
+        }
 
         // ---- the rest: speed, practice, queue, then sound and CLOSE at the edge
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| {

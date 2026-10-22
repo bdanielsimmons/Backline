@@ -216,13 +216,11 @@ impl App {
             let area = place(egui::Area::new(egui::Id::new("metro")).order(egui::Order::Foreground).constrain(true), mpill);
             panel = Some(area.show(ctx, |ui| self.metro_box(ui, acts)).response.rect);
         }
-        // a click outside the open panel (and the pills), or Esc, shuts it
-        if let Some(pr) = panel {
-            let on_pill = |q: Pos2| [tpill, mpill, corner].iter().flatten().any(|r| r.contains(q));
-            let out = ctx
-                .input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|q| !pr.contains(q) && !on_pill(q)));
+        // Esc shuts the open panel (a click elsewhere leaves it open: you play along with it; its X and its pill close it)
+        if panel.is_some() {
+            let _ = (tpill, mpill, corner);
             let esc = self.ed.id == 0 && ctx.input(|i| i.key_pressed(egui::Key::Escape));
-            if out || esc {
+            if esc {
                 acts.push(if self.timer_open { Action::TimerPanel } else { Action::MetroPanel });
             }
         }
@@ -1038,8 +1036,8 @@ impl App {
     /// The lead sheet: a header (name, key, transpose, edit), the chart, and the band as one bar at the foot.
     pub(crate) fn chart_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         crate::tour::mark("SHEET", ui.clip_rect());
-        // follow the player (the default), or keep what is on show
-        let playing = self.cur_track().filter(|_| !self.stopped);
+        // follow the player (the default), or keep what is on show; a stopped song keeps its sheet up
+        let playing = self.cur_track();
         let ti = self.chart_tune();
         let playing_title = playing.as_ref().map(|t| t.title.clone());
         // what is on show: a saved tune, or whatever is playing (looked up on its own)
@@ -1235,7 +1233,30 @@ impl App {
         } else {
             "Following the player: the lead sheet changes with the song playing. Click to keep this one."
         };
-        if ibutton(ui, "lock", tip, self.chart_lock).clicked() {
+        // an open or shut padlock and its word: clear at a glance which it is
+        let (icon, word) = if self.chart_lock { ("lock", "LOCKED") } else { ("unlock", "FOLLOWING") };
+        let w = text_w(word, 1.6) + 34.0;
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
+        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let p = ui.painter();
+        let col = if self.chart_lock { pal().bar_txt } else { pal().ink2 };
+        p.rect_filled(r, r.height() / 2.0, if self.chart_lock { pal().lcd } else { pal().beige.lerp_to_gamma(pal().lcd, 0.35) });
+        p.rect_stroke(
+            r,
+            r.height() / 2.0,
+            egui::Stroke::new(1.0_f32, if self.chart_lock { pal().bar_txt } else { pal().beige_h }),
+        );
+        crate::vicon::named(
+            p,
+            Rect::from_center_size(Pos2::new(r.min.x + 14.0, r.center().y), Vec2::splat(r.height() * 0.5)),
+            icon,
+            col,
+        );
+        crate::winamp_ui::as_title(|| {
+            crate::ui_text(p, Pos2::new(r.min.x + 26.0, r.center().y), Align::Min, word, 1.6, w - 28.0, col)
+        });
+        let _ = ibutton;
+        if resp.tip(tip).clicked() {
             if self.chart_lock {
                 self.chart_lock = false;
                 if let Some(id) = playing {
@@ -1483,6 +1504,25 @@ impl App {
         }
         // dragging across bars picks them, so it must not scroll the sheet
         egui::ScrollArea::vertical().auto_shrink([false, false]).drag_to_scroll(false).show(ui, |ui| {
+            // picking bars past the edge of the sheet: held near (or past) its top or bottom, it scrolls along, faster
+            // the further out the pointer is
+            if self.chart_drag.is_some() && ui.input(|i| i.pointer.primary_down()) {
+                let view = ui.clip_rect();
+                if let Some(pp) = ui.input(|i| i.pointer.interact_pos()) {
+                    let edge = 36.0;
+                    let dy = if pp.y > view.max.y - edge {
+                        -((pp.y - (view.max.y - edge)) * 0.35).clamp(2.0, 30.0)
+                    } else if pp.y < view.min.y + edge {
+                        ((view.min.y + edge - pp.y) * 0.35).clamp(2.0, 30.0)
+                    } else {
+                        0.0
+                    };
+                    if dy != 0.0 {
+                        ui.scroll_with_delta(Vec2::new(0.0, dy));
+                        ui.ctx().request_repaint();
+                    }
+                }
+            }
             ui.add_space(4.0);
             let w = ui.available_width() - 6.0;
             let per: usize = if w >= 760.0 { 8 } else { 4 };
@@ -1517,7 +1557,13 @@ impl App {
                         self.chart_drag = Some(idx);
                     }
                     if let Some(start) = self.chart_drag {
-                        let over = ui.input(|i| i.pointer.interact_pos()).is_some_and(|pos| cell.contains(pos));
+                        // (over the bar, or past the sheet's edge with this the last bar shown that way)
+                        let over = ui.input(|i| i.pointer.interact_pos()).is_some_and(|pos| {
+                            let view = ui.clip_rect();
+                            cell.contains(pos)
+                                || (pos.y > view.max.y && cell.max.y > view.max.y - ch && cell.x_range().contains(pos.x))
+                                || (pos.y < view.min.y && cell.min.y < view.min.y + ch && cell.x_range().contains(pos.x))
+                        });
                         if over && ui.input(|i| i.pointer.primary_down()) {
                             let sel = (start.min(idx), start.max(idx));
                             if self.chart_sel != Some(sel) {
