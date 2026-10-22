@@ -1045,6 +1045,23 @@ fn note_box(ui: &mut egui::Ui, text: &str, col: Color32) {
     ui.add_space(8.0);
 }
 
+/// Every line of a paragraph, wrapped to the width (the notes of WHAT'S NEW: nothing tucked away under the pointer).
+pub(crate) fn wrapped(ui: &mut egui::Ui, text: &str, col: Color32) {
+    let text = if winamp_ui::chrome_on() { winamp_ui::caps_words(text) } else { text.to_string() };
+    let w = ui.available_width() - 12.0;
+    let lh = (font::text_px(2.0) * 1.35).max(18.0);
+    for line in wrap(&text, 2.0, w) {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), lh), Sense::hover());
+        ptext(ui.painter(), Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, &line, 2.0, col);
+        // (lines of one paragraph sit together, whatever gap the page puts between things)
+        let gap = ui.spacing().item_spacing.y;
+        if gap > 0.0 {
+            ui.add_space(-gap);
+        }
+    }
+    ui.add_space(6.0);
+}
+
 /// Break a long unbroken string (a file path) into lines that fit.
 pub(crate) fn chunk(text: &str, px: f32, w: f32) -> Vec<String> {
     let mut out = Vec::new();

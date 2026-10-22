@@ -1688,9 +1688,11 @@ impl App {
                 egui::Frame::none().fill(pal().app_bg).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(16.0).show(
                     ui,
                     |ui| {
-                        ui.set_width(460.0_f32.min(screen.width() - 40.0));
+                        let w = 560.0_f32.min(screen.width() - 40.0);
+                        ui.set_width(w);
                         title_line(ui, "WHAT'S NEW", 3.0, pal().ink);
                         egui::ScrollArea::vertical().max_height((screen.height() * 0.45).max(160.0)).show(ui, |ui| {
+                            ui.set_width(w - 16.0);
                             for (tag, body) in &notes {
                                 let this = tag.rsplit('.').next().and_then(|n| n.parse::<u64>().ok()) == Some(me);
                                 section_header(
@@ -1718,7 +1720,7 @@ impl App {
                                         Some(b) => (format!("  - {}", b), pal().ink2),
                                         None => (l.to_string(), pal().ink),
                                     };
-                                    para(ui, &text, col);
+                                    crate::wrapped(ui, &text, col);
                                 }
                                 ui.add_space(6.0);
                             }
