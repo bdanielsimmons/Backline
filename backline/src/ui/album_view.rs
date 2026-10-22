@@ -114,7 +114,11 @@ impl App {
 
         // ---- visualizer, soft and behind everything (only under the cover when lyrics split the view)
         if self.show_spec {
-            let zone = if lyrics_on { Rect::from_min_max(full.min, Pos2::new(art_zone.max.x + 14.0, full.max.y)) } else { full };
+            let zone = if lyrics_on && self.spec_lyr == 0 {
+                Rect::from_min_max(full.min, Pos2::new(art_zone.max.x + 14.0, full.max.y))
+            } else {
+                full
+            };
             // WIDTH = how much of the zone the visualizer spans, centred (the zone is the cover's side when lyrics are up)
             let half = (zone.width() * self.spec_w / 2.0).max(40.0);
             let mid = zone.center().x;
@@ -548,7 +552,10 @@ impl App {
         }
 
         // ---- buttons
-        let row = Rect::from_min_size(Pos2::new(full.min.x + 28.0, full.max.y - 52.0), Vec2::new(full.width() - 56.0, bh()));
+        // (with a skin worn: centred exactly between the seek bar and the window's bottom edge)
+        let row_y =
+            if crate::winamp_ui::chrome_on() { (sb.max.y + ui.ctx().screen_rect().max.y) / 2.0 - bh() / 2.0 } else { full.max.y - 52.0 };
+        let row = Rect::from_min_size(Pos2::new(full.min.x + 28.0, row_y), Vec2::new(full.width() - 56.0, bh()));
         tour::mark("ARTBTNS", row);
         if prac {
             // practice mode: the loop tools on the left, the speed on the right, in the band along the top
@@ -638,82 +645,87 @@ impl App {
         // ---- playing, in the middle (a skin worn: no boxes, the symbols themselves light when on, as in the bar
         // under the library; repeat one carries a small 1)
         if crate::winamp_ui::chrome_on() {
-            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 14.0;
-                    let bare = |ui: &mut egui::Ui, icon: &str, on: bool, big: bool, tip: &str| -> bool {
-                        let d = if big { 40.0 } else { 30.0 };
-                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
-                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
-                        let p = ui.painter();
-                        if big {
-                            p.circle_filled(r.center(), d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 }, pal().ink);
-                            crate::vicon::named(
-                                p,
-                                Rect::from_center_size(r.center() + Vec2::new(1.5, 0.0), Vec2::splat(d * 0.42)),
-                                icon,
-                                pal().lcd,
-                            );
-                        } else {
-                            let col = if on {
-                                pal().bar_txt
-                            } else if resp.hovered() {
-                                pal().ink
-                            } else {
-                                pal().ink2
-                            };
-                            crate::vicon::named(p, r.shrink(d * 0.2), icon, col);
-                            if on {
-                                p.circle_filled(Pos2::new(r.center().x, r.max.y + 1.0), 2.0, col);
-                            }
-                        }
-                        resp.clicked()
+            // every symbol on one centre line, evenly spaced, the round play in the middle
+            let cy = row.center().y;
+            let gap = 40.0;
+            let mut n = 0usize;
+            let mut bare = |icon: &str, on: bool, big: bool, tip: &str, x: f32| -> bool {
+                n += 1;
+                let d = if big { 40.0 } else { 26.0 };
+                let r = Rect::from_center_size(Pos2::new(x, cy), Vec2::splat(d));
+                let resp = ui
+                    .interact(r, ui.id().with(("np_ctl", n)), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .tip(tip);
+                let p = ui.painter();
+                if big {
+                    p.circle_filled(r.center(), d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 }, pal().ink);
+                    let off = if icon == "play" { 1.5 } else { 0.0 };
+                    crate::vicon::named(
+                        p,
+                        Rect::from_center_size(r.center() + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)),
+                        icon,
+                        pal().lcd,
+                    );
+                } else {
+                    let col = if on {
+                        pal().bar_txt
+                    } else if resp.hovered() {
+                        pal().ink
+                    } else {
+                        pal().ink2
                     };
-                    if bare(ui, "shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }) {
-                        acts.push(Action::Shuffle);
+                    crate::vicon::named(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.62)), icon, col);
+                    if on {
+                        p.circle_filled(Pos2::new(r.center().x, r.max.y + 3.0), 2.0, col);
                     }
-                    if bare(ui, "prev", false, false, "Previous") {
-                        acts.push(Action::Prev);
-                    }
-                    if bare(
-                        ui,
-                        if playing { "pause" } else { "play" },
-                        false,
-                        true,
-                        if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" },
-                    ) {
-                        acts.push(Action::Toggle);
-                    }
-                    if bare(ui, "skip", false, false, "Next") {
-                        acts.push(Action::Next);
-                    }
-                    let rep_tip = match self.repeat {
-                        Repeat::Off => "Repeat: off  (click for all)",
-                        Repeat::All => "Repeat: all  (click for this song)",
-                        Repeat::One => "Repeat: this song  (click for off)",
-                    };
-                    let before = ui.cursor().min;
-                    if bare(ui, "loop", self.repeat != Repeat::Off, false, rep_tip) {
-                        acts.push(Action::Repeat);
-                    }
-                    if self.repeat == Repeat::One {
-                        let c = before + Vec2::new(24.0, 6.0);
-                        ui.painter().circle_filled(c, 6.0, pal().bar_txt);
-                        crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, pal().lcd));
-                    }
-                    if bare(
-                        ui,
-                        "heart",
-                        liked_now,
-                        false,
-                        if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" },
-                    ) {
-                        if let Some(t) = &cur_t {
-                            acts.push(Action::ToggleLike(t.clone()));
-                        }
-                    }
-                });
-            });
+                }
+                resp.clicked()
+            };
+            // (a little left of centre: the right-hand group is the wider one)
+            let x0 = mid.center().x - if row.width() < 1400.0 { 40.0 } else { 0.0 };
+            if bare("shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }, x0 - 2.5 * gap) {
+                acts.push(Action::Shuffle);
+            }
+            if bare("prev", false, false, "Previous", x0 - 1.5 * gap) {
+                acts.push(Action::Prev);
+            }
+            if bare(
+                if playing { "pause" } else { "play" },
+                false,
+                true,
+                if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" },
+                x0 - 0.5 * gap,
+            ) {
+                acts.push(Action::Toggle);
+            }
+            if bare("skip", false, false, "Next", x0 + 0.5 * gap) {
+                acts.push(Action::Next);
+            }
+            let rep_tip = match self.repeat {
+                Repeat::Off => "Repeat: off  (click for all)",
+                Repeat::All => "Repeat: all  (click for this song)",
+                Repeat::One => "Repeat: this song  (click for off)",
+            };
+            if bare("loop", self.repeat != Repeat::Off, false, rep_tip, x0 + 1.5 * gap) {
+                acts.push(Action::Repeat);
+            }
+            if self.repeat == Repeat::One {
+                let c = Pos2::new(x0 + 1.5 * gap + 9.0, cy - 9.0);
+                ui.painter().circle_filled(c, 6.0, pal().bar_txt);
+                crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, pal().lcd));
+            }
+            if bare(
+                "heart",
+                liked_now,
+                false,
+                if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" },
+                x0 + 2.5 * gap,
+            ) {
+                if let Some(t) = &cur_t {
+                    acts.push(Action::ToggleLike(t.clone()));
+                }
+            }
         } else {
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
                 ui.horizontal(|ui| {

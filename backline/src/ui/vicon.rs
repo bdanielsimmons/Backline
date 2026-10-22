@@ -198,10 +198,11 @@ pub fn draw(p: &egui::Painter, r: Rect, rows: &[&str], col: Color32) -> bool {
     } else if is(&MARK) {
         gem(p, r, col, pal().ink2);
     } else if is(&IC_OUT) {
-        pen.frame(0.24, 0.04, 0.76, 0.96, 0.08);
-        pen.dot(0.5, 0.24, 0.06);
-        pen.circle(0.5, 0.62, 0.17);
-        pen.dot(0.5, 0.62, 0.05);
+        // (the size of the other symbols, not the whole button's height)
+        pen.frame(0.32, 0.16, 0.68, 0.84, 0.08);
+        pen.dot(0.5, 0.31, 0.045);
+        pen.circle(0.5, 0.6, 0.12);
+        pen.dot(0.5, 0.6, 0.04);
     } else if is(&IC_MENU) {
         for y in [0.18, 0.44, 0.7] {
             pen.rect(0.1, y, 0.9, y + 0.12, 0.06);
@@ -426,6 +427,16 @@ pub fn named(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
             for (x, y) in [(0.22, 0.62), (0.5, 0.32), (0.78, 0.56)] {
                 pen.line(&[(x, 0.1), (x, 0.9)]);
                 pen.rect(x - 0.1, y - 0.06, x + 0.1, y + 0.06, 0.03);
+            }
+        }
+        "headphones" => {
+            pen.line(&pen.arc(0.5, 0.58, 0.4, 180.0, 360.0));
+            pen.rect(0.04, 0.52, 0.3, 0.92, 0.1);
+            pen.rect(0.7, 0.52, 0.96, 0.92, 0.1);
+        }
+        "wave" => {
+            for (x, h) in [(0.12, 0.14), (0.26, 0.3), (0.4, 0.42), (0.54, 0.24), (0.68, 0.36), (0.82, 0.16)] {
+                pen.line(&[(x, 0.5 - h), (x, 0.5 + h)]);
             }
         }
         "unlock" => {

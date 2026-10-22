@@ -215,6 +215,10 @@ impl App {
                     self.spec_frame = f;
                     dirty = true;
                 }
+                if let Some(f) = choice(ui, "WITH LYRICS", &["UNDER THE COVER", "FULL WIDTH"], self.spec_lyr) {
+                    self.spec_lyr = f;
+                    dirty = true;
+                }
             }
             if dirty {
                 self.dirty = true;

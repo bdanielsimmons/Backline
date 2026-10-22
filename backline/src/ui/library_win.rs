@@ -1193,7 +1193,7 @@ impl App {
         p.rect_stroke(area, h / 2.0, Stroke::new(1.0_f32, pal().beige_h));
         let half = area.width() / 2.0;
         for (k, (icon, word, on)) in
-            [("note", "LISTEN", !self.practice), ("guitar", "PRACTICE", self.practice)].into_iter().enumerate()
+            [("headphones", "LISTEN", !self.practice), ("wave", "PRACTICE", self.practice)].into_iter().enumerate()
         {
             let cell = Rect::from_min_size(Pos2::new(area.min.x + k as f32 * half, area.min.y), Vec2::new(half, h)).shrink(3.0);
             let resp = ui
@@ -1214,7 +1214,15 @@ impl App {
             let x0 = cell.center().x - (tw + 18.0) / 2.0;
             crate::vicon::named(&p, Rect::from_center_size(Pos2::new(x0 + 7.0, cell.center().y), Vec2::splat(12.0)), icon, col);
             crate::winamp_ui::as_title(|| {
-                crate::ui_text(&p, Pos2::new(x0 + 18.0, cell.center().y), Align::Min, word, 1.4, cell.width() - (x0 + 18.0 - cell.min.x), col)
+                crate::ui_text(
+                    &p,
+                    Pos2::new(x0 + 18.0, cell.center().y),
+                    Align::Min,
+                    word,
+                    1.4,
+                    cell.width() - (x0 + 18.0 - cell.min.x),
+                    col,
+                )
             });
             if k == 1 {
                 tour::mark("CHIP", cell);

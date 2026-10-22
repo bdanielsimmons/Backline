@@ -2091,6 +2091,8 @@ struct App {
     spec_w: f32,
     /// the album view's visualizer in a box: 0 none, 1 a themed box, 2 a thin line
     spec_frame: u8,
+    /// with lyrics up, the visualizer stays as wide as the whole view (0: only under the cover, 1: full width)
+    spec_lyr: u8,
     /// the visualizer settings panel, open on 0 (the player's screen) or 1 (the album view)
     viz_panel: Option<usize>,
     /// the Winamp skin browser: open, what was searched, the skins found, still loading, no more to load,
@@ -2954,6 +2956,7 @@ impl App {
             spec_h: 0.42,
             spec_w: 0.6,
             spec_frame: 1,
+            spec_lyr: 0,
             viz_panel: None,
             show_winamp: false,
             show_tl: false,
@@ -3673,6 +3676,9 @@ impl App {
             }
         }
 
+        if let Some(f) = st["spec_lyr"].as_u64() {
+            app.spec_lyr = (f as u8).min(1);
+        }
         if let Some(f) = st["spec_frame"].as_u64() {
             app.spec_frame = (f as u8).min(1);
         }
@@ -4066,6 +4072,7 @@ impl App {
             "spec_h": self.spec_h,
             "spec_w": self.spec_w,
             "spec_frame": self.spec_frame,
+            "spec_lyr": self.spec_lyr,
             "pl_font": self.pl_font,
             "eq_auto": self.eq_auto,
             "eq_songs": self.eq_songs,
