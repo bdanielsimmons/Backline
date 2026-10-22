@@ -9,7 +9,12 @@ const RATE: u32 = 44100;
 
 /// Play the opening sound on `device` at `vol` (0..1), off the main thread. `file`: your own sound (its first
 /// eight seconds); None: Backline's sound number `which` of SOUNDS.
+/// Which opening sound is the latest asked for: one already playing stops when a newer one starts (clicking
+/// through them, or clicking one again, never stacks them up).
+static PLAYING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub fn play(file: Option<String>, which: usize, device: Option<String>, vol: f32) {
+    let me = PLAYING.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     // muted (a test copy, a demo recording): no chime
     if crate::player::MUTED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
@@ -22,7 +27,13 @@ pub fn play(file: Option<String>, which: usize, device: Option<String>, vol: f32
             Some(src) => sink.append(src.take_duration(std::time::Duration::from_secs(8))),
             None => sink.append(rodio::buffer::SamplesBuffer::new(2, RATE, sound(which))),
         }
-        sink.sleep_until_end();
+        while !sink.empty() {
+            if PLAYING.load(std::sync::atomic::Ordering::SeqCst) != me {
+                sink.stop();
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
     });
 }
 
@@ -127,7 +138,13 @@ fn pad(out: &mut [f32], start: f32, notes: &[f32], len: f32, att: f32, rel: f32,
                 let saw = ph * 2.0 - 1.0;
                 lp1 += a * (saw - lp1);
                 lp2 += a * (lp1 - lp2);
-                let env = if t < att { (t / att).powf(1.6) } else if t < len { 1.0 } else { (1.0 - (t - len) / rel).max(0.0).powi(2) };
+                let env = if t < att {
+                    (t / att).powf(1.6)
+                } else if t < len {
+                    1.0
+                } else {
+                    (1.0 - (t - len) / rel).max(0.0).powi(2)
+                };
                 *o += lp2 * env * amp / notes.len() as f32;
             }
         }

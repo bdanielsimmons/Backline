@@ -1688,6 +1688,59 @@ pub(crate) fn filter_score(filter: &str, fields: &[&str]) -> Option<u32> {
     Some(score)
 }
 
+/// A tune's proper title, when the name typed is short of it or misspelled ("Incompatibilidade de" for
+/// "Incompatibilidade de Gênios"): the title most of these (the recordings LOOK UP found) go by, among those that
+/// match what was typed, with the tunes Backline knows (`known`) counted once each. None when nothing matches, two
+/// titles are as common, or the best is the name as typed (capitals aside).
+pub(crate) fn likely_title(name: &str, titles: &[&str], known: &[&str]) -> Option<String> {
+    let squash = |s: &str| fold(s).split_whitespace().collect::<Vec<_>>().join(" ");
+    let typed = squash(name);
+    if typed.is_empty() {
+        return None;
+    }
+    let fits = |c: &str| {
+        let f = squash(c);
+        !f.is_empty() && (f.starts_with(&typed) || filter_score(name, &[c]).is_some())
+    };
+    // (the title folded, how many in all, each spelling and how many)
+    let mut groups: Vec<(String, u32, Vec<(String, u32)>)> = Vec::new();
+    let mut add = |c: &str| {
+        let f = squash(c);
+        let gi = groups.iter().position(|g| g.0 == f).unwrap_or_else(|| {
+            groups.push((f, 0, Vec::new()));
+            groups.len() - 1
+        });
+        let g = &mut groups[gi];
+        g.1 += 1;
+        match g.2.iter_mut().find(|s| s.0 == c) {
+            Some(s) => s.1 += 1,
+            None => g.2.push((c.to_string(), 1)),
+        }
+    };
+    for t in titles {
+        // "Autumn Leaves (Live)", or "Artist - Title": the part that matches
+        if let Some(c) = t.split(" - ").map(crate::chart::clean_title).find(|c| fits(c)) {
+            add(&c);
+        }
+    }
+    for k in known.iter().filter(|k| fits(k)) {
+        add(k);
+    }
+    groups.sort_by(|a, b| b.1.cmp(&a.1));
+    if groups.len() > 1 && groups[0].1 == groups[1].1 {
+        return None;
+    }
+    let g = groups.into_iter().next()?;
+    // the commonest spelling (the first found, of those as common)
+    let mut best = g.2[0].clone();
+    for s in &g.2[1..] {
+        if s.1 > best.1 {
+            best = s.clone();
+        }
+    }
+    (best.0.to_lowercase() != name.trim().to_lowercase()).then_some(best.0)
+}
+
 thread_local! {
     /// The last filtered list: (filter, how many there were, which list, the order of the ones that match), so a
     /// long library is matched once per change, not every frame.
@@ -1735,8 +1788,23 @@ fn page_view(
                 // filtered by the words typed above (title, artist or album)
                 // (offline mode: only the songs on this computer)
                 let here: Vec<Track>;
+                let mut liked_total = page.total.max(page.tracks.len());
                 let all: &[Track] = if crate::api::OFFLINE.load(Ordering::Relaxed) {
-                    here = page.tracks.iter().filter(|t| cache::has(t.id)).cloned().collect();
+                    // every liked song stored on this computer, also the ones the library hadn't loaded yet (from the
+                    // list of liked songs kept from last time, read once)
+                    thread_local! {
+                        static SAVED: std::cell::OnceCell<Vec<Track>> = const { std::cell::OnceCell::new() };
+                    }
+                    let saved = SAVED.with(|s| s.get_or_init(crate::api::load_liked).clone());
+                    liked_total = liked_total.max(saved.len());
+                    let mut seen: HashSet<i64> = HashSet::new();
+                    here = page
+                        .tracks
+                        .iter()
+                        .chain(saved.iter())
+                        .filter(|t| cache::has(t.id) && seen.insert(t.id))
+                        .cloned()
+                        .collect();
                     &here
                 } else {
                     &page.tracks
@@ -1754,7 +1822,7 @@ fn page_view(
                 let sub = if !filter.trim().is_empty() {
                     format!("{} of {} songs match", tracks.len(), all.len())
                 } else if crate::api::OFFLINE.load(Ordering::Relaxed) {
-                    format!("offline: {} of {} songs are on this computer", all.len(), page.tracks.len())
+                    format!("Offline: {} of {} songs are on this computer", commas(all.len()), commas(liked_total))
                 } else if page.total > page.tracks.len() {
                     format!("{} of {} songs loaded", commas(page.tracks.len()), commas(page.total))
                 } else {
@@ -2316,6 +2384,10 @@ struct App {
     look_busy: bool,
     look_for: String,
     look_tracks: Vec<(Track, u32)>,
+    /// the tune's proper name, guessed from what LOOK UP found: (for which name, how many found, the guess)
+    name_guess: (String, usize, Option<String>),
+    /// tunes whose guessed name you said KEEP to (their names as kept)
+    name_kept: Vec<String>,
     f_tune: String,
     f_mins: String,
     f_bpm: String,
@@ -2603,13 +2675,6 @@ struct App {
     cm_named: bool,
     /// COLTRANE CELLS THROUGH A TUNE: which cell
     ct_cell: u8,
-    /// OLD SCREEN effects: scanlines, tube edges, ghost segments, burn-in
-    crt: [bool; 6],
-    /// how strong the glow and afterglow are: 1 faint ... 4 as made ... 10 blazing
-    crt_glow: u8,
-    /// the time readout's seconds last drawn, and the ones before with when they changed (for the afterglow)
-    wa_secs: u32,
-    wa_after: Option<(u32, std::time::Instant)>,
     /// the current loop: the diary key it was last kept under (its ends move with it until it is cleared or another is
     /// picked), and the saved loop it is (song, which), if one
     loop_ident: Option<String>,
@@ -2748,6 +2813,8 @@ struct App {
     mt_gen: u32,
     mt_pos: (f32, Instant),
     mt_sync_at: Instant,
+    /// locked to a song's beats: the song time its laid-out clicks run to (rebuilt before then)
+    mt_lead_end: f32,
     beat: Option<(i64, f32, f32)>,
     /// every beat of that song through it (followed as the band drifts), and its usual beat length
     beat_grid: Option<(i64, std::sync::Arc<Vec<f32>>, f32)>,
@@ -3118,6 +3185,8 @@ impl App {
             look_busy: false,
             look_for: String::new(),
             look_tracks: Vec::new(),
+            name_guess: (String::new(), 0, None),
+            name_kept: Vec::new(),
             f_tune: String::new(),
             f_mins: String::new(),
             f_bpm: String::new(),
@@ -3331,10 +3400,6 @@ impl App {
             cm_drag: None,
             cm_named: false,
             ct_cell: 0,
-            crt: [false; 6],
-            crt_glow: 4,
-            wa_secs: 0,
-            wa_after: None,
             loop_ident: None,
             loop_saved: None,
             cm_hidden: Vec::new(),
@@ -3433,6 +3498,7 @@ impl App {
             mt_gen: 0,
             mt_pos: (0.0, Instant::now()),
             mt_sync_at: Instant::now(),
+            mt_lead_end: 0.0,
             beat: None,
             beat_busy: false,
             band_on: false,
@@ -3736,13 +3802,10 @@ impl App {
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
         app.pn_first = st["pn_first"].as_u64().unwrap_or(0).min(4) as u8;
         app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
-        app.crt_glow = st["crt_glow"].as_u64().unwrap_or(4).clamp(1, 10) as u8;
-
-        if let Some(a) = st["crt"].as_array() {
-            for (i, v) in a.iter().take(6).enumerate() {
-                app.crt[i] = v.as_bool().unwrap_or(false);
-            }
-        }
+        app.name_kept = st["name_kept"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
         app.pf_num = st["pf_num"].as_str().unwrap_or("").to_string();
         app.ar_num = st["ar_num"].as_str().unwrap_or("").to_string();
         app.pf_first = st["pf_first"].as_u64().unwrap_or(255).min(255) as u8;
@@ -4114,8 +4177,7 @@ impl App {
             "go_offline": self.go_offline,
             "pn_first": self.pn_first,
             "pn_num": self.pn_num,
-            "crt": self.crt,
-            "crt_glow": self.crt_glow,
+            "name_kept": self.name_kept,
             "pf_num": self.pf_num,
             "ar_num": self.ar_num,
             "pf_first": self.pf_first,
@@ -4166,47 +4228,6 @@ impl App {
     }
 
     /// Push loop / speed state to the audio thread and remember the loop for this track.
-    /// The GLOW strength as a factor on the light (4, as made, is 1).
-    pub(crate) fn glow_scale(&self) -> f32 {
-        self.crt_glow as f32 / 4.0
-    }
-
-    /// OLD SCREEN, over everything (drawn only, never in the way of a click): scanlines, and the tube's darker edges.
-    fn crt_overlay(&self, ctx: &egui::Context) {
-        if !self.crt[0] && !self.crt[1] {
-            return;
-        }
-        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Debug, egui::Id::new("crt")));
-        let r = ctx.screen_rect();
-        if self.crt[0] {
-            let line = Stroke::new(1.0_f32, Color32::from_black_alpha(46));
-            let mut y = r.min.y + 1.5;
-            while y < r.max.y {
-                p.line_segment([Pos2::new(r.min.x, y), Pos2::new(r.max.x, y)], line);
-                y += 3.0;
-            }
-        }
-        if self.crt[1] {
-            // a band round the edge, dark at the rim, clear inside
-            let inner = r.shrink2(Vec2::new(r.width() * 0.16, r.height() * 0.16));
-            let dark = Color32::from_black_alpha(120);
-            let clear = Color32::TRANSPARENT;
-            let o = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()];
-            let i = [inner.left_top(), inner.right_top(), inner.right_bottom(), inner.left_bottom()];
-            let mut mesh = egui::Mesh::default();
-            for k in 0..4 {
-                let b = mesh.vertices.len() as u32;
-                mesh.colored_vertex(o[k], dark);
-                mesh.colored_vertex(o[(k + 1) % 4], dark);
-                mesh.colored_vertex(i[(k + 1) % 4], clear);
-                mesh.colored_vertex(i[k], clear);
-                mesh.add_triangle(b, b + 1, b + 2);
-                mesh.add_triangle(b, b + 2, b + 3);
-            }
-            p.add(egui::Shape::mesh(mesh));
-        }
-    }
-
     fn sync_loop(&mut self) {
         let both = self.loop_a.zip(self.loop_b);
         let on = self.practice && self.loop_on && both.is_some();
@@ -6478,7 +6499,10 @@ impl eframe::App for App {
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
-        self.crt_overlay(ctx);
+        // away from the Settings page, its skin lists fold shut again: next time they show as one line each
+        if !self.show_tl || self.show_log || self.show_cache || self.show_winamp {
+            self.skins_open = [false; 3];
+        }
         // the first time in: once you've chosen Tidal or not, straight into the tour
         if !self.tour_seen && (self.auth == Auth::In || self.offline) && self.frames >= 10 && self.tour.is_none() {
             self.tour_seen = true;
@@ -6646,6 +6670,30 @@ fn main() -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tune_typed_short_finds_its_proper_title() {
+        let found = [
+            "Incompatibilidade de Gênios",
+            "João Bosco & Aldir Blanc - Incompatibilidade de Gênios",
+            "Incompatibilidade de Gênios (Ao Vivo)",
+            "Incompatibilidade De Genios",
+            "O Bêbado e a Equilibrista",
+        ];
+        let known: Vec<&str> = canon::SESSION_TUNES.iter().flat_map(|k| k.1.iter().map(|t| t.0)).collect();
+        // short, or without its accents: the name the recordings go by
+        for typed in ["Incompatibilidade de", "incompatibilidade de genios", "Incompatibilidad de Genios"] {
+            assert_eq!(likely_title(typed, &found, &known).as_deref(), Some("Incompatibilidade de Gênios"), "{}", typed);
+        }
+        // already right (capitals aside): nothing to suggest
+        assert_eq!(likely_title("Incompatibilidade de Gênios", &found, &known), None);
+        assert_eq!(likely_title("incompatibilidade de gênios", &found, &known), None);
+        // nothing like it
+        assert_eq!(likely_title("Stablemates", &found, &[]), None);
+        // offline: the known tunes alone
+        assert_eq!(likely_title("Autum Leaves", &[], &known).as_deref(), Some("Autumn Leaves"));
+        assert_eq!(likely_title("Stella by", &[], &known).as_deref(), Some("Stella by Starlight"));
+    }
 
     #[test]
     fn library_filter_forgives() {

@@ -546,40 +546,6 @@ impl App {
             });
             ui.add_space(14.0);
             title_line(ui, "SKINS", 3.0, pal().ink);
-            // old screens, on top of any skin
-            ui.horizontal_wrapped(|ui| {
-                crate::views::label(ui, "OLD SCREEN", 120.0);
-                const FX: [(&str, &str); 6] = [
-                    ("SCANLINES", "The dark lines between a CRT's rows of light."),
-                    ("TUBE EDGES", "Darker corners, where the glass curves away."),
-                    ("GHOST SEGMENTS", "The unlit 8s of the time readout, faint behind the digits (Winamp skins)."),
-                    ("BURN-IN", "The player's name worn into the glass behind the scrolling title (Winamp skins)."),
-                    ("GLOW", "The lit digits and the title glow, as phosphor does (Winamp skins)."),
-                    ("AFTERGLOW", "A changed digit lingers and fades, and the moving title leaves a trail (Winamp skins)."),
-                ];
-                for (i, (n, tip)) in FX.iter().enumerate() {
-                    if crate::check_box(ui, n, self.crt[i]).tip(*tip).clicked() {
-                        self.crt[i] = !self.crt[i];
-                        self.dirty = true;
-                    }
-                }
-            });
-            // how strong the glow and afterglow are
-            if self.crt[4] || self.crt[5] {
-                ui.horizontal(|ui| {
-                    crate::views::label(ui, "GLOW STRENGTH", 120.0);
-                    if retro_btn_w(ui, "-", 28.0, false).clicked() {
-                        self.crt_glow = self.crt_glow.saturating_sub(1).max(1);
-                        self.dirty = true;
-                    }
-                    lcd_box(ui, &format!("{}", self.crt_glow), 40.0, pal().ink);
-                    if retro_btn_w(ui, "+", 28.0, false).clicked() {
-                        self.crt_glow = (self.crt_glow + 1).min(10);
-                        self.dirty = true;
-                    }
-                    crate::views::dim_line(ui, "1 FAINT, 4 AS MADE, 10 BLAZING", 1.0, pal().dim);
-                });
-            }
             ui.add_space(6.0);
             self.skin_lists(ui, acts);
             ui.add_space(20.0);

@@ -531,6 +531,37 @@ fn palette_from(f: &HashMap<String, Vec<u8>>) -> Result<Pal, String> {
 #[cfg(test)]
 mod tests {
 
+    /// One skin's whole palette ($BACKLINE_SKIN = a .wsz), each colour's brightness (run with --ignored --nocapture).
+    #[test]
+    #[ignore]
+    fn print_palette() {
+        let Ok(f) = std::env::var("BACKLINE_SKIN") else { return };
+        let (p, _) = load(&std::fs::read(f).unwrap()).unwrap();
+        for (n, c) in [
+            ("app_bg", p.app_bg),
+            ("beige", p.beige),
+            ("beige_lt", p.beige_lt),
+            ("beige_dk", p.beige_dk),
+            ("beige_h", p.beige_h),
+            ("lcd", p.lcd),
+            ("lcd_ghost", p.lcd_ghost),
+            ("groove", p.groove),
+            ("sel", p.sel),
+            ("ink", p.ink),
+            ("ink2", p.ink2),
+            ("dim", p.dim),
+            ("btn_face", p.btn_face),
+            ("btn_hi", p.btn_hi),
+            ("row_alt", p.row_alt),
+            ("row_sel", p.row_sel),
+            ("bar_txt", p.bar_txt),
+            ("edge", p.edge),
+            ("trim", p.trim),
+        ] {
+            println!("{:10} {:?} {:.2}", n, c, lum(c));
+        }
+    }
+
     /// Every skin in $BACKLINE_SKINS (a folder of .wsz): what each lacks of the windows Backline draws, and how bright
     /// its big areas come out (run with --ignored --nocapture).
     #[test]
@@ -555,7 +586,16 @@ mod tests {
                         .copied()
                         .filter(|x| !have.contains(x) && !(*x == "numbers" && have.contains(&"nums_ex")))
                         .collect();
-                    let glare = lum(pal.lcd) > 0.8 || lum(pal.beige) > 0.85 || lum(pal.app_bg) > 0.85;
+                    // as worn: after the readability fix every big surface stays on the list's side
+                    let worn = crate::skin::readable(pal, true);
+                    let dark = lum(worn.lcd) < 0.5;
+                    // (a mid-grey panel is a skin's own choice; white behind a dark list is a flip. The space round
+                    // the windows is always dark, so it isn't counted for light skins)
+                    let flipped = [worn.app_bg, worn.beige, worn.row_alt, worn.sel, worn.row_sel, worn.btn_face]
+                        .iter()
+                        .enumerate()
+                        .any(|(i, c)| if dark { lum(*c) > 0.62 } else { i > 0 && lum(*c) < 0.2 });
+                    let glare = lum(worn.lcd) > 0.82 || lum(worn.beige) > 0.85 || lum(worn.app_bg) > 0.85 || flipped;
                     if !miss.is_empty() || glare {
                         bad += 1;
                         println!(

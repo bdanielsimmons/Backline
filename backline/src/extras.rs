@@ -634,9 +634,16 @@ impl App {
         if locked {
             let pos = self.pos();
             let (last, at) = self.mt_pos;
-            // (with the song's beats followed through it, re-aimed every few seconds at the next real beat)
-            let every = if self.beat_grid.as_ref().is_some_and(|g| Some(g.0) == tid) { 3 } else { 12 };
-            if (pos - (last + at.elapsed().as_secs_f32() * ratio)).abs() > 0.25 || self.mt_sync_at.elapsed().as_secs() >= every {
+            // (the song's beats known: the clicks are laid on them ahead of time, so only a seek, or nearing the end
+            // of what is laid out, lays them again - never a re-aim in the middle, which would stutter)
+            let gridded = self.beat_grid.as_ref().is_some_and(|g| Some(g.0) == tid);
+            let jumped = (pos - (last + at.elapsed().as_secs_f32() * ratio)).abs() > 0.25;
+            let due = if gridded {
+                pos > self.mt_lead_end - 6.0 || pos < self.mt_lead_end - 60.0
+            } else {
+                self.mt_sync_at.elapsed().as_secs() >= 12
+            };
+            if jumped || due {
                 self.mt_gen += 1;
                 self.mt_sync_at = Instant::now();
             }
@@ -652,7 +659,8 @@ impl App {
         } else {
             None
         };
-        let period = grid_now.map_or_else(|| self.beat.map_or(0.5, |b| b.1), |g| g.1);
+        // (the usual beat length for what is sent: the local one changes every frame and would rebuild the click)
+        let period = self.beat.map_or(0.5, |b| b.1);
         let tempo = if locked { 60.0 * ratio / period } else { self.metro_tempo(playing) };
         let m = &self.mt;
         let mut sig = (tempo * 10.0) as u64 ^ ((m.beats as u64) << 20) ^ ((m.sub as u64) << 24) ^ ((m.gap_play as u64) << 28);
@@ -684,7 +692,25 @@ impl App {
                 lead = vec![0i16; (wait * band::RATE) as usize];
             }
         }
-        let body = band::click_loop(&cfg, tempo);
+        let mut body = band::click_loop(&cfg, tempo);
+        // the song's beats known: 40 seconds of clicks laid exactly on them (the band speeding up or slowing down is
+        // in it), then the steady loop carries on until they are laid again
+        if locked {
+            if let Some((_, grid, _)) = self.beat_grid.as_ref().filter(|g| Some(g.0) == tid) {
+                let pos = self.pos();
+                let shift = self.mt.shift_ms as f32 / 1000.0;
+                let vol = 1.0;
+                lead = band::grid_clicks(grid, pos, 40.0, ratio, shift, self.mt.beats.max(1), vol);
+                self.mt_lead_end = pos + 40.0;
+                wait = 0.0;
+                if let Some((next, _)) = band::next_beat(grid, pos + 40.0) {
+                    // the loop after it starts on the beat after the laid-out stretch
+                    let gap = (((next - (pos + 40.0)) / ratio) * band::RATE) as usize;
+                    lead.extend(std::iter::repeat(0i16).take(gap));
+                }
+                let _ = &mut body;
+            }
+        }
         let cycle =
             cfg.beats.clamp(1, 32) as usize * if cfg.gap_play > 0 { (cfg.gap_play + cfg.gap_mute.max(1)) as usize } else { 1 };
         self.mt_vis = Some((Instant::now() + Duration::from_secs_f32(wait), 60.0 / cfg.pulse(tempo), cycle));

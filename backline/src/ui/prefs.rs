@@ -344,7 +344,7 @@ impl App {
                         }
 
                         section_header(ui, "OPENING SOUND");
-                        para(ui, "Play a short sound when Backline opens. Pick its chime or a sound file of your own.", pal().ink2);
+                        para(ui, "Click a sound to hear it; the one picked plays when Backline opens. You can also use a sound file of your own.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for (m, name) in [(0u8, "OFF"), (1, "BACKLINE'S"), (2, "MY FILE")] {
                                 let ok = m != 2 || self.intro_file.is_some();

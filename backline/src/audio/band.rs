@@ -353,6 +353,24 @@ pub fn click_loop(m: &Metro, bpm: f32) -> Vec<i16> {
     v
 }
 
+/// Clicks on a song's own beats: every beat in `grid` (song seconds) from `from` for `secs` seconds of song, placed
+/// at playback `ratio` (0.85 = slowed to 85%), `shift` seconds late, at `vol`. The first beat of every `beats` is
+/// the accented one, counted from the first beat of the song.
+pub fn grid_clicks(grid: &[f32], from: f32, secs: f32, ratio: f32, shift: f32, beats: u32, vol: f32) -> Vec<i16> {
+    let len = ((secs / ratio) * RATE) as usize + 1;
+    let mut v = vec![0i16; len];
+    let first = grid.partition_point(|b| *b < from);
+    for (k, b) in grid.iter().enumerate().skip(first) {
+        if *b > from + secs {
+            break;
+        }
+        let at = (((b - from) / ratio + shift).max(0.0) * RATE) as usize;
+        let down = k % beats.max(1) as usize == 0;
+        click(&mut v, at, if down { 1650.0 } else { 1250.0 }, if down { vol } else { vol * 0.7 });
+    }
+    v
+}
+
 /// A bar of plain clicks, played once before the band starts.
 pub fn count_in(beats: u32, bpm: f32) -> Vec<i16> {
     click_loop(&Metro { beats, ..Metro::default() }, bpm)
@@ -1306,6 +1324,16 @@ mod tests {
         let gaps: Vec<f32> = grid.windows(2).map(|w| w[1] - w[0]).collect();
         let off = gaps.iter().filter(|g| (**g / period - 1.0).abs() > 0.15).count();
         println!("tempo {:.1} first {:.2}s beats {} odd gaps {}", 60.0 / period, first, grid.len(), off);
+    }
+
+    /// Clicks laid on a beat list land where the beats are (at speed, and shifted).
+    #[test]
+    fn grid_clicks_land_on_the_beats() {
+        let grid: Vec<f32> = (0..40).map(|k| 0.3 + k as f32 * 0.52).collect();
+        let v = grid_clicks(&grid, 1.0, 10.0, 0.5, 0.0, 4, 1.0);
+        // the first beat after 1.0 s is 1.34 s: at half speed it sounds 0.68 s in
+        let onset = v.iter().position(|s| s.abs() > 200).unwrap() as f32 / RATE;
+        assert!((onset - 0.68).abs() < 0.01, "first click at {}", onset);
     }
 
     #[test]

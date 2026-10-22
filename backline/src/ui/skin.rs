@@ -510,7 +510,22 @@ fn push(c: Color32, against: Color32, min: f32, to_dark: bool) -> Color32 {
 /// go darker (rather than the text going grey), dark text gets lighter backgrounds. Skins that are already clear
 /// don't change.
 pub(crate) fn readable(mut p: Pal, app_bg_too: bool) -> Pal {
-    let light_ink = lum(p.ink) > 0.4;
+    // which side the skin is on comes from its list background, never from its text: a dark skin stays dark (and a
+    // light one light) whatever colour its text is. Text that can't read on that side - deep red, blue or purple on
+    // dark - is lifted (or deepened) itself, rather than the backgrounds flipping to white.
+    let dark = lum(p.lcd) < 0.5;
+    let far = if dark { Color32::BLACK } else { Color32::WHITE };
+    let toward = if dark { Color32::WHITE } else { Color32::BLACK };
+    for (fg, min) in [(&mut p.ink, 5.5f32), (&mut p.bar_txt, 5.0), (&mut p.ink2, 4.0), (&mut p.dim, 3.0)] {
+        for k in 0..=20 {
+            let c = fg.lerp_to_gamma(toward, k as f32 / 20.0);
+            if contrast(c, far) >= min || k == 20 {
+                *fg = c;
+                break;
+            }
+        }
+    }
+    let light_ink = dark;
     if app_bg_too {
         p.app_bg = push(p.app_bg, p.ink, 4.5, light_ink);
     }

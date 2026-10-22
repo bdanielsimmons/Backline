@@ -62,6 +62,38 @@ impl Store {
         }
     }
 
+    /// Rename a tune, everywhere it is named: the tune itself, the practice time kept under its name each day, the
+    /// diary, your takes, the ROUTINE (tune of the week, skipped tunes, your set).
+    pub fn rename_tune(&mut self, old: &str, new: &str) {
+        let new = new.trim();
+        if new.is_empty() || old == new {
+            return;
+        }
+        for t in self.tunes.iter_mut().filter(|t| t.name == old) {
+            t.name = new.to_string();
+        }
+        for d in &mut self.days {
+            if let Some(s) = d.secs.remove(old) {
+                *d.secs.entry(new.to_string()).or_insert(0) += s;
+            }
+        }
+        for e in self.entries.iter_mut().filter(|e| e.tune == old) {
+            e.tune = new.to_string();
+        }
+        for t in self.takes.iter_mut().filter(|t| t.tune == old) {
+            t.tune = new.to_string();
+        }
+        if self.routine_tune == old {
+            self.routine_tune = new.to_string();
+        }
+        for s in self.skipped_tunes.iter_mut().filter(|s| *s == old) {
+            *s = new.to_string();
+        }
+        for v in self.routine_set.values_mut().filter(|v| v.eq_ignore_ascii_case(old)) {
+            *v = new.to_string();
+        }
+    }
+
     /// Everything to share: every loop (with its song) and every playlist.
     pub fn share(&self) -> Share {
         let songs = self.sections.keys().filter_map(|id| self.songs.get(id).map(|v| (*id, v.clone()))).collect();
@@ -781,6 +813,27 @@ mod share_tests {
         assert_eq!(again.version, SHARE_VERSION);
         let t = b.take_share(again);
         assert_eq!((t.loops, t.playlists, t.items), (0, 0, 0));
+    }
+
+    #[test]
+    fn a_tune_renamed_keeps_everything_kept_under_its_name() {
+        let mut s = Store::default();
+        s.tunes.push(Tune { name: "Incompatibilidade de".into(), ..Default::default() });
+        s.day_mut("2026-10-01").secs.insert("Incompatibilidade de".into(), 60);
+        s.day_mut("2026-10-01").secs.insert("Incompatibilidade de Gênios".into(), 30);
+        s.entries.push(Entry { tune: "Incompatibilidade de".into(), ..Default::default() });
+        s.takes.push(Take { tune: "Incompatibilidade de".into(), ..Default::default() });
+        s.routine_tune = "Incompatibilidade de".into();
+        s.skipped_tunes.push("Incompatibilidade de".into());
+        s.routine_set.insert("BOSSA".into(), "Incompatibilidade de".into());
+        s.rename_tune("Incompatibilidade de", "Incompatibilidade de Gênios");
+        let new = "Incompatibilidade de Gênios";
+        assert_eq!(s.tunes[0].name, new);
+        assert_eq!(s.tune_secs(new), 90);
+        assert_eq!(s.tune_secs("Incompatibilidade de"), 0);
+        assert_eq!((s.entries[0].tune.as_str(), s.takes[0].tune.as_str()), (new, new));
+        assert_eq!((s.routine_tune.as_str(), s.skipped_tunes[0].as_str()), (new, new));
+        assert_eq!(s.routine_set["BOSSA"], new);
     }
 
     #[test]

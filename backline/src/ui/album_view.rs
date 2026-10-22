@@ -553,8 +553,11 @@ impl App {
 
         // ---- buttons
         // (with a skin worn: centred exactly between the seek bar and the window's bottom edge)
-        let row_y =
-            if crate::winamp_ui::chrome_on() { (sb.max.y + ui.ctx().screen_rect().max.y) / 2.0 - bh() / 2.0 } else { full.max.y - 52.0 };
+        let row_y = if crate::winamp_ui::chrome_on() {
+            (sb.max.y + ui.ctx().screen_rect().max.y) / 2.0 - bh() / 2.0
+        } else {
+            full.max.y - 52.0
+        };
         let row = Rect::from_min_size(Pos2::new(full.min.x + 28.0, row_y), Vec2::new(full.width() - 56.0, bh()));
         tour::mark("ARTBTNS", row);
         if prac {

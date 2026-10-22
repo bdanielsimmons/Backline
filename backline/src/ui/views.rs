@@ -2434,6 +2434,41 @@ impl App {
         ui.add_space(20.0);
     }
 
+    /// Under a tune's name, after LOOK UP: its proper title when the name looks short of it or misspelled (from the
+    /// recordings found, and the tunes Backline knows), to take with RENAME or leave with KEEP.
+    fn name_guess_line(&mut self, ui: &mut egui::Ui, i: usize) {
+        let name = self.store.tunes[i].name.clone();
+        if self.look_busy || self.look_for != name || self.name_kept.contains(&name) {
+            return;
+        }
+        if self.name_guess.0 != name || self.name_guess.1 != self.look_tracks.len() {
+            let titles: Vec<&str> = self.look_tracks.iter().map(|t| t.0.title.as_str()).collect();
+            let known: Vec<&str> = crate::canon::SESSION_TUNES
+                .iter()
+                .chain(crate::canon::GOSPEL_TUNES.iter())
+                .flat_map(|k| k.1.iter().map(|t| t.0))
+                .collect();
+            let guess = crate::likely_title(&name, &titles, &known)
+                // not one of your other tunes' names already
+                .filter(|g| !self.store.tunes.iter().any(|t| t.name.eq_ignore_ascii_case(g)));
+            self.name_guess = (name.clone(), self.look_tracks.len(), guess);
+        }
+        let Some(guess) = self.name_guess.2.clone() else { return };
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(76.0);
+            label(ui, &format!("Did you mean: {}?", guess), 0.0);
+            if retro_btn(ui, "RENAME", false).tip("Give the tune this name, everywhere it is used.").clicked() {
+                self.store.rename_tune(&name, &guess);
+                self.look_for = guess.clone();
+                self.store_dirty = true;
+            }
+            if retro_btn(ui, "KEEP", false).tip("Keep the name as it is.").clicked() {
+                self.name_kept.push(name.clone());
+                self.dirty = true;
+            }
+        });
+    }
+
     fn tune_detail(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, i: usize) {
         ui.add_space(6.0);
         let (status, nvers, secs, tname) = {
@@ -2454,6 +2489,7 @@ impl App {
         }
         let o = field_row(ui, &mut self.ed, F_T_NAME, "NAME", &mut self.store.tunes[i].name, "Tune name", None);
         self.store_dirty |= o.changed;
+        self.name_guess_line(ui, i);
         let o = field_row(ui, &mut self.ed, F_T_KEY, "KEY", &mut self.store.tunes[i].key, "Bb, Dm", None);
         self.store_dirty |= o.changed;
         ui.horizontal_wrapped(|ui| {
