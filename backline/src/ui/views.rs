@@ -3214,25 +3214,16 @@ impl App {
     pub(crate) fn practice_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let inner = ui.max_rect();
         window_deco(ui, inner, "PRACTICE");
-        // the focus timer and the metronome have their own corner, in the title strip
-        let tools = Rect::from_min_size(Pos2::new(inner.max.x - 96.0, inner.min.y - 27.0), Vec2::new(96.0, 24.0));
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tools), |ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            ui.horizontal(|ui| {
-                let ink = pal().ink;
-                let tb = crate::icon_btn_w(ui, &crate::IC_TOMATO, self.pomo > 0 || self.timer_open, ink, 44.0)
-                    .tip("Focus timer (pomodoro). Work in blocks with short rests between.");
-                if tb.clicked() {
-                    acts.push(Action::TimerPanel);
-                }
-                let mb = crate::icon_btn_w(ui, &crate::IC_METRO, self.metro_open, ink, 44.0)
-                    .tip("Metronome with beats, subdivisions and a pendulum.");
-                if mb.clicked() {
-                    acts.push(Action::MetroPanel);
-                }
-                crate::tour::mark("TIMEBTNS", tb.rect.union(mb.rect));
-            });
-        });
+        // the focus timer and the metronome: a pill each in the title strip (click the dot to start or stop, the words
+        // to open its panel)
+        let sc = crate::font::ui_scale();
+        let (tw, mw, h) = (170.0 * sc, 120.0 * sc, 24.0);
+        let y = inner.min.y - 27.0;
+        let mr = Rect::from_min_size(Pos2::new(inner.max.x - mw, y), Vec2::new(mw, h));
+        let tr = Rect::from_min_size(Pos2::new(mr.min.x - 8.0 - tw, y), Vec2::new(tw, h));
+        self.timer_pill(ui, tr, acts);
+        self.metro_pill(ui, mr, acts);
+        crate::tour::mark("TIMEBTNS", tr.union(mr));
         // the panel's contents scroll when the panel is short, rather than running past its edge
         // (no drag-to-scroll: dragging on the waveform sets loops)
         // everything inside grows and shrinks with the panel, gently (the square root of the size change), from a
@@ -3729,59 +3720,67 @@ impl App {
         let b_txt = self.loop_b.map(fmt_t).unwrap_or_else(|| "-:--.-".to_string());
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            if retro_btn_w(ui, "A", 44.0, false).tip("Loop start here  ([ key)").clicked() && active {
+            if retro_btn_w(ui, "A", 34.0, false).tip("Loop start here  ([ key)").clicked() && active {
                 acts.push(Action::SetAAt(pos));
             }
             self.num_step(
                 ui,
                 acts,
                 F_LOOP_A,
-                92.0,
+                78.0,
                 Knob::LoopA,
                 a_txt,
                 "Nudge earlier or later, or click and type a time like 1:23.5.",
             );
-            ui.add_space(14.0);
-            if retro_btn_w(ui, "B", 44.0, false).tip("Loop end here  (] key)").clicked() && active {
+            divider(ui);
+            if retro_btn_w(ui, "B", 34.0, false).tip("Loop end here  (] key)").clicked() && active {
                 acts.push(Action::SetBAt(pos));
             }
             self.num_step(
                 ui,
                 acts,
                 F_LOOP_B,
-                92.0,
+                78.0,
                 Knob::LoopB,
                 b_txt,
                 "Nudge earlier or later, or click and type a time like 2:05.",
             );
-            ui.add_space(14.0);
+            divider(ui);
             let ink = pal().ink;
-            if crate::icon_btn_w(ui, &crate::IC_REP, self.loop_on && both, ink, 44.0).tip("Loop on / off  (\\ key)").clicked() {
+            if crate::icon_btn_w(ui, &crate::IC_REP, self.loop_on && both, ink, 34.0).tip("Loop on / off  (\\ key)").clicked() {
                 acts.push(Action::LoopToggle);
             }
-            if crate::icon_btn_w(ui, &crate::IC_X, false, ink, 44.0).tip("Clear the loop.").clicked() {
+            if crate::icon_btn_w(ui, &crate::IC_X, false, ink, 34.0).tip("Clear the loop.").clicked() {
                 acts.push(Action::LoopClear);
+            }
+            divider(ui);
+            // the whole loop on to the next phrase, or back to the one before (same length)
+            if crate::icon_btn_w(ui, &crate::IC_BACK, false, ink, 34.0).tip("Shift the loop back by its own length.").clicked() && both {
+                acts.push(Action::ShiftLoop(false));
+            }
+            if crate::icon_btn_w(ui, &crate::IC_FWD, false, ink, 34.0).tip("Shift the loop on by its own length, to the next phrase.").clicked() && both {
+                acts.push(Action::ShiftLoop(true));
             }
         });
         row_mark(ui, "LOOPROW", ab_top);
-        ui.add_space(8.0);
+        ui.add_space(12.0);
 
         // ---- moving around, the speed, and MORE
         let speed_top = ui.cursor().min.y;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let ink = pal().ink;
-            if crate::ibtn(ui, &crate::IC_REW, "2 SEC", false).tip("Back two seconds  (, key)").clicked() {
+            if crate::icon_btn_w(ui, &crate::IC_REW, false, ink, 34.0).tip("Back two seconds  (, key)").clicked() {
                 acts.push(Action::SeekRel(-2.0));
             }
-            if crate::ibtn(ui, &crate::IC_PREV, "RESTART", false)
-                .tip("Back to the loop start (or the track start)  (. key)")
+            if crate::icon_btn_w(ui, &crate::IC_PREV, false, ink, 34.0)
+                .tip("Restart: back to the loop start (or the track start)  (. key)")
                 .clicked()
             {
                 acts.push(Action::Seek(self.loop_a.unwrap_or(0.0)));
             }
             let _ = ink;
-            ui.add_space(14.0);
+            divider(ui);
             label(ui, "SPEED", 64.0);
             // the usual speeds in a drop-down, and - / + for 1% at a time (click the number to type any, 25 to 250)
             let sp = retro_btn_w(ui, "v", 34.0, false).tip("Pick a speed.");
@@ -3809,7 +3808,7 @@ impl App {
             );
         });
         row_mark(ui, "SPEEDROW", speed_top);
-        ui.add_space(10.0);
+        ui.add_space(14.0);
 
         // ---- saved loops for this track: which one is looping now (or that it isn't saved yet)
         if let (Some(a), Some(b), Some(id)) = (self.loop_a, self.loop_b, tid) {
@@ -4668,4 +4667,14 @@ mod summary_tests {
         assert_eq!(year.cols.len(), 12);
         assert_eq!(year.cols.iter().map(|c| c.1.len()).sum::<usize>(), 365);
     }
+}
+
+/// A thin upright line between groups of controls in a row.
+fn divider(ui: &mut egui::Ui) {
+    let h = crate::bh();
+    let (r, _) = ui.allocate_exact_size(Vec2::new(9.0, h), Sense::hover());
+    ui.painter().line_segment(
+        [Pos2::new(r.center().x, r.min.y + 4.0), Pos2::new(r.center().x, r.max.y - 4.0)],
+        egui::Stroke::new(1.0_f32, pal().beige_lt),
+    );
 }

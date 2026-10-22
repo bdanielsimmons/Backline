@@ -26,7 +26,8 @@ pub(crate) const PAUSE_S: [&str; 5] = ["##.##", "##.##", "##.##", "##.##", "##.#
 pub(crate) const STOP_S: [&str; 5] = ["#####", "#####", "#####", "#####", "#####"];
 
 pub(crate) fn pixmap(p: &egui::Painter, origin: Pos2, px: f32, rows: &[&str], color: Color32) {
-    if style() != 0 {
+    // the modern skins, and a Winamp skin everywhere but its own deck (that draws the skin's pictures): smooth icons
+    if style() != 0 || crate::winamp_ui::chrome_on() {
         // modern skins: smooth vector icons; anything without one gets soft rounded dots instead of hard squares
         let size = Vec2::new(rows.first().map_or(0, |r| r.len()) as f32 * px, rows.len() as f32 * px);
         if vicon::draw(p, Rect::from_min_size(origin, size), rows, color) {

@@ -1052,6 +1052,66 @@ pub fn grip_sections(c: &ChordNotes, tuning: &[i32; 6]) -> GripSections {
     s
 }
 
+impl GripSections {
+    /// The movable grips split by the string the root sits on (0 = the low E), low strings first.
+    pub fn moveable_by_string(&self) -> Vec<(usize, Vec<[Option<u8>; 6]>)> {
+        let mut out: Vec<(usize, Vec<[Option<u8>; 6]>)> = Vec::new();
+        for g in &self.moveable {
+            let rs = g.iter().position(|f| f.is_some()).unwrap_or(0);
+            match out.iter_mut().find(|(s, _)| *s == rs) {
+                Some((_, l)) => l.push(*g),
+                None => out.push((rs, vec![*g])),
+            }
+        }
+        out.sort_by_key(|(s, _)| *s);
+        out
+    }
+}
+
+/// A chord played as an open-position shape of a lower chord with a capo: the capo's fret, the shape's frets
+/// counted from the capo (0 = an open string, ringing at the capo), and the chord the shape is fingered as.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CapoShape {
+    pub capo: u8,
+    pub frets: [Option<u8>; 6],
+    /// the root of the shape as fingered, e.g. "G" for Bb as the G shape at capo 3
+    pub shape: &'static str,
+}
+
+/// Open-position shapes of the chord a few frets lower, played with a capo (Bb as the G shape at capo 3, or the A
+/// shape at capo 1). Only shapes that ring open strings (otherwise it is just a movable grip), held to the grips'
+/// rules: the chord's bass lowest, the 3rd and the 7th in, only the 5th left out, no mud, four fingers behind the
+/// capo. The open-chord keys (E, A, D, G, C), lower capo first; one shape per capo, at most four.
+pub fn capo_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<CapoShape> {
+    let mut found: Vec<(bool, CapoShape)> = Vec::new();
+    for capo in 1..=7i32 {
+        let t = ChordNotes {
+            root: (c.root - capo).rem_euclid(12),
+            bass: (c.bass - capo).rem_euclid(12),
+            pcs: c.pcs.iter().map(|p| (p - capo).rem_euclid(12)).collect(),
+            named: Vec::new(),
+        };
+        // (the reach from the first fret: the open position behind the capo)
+        let pick = search_ranked(&t, tuning, 1..=1).into_iter().map(|(_, g)| g).find(|g| {
+            let open = g.iter().any(|f| *f == Some(0));
+            let hi = g.iter().flatten().copied().max().unwrap_or(0);
+            let offs: [Option<i32>; 6] = g.map(|f| f.map(|f| f as i32));
+            // (the open strings count as one barre in grip_fingers: that one is the capo)
+            let fingers = grip_fingers(&offs) - usize::from(open);
+            open && hi <= 4 && fingers <= 4
+        });
+        if let Some(g) = pick {
+            let key = matches!(t.root, 4 | 9 | 2 | 7 | 0);
+            found.push((key, CapoShape { capo: capo as u8, frets: g, shape: note_name(t.root, false) }));
+        }
+    }
+    found.sort_by_key(|(key, s)| (!*key, s.capo));
+    // the shapes of the other keys (an F shape with an open A under it) only when no open-chord key has one
+    let keyed = found.iter().any(|(k, _)| *k);
+    let n = if keyed { 4 } else { 2 };
+    found.into_iter().filter(|(k, _)| *k || !keyed).take(n).map(|(_, s)| s).collect()
+}
+
 pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
     // the grips players use first, then what the search finds for anything they don't cover
     // (the search only for chords the library doesn't cover: it finds odd grips beside real ones)
@@ -1073,9 +1133,26 @@ pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> 
 }
 
 fn search_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
+    let best = search_ranked(c, tuning, 0..=10);
+    let mut out: Vec<[Option<u8>; 6]> = Vec::new();
+    for (_, s) in best {
+        // different enough from the ones already chosen (another position on the neck)
+        let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
+        if !out.iter().any(|o| *o == s || pos(o).abs_diff(pos(&s)) < 2) {
+            out.push(s);
+        }
+        if out.len() == 4 {
+            break;
+        }
+    }
+    out
+}
+
+/// Every shape the search allows with its reach starting at a fret in `starts`, best first, with its score.
+fn search_ranked(c: &ChordNotes, tuning: &[i32; 6], starts: std::ops::RangeInclusive<i32>) -> Vec<(i32, [Option<u8>; 6])> {
     let mut best: Vec<(i32, [Option<u8>; 6])> = Vec::new();
     let needed: Vec<i32> = c.pcs.clone();
-    for start in 0..=10i32 {
+    for start in starts {
         // each string: not played, or a fret in reach that gives a chord note (open strings count anywhere)
         let options: Vec<Vec<Option<u8>>> = tuning
             .iter()
@@ -1159,18 +1236,7 @@ fn search_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
         }
     }
     best.sort_by(|a, b| b.0.cmp(&a.0));
-    let mut out: Vec<[Option<u8>; 6]> = Vec::new();
-    for (_, s) in best {
-        // different enough from the ones already chosen (another position on the neck)
-        let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
-        if !out.iter().any(|o| *o == s || pos(o).abs_diff(pos(&s)) < 2) {
-            out.push(s);
-        }
-        if out.len() == 4 {
-            break;
-        }
-    }
-    out
+    best
 }
 
 // ----------------------------------------------------------------- two-note clusters, after Robbie Barnby's
@@ -1556,28 +1622,28 @@ pub fn passing_options(to: &str) -> Vec<(&'static str, Vec<String>, String)> {
 /// every note of the chord (the natural 5th aside, which players leave out of an altered chord), except the
 /// pentatonics and the blues scale, which are offered where players use them.
 pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
-    const IONIAN: (&str, &[i32]) = ("Ionian (major)", &[0, 2, 4, 5, 7, 9, 11]);
+    const IONIAN: (&str, &[i32]) = ("Ionian (Major)", &[0, 2, 4, 5, 7, 9, 11]);
     const LYDIAN: (&str, &[i32]) = ("Lydian", &[0, 2, 4, 6, 7, 9, 11]);
     const MIXO: (&str, &[i32]) = ("Mixolydian", &[0, 2, 4, 5, 7, 9, 10]);
-    const LYD_DOM: (&str, &[i32]) = ("Lydian dominant", &[0, 2, 4, 6, 7, 9, 10]);
-    const BEBOP: (&str, &[i32]) = ("Dominant bebop", &[0, 2, 4, 5, 7, 9, 10, 11]);
+    const LYD_DOM: (&str, &[i32]) = ("Lydian Dominant", &[0, 2, 4, 6, 7, 9, 10]);
+    const BEBOP: (&str, &[i32]) = ("Dominant Bebop", &[0, 2, 4, 5, 7, 9, 10, 11]);
     const BLUES: (&str, &[i32]) = ("Blues", &[0, 3, 5, 6, 7, 10]);
     const ALTERED: (&str, &[i32]) = ("Altered", &[0, 1, 3, 4, 6, 8, 10]);
-    const HW: (&str, &[i32]) = ("Half-whole diminished", &[0, 1, 3, 4, 6, 7, 9, 10]);
-    const WH: (&str, &[i32]) = ("Whole-half diminished", &[0, 2, 3, 5, 6, 8, 9, 11]);
-    const PHRYG_DOM: (&str, &[i32]) = ("Phrygian dominant", &[0, 1, 4, 5, 7, 8, 10]);
+    const HW: (&str, &[i32]) = ("Half-Whole Diminished", &[0, 1, 3, 4, 6, 7, 9, 10]);
+    const WH: (&str, &[i32]) = ("Whole-Half Diminished", &[0, 2, 3, 5, 6, 8, 9, 11]);
+    const PHRYG_DOM: (&str, &[i32]) = ("Phrygian Dominant", &[0, 1, 4, 5, 7, 8, 10]);
     const MIXO_B6: (&str, &[i32]) = ("Mixolydian b6", &[0, 2, 4, 5, 7, 8, 10]);
-    const WHOLE: (&str, &[i32]) = ("Whole tone", &[0, 2, 4, 6, 8, 10]);
-    const LYD_AUG: (&str, &[i32]) = ("Lydian augmented", &[0, 2, 4, 6, 8, 9, 11]);
+    const WHOLE: (&str, &[i32]) = ("Whole Tone", &[0, 2, 4, 6, 8, 10]);
+    const LYD_AUG: (&str, &[i32]) = ("Lydian Augmented", &[0, 2, 4, 6, 8, 9, 11]);
     const LOCRIAN: (&str, &[i32]) = ("Locrian", &[0, 1, 3, 5, 6, 8, 10]);
-    const LOCRIAN9: (&str, &[i32]) = ("Locrian nat 9", &[0, 2, 3, 5, 6, 8, 10]);
+    const LOCRIAN9: (&str, &[i32]) = ("Locrian Nat 9", &[0, 2, 3, 5, 6, 8, 10]);
     const DORIAN: (&str, &[i32]) = ("Dorian", &[0, 2, 3, 5, 7, 9, 10]);
-    const AEOLIAN: (&str, &[i32]) = ("Aeolian (natural minor)", &[0, 2, 3, 5, 7, 8, 10]);
+    const AEOLIAN: (&str, &[i32]) = ("Aeolian (Natural Minor)", &[0, 2, 3, 5, 7, 8, 10]);
     const PHRYGIAN: (&str, &[i32]) = ("Phrygian", &[0, 1, 3, 5, 7, 8, 10]);
-    const MEL_MIN: (&str, &[i32]) = ("Melodic minor", &[0, 2, 3, 5, 7, 9, 11]);
-    const HARM_MIN: (&str, &[i32]) = ("Harmonic minor", &[0, 2, 3, 5, 7, 8, 11]);
-    const MIN_PENT: (&str, &[i32]) = ("Minor pentatonic", &[0, 3, 5, 7, 10]);
-    const MAJ_PENT: (&str, &[i32]) = ("Major pentatonic", &[0, 2, 4, 7, 9]);
+    const MEL_MIN: (&str, &[i32]) = ("Melodic Minor", &[0, 2, 3, 5, 7, 9, 11]);
+    const HARM_MIN: (&str, &[i32]) = ("Harmonic Minor", &[0, 2, 3, 5, 7, 8, 11]);
+    const MIN_PENT: (&str, &[i32]) = ("Minor Pentatonic", &[0, 3, 5, 7, 10]);
+    const MAJ_PENT: (&str, &[i32]) = ("Major Pentatonic", &[0, 2, 4, 7, 9]);
     let rel: Vec<i32> = c.pcs.iter().map(|p| (p - c.root).rem_euclid(12)).collect();
     let has = |x: i32| rel.contains(&x);
     let (maj3, min3) = (has(4), has(3) && !has(4));
@@ -1648,7 +1714,7 @@ pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
     };
     let fits = |steps: &[i32]| rel.iter().all(|r| *r == 7 || steps.contains(r));
     list.into_iter()
-        .filter(|(name, steps)| matches!(*name, "Minor pentatonic" | "Major pentatonic" | "Blues") || fits(steps))
+        .filter(|(name, steps)| matches!(*name, "Minor Pentatonic" | "Major Pentatonic" | "Blues") || fits(steps))
         .collect()
 }
 
@@ -2542,29 +2608,29 @@ mod chord_audit {
     fn the_scales_offered_fit() {
         let first = |n: &str| scales_for(&chord_notes(n).unwrap()).first().map(|s| s.0).unwrap_or("");
         let all = |n: &str| scales_for(&chord_notes(n).unwrap()).iter().map(|s| s.0).collect::<Vec<_>>();
-        assert_eq!(first("C7b9"), "Half-whole diminished");
-        assert!(all("C7b9").contains(&"Phrygian dominant"));
-        assert_eq!(first("C13b9"), "Half-whole diminished");
+        assert_eq!(first("C7b9"), "Half-Whole Diminished");
+        assert!(all("C7b9").contains(&"Phrygian Dominant"));
+        assert_eq!(first("C13b9"), "Half-Whole Diminished");
         assert_eq!(first("C7alt"), "Altered");
         assert_eq!(first("C7#9b13"), "Altered");
         assert_eq!(first("C7b9b13"), "Altered");
-        assert!(all("C7b9b13").contains(&"Phrygian dominant"));
+        assert!(all("C7b9b13").contains(&"Phrygian Dominant"));
         assert_eq!(first("Cm7b5"), "Locrian");
-        assert!(all("Cm7b5").contains(&"Locrian nat 9"));
-        assert_eq!(first("Cm9b5"), "Locrian nat 9");
+        assert!(all("Cm7b5").contains(&"Locrian Nat 9"));
+        assert_eq!(first("Cm9b5"), "Locrian Nat 9");
         assert_eq!(first("Cmaj7#11"), "Lydian");
-        assert_eq!(first("C7#11"), "Lydian dominant");
-        assert_eq!(first("C13#11"), "Lydian dominant");
+        assert_eq!(first("C7#11"), "Lydian Dominant");
+        assert_eq!(first("C13#11"), "Lydian Dominant");
         assert_eq!(first("C7b13"), "Mixolydian b6");
-        assert_eq!(first("C7#5"), "Whole tone");
+        assert_eq!(first("C7#5"), "Whole Tone");
         assert_eq!(first("C7sus4"), "Mixolydian");
         assert_eq!(first("C7sus4b9"), "Phrygian");
         assert_eq!(first("Cm6"), "Dorian");
-        assert!(!all("Cm6").contains(&"Aeolian (natural minor)"));
-        assert_eq!(first("CmMaj7"), "Melodic minor");
-        assert_eq!(first("Cdim7"), "Whole-half diminished");
-        assert_eq!(first("Caug"), "Whole tone");
-        assert_eq!(first("Cmaj7#5"), "Lydian augmented");
+        assert!(!all("Cm6").contains(&"Aeolian (Natural Minor)"));
+        assert_eq!(first("CmMaj7"), "Melodic Minor");
+        assert_eq!(first("Cdim7"), "Whole-Half Diminished");
+        assert_eq!(first("Caug"), "Whole Tone");
+        assert_eq!(first("Cmaj7#5"), "Lydian Augmented");
         assert!(!all("C6").contains(&"Mixolydian"));
         assert!(!all("Csus4").contains(&"Lydian"));
         // every scale offered holds the chord's notes (the 5th aside; the pentatonics and blues are extras)
@@ -2577,7 +2643,7 @@ mod chord_audit {
             let s = scales_for(&c);
             assert!(!s.is_empty(), "no scale for C{}", kind);
             for (name, steps) in s {
-                if matches!(name, "Minor pentatonic" | "Major pentatonic" | "Blues") {
+                if matches!(name, "Minor Pentatonic" | "Major Pentatonic" | "Blues") {
                     continue;
                 }
                 for p in &c.pcs {
@@ -2589,11 +2655,11 @@ mod chord_audit {
         let steps =
             |n: &str, s: &str| scales_for(&chord_notes(n).unwrap()).into_iter().find(|x| x.0 == s).map(|x| x.1.to_vec()).unwrap();
         assert_eq!(steps("C7alt", "Altered"), vec![0, 1, 3, 4, 6, 8, 10]);
-        assert_eq!(steps("C7b9", "Half-whole diminished"), vec![0, 1, 3, 4, 6, 7, 9, 10]);
-        assert_eq!(steps("C7b9", "Phrygian dominant"), vec![0, 1, 4, 5, 7, 8, 10]);
-        assert_eq!(steps("Cdim7", "Whole-half diminished"), vec![0, 2, 3, 5, 6, 8, 9, 11]);
-        assert_eq!(steps("C7#11", "Lydian dominant"), vec![0, 2, 4, 6, 7, 9, 10]);
-        assert_eq!(steps("Cm7b5", "Locrian nat 9"), vec![0, 2, 3, 5, 6, 8, 10]);
+        assert_eq!(steps("C7b9", "Half-Whole Diminished"), vec![0, 1, 3, 4, 6, 7, 9, 10]);
+        assert_eq!(steps("C7b9", "Phrygian Dominant"), vec![0, 1, 4, 5, 7, 8, 10]);
+        assert_eq!(steps("Cdim7", "Whole-Half Diminished"), vec![0, 2, 3, 5, 6, 8, 9, 11]);
+        assert_eq!(steps("C7#11", "Lydian Dominant"), vec![0, 2, 4, 6, 7, 9, 10]);
+        assert_eq!(steps("Cm7b5", "Locrian Nat 9"), vec![0, 2, 3, 5, 6, 8, 10]);
     }
 
     #[test]
@@ -2655,5 +2721,64 @@ mod chord_audit {
                 }
             }
         }
+    }
+
+    /// Capo shapes: what sounds (open + capo + fret) is only the chord's notes, its bass lowest, the 3rd and the 7th
+    /// in, an open string rings, four fingers behind the capo; Bb is the G shape at capo 3.
+    #[test]
+    fn capo_shapes_are_right() {
+        use super::*;
+        for root in ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] {
+            for kind in ["", "m", "7", "m7", "maj7", "9", "6", "sus4", "7sus4", "add9"] {
+                let name = format!("{}{}", root, kind);
+                let c = chord_notes(&name).unwrap();
+                let list = capo_shapes(&c, &STANDARD);
+                assert!(list.len() <= 4, "{}: {:?}", name, list);
+                for s in &list {
+                    assert!((1..=7).contains(&s.capo), "{} {:?}", name, s);
+                    assert!(s.frets.iter().any(|f| *f == Some(0)), "{} {:?}: no open string", name, s);
+                    assert!(s.frets.iter().flatten().all(|f| *f <= 4), "{} {:?}: not open position", name, s);
+                    let sound: Vec<i32> = s
+                        .frets
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, f)| f.map(|f| STANDARD[i] + s.capo as i32 + f as i32))
+                        .collect();
+                    let pcs: Vec<i32> = sound.iter().map(|m| m.rem_euclid(12)).collect();
+                    for p in &pcs {
+                        assert!(c.pcs.contains(p), "{} {:?} sounds a note not in it", name, s);
+                    }
+                    let low = *sound.iter().min().unwrap();
+                    assert_eq!(low.rem_euclid(12), c.root, "{} {:?}: root not lowest", name, s);
+                    let mut sorted = sound.clone();
+                    sorted.sort();
+                    assert!(sorted[1] - sorted[0] >= 3, "{} {:?}: mud over the bass", name, s);
+                    for d in [3, 4, 10, 11] {
+                        let pc = (c.root + d).rem_euclid(12);
+                        if c.pcs.contains(&pc) {
+                            assert!(pcs.contains(&pc), "{} {:?} leaves out {}", name, s, d);
+                        }
+                    }
+                    let fifth = (c.root + 7).rem_euclid(12);
+                    for p in &c.pcs {
+                        assert!(pcs.contains(p) || *p == fifth, "{} {:?} leaves out more than the 5th", name, s);
+                    }
+                    let offs: [Option<i32>; 6] = s.frets.map(|f| f.map(|f| f as i32));
+                    assert!(grip_fingers(&offs) - 1 <= 4, "{} {:?} fingers", name, s);
+                }
+            }
+        }
+        let bb = capo_shapes(&chord_notes("Bb").unwrap(), &STANDARD);
+        let g = bb.iter().find(|s| s.capo == 3).expect("Bb at capo 3");
+        assert_eq!(g.shape, "G");
+        assert_eq!(g.frets, [Some(3), Some(2), Some(0), Some(0), Some(0), Some(3)], "{:?}", bb);
+        let sounding: Vec<Option<u8>> = g.frets.iter().map(|f| f.map(|f| f + g.capo)).collect();
+        assert_eq!(sounding, vec![Some(6), Some(5), Some(3), Some(3), Some(3), Some(6)]);
+        assert!(bb.iter().any(|s| s.capo == 1 && s.shape == "A"), "{:?}", bb);
+        // a dominant: Bb7 as the A7 shape at capo 1 (x 0 2 0 2 0), C7 as the A7 at capo 3
+        let bb7 = capo_shapes(&chord_notes("Bb7").unwrap(), &STANDARD);
+        assert!(bb7.iter().any(|s| s.capo == 1 && s.shape == "A" && s.frets[0].is_none()), "{:?}", bb7);
+        let c7 = capo_shapes(&chord_notes("C7").unwrap(), &STANDARD);
+        assert!(c7.iter().any(|s| s.capo == 3 && s.shape == "A"), "{:?}", c7);
     }
 }

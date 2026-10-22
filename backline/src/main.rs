@@ -402,6 +402,8 @@ enum Action {
     TogglePin,
     ToggleEq,
     TogglePractice,
+    /// move the whole A-B loop by its own length: on to the next phrase (true) or back to the one before
+    ShiftLoop(bool),
     SetAAt(f32),
     SetBAt(f32),
     LoopToggle,
@@ -2751,6 +2753,8 @@ struct App {
     band_sig: u64,
     band_chart: String,
     pomo_sound: bool,
+    /// the focus timer's extras (auto-start, long rest, music, diary) and its pills
+    tm: tools::TimerMore,
     lib_frac: f32,
     /// the chord finder's voicing group on show (drop 2, drop 3...)
     voicing_tab: u8,
@@ -3270,7 +3274,7 @@ impl App {
             si_pick: 0,
             si_kind: 0,
             si_kroot: 7,
-            pf_scale: "Ionian (major)".to_string(),
+            pf_scale: "Ionian (Major)".to_string(),
             pf_root: 0,
             pf_sys: 0,
             pf_pos: 0,
@@ -3420,6 +3424,7 @@ impl App {
             band_sig: 0,
             band_chart: String::new(),
             pomo_sound: false,
+            tm: Default::default(),
             lib_frac: 0.34,
             voicing_tab: 0,
             stack_w: 0.0,
@@ -3736,6 +3741,9 @@ impl App {
                 *COL_W.lock().unwrap() = [w[0], w[1], w[2]];
             }
         }
+        if let Ok(t) = serde_json::from_value::<tools::TimerMore>(st["timer_more"].clone()) {
+            app.tm = t;
+        }
         if let Some(b) = st["pomo_sound"].as_bool() {
             app.pomo_sound = b;
         }
@@ -3889,6 +3897,22 @@ impl App {
             }
             Ok("melodies") => app.sec = Sec::Melodies,
             Ok("sc") => app.sec = Sec::Sc,
+            Ok("settings") => app.show_tl = true,
+            Ok("skins") => app.show_winamp = true,
+            Ok("art") => app.art_view = true,
+            Ok("timer") => {
+                app.practice = true;
+                app.timer_open = true;
+            }
+            Ok("metro") => {
+                app.practice = true;
+                app.metro_open = true;
+            }
+            Ok("chart") => {
+                app.practice = true;
+                app.rtab = 1;
+                app.prac_chart = Some(("Cherokee".to_string(), crate::tour::CHEROKEE.to_string()));
+            }
             Ok("tunes") => app.sec = Sec::Tunes,
             Ok("reading") => app.sec = Sec::Reading,
             Ok("chords") => app.sec = Sec::Chords,
@@ -4058,6 +4082,7 @@ impl App {
             "loops_sort": self.loops_sort,
             "loops_fav": self.loops_fav,
             "pomo_sound": self.pomo_sound,
+            "timer_more": serde_json::to_value(&self.tm).unwrap_or_default(),
             "pomo_focus": self.pomo_focus,
             "pomo_break": self.pomo_break,
             "pomo_cycles": self.pomo_cycles,
@@ -5703,6 +5728,20 @@ impl App {
                 }
                 self.set_note(&format!("LOOP B = {}", fmt_t(t)));
             }
+            Action::ShiftLoop(on) => {
+                let (Some(a), Some(b)) = (self.loop_a, self.loop_b) else {
+                    self.set_note("SET LOOP A AND B FIRST");
+                    return;
+                };
+                let len = b - a;
+                let na = (if on { a + len } else { a - len }).clamp(0.0, (self.track_len() - len).max(0.0));
+                self.loop_a = Some(na);
+                self.loop_b = Some(na + len);
+                self.loop_on = true;
+                self.sync_loop();
+                self.player.send(Cmd::Seek(na));
+                self.set_note(&format!("LOOP MOVED: {} TO {}", fmt_t(na), fmt_t(na + len)));
+            }
             Action::LoopToggle => {
                 if self.loop_a.is_none() || self.loop_b.is_none() {
                     self.set_note("SET LOOP A AND B FIRST");
@@ -5777,6 +5816,9 @@ fn panel_frame() -> egui::Frame {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // a test copy can picture itself (BACKLINE_SHOT=file.png, after BACKLINE_SHOT_AT seconds): for checking layouts
+        // when no one is at the screen
+        test_shot(ctx);
         TOUR_ON.store(self.tour.is_some(), std::sync::atomic::Ordering::Relaxed);
         // ctrl + / - / 0 size the whole app - except over the library, where they zoom the library (done there)
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
@@ -6653,4 +6695,36 @@ mod tests {
         assert!(track_cells(888002, "T", "A", "B").ends_with("\tC?|95"), "detected keys carry a ?");
         assert!(track_cells(888003, "T", "A", "").ends_with("\t|"), "unknown: empty cell");
     }
+}
+
+/// BACKLINE_SHOT: once, after BACKLINE_SHOT_AT seconds (8 if not set), the app's own frame saved as a PNG there.
+fn test_shot(ctx: &egui::Context) {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    static STATE: AtomicU8 = AtomicU8::new(0);
+    let Ok(path) = std::env::var("BACKLINE_SHOT") else { return };
+    let at: f64 = std::env::var("BACKLINE_SHOT_AT").ok().and_then(|s| s.parse().ok()).unwrap_or(8.0);
+    match STATE.load(Ordering::Relaxed) {
+        0 if ctx.input(|i| i.time) > at => {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            STATE.store(1, Ordering::Relaxed);
+        }
+        1 => {
+            let shot = ctx.input(|i| {
+                i.raw.events.iter().find_map(|e| match e {
+                    egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                    _ => None,
+                })
+            });
+            if let Some(img) = shot {
+                let [w, h] = img.size;
+                let px: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
+                if let Some(buf) = image::RgbaImage::from_raw(w as u32, h as u32, px) {
+                    let _ = buf.save(&path);
+                }
+                STATE.store(2, Ordering::Relaxed);
+            }
+        }
+        _ => {}
+    }
+    ctx.request_repaint();
 }

@@ -782,6 +782,10 @@ pub(crate) fn text_override() -> bool {
 /// In a sentence, a run of words in capitals (a button's name: "+ MY TUNES keeps it") reads as a name: "+ My Tunes
 /// keeps it". Single letters and abbreviations stay.
 pub(crate) fn caps_words(text: &str) -> String {
+    // all in capitals: one sentence, cased as a whole
+    if !text.chars().any(|c| c.is_lowercase()) {
+        return display_case(text).into_owned();
+    }
     let caps = |w: &str| {
         let letters: Vec<char> = w.chars().filter(|c| c.is_alphabetic()).collect();
         letters.len() >= 2 && letters.iter().all(|c| c.is_uppercase())
@@ -792,7 +796,12 @@ pub(crate) fn caps_words(text: &str) -> String {
     while i < words.len() {
         if caps(words[i]) {
             let mut j = i;
-            while j < words.len() && (caps(words[j]) || (j > i && words[j] == "&")) {
+            // (a lone A or I between words in capitals belongs to the run: "PLAY A TRACK")
+            while j < words.len()
+                && (caps(words[j])
+                    || (j > i && words[j] == "&")
+                    || (j > i && matches!(words[j], "A" | "I") && words.get(j + 1).is_some_and(|w| caps(w))))
+            {
                 j += 1;
             }
             out.push(display_case(&words[i..j].join(" ")).into_owned());
@@ -844,8 +853,15 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         let next = words.get(i + 1).copied().unwrap_or("");
         let prev = if i > 0 { words[i - 1] } else { "" };
         // (B to G alone are always notes; A is one beside "and", "or", a dash, after a colon or before a bracket)
+        // (beside another note letter it is a note too: "D E F G A B C", "A B" as a loop's ends)
+        let note = |w: &str| {
+            let c = w.trim_matches(|c: char| !c.is_alphanumeric());
+            c.len() == 1 && matches!(c, "A" | "B" | "C" | "D" | "E" | "F" | "G")
+        };
         let letter_name = core.chars().count() == 1
             && (matches!(core, "B" | "C" | "D" | "E" | "F" | "G")
+                || note(next)
+                || (i > 0 && note(prev))
                 || next.is_empty()
                 || next.starts_with('(')
                 || prev.ends_with(':')
@@ -1134,6 +1150,8 @@ mod tests {
         assert_eq!(display_case("GET YT-DLP"), "Get yt-dlp");
         assert_eq!(display_case("I-IV-V"), "I-IV-V");
         assert_eq!(display_case("7THS"), "7ths");
+        assert_eq!(display_case("D E F G A B C"), "D E F G A B C");
+        assert_eq!(display_case("PLAY A SONG TO START"), "Play a song to start");
         assert_eq!(display_case("START ON: C (AS WRITTEN)"), "Start on: C (as written)");
         assert_eq!(display_case("START ON: A (AS WRITTEN)"), "Start on: A (as written)");
         assert_eq!(display_case("B♭7 OVER E♭"), "B♭7 Over E♭");
@@ -1147,6 +1165,8 @@ mod tests {
         );
         assert_eq!(caps_words("Click one; + MY TUNES keeps it at 120 BPM."), "Click one; + My Tunes keeps it at 120 BPM.");
         assert_eq!(caps_words("No book? MADE-UP LINES works"), "No book? Made-Up Lines works");
+        assert_eq!(caps_words("PLAY A TRACK TO CLICK ALONG WITH IT."), "Play a track to click along with it.");
+        assert_eq!(caps_words("Then PLAY A TRACK now"), "Then Play a Track now");
         assert_eq!(display_case("PLAY A TRACK TO START"), "Play a track to start");
         assert_eq!(display_case("SET A AND B"), "Set A and B");
         assert_eq!(display_case("SOUNDCLOUD"), "SoundCloud");

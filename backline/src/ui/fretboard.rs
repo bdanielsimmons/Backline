@@ -238,6 +238,63 @@ pub(crate) fn chord_box_coloured(
     }
 }
 
+/// A chord box for a shape played with a capo: a thick capo bar across the top marked "CAPO n", the shape as
+/// fingered behind it (an open string is a ring just under the bar), each note labelled as it sounds (`label` gets
+/// the sounding note: open + capo + fret), and `caption` under the box ("G shape, capo 3").
+pub(crate) fn chord_box_capo(
+    p: &egui::Painter,
+    rect: Rect,
+    capo: u8,
+    shape: &[Option<u8>; 6],
+    caption: &str,
+    label: &dyn Fn(i32) -> (String, Color32),
+) {
+    let rows = (shape.iter().flatten().copied().max().unwrap_or(0) as usize).max(4);
+    let gx0 = rect.min.x + 14.0;
+    let gx1 = rect.max.x - 14.0;
+    let sx = (gx1 - gx0) / 5.0;
+    ptext(p, Pos2::new(rect.center().x, rect.min.y + 6.0), Align::Center, &format!("CAPO {}", capo), 1.0, pal().ink2);
+    let bar = Rect::from_min_max(Pos2::new(gx0 - 6.0, rect.min.y + 13.0), Pos2::new(gx1 + 6.0, rect.min.y + 20.0));
+    // the ring row just under the bar, then the frets behind the capo
+    let ring_y = bar.max.y + 10.0;
+    let top = ring_y + 10.0;
+    let bottom = rect.max.y - 16.0;
+    let fy = (bottom - top) / rows as f32;
+    let line = Stroke::new(1.0_f32, pal().ink2);
+    for s in 0..6 {
+        let x = gx0 + s as f32 * sx;
+        p.line_segment([Pos2::new(x, bar.max.y), Pos2::new(x, bottom)], line);
+    }
+    for f in 0..=rows {
+        let y = top + f as f32 * fy;
+        p.line_segment([Pos2::new(gx0, y), Pos2::new(gx1, y)], line);
+    }
+    p.rect_filled(bar, 3.0, pal().ink);
+    let r = (sx.min(fy) * 0.46).max(6.0);
+    for (s, f) in shape.iter().enumerate() {
+        let x = gx0 + s as f32 * sx;
+        match f {
+            None => {
+                ptext(p, Pos2::new(x, ring_y), Align::Center, "x", 1.0, pal().dim);
+            }
+            Some(0) => {
+                let (txt, fill) = label(theory::STANDARD[s] + capo as i32);
+                let ring = if fill == Color32::from_gray(245) { pal().ink } else { fill };
+                p.circle_stroke(Pos2::new(x, ring_y), 7.0, Stroke::new(1.5_f32, ring));
+                ptext(p, Pos2::new(x, ring_y), Align::Center, &txt, 1.0, ring);
+            }
+            Some(f) => {
+                let c = Pos2::new(x, top + (*f as f32 - 0.5) * fy);
+                let (txt, fill) = label(theory::STANDARD[s] + capo as i32 + *f as i32);
+                p.circle_filled(c, r, fill);
+                p.circle_stroke(c, r, Stroke::new(1.0_f32, Color32::from_gray(60)));
+                ptext(p, c, Align::Center, &txt, 1.0, Color32::from_gray(10));
+            }
+        }
+    }
+    ptext(p, Pos2::new(rect.center().x, rect.max.y - 6.0), Align::Center, caption, 1.0, pal().ink2);
+}
+
 /// A guitar neck lying down (high string on top), frets 0 to `frets`. `shape` marks a fret per string; when
 /// `click` is on, a click returns (string, fret) - fret 0 left of the first fret wire is the open string, and a
 /// click on the marked fret again clears that string.

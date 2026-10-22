@@ -134,7 +134,12 @@ impl App {
             para(ui, "Pick a root, a kind and a chord, or type one. You see it on the neck and the piano, with its shapes and the scales that fit.", pal().ink2);
             return;
         };
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        // (a test copy can open scrolled down: BACKLINE_SCROLL=points)
+        let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
+        if let Some(y) = std::env::var("BACKLINE_SCROLL").ok().and_then(|s| s.parse::<f32>().ok()) {
+            sa = sa.vertical_scroll_offset(y);
+        }
+        sa.show(ui, |ui| {
             ui.add_space(8.0);
             title_line(ui, self.chord_q.trim(), 4.0, pal().ink);
             let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} ({})", n, i)).collect();
@@ -190,13 +195,54 @@ impl App {
             // as a chord book lays them out: the grips to know first, open position, then every movable shape
             let key = grip_key(&q);
             let mut first = true;
-            for (title, list) in [("Must know", &sec.must), ("Open position", &sec.open), ("Moveable", &sec.moveable)] {
+            for (title, list) in [("Must know", &sec.must), ("Open position", &sec.open)] {
                 if list.is_empty() && !(first && self.store.custom_grips.contains_key(&key)) {
                     continue;
                 }
                 crate::views::dim_line(ui, title, 1.0, pal().ink2);
                 self.chord_grips(ui, acts, &key, &c, list, false, first);
                 first = false;
+            }
+            // the movable grips by the string the root is on, as Oolimo sorts them
+            let by_string = sec.moveable_by_string();
+            if !by_string.is_empty() || (first && self.store.custom_grips.contains_key(&key)) {
+                crate::views::dim_line(ui, "Moveable", 1.0, pal().ink2);
+                if by_string.is_empty() {
+                    self.chord_grips(ui, acts, &key, &c, &[], false, first);
+                }
+                for (rs, list) in &by_string {
+                    let name = ["6th", "5th", "4th", "3rd", "2nd", "1st"][(*rs).min(5)];
+                    crate::views::dim_line(ui, &format!("Root on the {} string", name), 1.0, pal().dim);
+                    self.chord_grips(ui, acts, &key, &c, list, false, first);
+                    first = false;
+                }
+            }
+            // the chord as an open shape of a lower one, with a capo
+            let capo = capo_cache(&q, &c);
+            if !capo.is_empty() {
+                crate::views::dim_line(ui, "With a capo", 1.0, pal().ink2);
+                let (root, pcs) = (c.root, c.pcs.clone());
+                ui.horizontal_wrapped(|ui| {
+                    for s in capo.iter() {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 176.0), Sense::click());
+                        let caption = format!("{} shape, capo {}", s.shape, s.capo);
+                        crate::fretboard::chord_box_capo(ui.painter(), r, s.capo, &s.frets, &caption, &|m| {
+                            let (d, col) = degree_in(m, root, &pcs);
+                            (d.to_string(), col)
+                        });
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear this shape");
+                        if resp.clicked() {
+                            let notes: Vec<i32> = s
+                                .frets
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + s.capo as i32 + f as i32))
+                                .collect();
+                            acts.push(Action::PlayNotes(notes));
+                        }
+                        ui.add_space(10.0);
+                    }
+                });
             }
             // the voicing groups: every inversion of the chord's four notes, string set by string set
             self.voicing_browser(ui, acts, &c);
@@ -1310,4 +1356,18 @@ pub(crate) fn octave_keys(ui: &mut egui::Ui, id: &str, marks: &[(i32, Color32)],
     }
     let i = (((pos.x - r.min.x) / ww).floor() as usize).min(6);
     Some(WHITE[i])
+}
+
+/// The capo shapes for the chord in the finder, worked out once per chord (not every frame).
+fn capo_cache(q: &str, c: &theory::ChordNotes) -> Vec<theory::CapoShape> {
+    thread_local! {
+        static CAPO: std::cell::RefCell<(String, Vec<theory::CapoShape>)> = std::cell::RefCell::new((String::from("\u{0}"), Vec::new()));
+    }
+    CAPO.with(|k| {
+        let mut k = k.borrow_mut();
+        if k.0 != q {
+            *k = (q.to_string(), theory::capo_shapes(c, &theory::STANDARD));
+        }
+        k.1.clone()
+    })
 }

@@ -936,10 +936,19 @@ impl App {
         // the controls, in the middle (or after the words when the bar is narrow)
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
         let cw = 44.0;
-        let cx = bar.center().x.max(tx + 220.0).min(heart.min.x - 1.5 * cw - 20.0);
+        let cx = bar.center().x.max(tx + 220.0 + cw).min(heart.min.x - 2.5 * cw - 20.0);
         let mut clicked_control = false;
-        // previous, a round PLAY / PAUSE, next: smooth icons, as over the lists
+        // shuffle, previous, a round PLAY / PAUSE, next, repeat: smooth icons, as over the lists (shuffle and repeat
+        // lit when on)
+        let rep = match self.repeat {
+            crate::Repeat::Off => "Repeat: off",
+            crate::Repeat::All => "Repeat: all",
+            crate::Repeat::One => "Repeat: this song",
+        };
+        let rep_on = !matches!(self.repeat, crate::Repeat::Off);
+        let rep_one = matches!(self.repeat, crate::Repeat::One);
         for (n, (icon, a, tip)) in [
+            ("shuffle", Action::Shuffle, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }),
             ("prev", Action::Prev, "Previous"),
             (
                 if playing { "pause" } else { "play" },
@@ -947,28 +956,36 @@ impl App {
                 if playing { "Pause" } else { "Play" },
             ),
             ("skip", Action::Next, "Next"),
+            ("loop", Action::Repeat, rep),
         ]
         .into_iter()
         .enumerate()
         {
-            let c = Pos2::new(cx + (n as f32 - 1.0) * cw, bar.center().y - 2.0);
-            let d = if n == 1 { 34.0 } else { 28.0 };
+            let c = Pos2::new(cx + (n as f32 - 2.0) * cw, bar.center().y - 2.0);
+            let d = if n == 2 { 34.0 } else if n == 0 || n == 4 { 24.0 } else { 28.0 };
             let r = Rect::from_center_size(c, Vec2::splat(d));
             let h = ui.interact(r, id.with(("ctl", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
-            if n == 1 {
+            if n == 2 {
                 p.circle_filled(c, d / 2.0 + if h.hovered() { 1.0 } else { 0.0 }, pal().ink);
                 let off = if playing { 0.0 } else { 1.5 };
                 crate::vicon::named(&p, Rect::from_center_size(c + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)), icon, pal().lcd);
             } else {
-                let col = if h.hovered() { pal().ink } else { pal().ink2 };
-                crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(d * 0.55)), icon, col);
+                let lit = (n == 0 && self.shuffle) || (n == 4 && rep_on);
+                let col = if lit { pal().bar_txt } else if h.hovered() { pal().ink } else { pal().ink2 };
+                crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(d * 0.6)), icon, col);
+                if lit {
+                    p.circle_filled(Pos2::new(c.x, c.y + d * 0.55), 1.8, col);
+                }
+                if n == 4 && rep_one {
+                    crate::font::keep_caps(|| ptext(&p, Pos2::new(c.x + d * 0.42, c.y - d * 0.3), Align::Center, "1", 1.0, col));
+                }
             }
             if h.clicked() {
                 acts.push(a);
                 clicked_control = true;
             }
         }
-        let room = (cx - 1.5 * cw - 12.0) - tx;
+        let room = (cx - 2.5 * cw - 12.0) - tx;
         crate::row_text(&p, Pos2::new(tx, bar.min.y + 17.0), Align::Min, &tr.title, room, pal().bar_txt);
         crate::row_text(&p, Pos2::new(tx, bar.min.y + 35.0), Align::Min, &tr.artists_text(), room, pal().ink2);
         // how far in: a thin line along the foot - click or drag it to move in the song
@@ -1353,10 +1370,14 @@ impl App {
             }
             // the scrollbar's room is always kept: a page about as tall as the window would otherwise gain and lose
             // its scrollbar every frame (the width changes, rows wrap, the height changes) and flicker
-            egui::ScrollArea::vertical()
+            // (a test copy can open scrolled down: BACKLINE_SCROLL=points; the chord finder scrolls itself)
+            let mut sa = egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-                .show(ui, |ui| {
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible);
+            if let Some(y) = std::env::var("BACKLINE_SCROLL").ok().and_then(|s| s.parse::<f32>().ok()).filter(|_| sec != Sec::Chords) {
+                sa = sa.vertical_scroll_offset(y);
+            }
+            sa.show(ui, |ui| {
                     ui.push_id((serial, sec_i), |ui| match sec {
                         // used without Tidal: the tab is still here, and logs you in
                         Sec::Tidal if self.offline => {
