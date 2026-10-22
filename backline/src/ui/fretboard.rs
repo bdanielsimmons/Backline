@@ -44,7 +44,7 @@ pub(crate) fn degree(pc: i32, root: i32) -> (&'static str, Color32) {
     let s = (pc - root).rem_euclid(12) as usize;
     // over a seventh the sixth is the 13th (G13b9: its E is the 13)
     if s == 9 && SEVENTH.with(|c| c.get() == Some(root.rem_euclid(12))) {
-        return ("13", Color32::from_rgb(178, 96, 255));
+        return ("13", Color32::from_rgb(255, 150, 40));
     }
     let col = match s {
         0 => Color32::from_rgb(235, 64, 64),
@@ -183,7 +183,8 @@ pub(crate) fn chord_box_coloured(
     // five frets, or more for a wide grip, so every dot sits inside the box
     let rows = (hi.saturating_sub(start) as usize + 1).max(5);
     let top = rect.min.y + 14.0;
-    let grid = Rect::from_min_max(Pos2::new(rect.min.x + 14.0, top), Pos2::new(rect.max.x - 6.0, rect.max.y - 4.0));
+    // (room at the side for the starting fret's number, clear of the low string's dots)
+    let grid = Rect::from_min_max(Pos2::new(rect.min.x + 22.0, top), Pos2::new(rect.max.x - 8.0, rect.max.y - 4.0));
     let sx = grid.width() / 5.0;
     let fy = grid.height() / rows as f32;
     let line = Stroke::new(1.0_f32, pal().ink2);
@@ -197,7 +198,8 @@ pub(crate) fn chord_box_coloured(
         p.line_segment([Pos2::new(grid.min.x, y), Pos2::new(grid.max.x, y)], Stroke::new(w, pal().ink2));
     }
     if start > 1 {
-        ptext(p, Pos2::new(rect.min.x + 1.0, grid.min.y + fy * 0.5), Align::Min, &start.to_string(), 1.0, pal().ink2);
+        let r = (sx.min(fy) * 0.46).max(6.0);
+        ptext(p, Pos2::new(grid.min.x - r - 3.0, grid.min.y + fy * 0.5), Align::Max, &start.to_string(), 1.0, pal().ink2);
     }
     for (s, f) in shape.iter().enumerate() {
         let x = grid.min.x + s as f32 * sx;

@@ -3817,6 +3817,12 @@ impl App {
             });
         }
         // BACKLINE_OPEN=practice / lists: start with that open (for checking layouts and recording demos)
+        // (a test copy opened on a page shows that page, whatever side page it was left on)
+        if std::env::var_os("BACKLINE_OPEN").is_some() {
+            app.show_winamp = false;
+            app.show_tl = false;
+            app.show_log = false;
+        }
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
             // pick up the last song where it was left (as CONTINUE does)

@@ -161,7 +161,11 @@ impl App {
             ui.horizontal(|ui| {
                 let pw = (ui.available_width() - 270.0).clamp(240.0, 560.0);
                 let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 96.0), Sense::hover());
+                // (over a seventh the piano names the sixth 13, as the staff and the grips do)
+                let seventh = c.pcs.iter().any(|p| matches!((p - c.root).rem_euclid(12), 10 | 11));
+                SEVENTH.with(|s| s.set(seventh.then_some(c.root.rem_euclid(12))));
                 piano_span(ui, pr.shrink2(Vec2::new(4.0, 4.0)), &voiced, false, "find_piano", Some(c.root), 48, 2);
+                SEVENTH.with(|s| s.set(None));
                 let (sr, _) = ui.allocate_exact_size(Vec2::new(260.0, 96.0), Sense::hover());
                 let pcs = c.pcs.clone();
                 let notes: Vec<(i32, Option<(usize, u8)>)> = voiced.iter().map(|m| (*m, None)).collect();
@@ -1017,7 +1021,11 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for (own, g) in &all {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 140.0), Sense::click());
-                chord_box_labelled(ui.painter(), r, g, &|m| degree_in(m, root, &pcs).0.to_string());
+                // (each dot in its degree's colour, as on the piano and the staff)
+                crate::fretboard::chord_box_coloured(ui.painter(), r, g, &|m| {
+                    let (d, col) = degree_in(m, root, &pcs);
+                    (d.to_string(), col)
+                });
                 let tip = if own.is_some() {
                     "Your grip. Click to hear it, right-click to delete it."
                 } else if to_neck {
