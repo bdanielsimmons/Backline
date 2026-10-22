@@ -19,6 +19,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- The chord engine checked against standard theory: every common chord spelling reads right, notes spelt from the root
+- Brazilian songbook in the recommended tunes: Jobim, Bonfá, Baden Powell, Edu Lobo, Milton, João Bosco, Hermeto, choro
 - With a skin, the library lists its places down the side, like Spotify
 - Play, shuffle and queue are icons, with the rest under "..."
 - DIARY > ROUTINE - a session tune a week (a different kind each time, or gospel), with daily steps that open the tool set up for them: listen, melody by ear, changes with the band, a lick through 12 keys, a recorded solo, listening back
@@ -27,8 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - SCALE HARMONY in CHORDS - every chord a scale makes, its mode, a grip, what to solo with (triad pairs too) and a vamp the band loops
 - ARPEGGIOS in LINES - a chord's notes inside its scale, in the same positions as SCALES, played every way round and through a tune
 - CHORD MELODIES under PRACTICE - your transcriptions written out bar by bar, with the moves in them spotted
-- PENTATONICS & MORE - pentatonic, hexatonic (triad pairs), diminished and chromatic options, with exercises
-- SUPERIMPOSE - what to play over a chord to get its colours
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
