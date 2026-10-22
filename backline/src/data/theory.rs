@@ -746,7 +746,7 @@ pub(crate) const GRIPS: &[(&str, [i8; 6])] = &[
     // major sevenths and on
     ("maj7", [0, 7, 11, 4, X, X]),
     ("maj13", [0, X, 11, 4, 9, X]),
-    ("maj13", [X, 0, 4, 11, 2, 9]),
+    ("maj13", [X, 0, X, 11, 4, 9]),
     ("maj7#5", [0, X, 11, 4, 8, X]),
     ("maj7#5", [X, 0, 8, 11, 4, X]),
     // dominants: the barre shapes, then the altered ones
@@ -762,40 +762,51 @@ pub(crate) const GRIPS: &[(&str, [i8; 6])] = &[
     ("", [X, 0, 4, 7, 0, 4]),
     ("", [0, 4, 7, 0, 4, 0]),
     ("m", [X, 0, 3, 7, 0, X]),
-    ("9#11", [0, X, 10, 4, 6, 2]),
     ("9#11", [X, 0, 4, 10, 2, 6]),
     ("7b9b13", [0, X, 10, 4, 8, 1]),
     ("7#9b13", [0, X, 10, 4, 8, 3]),
-    ("7b5b9", [0, X, 10, 4, 6, 1]),
     ("7b5b9", [X, 0, 4, 10, 1, 6]),
     ("9sus4", [0, X, 10, 5, X, 2]),
 ];
 
-/// A grip's frets for this root in standard tuning, the root at fret `f0` on its string (None when it won't sit in
-/// four frets there).
-fn place_grip(degrees: &[i8; 6], root: i32, f0: i32, tuning: &[i32; 6]) -> Option<[Option<u8>; 6]> {
+/// A grip's shape: per string, the fret relative to the root's (None: not played). Worked out once, mid-neck
+/// where nothing is near the nut, so the shape is the same in every key - a movable grip, as a guitarist slides it.
+/// None when it won't sit within four frets.
+pub(crate) fn grip_offsets(degrees: &[i8; 6], tuning: &[i32; 6]) -> Option<[Option<i32>; 6]> {
+    let rs = degrees.iter().position(|d| *d == 0)?;
+    let at = 7;
+    let root = tuning[rs] + at;
     let mut out = [None; 6];
     for (s, d) in degrees.iter().enumerate() {
         if *d < 0 {
             continue;
         }
-        let pc = (root + *d as i32).rem_euclid(12);
-        let base = (pc - tuning[s]).rem_euclid(12);
+        let base = (root + *d as i32 - tuning[s]).rem_euclid(12);
         // the fret for that note nearest the root's (a shape leans up the neck from it)
-        let f = [base - 12, base, base + 12, base + 24]
-            .into_iter()
-            .filter(|f| *f >= 0 && *f <= 17)
-            .min_by_key(|f| ((f - f0) * 2 - 1).abs())?;
-        out[s] = Some(f as u8);
+        let f = [base, base + 12].into_iter().min_by_key(|f| ((f - at) * 2 - 1).abs())?;
+        out[s] = Some(f - at);
     }
-    let fretted: Vec<i32> = out.iter().flatten().map(|f| *f as i32).filter(|f| *f > 0).collect();
-    let (lo, hi) = (fretted.iter().min().copied().unwrap_or(0), fretted.iter().max().copied().unwrap_or(0));
-    if hi - lo > 3 {
+    let offs: Vec<i32> = out.iter().flatten().copied().collect();
+    let (lo, hi) = (offs.iter().min().copied()?, offs.iter().max().copied()?);
+    (hi - lo <= 3).then_some(out)
+}
+
+/// A grip with its root at fret `f0`: the shape moved there whole (None when part of it falls off the neck).
+fn place_grip(degrees: &[i8; 6], root: i32, f0: i32, tuning: &[i32; 6]) -> Option<[Option<u8>; 6]> {
+    let rs = degrees.iter().position(|d| *d == 0)?;
+    if (tuning[rs] + f0 - root).rem_euclid(12) != 0 {
         return None;
     }
-    // an open string only with a shape at the nut
-    if out.iter().flatten().any(|f| *f == 0) && lo > 3 {
-        return None;
+    let offs = grip_offsets(degrees, tuning)?;
+    let mut out = [None; 6];
+    for (s, o) in offs.iter().enumerate() {
+        if let Some(o) = o {
+            let f = f0 + o;
+            if !(0..=17).contains(&f) {
+                return None;
+            }
+            out[s] = Some(f as u8);
+        }
     }
     Some(out)
 }
@@ -823,16 +834,12 @@ pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8
         if !ok {
             continue;
         }
+        // each grip once, where it sits lowest on the neck with all of it on (every shape shows in every key)
         let rs = degrees.iter().position(|d| *d == 0).unwrap_or(0);
         let f0 = (c.root - tuning[rs]).rem_euclid(12);
-        for f in [f0, f0 + 12] {
-            if f > 15 {
-                continue;
-            }
-            if let Some(g) = place_grip(degrees, c.root, f, tuning) {
-                if !out.iter().any(|(_, o)| *o == g) {
-                    out.push((f, g));
-                }
+        if let Some((f, g)) = [f0, f0 + 12].into_iter().find_map(|f| place_grip(degrees, c.root, f, tuning).map(|g| (f, g))) {
+            if !out.iter().any(|(_, o)| *o == g) {
+                out.push((f, g));
             }
         }
     }
@@ -843,11 +850,11 @@ pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8
 pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
     // the grips players use first, then what the search finds for anything they don't cover
     // (the search only for chords the library doesn't cover: it finds odd grips beside real ones)
-    let mut out = library_grips(c, tuning);
+    let out = library_grips(c, tuning);
     if !out.is_empty() {
-        out.truncate(6);
         return out;
     }
+    let mut out = out;
     for g in search_shapes(c, tuning) {
         let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
         if !out.iter().any(|o| *o == g || pos(o).abs_diff(pos(&g)) < 2) {
@@ -1920,6 +1927,57 @@ mod chord_spellings {
 #[cfg(test)]
 mod chord_audit {
 
+    /// Every grip in the library is a movable shape that sits in four frets and four fingers (a barre counts as one
+    /// finger), and it shows for every root, the same shape in every key.
+    /// The fingers a grip takes: one per fretted note, except that notes on the same fret on neighbouring strings,
+    /// with nothing fretted lower between them, take one finger together (a barre).
+    fn grip_fingers(offs: &[Option<i32>; 6]) -> usize {
+        let lowest = offs.iter().flatten().copied().min().unwrap_or(0);
+        let mut n = 0;
+        let mut frets: Vec<i32> = offs.iter().flatten().copied().collect();
+        frets.sort();
+        frets.dedup();
+        for f in frets {
+            let mut run = false;
+            for s in 0..6 {
+                match offs[s] {
+                    Some(x) if x == f => {
+                        if !run {
+                            n += 1;
+                            run = true;
+                        }
+                    }
+                    // a string fretted higher, or (for the lowest fret) not played, keeps a barre going
+                    Some(x) if x > f => {}
+                    None if f == lowest => {}
+                    _ => run = false,
+                }
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn every_grip_is_movable_and_playable() {
+        use super::*;
+        for (name, degrees) in GRIPS.iter() {
+            let offs = grip_offsets(degrees, &STANDARD).unwrap_or_else(|| panic!("{} {:?} won't sit in four frets", name, degrees));
+            // (no thumb over the neck: every grip is four fingers, as the chord books and Oolimo give them)
+            assert!(grip_fingers(&offs) <= 4, "{} {:?} needs {} fingers", name, degrees, grip_fingers(&offs));
+            let rs = degrees.iter().position(|d| *d == 0).unwrap();
+            for root in 0..12i32 {
+                let f0 = (root - STANDARD[rs]).rem_euclid(12);
+                let g = [f0, f0 + 12].into_iter().find_map(|f| place_grip(degrees, root, f, &STANDARD));
+                let g = g.unwrap_or_else(|| panic!("{} {:?} missing with root {}", name, degrees, root));
+                // the same shape: each string the same distance from the root's fret
+                let rf = g[rs].unwrap() as i32;
+                for s in 0..6 {
+                    assert_eq!(g[s].map(|f| f as i32 - rf), offs[s], "{} root {} string {}", name, root, s);
+                }
+            }
+        }
+    }
+
     /// Every chord the finder offers, in every key, has library grips with the root on the 6th string and on the
     /// 5th (the shapes the chord books give), each one spelling the chord.
     #[test]
@@ -1933,7 +1991,7 @@ mod chord_audit {
                     let c = chord_notes(&name).unwrap_or_else(|| panic!("{} can't be read", name));
                     let grips = library_grips(&c, &STANDARD);
                     let on = |s: usize| grips.iter().any(|g| g.iter().position(|f| f.is_some()) == Some(s));
-                    if !(on(0) && on(1)) {
+                    if !(on(0) || on(1)) {
                         short.push(format!("{} (6th: {}, 5th: {})", name, on(0), on(1)));
                     }
                 }
