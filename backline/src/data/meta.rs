@@ -90,7 +90,7 @@ pub fn claim(id: i64) -> bool {
 
 /// Tempo and key from a stored track's audio (a second or two of work, in the background).
 pub fn detect(id: i64, bytes: Vec<u8>) -> Info {
-    let bpm = crate::band::detect_beats(bytes.clone()).map(|(period, _)| (60.0 / period).round() as u16);
+    let bpm = crate::band::detect_beats(bytes.clone()).map(|(period, _, _)| (60.0f32 / period).round() as u16);
     let key = crate::tuning::decode_mono(bytes, 155.0).and_then(|(x, sr)| {
         let cents = crate::tuning::offset_cents(&x, sr).filter(|c| c.1 >= 0.04).map_or(0, |c| c.0);
         crate::tuning::key_of(&x, sr, cents).map(|k| k.0)

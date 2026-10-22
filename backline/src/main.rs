@@ -224,9 +224,9 @@ enum Msg {
     TuneDetails(String, Result<sources::Work, String>),
     Chart(String, Result<(String, String, String), (String, Vec<String>)>),
     Live(String, Result<(String, String, String), (String, Vec<String>)>),
-    Beats(i64, Option<(f32, f32)>),
+    Beats(i64, Option<band::BeatInfo>),
     /// the beat worked out in the background as a song starts (kept for FIND BEAT)
-    BeatsBg(i64, Option<(f32, f32)>),
+    BeatsBg(i64, Option<band::BeatInfo>),
     /// tempo / key detected from a track's audio
     Meta(i64, meta::Info),
     /// Winamp skins found (the list, whether they add to what is shown)
@@ -2732,12 +2732,14 @@ struct App {
     mt_vis: Option<(Instant, f32, usize)>,
     beat_failed: HashSet<i64>,
     /// each played song's beat, worked out as it starts (None: no steady beat), and the song FIND BEAT waits on
-    beat_known: HashMap<i64, Option<(f32, f32)>>,
+    beat_known: HashMap<i64, Option<band::BeatInfo>>,
     beat_wait: Option<i64>,
     mt_gen: u32,
     mt_pos: (f32, Instant),
     mt_sync_at: Instant,
     beat: Option<(i64, f32, f32)>,
+    /// every beat of that song through it (followed as the band drifts), and its usual beat length
+    beat_grid: Option<(i64, std::sync::Arc<Vec<f32>>, f32)>,
     beat_busy: bool,
     band_on: bool,
     band_style: u8,
@@ -3410,6 +3412,7 @@ impl App {
             mt_vis: None,
             beat_failed: HashSet::new(),
             beat_known: HashMap::new(),
+            beat_grid: None,
             beat_wait: None,
             mt_gen: 0,
             mt_pos: (0.0, Instant::now()),

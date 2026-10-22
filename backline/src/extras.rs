@@ -634,13 +634,25 @@ impl App {
         if locked {
             let pos = self.pos();
             let (last, at) = self.mt_pos;
-            if (pos - (last + at.elapsed().as_secs_f32() * ratio)).abs() > 0.25 || self.mt_sync_at.elapsed().as_secs() >= 12 {
+            // (with the song's beats followed through it, re-aimed every few seconds at the next real beat)
+            let every = if self.beat_grid.as_ref().is_some_and(|g| Some(g.0) == tid) { 3 } else { 12 };
+            if (pos - (last + at.elapsed().as_secs_f32() * ratio)).abs() > 0.25 || self.mt_sync_at.elapsed().as_secs() >= every {
                 self.mt_gen += 1;
                 self.mt_sync_at = Instant::now();
             }
             self.mt_pos = (pos, Instant::now());
         }
-        let period = self.beat.map_or(0.5, |b| b.1);
+        // locked to a song whose beats are known: the local beat length and the next real beat, from the list (x2 and
+        // /2 scale it as they scale the usual one)
+        let grid_now = if locked {
+            self.beat_grid.as_ref().filter(|g| Some(g.0) == tid).and_then(|(_, grid, usual)| {
+                let scale = self.beat.map_or(1.0, |b| b.1) / usual;
+                band::next_beat(grid, self.pos()).map(|(next, local)| (next, local * scale))
+            })
+        } else {
+            None
+        };
+        let period = grid_now.map_or_else(|| self.beat.map_or(0.5, |b| b.1), |g| g.1);
         let tempo = if locked { 60.0 * ratio / period } else { self.metro_tempo(playing) };
         let m = &self.mt;
         let mut sig = (tempo * 10.0) as u64 ^ ((m.beats as u64) << 20) ^ ((m.sub as u64) << 24) ^ ((m.gap_play as u64) << 28);
@@ -661,9 +673,12 @@ impl App {
             cfg.levels = [2; 32];
             cfg.unit = 4;
             cfg.gap_play = 0;
-            if let Some((_, period, phase)) = self.beat {
+            if let Some((_, period0, phase)) = self.beat {
                 let pos = self.pos();
-                let next = phase + ((pos - phase) / period).ceil().max(0.0) * period;
+                let next = match grid_now {
+                    Some((g, _)) => g,
+                    None => phase + ((pos - phase) / period0).ceil().max(0.0) * period0,
+                };
                 let each = period / ratio;
                 wait = ((next - pos).max(0.0) / ratio + self.mt.shift_ms as f32 / 1000.0).rem_euclid(each);
                 lead = vec![0i16; (wait * band::RATE) as usize];
@@ -1801,20 +1816,21 @@ impl App {
                 }
             }
             Msg::BeatsBg(id, r) => {
-                self.beat_known.insert(id, r);
+                self.beat_known.insert(id, r.clone());
                 // FIND BEAT was pressed before it was ready: answer it now
                 if self.beat_wait == Some(id) {
                     self.beat_wait = None;
                     self.beat_busy = true;
-                    let _ = self.tx.send(Msg::Beats(id, r));
+                    let _ = self.tx.send(Msg::Beats(id, r.clone()));
                 }
             }
             Msg::Beats(id, r) => {
                 self.beat_busy = false;
                 match r {
-                    Some((period, phase)) => {
+                    Some((period, phase, grid)) => {
                         self.beat_failed.remove(&id);
                         self.beat = Some((id, period, phase));
+                        self.beat_grid = Some((id, grid, period));
                         self.mt_gen += 1;
                         self.set_note(&format!("FOUND THE BEAT: {:.0} BPM. NOW TURN ON LOCK", 60.0 / period));
                     }
@@ -3465,7 +3481,7 @@ impl App {
                 }
                 self.beat_failed.remove(&t.id);
                 // worked out already as the song started (or on its way): no file needed
-                if let Some(r) = self.beat_known.get(&t.id).copied() {
+                if let Some(r) = self.beat_known.get(&t.id).cloned() {
                     self.beat_busy = true;
                     let _ = self.tx.send(Msg::Beats(t.id, r));
                     return;

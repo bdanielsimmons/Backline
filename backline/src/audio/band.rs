@@ -1159,11 +1159,12 @@ pub fn wav(samples: &[i16]) -> Vec<u8> {
     b
 }
 
-// ----------------------------------------------------------------- beat finder
-/// Find the tempo and the position of a beat in a recording: (seconds per beat, seconds of a beat).
-/// Looks at how sharply the sound changes (about 200 times a second) and picks the pulse that
-/// lines up with the most of those changes. Good on steady music; it can land on half or double.
-pub fn detect_beats(bytes: Vec<u8>) -> Option<(f32, f32)> {
+/// A song's beat: its usual length (seconds), where the first one falls, and every beat's time through the song -
+/// followed as the band speeds up or slows down, so a click locked to it stays with them.
+pub type BeatInfo = (f32, f32, std::sync::Arc<Vec<f32>>);
+
+/// The beat of a song (the first 15 minutes of it), from its audio.
+pub fn detect_beats(bytes: Vec<u8>) -> Option<BeatInfo> {
     let src = SymSource::new(bytes).ok()?;
     let ch = src.channels().max(1) as usize;
     let hop = (src.sample_rate() as usize / 200).max(1);
@@ -1180,7 +1181,7 @@ pub fn detect_beats(bytes: Vec<u8>) -> Option<(f32, f32)> {
             if n == hop {
                 env.push(acc / hop as f32);
                 (acc, n) = (0.0, 0);
-                if env.len() >= 200 * 150 {
+                if env.len() >= 200 * 900 {
                     break;
                 }
             }
@@ -1196,36 +1197,87 @@ pub fn detect_beats(bytes: Vec<u8>) -> Option<(f32, f32)> {
         on[i] = (env[i] - run / w as f32).max(0.0);
         run += env[i] - env[i - w];
     }
-    // tempo: strongest repeat distance between onsets, leaning gently towards 120 bpm
-    let (mut best, mut lag0) = (0.0f32, 100usize);
-    for lag in 60..=200usize {
-        let sum: f32 = (0..on.len() - lag).map(|i| on[i] * on[i + lag]).sum::<f32>() / (on.len() - lag) as f32;
-        let bpm = 60.0 * 200.0 / lag as f32;
+    track_beats(&on, 200.0)
+}
+
+/// The beat in an onset strength curve `on` (`fps` values a second): the usual beat length from how onsets repeat,
+/// then every beat placed by dynamic programming (as Ellis's beat tracker): each beat lands on a strong onset about
+/// one beat after the one before, the gap allowed to stretch a little, so a band drifting faster or slower is
+/// followed beat by beat rather than drifting away from one fixed tempo.
+pub fn track_beats(on: &[f32], fps: f32) -> Option<BeatInfo> {
+    if on.len() < (4.0 * fps) as usize {
+        return None;
+    }
+    // the usual beat: the strongest repeat distance in the first 2.5 minutes, leaning gently towards 120 bpm
+    let head = &on[..on.len().min((150.0 * fps) as usize)];
+    let (lo, hi) = ((fps * 60.0 / 200.0) as usize, (fps * 60.0 / 60.0) as usize);
+    let (mut best, mut lag0) = (0.0f32, (fps / 2.0) as usize);
+    for lag in lo..=hi.min(head.len() / 2) {
+        let sum: f32 = (0..head.len() - lag).map(|i| head[i] * head[i + lag]).sum::<f32>() / (head.len() - lag) as f32;
+        let bpm = 60.0 * fps / lag as f32;
         let score = sum * (-0.5 * ((bpm / 120.0).log2() / 0.9).powi(2)).exp();
         if score > best {
             (best, lag0) = (score, lag);
         }
     }
-    // fine tune the beat length and find where the beats fall
-    let (mut top, mut period, mut phase) = (-1.0f32, lag0 as f32, 0.0f32);
-    let mut p = lag0 as f32 - 3.0;
-    while p <= lag0 as f32 + 3.0 {
-        for ph in 0..p as usize {
-            let (mut sum, mut beats, mut t) = (0.0f32, 0.0f32, ph as f32);
-            while (t as usize) + 1 < on.len() {
-                let k = t.round() as usize;
-                sum += on[k].max(on[k.saturating_sub(1)] * 0.7).max(on[(k + 1).min(on.len() - 1)] * 0.7);
-                beats += 1.0;
-                t += p;
-            }
-            let score = sum / beats.max(1.0);
-            if score > top {
-                (top, period, phase) = (score, p, ph as f32);
+    if best <= 0.0 {
+        return None;
+    }
+    let p = lag0 as f32;
+    // dynamic programming: the best chain of beats ending at each frame
+    let norm = {
+        let mut v: Vec<f32> = on.to_vec();
+        v.sort_by(|a, b| b.total_cmp(a));
+        v[v.len() / 50].max(1e-6)
+    };
+    let o: Vec<f32> = on.iter().map(|x| (x / norm).min(4.0)).collect();
+    let tight = 100.0f32;
+    let mut score = vec![0f32; o.len()];
+    let mut back = vec![usize::MAX; o.len()];
+    for t in 0..o.len() {
+        let (a, b) = ((t as f32 - 2.0 * p).max(0.0) as usize, (t as f32 - p / 2.0).max(0.0) as usize);
+        let mut top = 0.0f32;
+        let mut from = usize::MAX;
+        if b > a {
+            for q in a..b {
+                let r = ((t - q) as f32 / p).ln();
+                let s = score[q] - tight * r * r;
+                if s > top || from == usize::MAX {
+                    top = s;
+                    from = q;
+                }
             }
         }
-        p += 0.1;
+        score[t] = o[t] + top.max(0.0);
+        back[t] = if top > 0.0 { from } else { usize::MAX };
     }
-    Some((period / 200.0, phase / 200.0))
+    // the chain ending at the strongest place in the last beat, followed back
+    let last = o.len() - 1;
+    let start = (last as f32 - p).max(0.0) as usize;
+    let mut t = (start..=last).max_by(|a, b| score[*a].total_cmp(&score[*b]))?;
+    let mut beats = vec![t as f32 / fps];
+    while back[t] != usize::MAX {
+        t = back[t];
+        beats.push(t as f32 / fps);
+    }
+    beats.reverse();
+    if beats.len() < 8 {
+        return None;
+    }
+    // the usual beat length: the middle of the gaps
+    let mut gaps: Vec<f32> = beats.windows(2).map(|w| w[1] - w[0]).collect();
+    gaps.sort_by(f32::total_cmp);
+    let period = gaps[gaps.len() / 2];
+    Some((period, beats[0], std::sync::Arc::new(beats)))
+}
+
+/// The beat after `pos` in a beat list and the local beat length there (the average of the next few gaps).
+pub fn next_beat(grid: &[f32], pos: f32) -> Option<(f32, f32)> {
+    let k = grid.partition_point(|b| *b <= pos + 0.002);
+    let next = *grid.get(k)?;
+    let end = (k + 4).min(grid.len() - 1);
+    let local = if end > k { (grid[end] - grid[k]) / (end - k) as f32 } else if k > 0 { grid[k] - grid[k - 1] } else { return None };
+    Some((next, local))
 }
 
 #[cfg(test)]
@@ -1235,6 +1287,58 @@ mod tests {
     fn notes(c: &str) -> (i32, i32, i32, Option<i32>, Option<i32>, i32) {
         let ch = parse_chord(c).unwrap_or_else(|| panic!("{} did not parse", c));
         (ch.root, ch.third, ch.fifth, ch.seventh, ch.exts.first().copied(), ch.bass)
+    }
+
+    /// A band drifting from 120 to 126 bpm over two minutes, with a missed hit now and then and noise between: every
+    /// beat found within 20 ms, so a locked click stays with them to the end.
+    /// A real recording ($BACKLINE_BEAT_FILE): its tempo and how steady the found beats are (run with --ignored).
+    #[test]
+    #[ignore]
+    fn beats_of_a_file() {
+        let Ok(p) = std::env::var("BACKLINE_BEAT_FILE") else { return };
+        let (period, first, grid) = detect_beats(std::fs::read(p).unwrap()).expect("a beat");
+        let gaps: Vec<f32> = grid.windows(2).map(|w| w[1] - w[0]).collect();
+        let off = gaps.iter().filter(|g| (**g / period - 1.0).abs() > 0.15).count();
+        println!("tempo {:.1} first {:.2}s beats {} odd gaps {}", 60.0 / period, first, grid.len(), off);
+    }
+
+    #[test]
+    fn beats_follow_a_drifting_band() {
+        let fps = 200.0f32;
+        let secs = 120.0f32;
+        let mut on = vec![0f32; (secs * fps) as usize];
+        let mut seed = 7u32;
+        let mut rnd = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed >> 8) as f32 / (1u32 << 24) as f32
+        };
+        for v in on.iter_mut() {
+            *v = rnd() * 0.15;
+        }
+        let mut truth = Vec::new();
+        let (mut t, mut k) = (0.5f32, 0);
+        while t < secs - 0.5 {
+            let bpm = 120.0 + 6.0 * t / secs;
+            truth.push(t);
+            if k % 13 != 5 {
+                let i = (t * fps).round() as usize;
+                on[i] += 1.0;
+                on[i + 1] += 0.5;
+            }
+            t += 60.0 / bpm;
+            k += 1;
+        }
+        let (period, _, grid) = track_beats(&on, fps).expect("a beat");
+        assert!((60.0 / period - 123.0).abs() < 4.0, "tempo {}", 60.0 / period);
+        // every true beat after the first few seconds has a found beat within 20 ms
+        for b in truth.iter().filter(|b| **b > 3.0 && **b < secs - 3.0) {
+            let near = grid.iter().map(|g| (g - b).abs()).fold(f32::MAX, f32::min);
+            assert!(near < 0.02, "beat at {:.2}s missed by {:.3}s", b, near);
+        }
+        // and the next beat from any point lands on one
+        let (next, local) = next_beat(&grid, 60.0).unwrap();
+        assert!(truth.iter().any(|b| (b - next).abs() < 0.02), "next beat {}", next);
+        assert!((60.0 / local - 123.0).abs() < 3.0, "local tempo {}", 60.0 / local);
     }
 
     #[test]
