@@ -831,10 +831,9 @@ impl App {
     fn right_tabs(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let inner = ui.max_rect();
         let chip_h = 16.0;
-        let ty = inner.min.y - 18.0 - chip_h / 2.0;
-        let mut right = inner.max.x - 8.0;
+        let mut right = crate::title_right(inner);
         let mut place = |w: f32| {
-            let r = Rect::from_min_size(Pos2::new(right - w, ty), Vec2::new(w, chip_h));
+            let r = crate::title_slot(inner, right, w, chip_h);
             right -= w + 6.0;
             r
         };
@@ -848,14 +847,15 @@ impl App {
         }
     }
 
-    /// Called at the top of the queue window.
-    pub(crate) fn right_header(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) -> bool {
+    /// Called at the top of the queue window: the QUEUE / CHART chips in the window's title strip (`ui`, the
+    /// panel's), the lead sheet on its page (`page`).
+    pub(crate) fn right_header(&mut self, ui: &mut egui::Ui, page: &mut egui::Ui, acts: &mut Vec<Action>) -> bool {
         if !PRACTICE {
             return false;
         }
         self.right_tabs(ui, acts);
         if self.rtab == 1 {
-            self.chart_ui(ui, acts);
+            self.chart_ui(page, acts);
             true
         } else {
             false
@@ -3346,9 +3346,8 @@ impl App {
         // to open its panel)
         let sc = crate::font::ui_scale();
         let (tw, mw, h) = (170.0 * sc, 120.0 * sc, 24.0);
-        let y = inner.min.y - 27.0;
-        let mr = Rect::from_min_size(Pos2::new(inner.max.x - mw, y), Vec2::new(mw, h));
-        let tr = Rect::from_min_size(Pos2::new(mr.min.x - 8.0 - tw, y), Vec2::new(tw, h));
+        let mr = crate::title_slot(inner, crate::title_right(inner), mw, h);
+        let tr = crate::title_slot(inner, mr.min.x - 8.0, tw, h);
         self.timer_pill(ui, tr, acts);
         self.metro_pill(ui, mr, acts);
         crate::tour::mark("TIMEBTNS", tr.union(mr));
@@ -3356,13 +3355,12 @@ impl App {
         // (no drag-to-scroll: dragging on the waveform sets loops)
         // everything inside grows and shrinks with the panel, gently (the square root of the size change), from a
         // little smaller to about twice as big
-        let size = ui.available_size();
+        // the page: PAGE_PAD in from the frame all round, so nothing runs into it
+        let body = crate::page_rect(inner);
+        let size = body.size();
         let s = (size.y / 250.0).min(size.x / 760.0).max(0.1).sqrt().clamp(0.85, 2.0);
         // the waveform's height is yours to drag (the handle under it)
         let wave_h = 54.0 * s * self.wv_h.clamp(0.6, 4.0);
-        // the contents stop a little above the window's bottom edge, so they never run into it
-        let r = ui.available_rect_before_wrap();
-        let body = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.max.y - 6.0));
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(body), |ui| {
             crate::font::with_scale(s, || {
                 egui::ScrollArea::vertical()

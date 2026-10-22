@@ -1276,7 +1276,13 @@ pub fn next_beat(grid: &[f32], pos: f32) -> Option<(f32, f32)> {
     let k = grid.partition_point(|b| *b <= pos + 0.002);
     let next = *grid.get(k)?;
     let end = (k + 4).min(grid.len() - 1);
-    let local = if end > k { (grid[end] - grid[k]) / (end - k) as f32 } else if k > 0 { grid[k] - grid[k - 1] } else { return None };
+    let local = if end > k {
+        (grid[end] - grid[k]) / (end - k) as f32
+    } else if k > 0 {
+        grid[k] - grid[k - 1]
+    } else {
+        return None;
+    };
     Some((next, local))
 }
 

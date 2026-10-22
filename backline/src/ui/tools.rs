@@ -1914,7 +1914,7 @@ fn pill_face(p: &egui::Painter, r: Rect, open: bool, hot: bool) {
 
 /// The words of a pill, and a small dot before what follows them.
 fn pill_words(p: &egui::Painter, r: Rect, main: &str, tail: &str, col: Color32) {
-    let px = if r.height() >= 22.0 { 2.0 } else { 1.5 };
+    let px = if r.height() >= 20.0 { 2.0 } else { 1.5 };
     let x = r.min.x + 4.0;
     let room = r.max.x - x - 10.0;
     let mw = text_w(main, px);

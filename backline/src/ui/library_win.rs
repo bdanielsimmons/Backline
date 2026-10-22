@@ -253,12 +253,20 @@ impl App {
         let inner = ui.max_rect();
         window_deco(ui, inner, "EQUALIZER");
         // the close button, in the title strip
-        let xr = Rect::from_min_size(Pos2::new(inner.max.x - 34.0, inner.min.y - 26.0), Vec2::new(30.0, 22.0));
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(xr), |ui| {
-            if retro_btn_w(ui, "X", 30.0, false).tip("Close the equalizer.").clicked() {
-                self.show_eq = false;
-            }
-        });
+        // (drawn to the slot's height: a full-size button would stand taller than the strip's band)
+        let xr = crate::title_slot(inner, crate::title_right(inner), 30.0, 22.0);
+        let xb = ui
+            .interact(xr, ui.id().with("eq_close"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .tip("Close the equalizer.");
+        raised_h(ui.painter(), xr, xb.is_pointer_button_down_on(), xb.hovered());
+        crate::winamp_ui::as_title(|| ui_text(ui.painter(), xr.center(), Align::Center, "X", 2.0, xr.width() - 6.0, pal().ink));
+        if xb.clicked() {
+            self.show_eq = false;
+        }
+        // the page, clear of the frame all round
+        let mut page = crate::page_ui(ui, inner);
+        let ui = &mut page;
         if self.wa_art.is_some() {
             let full = ui.available_rect_before_wrap();
             // the preset cards under it give way as you size the equalizer up (as the cover beside the player
@@ -1033,22 +1041,25 @@ impl App {
         }
         // a skin worn: the places down a list at the side (as Spotify has them), the page beside it
         if self.wa_art.is_some() && !self.mini && crate::winamp_ui::chrome_on() {
-            let all = ui.max_rect();
+            // (the page margin all round: nothing touches the window's edges)
+            let all = crate::page_rect(ui.max_rect());
             let sw = (190.0 * font::ui_scale()).clamp(140.0, (all.width() * 0.3).max(140.0));
-            let side = Rect::from_min_max(all.min + Vec2::new(0.0, 8.0), Pos2::new(all.min.x + sw, all.max.y - 6.0));
+            let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
             self.side_nav(ui, side, acts);
             tour::mark("TABS", side);
             tour::mark("APPMENU", side);
-            // (a margin all round: nothing touches the window's edges)
-            let main = Rect::from_min_max(Pos2::new(side.max.x + 12.0, all.min.y + 8.0), Pos2::new(all.max.x - 4.0, all.max.y));
+            let main = Rect::from_min_max(Pos2::new(side.max.x + crate::PAGE_PAD, all.min.y), all.max);
             let mut body = ui.new_child(egui::UiBuilder::new().max_rect(main).layout(egui::Layout::top_down(Align::Min)));
             self.library_body(&mut body, acts, false);
             ui.allocate_rect(all, Sense::hover());
             return;
         }
-        logo(ui);
-        ui.add_space(4.0);
-        self.library_body(ui, acts, true);
+        let all = ui.max_rect();
+        let mut page = crate::page_ui(ui, all);
+        logo(&mut page);
+        page.add_space(4.0);
+        self.library_body(&mut page, acts, true);
+        ui.allocate_rect(all, Sense::hover());
     }
 
     /// The places, down the side of the library (a skin worn): home, your music by where it is, the practice
@@ -1332,10 +1343,9 @@ impl App {
         }
         ui.add_space(4.0);
 
-        // list well: it stops a little above the window's bottom edge, so its own border shows and the last row
+        // list well: down to the page's foot (PAGE_PAD above the frame), so its own border shows and the last row
         // ends inside it instead of running into the frame
-        let avail = ui.available_rect_before_wrap();
-        let mut avail = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - 6.0));
+        let mut avail = ui.available_rect_before_wrap();
         // with a skin and a song: the now-playing bar along the foot (click it for NOW PLAYING)
         if self.wa_art.is_some() && !self.mini && avail.height() > 200.0 {
             if let Some(tr) = self.cur_track() {

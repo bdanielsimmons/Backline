@@ -464,7 +464,7 @@ impl App {
         // a worn Winamp skin draws the queue as its own playlist window
         if self.rtab == 0 && self.wa_art.as_ref().is_some_and(|t| t.sheets.contains_key("pledit")) {
             let inner = ui.max_rect();
-            let outer = Rect::from_min_max(inner.min - Vec2::new(14.0, 30.0), inner.max + Vec2::new(14.0, 14.0));
+            let outer = crate::frame_outer(inner);
             crate::tour::note("QUEUE", outer);
             self.winamp_playlist(ui, outer, acts);
             return;
@@ -476,13 +476,17 @@ impl App {
         } else {
             "QUEUE"
         };
-        window_deco(ui, ui.max_rect(), title);
+        let inner = ui.max_rect();
+        window_deco(ui, inner, title);
         // nothing in the window (the lead sheet's mixer at its foot) spills over the window under it
-        let clip = ui.max_rect().expand2(Vec2::new(14.0, 30.0)).intersect(ui.clip_rect());
-        ui.set_clip_rect(Rect::from_min_max(clip.min, Pos2::new(clip.max.x, ui.max_rect().max.y + 6.0)));
-        if self.right_header(ui, acts) {
+        let clip = crate::frame_outer(inner).intersect(ui.clip_rect());
+        ui.set_clip_rect(Rect::from_min_max(clip.min, Pos2::new(clip.max.x, inner.max.y + 6.0)));
+        // the page, clear of the frame all round (the panel's Ui keeps the title strip's chips)
+        let mut page = crate::page_ui(ui, inner);
+        if self.right_header(ui, &mut page, acts) {
             return;
         }
+        let ui = &mut page;
         let queue = self.queue.clone();
         let cur = self.cur;
         let full = ui.available_rect_before_wrap();
@@ -711,11 +715,10 @@ impl App {
     /// after it, most-used first, and any that don't fit go into a ... menu at their left.
     pub(crate) fn title_chips(&mut self, ui: &mut egui::Ui, inner: Rect, acts: &mut Vec<Action>) {
         let chip_h = 16.0;
-        let ty = inner.min.y - 18.0 - chip_h / 2.0;
         let fit = |s: &str| text_w(s, 1.0) + 14.0;
         // where the window's name (and its little picture) ends - as the frame draws it
         let title_end = inner.min.x + 8.0 + text_w("PLAYER", 2.0) + 28.0 + 26.0 + 10.0;
-        let room = inner.max.x - 8.0 - title_end;
+        let room = crate::title_right(inner) - title_end;
         // (name, width, how much it matters: lower stays longer); in the order they sit, right to left
         let mut items: Vec<(&str, f32, u8)> = vec![("PIN", fit("PIN"), 4), ("MINI", fit("MINI"), 1)];
         if PRACTICE {
@@ -749,11 +752,11 @@ impl App {
             keep = try_set;
         }
         let hidden: Vec<&str> = (0..items.len()).filter(|i| !keep.contains(i)).map(|i| items[i].0).collect();
-        let mut right = inner.max.x - 8.0;
+        let mut right = crate::title_right(inner);
         let mut at: Vec<(&str, Rect)> = Vec::new();
         for (i, (name, w, _)) in items.iter().enumerate() {
             if keep.contains(&i) {
-                at.push((name, Rect::from_min_size(Pos2::new(right - w, ty), Vec2::new(*w, chip_h))));
+                at.push((name, crate::title_slot(inner, right, *w, chip_h)));
                 right -= w + 6.0;
             }
         }
@@ -832,7 +835,7 @@ impl App {
         }
         // the rest, in a menu
         if !hidden.is_empty() {
-            let r = Rect::from_min_size(Pos2::new(right - more_w, ty), Vec2::new(more_w, chip_h));
+            let r = crate::title_slot(inner, right, more_w, chip_h);
             let mr = chip(ui, r, "...", false, "c_more").tip("More buttons that don't fit here.");
             let id = ui.id().with("title_more");
             if mr.clicked() {

@@ -23,6 +23,8 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Practice logic (sources, tunes, loops, diary, trainer, stems, metronome, playlists) | `extras.rs` |
 | Practice screens (FILES / YT / SC / TUNES / DIARY / LOOPS lists, practice panel, lead sheet) | `ui/views.rs` |
 | Library window, sign-in, Tidal search box, EQ dock, presets | `ui/library_win.rs` |
+| Window frames and title strips: `title_slot` / `title_right` (controls inside the strip), `page_rect` / `PAGE_PAD` (12 pt margin inside every window), `SKIN_TITLE_H` | `ui/widgets.rs`, `ui/winamp_draw.rs` (`draw_frame`) |
+| Skin colours and missing pictures: `soften` (no glare), `backing` (panels stay on their side), borrowed pieces from the generated default skin in `load`; audit all saved skins with the ignored test `audit_skins` (BACKLINE_SKINS=folder) | `data/winamp.rs` |
 | Chord grips: GRIPS library (degrees per string), movable placement (`grip_offsets`/`place_grip`), sections (`grip_sections`: must know / open / moveable), drop-voicing groups (`voicing_groups`), the signed-off rules as tests (`chord_audit`) | `data/theory.rs` |
 | Chord spelling by letter (`spell_degree`, `scale_names`), parsing chord symbols | `data/theory.rs`, `audio/band.rs` (`parse_chord`) |
 | With a skin: side list of places (`side_nav`), window switch icons (`window_icons`), now-playing bar (`now_bar`), page body (`library_body`) | `ui/library_win.rs` |

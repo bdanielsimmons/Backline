@@ -240,14 +240,85 @@ pub(crate) fn notch_fill(p: &egui::Painter, r: Rect, n: f32, c: Color32) {
     fill_rect(p, Rect::from_min_max(Pos2::new(r.min.x, r.min.y + n), Pos2::new(r.max.x, r.max.y - n)), c);
 }
 
+// ------------------------------------------------------- window frames
+// Every window is a panel (main.rs's panel_frame) whose margins hold its frame: FRAME_SIDE on the sides and foot,
+// FRAME_TOP over it for the title strip. `inner` below is always the panel's own rect, inside those margins.
+
+/// The frame's width at a window's sides and foot.
+pub(crate) const FRAME_SIDE: f32 = 14.0;
+/// The panel's top margin, where the title strip goes.
+pub(crate) const FRAME_TOP: f32 = 30.0;
+/// The title strip under a worn skin: taller, so its title bar keeps a band free for the window's controls.
+pub(crate) const SKIN_TITLE_H: f32 = 42.0;
+/// The room every window keeps between its frame and anything on its page (lists, waveforms, boxes), all round.
+pub(crate) const PAGE_PAD: f32 = 12.0;
+
+/// The title strip's height.
+pub(crate) fn title_h() -> f32 {
+    if winamp_ui::chrome_on() {
+        SKIN_TITLE_H
+    } else {
+        FRAME_TOP
+    }
+}
+
+/// The whole window drawn round the panel `inner`, frame and all.
+pub(crate) fn frame_outer(inner: Rect) -> Rect {
+    Rect::from_min_max(inner.min - Vec2::new(FRAME_SIDE, FRAME_TOP), inner.max + Vec2::splat(FRAME_SIDE))
+}
+
+/// The window's body inside its frame: the panel, less what a taller title strip takes from its top.
+pub(crate) fn frame_body(inner: Rect) -> Rect {
+    Rect::from_min_max(Pos2::new(inner.min.x, inner.min.y + title_h() - FRAME_TOP), inner.max)
+}
+
+/// Where a window's page goes: its body, PAGE_PAD in from the frame on every side.
+pub(crate) fn page_rect(inner: Rect) -> Rect {
+    frame_body(inner).shrink(PAGE_PAD)
+}
+
+/// A Ui for a window's page (top down, in page_rect). The panel's Ui still holds the title strip's controls.
+pub(crate) fn page_ui(ui: &mut egui::Ui, inner: Rect) -> egui::Ui {
+    ui.new_child(egui::UiBuilder::new().max_rect(page_rect(inner)).layout(egui::Layout::top_down(Align::Min)))
+}
+
+/// The title strip's band for controls: (its centre, the tallest control it takes). Under a skin, the free band of
+/// the skin's title bar less an equal gap above and below; Backline's own frames centre them on the window's name.
+pub(crate) fn title_band(inner: Rect) -> (f32, f32) {
+    let outer = frame_outer(inner);
+    if winamp_ui::chrome_on() {
+        let strip = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + title_h()));
+        let band = winamp_ui::title_band_rect(strip, FRAME_SIDE);
+        (band.center().y, band.height() - 2.0 * winamp_ui::TITLE_GAP)
+    } else if style() != 0 {
+        (outer.min.y + 14.0, 24.0)
+    } else {
+        (outer.min.y + 12.0, 24.0)
+    }
+}
+
+/// Where title-strip controls end on the right: in line with the page's right edge, clear of the frame.
+pub(crate) fn title_right(inner: Rect) -> f32 {
+    inner.max.x - PAGE_PAD
+}
+
+/// The rect for a control `w` wide and `h` tall (less, if the strip's band is lower) in a window's title strip,
+/// its right end at `right` (title_right for the first): vertically centred in the band, an equal gap above and
+/// below. Every control in a title strip is placed with this.
+pub(crate) fn title_slot(inner: Rect, right: f32, w: f32, h: f32) -> Rect {
+    let (cy, room) = title_band(inner);
+    let h = h.min(room);
+    Rect::from_min_size(Pos2::new(right - w, cy - h / 2.0), Vec2::new(w, h))
+}
+
 /// Black window frame with beige trim, title tab and beige body at `inner`; square, with stepped corners.
 pub(crate) fn window_deco(ui: &egui::Ui, inner: Rect, title: &str) {
     let p = ui.painter();
     let u = thick(2.0);
-    let outer = Rect::from_min_max(inner.min - Vec2::new(14.0, 30.0), inner.max + Vec2::new(14.0, 14.0));
+    let outer = frame_outer(inner);
     tour::note(title, outer);
     // a worn Winamp skin dresses every window in its own frame
-    if winamp_ui::draw_frame(p, outer, inner, title) {
+    if winamp_ui::draw_frame(p, outer, frame_body(inner), title) {
         return;
     }
     if style() != 0 {

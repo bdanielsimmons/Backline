@@ -206,6 +206,23 @@ pub(crate) fn set_chrome(t: Option<&WaTex>) {
     CHROME.with(|c| *c.borrow_mut() = v);
 }
 
+/// The skin title bar's rows above and below its free band (a playlist title bar is 20 pixels: an edge on top,
+/// the bar, then its shading, the line and the border under it).
+pub(crate) const BAR_CAP_TOP: f32 = 3.0;
+pub(crate) const BAR_CAP_BOTTOM: f32 = 8.0;
+/// The gap kept above and below anything in a title strip's free band (the title's plate, a window's controls).
+pub(crate) const TITLE_GAP: f32 = 4.0;
+
+/// The free band of a worn skin's title bar drawn into `strip` (frame sides `side_w` wide): between the bar's own
+/// top rows and the line under it.
+pub(crate) fn title_band_rect(strip: Rect, side_w: f32) -> Rect {
+    let k = side_w / 12.0;
+    Rect::from_min_max(
+        Pos2::new(strip.min.x, strip.min.y + BAR_CAP_TOP * k),
+        Pos2::new(strip.max.x, strip.max.y - BAR_CAP_BOTTOM * k),
+    )
+}
+
 /// A window's frame and title from the worn skin. False when no skin is worn (Backline draws its own).
 pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &str) -> bool {
     CHROME.with(|c| {
@@ -219,33 +236,31 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             );
             p.image(tex.id(), dst, uv, Color32::WHITE);
         };
-        let top_h = inner.min.y - outer.min.y;
-        let k = top_h / 20.0; // the skin's 20-pixel title bar fills our title strip
+        // the skin's pixels at the size of its side edges; the title bar keeps its top and bottom rows at that size
+        // and stretches the band between them to fill the strip (the band the title and the window's controls sit in)
+        let k = (inner.min.x - outer.min.x) / 12.0;
         let tw = 25.0 * k;
-        // the title bar: corners at the ends, tiles between
         let top = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, inner.min.y));
+        let band = title_band_rect(top, inner.min.x - outer.min.x);
+        // one 25-pixel column of the title bar at `x`: its top rows, the stretched band, its bottom rows
+        let bar = |p: &egui::Painter, sx: f32, x: f32| {
+            let mid = 20.0 - BAR_CAP_TOP - BAR_CAP_BOTTOM;
+            let col = |y0: f32, y1: f32| Rect::from_min_max(Pos2::new(x, y0), Pos2::new(x + tw, y1));
+            piece(p, tex, *size, (sx, 0.0, 25.0, BAR_CAP_TOP), col(top.min.y, band.min.y));
+            piece(p, tex, *size, (sx, BAR_CAP_TOP, 25.0, mid), col(band.min.y, band.max.y));
+            piece(p, tex, *size, (sx, 20.0 - BAR_CAP_BOTTOM, 25.0, BAR_CAP_BOTTOM), col(band.max.y, top.max.y));
+        };
+        // the title bar: corners at the ends, tiles between
         let clip = p.with_clip_rect(top);
         let mut x = outer.min.x + tw;
         while x < outer.max.x - tw {
-            piece(
-                &clip,
-                tex,
-                *size,
-                (127.0, 0.0, 25.0, 20.0),
-                Rect::from_min_size(Pos2::new(x, top.min.y), Vec2::new(tw, top_h)),
-            );
+            bar(&clip, 127.0, x);
             x += tw;
         }
-        piece(p, tex, *size, (0.0, 0.0, 25.0, 20.0), Rect::from_min_size(top.min, Vec2::new(tw, top_h)));
+        bar(p, 0.0, top.min.x);
         // the right end is a plain piece: the skin's own corner has minimize / close buttons, which would do
         // nothing on these windows
-        piece(
-            p,
-            tex,
-            *size,
-            (127.0, 0.0, 25.0, 20.0),
-            Rect::from_min_size(Pos2::new(outer.max.x - tw, top.min.y), Vec2::new(tw, top_h)),
-        );
+        bar(p, 127.0, outer.max.x - tw);
         // the sides: the skin's edge tiles, repeated down
         let (lw, rw, bh) = (inner.min.x - outer.min.x, outer.max.x - inner.max.x, outer.max.y - inner.max.y);
         for (x0, w, src) in [(outer.min.x, lw, (0.0, 42.0, 12.0, 29.0)), (inner.max.x, rw, (39.0, 42.0, 12.0, 29.0))] {
@@ -274,16 +289,15 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             x += tw;
         }
         bottom_edge(p, outer, bot.min.y);
-        // the title on a dark plate in light text, so it reads over any decoration in any skin
-        let size = top_h * 0.46;
+        // the title on a dark plate in light text, so it reads over any decoration in any skin; the plate keeps the
+        // same gaps in the band as the window's controls
+        let plate_h = (band.height() - 2.0 * TITLE_GAP).max(8.0);
+        let size = plate_h * 0.6;
         let label = title.to_uppercase();
         let tw2 = sans_width(&label, size);
-        let at = Pos2::new(outer.min.x + tw + 6.0, top.center().y);
+        let at = Pos2::new(outer.min.x + tw + 6.0, band.center().y);
         p.rect_filled(
-            Rect::from_min_max(
-                Pos2::new(at.x - 5.0, top.min.y + top_h * 0.18),
-                Pos2::new(at.x + tw2 + 5.0, top.max.y - top_h * 0.18),
-            ),
+            Rect::from_center_size(Pos2::new(at.x + tw2 / 2.0, band.center().y), Vec2::new(tw2 + 10.0, plate_h)),
             2.0,
             Color32::from_black_alpha(190),
         );

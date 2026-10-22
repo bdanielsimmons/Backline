@@ -150,6 +150,16 @@ fn viscolor(text: &str) -> Vec<Color32> {
         .collect()
 }
 
+/// `c`, if brighter than `max`, brought down to it: the same hue, just less glare.
+fn soften(c: Color32, max: f32) -> Color32 {
+    let l = lum(c);
+    if l <= max {
+        return c;
+    }
+    let k = max / l;
+    Color32::from_rgb((c.r() as f32 * k) as u8, (c.g() as f32 * k) as u8, (c.b() as f32 * k) as u8)
+}
+
 pub(crate) fn lum(c: Color32) -> f32 {
     (0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) / 255.0
 }
@@ -181,6 +191,28 @@ pub(crate) fn readable(fg: Color32, bg: Color32, min: f32) -> Color32 {
 
 /// A background (panel, button) that `fg` reads on.
 fn backing(bg: Color32, fg: Color32, min: f32) -> Color32 {
+    // a dark panel stays dark (a light one light) when it can still read that way: darkened or lightened just enough
+    // - only when it can't does it cross over
+    let dark = lum(bg) < 0.5;
+    for i in 0..=20 {
+        let t = i as f32 / 20.0;
+        let c = if dark { darker(bg, t) } else { lighter(bg, t) };
+        // (never lightened into a glare: past soft paper, it goes the other way instead)
+        if !dark && lum(c) > 0.8 {
+            break;
+        }
+        if contrast(c, fg) >= min {
+            return c;
+        }
+    }
+    // the other way: darker for a light one, lighter for a dark one
+    for i in 0..=20 {
+        let t = i as f32 / 20.0;
+        let c = if dark { lighter(bg, t) } else { darker(bg, t) };
+        if contrast(c, fg) >= min && lum(c) <= 0.8 {
+            return c;
+        }
+    }
     apart(bg, fg, min)
 }
 
@@ -345,8 +377,17 @@ pub fn load(wsz: &[u8]) -> Result<(Pal, Art), String> {
     let pal = palette_from(&f)?;
     let mut sheets = Vec::new();
     let mut graph = Vec::new();
+    // pictures a skin leaves out are borrowed, as Winamp borrows from its base skin: from Backline's own skin made in
+    // this skin's colours, so a skin with no equalizer or playlist still gets whole ones that match it
+    let lacks = |n: &str| !f.contains_key(&format!("{}.bmp", n)) && !(n == "numbers" && f.contains_key("nums_ex.bmp"));
+    let base: HashMap<String, Vec<u8>> = if SHEETS.iter().any(|n| *n != "nums_ex" && *n != "monoster" && lacks(n)) {
+        files(&crate::genskin::make(&pal, 1)).unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
     for name in SHEETS {
-        let Some(b) = f.get(&format!("{}.bmp", name)) else { continue };
+        let own = f.get(&format!("{}.bmp", name));
+        let Some(b) = own.or_else(|| if lacks(name) { base.get(&format!("{}.bmp", name)) } else { None }) else { continue };
         let Ok(img) = image::load_from_memory_with_format(b, image::ImageFormat::Bmp) else { continue };
         let mut img = img.to_rgba8();
         if name == "text" && img.width() > 150 {
@@ -429,7 +470,9 @@ fn palette_from(f: &HashMap<String, Vec<u8>>) -> Result<Pal, String> {
     // Winamp's own defaults when a skin leaves something out
     let normal = pl.get("normal").copied().unwrap_or(Color32::from_rgb(0, 255, 0));
     let current = pl.get("current").copied().unwrap_or(Color32::WHITE);
-    let normal_bg = pl.get("normalbg").copied().unwrap_or(Color32::BLACK);
+    // (a white list background is fine in a small playlist; spread over the library and the panels it glares: the big
+    // areas keep the skin's tint but never come brighter than a soft paper grey)
+    let normal_bg = soften(pl.get("normalbg").copied().unwrap_or(Color32::BLACK), 0.80);
     let sel_bg = pl.get("selectedbg").copied().unwrap_or(Color32::from_rgb(0, 0, 198));
     let (chrome, dark, light) = f.get("main.bmp").and_then(|b| tones(b)).unwrap_or((
         Color32::from_gray(58),
@@ -443,7 +486,9 @@ fn palette_from(f: &HashMap<String, Vec<u8>>) -> Result<Pal, String> {
     // the selection colour bends to the playing text, not the other way round
     let sel_bg = backing(sel_bg, bar_txt, 4.5);
     // panels and buttons take the skin's tones, moved just far enough from the text to read
-    let beige = backing(chrome, ink, 4.5);
+    let beige = soften(backing(chrome, ink, 4.5), 0.78);
+    // (softened, a panel might sit too close to the text again)
+    let beige = backing(beige, ink, 4.5);
     let accent = vis.get(2).copied().filter(|c| lum(*c) > 0.15).unwrap_or(current);
     let (btn, btn_light) = match f.get("cbuttons.bmp").and_then(|b| tones(b)) {
         Some((avg, _, light)) => {
@@ -485,6 +530,49 @@ fn palette_from(f: &HashMap<String, Vec<u8>>) -> Result<Pal, String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every skin in $BACKLINE_SKINS (a folder of .wsz): what each lacks of the windows Backline draws, and how bright
+    /// its big areas come out (run with --ignored --nocapture).
+    #[test]
+    #[ignore]
+    fn audit_skins() {
+        let Ok(dir) = std::env::var("BACKLINE_SKINS") else { return };
+        let need =
+            ["main", "titlebar", "cbuttons", "eqmain", "pledit", "text", "numbers", "posbar", "volume", "shufrep", "playpaus"];
+        let (mut n, mut bad) = (0, 0);
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let b = std::fs::read(e.path()).unwrap();
+            n += 1;
+            match load(&b) {
+                Err(err) => {
+                    bad += 1;
+                    println!("FAIL {:?}: {}", e.file_name(), err);
+                }
+                Ok((pal, art)) => {
+                    let have: Vec<&str> = art.sheets.iter().map(|s| s.0.as_str()).collect();
+                    let miss: Vec<&str> = need
+                        .iter()
+                        .copied()
+                        .filter(|x| !have.contains(x) && !(*x == "numbers" && have.contains(&"nums_ex")))
+                        .collect();
+                    let glare = lum(pal.lcd) > 0.8 || lum(pal.beige) > 0.85 || lum(pal.app_bg) > 0.85;
+                    if !miss.is_empty() || glare {
+                        bad += 1;
+                        println!(
+                            "{:?}: missing {:?} lcd {:.2} panel {:.2} back {:.2}{}",
+                            e.file_name(),
+                            miss,
+                            lum(pal.lcd),
+                            lum(pal.beige),
+                            lum(pal.app_bg),
+                            if glare { "  GLARE" } else { "" }
+                        );
+                    }
+                }
+            }
+        }
+        println!("{} skins, {} with something to look at", n, bad);
+    }
     use super::*;
     use std::io::Write;
 
