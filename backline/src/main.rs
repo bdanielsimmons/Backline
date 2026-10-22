@@ -2255,6 +2255,8 @@ struct App {
     /// the opening sound: 0 off, 1 Backline's chime, 2 the file below
     intro: u8,
     intro_file: Option<String>,
+    /// which of Backline's opening sounds (intro::SOUNDS)
+    intro_sound: u8,
     binds: Vec<Option<egui::Key>>,
     rebinding: Option<usize>,
     bind_note: String,
@@ -3073,6 +3075,7 @@ impl App {
             auto_restart: false,
             intro: 1,
             intro_file: None,
+            intro_sound: 0,
             binds: prefs::default_binds(),
             rebinding: None,
             bind_note: String::new(),
@@ -3561,6 +3564,9 @@ impl App {
             app.intro = (m as u8).min(2);
         }
         app.intro_file = st["intro_file"].as_str().map(|s| s.to_string());
+        if let Some(n) = st["intro_sound"].as_u64() {
+            app.intro_sound = (n as usize).min(intro::SOUNDS.len() - 1) as u8;
+        }
         if let Some(b) = st["auto_restart"].as_bool() {
             app.auto_restart = b;
         }
@@ -4064,6 +4070,7 @@ impl App {
             "loop_safe": skin::LOOP_SAFE.load(Ordering::Relaxed),
             "reduce_motion": skin::calm(),
             "intro_file": self.intro_file,
+            "intro_sound": self.intro_sound,
             "art_op": self.art_op,
             "zoom": self.ctx.zoom_factor(),
             "lib_zoom": self.lib_zoom,
@@ -5014,7 +5021,7 @@ impl App {
             2 => self.intro_file.clone(),
             _ => None,
         };
-        intro::play(file, self.out_device.clone(), (self.volume * self.volume).max(0.15));
+        intro::play(file, self.intro_sound as usize, self.out_device.clone(), (self.volume * self.volume).max(0.15));
     }
 
     /// The name card of palette `n` drawn in `look` (genskin).

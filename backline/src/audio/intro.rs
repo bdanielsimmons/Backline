@@ -8,8 +8,8 @@ use std::f32::consts::TAU;
 const RATE: u32 = 44100;
 
 /// Play the opening sound on `device` at `vol` (0..1), off the main thread. `file`: your own sound (its first
-/// eight seconds); None: Backline's chime.
-pub fn play(file: Option<String>, device: Option<String>, vol: f32) {
+/// eight seconds); None: Backline's sound number `which` of SOUNDS.
+pub fn play(file: Option<String>, which: usize, device: Option<String>, vol: f32) {
     // muted (a test copy, a demo recording): no chime
     if crate::player::MUTED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
@@ -20,7 +20,7 @@ pub fn play(file: Option<String>, device: Option<String>, vol: f32) {
         sink.set_volume(vol.clamp(0.0, 1.0));
         match file.and_then(|f| std::fs::read(f).ok()).and_then(|b| SymSource::new(b).ok()) {
             Some(src) => sink.append(src.take_duration(std::time::Duration::from_secs(8))),
-            None => sink.append(rodio::buffer::SamplesBuffer::new(2, RATE, chime())),
+            None => sink.append(rodio::buffer::SamplesBuffer::new(2, RATE, sound(which))),
         }
         sink.sleep_until_end();
     });
@@ -161,6 +161,19 @@ fn finish(dry: &[f32], peak: f32) -> Vec<f32> {
 }
 
 /// Candidate opening sounds, quieter and softer than the old chime (by name, for choosing one).
+/// The opening sounds to choose from, by name: Ember (the default) first, the old chime last.
+pub const SOUNDS: [&str; 10] =
+    ["Ember", "Aero", "Lift", "Daybreak", "Glass Rain", "Skylight", "Homecoming", "Frost", "Bellglass", "Classic"];
+
+/// Opening sound `i` of SOUNDS (stereo).
+pub fn sound(i: usize) -> Vec<f32> {
+    let name = SOUNDS[i.min(SOUNDS.len() - 1)];
+    if name == "Classic" {
+        return chime();
+    }
+    candidates().into_iter().find(|c| c.0 == name).map(|c| c.1).unwrap_or_else(chime)
+}
+
 pub fn candidates() -> Vec<(&'static str, Vec<f32>)> {
     let len = |s: f32| vec![0.0f32; (s * RATE as f32) as usize];
     // E2 B2 E3 G#3 B3 D#4 F#4 ... as frequencies
@@ -171,7 +184,7 @@ pub fn candidates() -> Vec<(&'static str, Vec<f32>)> {
     let mut d = len(4.5);
     pad(&mut d, 0.0, &[hz(52), hz(59), hz(63), hz(66), hz(68)], 1.6, 0.7, 2.2, 0.55, 1400.0);
     bell(&mut d, 0.55, hz(80), 2.0, 0.05);
-    out.push(("1 glass pad", finish(&d, 0.22)));
+    out.push(("Frost", finish(&d, 0.22)));
 
     // 2 AERO SWELL: the pad with air rising under it and a high harmonic ping
     let mut d = len(4.8);
@@ -179,14 +192,14 @@ pub fn candidates() -> Vec<(&'static str, Vec<f32>)> {
     air(&mut d, 0.0, 2.6, 0.02);
     bell(&mut d, 0.8, hz(87), 1.6, 0.03);
     bell(&mut d, 0.95, hz(83), 1.6, 0.025);
-    out.push(("2 aero swell", finish(&d, 0.22)));
+    out.push(("Aero", finish(&d, 0.22)));
 
     // 3 TWO CHORDS: Asus2 to Emaj9, a soft plagal lift
     let mut d = len(5.0);
     pad(&mut d, 0.0, &[hz(45), hz(57), hz(59), hz(64), hz(69)], 1.0, 0.5, 0.8, 0.5, 1300.0);
     pad(&mut d, 1.1, &[hz(52), hz(59), hz(63), hz(66), hz(68)], 1.4, 0.4, 2.2, 0.5, 1500.0);
     bell(&mut d, 1.2, hz(78), 1.8, 0.04);
-    out.push(("3 two chords", finish(&d, 0.22)));
+    out.push(("Lift", finish(&d, 0.22)));
 
     // 4 SOFT BELLS: the old chime's rising bells, darker and much quieter, over the pad
     let mut d = len(4.5);
@@ -194,8 +207,64 @@ pub fn candidates() -> Vec<(&'static str, Vec<f32>)> {
     for (k, m) in [64, 68, 71, 75, 78].iter().enumerate() {
         bell(&mut d, 0.25 + k as f32 * 0.11, hz(*m), 1.4, 0.06);
     }
-    out.push(("4 soft bells", finish(&d, 0.2)));
+    out.push(("Bellglass", finish(&d, 0.2)));
+
+    // 5 GLASS RAIN: the aero pad with quiet glass pings falling at random over it
+    let mut d = len(5.2);
+    pad(&mut d, 0.0, &[hz(52), hz(59), hz(64), hz(68), hz(71), hz(75)], 2.0, 1.0, 2.4, 0.5, 1700.0);
+    air(&mut d, 0.1, 3.0, 0.016);
+    glass(&mut d, 0.35, 2.8, &[76, 78, 80, 83, 85, 87, 90], 9, 7);
+    out.push(("Glass Rain", finish(&d, 0.21)));
+
+    // 6 TWO CHORDS, GLASS: Asus2 lifting to Emaj9, the pings answering the second chord
+    let mut d = len(5.4);
+    pad(&mut d, 0.0, &[hz(45), hz(57), hz(59), hz(64), hz(69)], 1.0, 0.5, 0.9, 0.5, 1300.0);
+    pad(&mut d, 1.1, &[hz(52), hz(59), hz(63), hz(66), hz(68), hz(71)], 1.6, 0.4, 2.4, 0.5, 1600.0);
+    air(&mut d, 0.9, 2.4, 0.014);
+    glass(&mut d, 1.15, 2.2, &[75, 78, 80, 83, 87], 7, 11);
+    out.push(("Daybreak", finish(&d, 0.21)));
+
+    // 7 WARM: Dmaj9 lower and darker, a few sparse pings
+    let mut d = len(5.0);
+    pad(&mut d, 0.0, &[hz(50), hz(57), hz(61), hz(64), hz(66)], 1.8, 0.9, 2.4, 0.5, 1100.0);
+    glass(&mut d, 0.5, 2.6, &[73, 76, 78, 81, 85, 88], 10, 3);
+    glass(&mut d, 1.2, 2.2, &[85, 88, 90, 93], 5, 17);
+    out.push(("Ember", finish(&d, 0.2)));
+
+    // 8 SKY: a bright lydian pad (Fmaj7#11), air sweeping up, pings drifting high
+    let mut d = len(5.2);
+    pad(&mut d, 0.0, &[hz(53), hz(60), hz(64), hz(67), hz(71)], 1.9, 1.0, 2.4, 0.5, 2000.0);
+    air(&mut d, 0.0, 3.2, 0.02);
+    glass(&mut d, 0.5, 2.6, &[77, 79, 81, 83, 84, 88, 91], 8, 21);
+    out.push(("Skylight", finish(&d, 0.21)));
+
+    // 9 THREE CHORDS: Cmaj9, D6/9, Emaj9 (bVI, bVII, I) - a slow lift home, glass over the last
+    let mut d = len(6.0);
+    pad(&mut d, 0.0, &[hz(48), hz(55), hz(59), hz(62), hz(64)], 0.8, 0.45, 0.7, 0.45, 1200.0);
+    pad(&mut d, 0.9, &[hz(50), hz(57), hz(59), hz(64), hz(66)], 0.8, 0.35, 0.7, 0.45, 1300.0);
+    pad(&mut d, 1.8, &[hz(52), hz(59), hz(63), hz(66), hz(68), hz(71)], 1.6, 0.35, 2.4, 0.5, 1600.0);
+    glass(&mut d, 1.9, 2.4, &[75, 78, 80, 83, 87, 90], 8, 5);
+    out.push(("Homecoming", finish(&d, 0.21)));
     out
+}
+
+/// Quiet glass pings at random (from `seed`): `count` of them between `from` and `from + span` seconds, each a note
+/// from `notes` (MIDI), panned a little at random by being louder or softer, short and bright.
+fn glass(out: &mut [f32], from: f32, span: f32, notes: &[i32], count: usize, seed: u32) {
+    let mut s = seed.wrapping_mul(2654435761).max(1);
+    let mut rnd = || {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        (s >> 8) as f32 / (1u32 << 24) as f32
+    };
+    for _ in 0..count {
+        let at = from + rnd() * span;
+        let m = notes[(rnd() * notes.len() as f32) as usize % notes.len()];
+        let f = 440.0 * 2f32.powf((m - 69) as f32 / 12.0);
+        let amp = 0.012 + rnd() * 0.022;
+        bell(out, at, f, 0.9 + rnd() * 0.8, amp);
+    }
 }
 
 #[cfg(test)]
@@ -212,6 +281,17 @@ mod tests {
         // and the old one, to compare
         let pcm: Vec<i16> = super::chime().iter().map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16).collect();
         std::fs::write(format!("{}/0 current chime.wav", dir), crate::tour::wav(&pcm, super::RATE, 2)).unwrap();
+    }
+
+    #[test]
+    fn every_opening_sound_is_quiet_clean_stereo() {
+        for i in 0..super::SOUNDS.len() {
+            let c = super::sound(i);
+            assert_eq!(c.len() % 2, 0);
+            let peak = c.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            assert!(peak > 0.05 && peak < 0.75, "{}: {}", super::SOUNDS[i], peak);
+            assert!(c.iter().all(|v| v.is_finite()));
+        }
     }
 
     #[test]

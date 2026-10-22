@@ -346,7 +346,7 @@ impl App {
                         section_header(ui, "OPENING SOUND");
                         para(ui, "Play a short sound when Backline opens. Pick its chime or a sound file of your own.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
-                            for (m, name) in [(0u8, "OFF"), (1, "BACKLINE CHIME"), (2, "MY FILE")] {
+                            for (m, name) in [(0u8, "OFF"), (1, "BACKLINE'S"), (2, "MY FILE")] {
                                 let ok = m != 2 || self.intro_file.is_some();
                                 if retro_btn(ui, name, self.intro == m).clicked() {
                                     acts.push(Action::Intro(if ok { m } else { 3 }));
@@ -359,6 +359,21 @@ impl App {
                                 acts.push(Action::Intro(4));
                             }
                         });
+                        // Backline's own sounds: click one to choose it and hear it
+                        if self.intro == 1 {
+                            ui.horizontal_wrapped(|ui| {
+                                for (i, name) in crate::intro::SOUNDS.iter().enumerate() {
+                                    if retro_btn(ui, &name.to_uppercase(), self.intro_sound as usize == i)
+                                        .tip("Choose this one and hear it.")
+                                        .clicked()
+                                    {
+                                        self.intro_sound = i as u8;
+                                        self.dirty = true;
+                                        acts.push(Action::Intro(4));
+                                    }
+                                }
+                            });
+                        }
                         if let Some(f) = &self.intro_file {
                             let name = std::path::Path::new(f).file_name().map_or(f.clone(), |n| n.to_string_lossy().to_string());
                             para(ui, &format!("Your file: {}", name), pal().dim);
