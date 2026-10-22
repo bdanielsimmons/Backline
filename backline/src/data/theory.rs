@@ -847,6 +847,162 @@ pub(crate) fn library_grips(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8
     out.into_iter().map(|(_, g)| g).collect()
 }
 
+// ----------------------------------------------------------------- voicing groups (four-note chords, every way)
+// After the drop voicings arrangers use (Ted Greene's V-System sorts them the same way): a chord's four notes stacked
+// close, then the 2nd voice from the top dropped an octave (drop 2), the 3rd (drop 3), or the 2nd and 4th (drop 2 & 4).
+// Each in all four inversions, on the string sets where that spacing falls under the hand.
+
+/// The voicing groups: name, which voices of the close voicing (counted from the top, 1 = top) drop an octave, and
+/// the string sets (low string first, 0 = low E) the spacing fits on.
+pub const VOICING_GROUPS: &[(&str, &[usize], &[[usize; 4]])] = &[
+    ("Drop 2", &[2], &[[0, 1, 2, 3], [1, 2, 3, 4], [2, 3, 4, 5]]),
+    ("Drop 3", &[3], &[[0, 2, 3, 4], [1, 3, 4, 5]]),
+    ("Drop 2 & 4", &[2, 4], &[[0, 1, 3, 4], [1, 2, 4, 5], [0, 2, 3, 5]]),
+    ("Close", &[], &[[1, 2, 3, 4], [2, 3, 4, 5], [0, 1, 2, 3]]),
+];
+
+/// The four notes a chord is voiced with (semitones above the root, each once): a four-note chord as it is; a
+/// bigger one keeps the 3rd and the 7th (the 6th of a sixth chord) and the tensions that name it - altered ones first,
+/// then 13, 11, 9 - dropping the 5th and then the root, as the chord books thin them. `rooted`: keep the root.
+pub fn four_note_form(rel: &[i32], rooted: bool) -> Option<Vec<i32>> {
+    let mut set: Vec<i32> = rel.to_vec();
+    set.sort();
+    set.dedup();
+    if set.len() < 4 {
+        return None;
+    }
+    if set.len() == 4 {
+        return (rooted == set.contains(&0)).then_some(set);
+    }
+    let has = |x: i32| set.contains(&x);
+    let mut out: Vec<i32> = Vec::new();
+    // the 3rd (or the 4th of a sus chord), the 7th (or the 6th)
+    for g in [4, 3, 5] {
+        if has(g) {
+            out.push(g);
+            break;
+        }
+    }
+    for g in [10, 11, 9] {
+        if has(g) {
+            out.push(g);
+            break;
+        }
+    }
+    if rooted {
+        out.push(0);
+    }
+    for x in [1, 3, 6, 8, 9, 5, 2] {
+        if out.len() >= 4 {
+            break;
+        }
+        if has(x) && !out.contains(&x) {
+            out.push(x);
+        }
+    }
+    for x in [0, 7] {
+        if out.len() < 4 && has(x) && !out.contains(&x) && (x != 0 || rooted) {
+            out.push(x);
+        }
+    }
+    out.sort();
+    (out.len() == 4).then_some(out)
+}
+
+/// One voicing of a group: its frets, which group, the note in the bass (semitones above the root) and the strings.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Voicing {
+    pub frets: [Option<u8>; 6],
+    pub group: &'static str,
+    pub bass: i32,
+    pub strings: [usize; 4],
+}
+
+/// The fingers a grip takes: one per fretted note, except that notes on the same fret on neighbouring strings with
+/// nothing fretted lower between them take one finger together (a barre). Open strings take none.
+pub fn grip_fingers(offs: &[Option<i32>; 6]) -> usize {
+    let lowest = offs.iter().flatten().copied().min().unwrap_or(0);
+    let mut n = 0;
+    let mut frets: Vec<i32> = offs.iter().flatten().copied().collect();
+    frets.sort();
+    frets.dedup();
+    for f in frets {
+        let mut run = false;
+        for s in 0..6 {
+            match offs[s] {
+                Some(x) if x == f => {
+                    if !run {
+                        n += 1;
+                        run = true;
+                    }
+                }
+                Some(x) if x > f => {}
+                None if f == lowest => {}
+                _ => run = false,
+            }
+        }
+    }
+    n
+}
+
+/// Every voicing of the chord in each group: its four notes (with the root, and without when it is a bigger chord),
+/// each inversion on each of the group's string sets, low on the neck, in four frets and four fingers.
+pub fn voicing_groups(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<(&'static str, Vec<Voicing>)> {
+    let rel: Vec<i32> = c.pcs.iter().map(|p| (p - c.root).rem_euclid(12)).collect();
+    let forms: Vec<Vec<i32>> = [true, false].into_iter().filter_map(|r| four_note_form(&rel, r)).collect();
+    let mut out = Vec::new();
+    for (name, drops, sets) in VOICING_GROUPS {
+        let mut list: Vec<Voicing> = Vec::new();
+        for form in &forms {
+            for inv in 0..4 {
+                // the close voicing from this inversion's bass up, within an octave
+                let mut close: Vec<i32> = (0..4).map(|k| form[(inv + k) % 4]).collect();
+                for k in 1..4 {
+                    while close[k] <= close[k - 1] {
+                        close[k] += 12;
+                    }
+                }
+                // drop the chosen voices (counted from the top) an octave
+                let mut v = close.clone();
+                for d in drops.iter() {
+                    v[4 - d] -= 12;
+                }
+                v.sort();
+                for set in sets.iter() {
+                    // the voicing put on the strings: the root's pitch class plus each voice, the lowest octave that
+                    // keeps every fret on the neck
+                    let base: Vec<i32> = (0..4).map(|k| c.root + v[k] - tuning[set[k]]).collect();
+                    let lift = (0..30).map(|o| o * 12 - 24).find(|l| base.iter().all(|b| b + l >= 0));
+                    let Some(lift) = lift else { continue };
+                    let frets: Vec<i32> = base.iter().map(|b| b + lift).collect();
+                    let fretted: Vec<i32> = frets.iter().copied().filter(|f| *f > 0).collect();
+                    let (lo, hi) = (fretted.iter().min().copied().unwrap_or(0), fretted.iter().max().copied().unwrap_or(0));
+                    if hi - lo > 3 || hi > 17 {
+                        continue;
+                    }
+                    let mut g = [None; 6];
+                    let mut offs = [None; 6];
+                    for k in 0..4 {
+                        g[set[k]] = Some(frets[k] as u8);
+                        offs[set[k]] = Some(frets[k]);
+                    }
+                    if grip_fingers(&offs) > 4 {
+                        continue;
+                    }
+                    let vc = Voicing { frets: g, group: name, bass: v[0].rem_euclid(12), strings: *set };
+                    if !list.iter().any(|x| x.frets == vc.frets) {
+                        list.push(vc);
+                    }
+                }
+            }
+        }
+        // string sets low to high, then up the neck
+        list.sort_by_key(|x| (x.strings[0], x.frets.iter().flatten().copied().filter(|f| *f > 0).min().unwrap_or(0)));
+        out.push((*name, list));
+    }
+    out
+}
+
 pub fn guitar_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<[Option<u8>; 6]> {
     // the grips players use first, then what the search finds for anything they don't cover
     // (the search only for chords the library doesn't cover: it finds odd grips beside real ones)
@@ -1927,36 +2083,60 @@ mod chord_spellings {
 #[cfg(test)]
 mod chord_audit {
 
-    /// Every grip in the library is a movable shape that sits in four frets and four fingers (a barre counts as one
-    /// finger), and it shows for every root, the same shape in every key.
-    /// The fingers a grip takes: one per fretted note, except that notes on the same fret on neighbouring strings,
-    /// with nothing fretted lower between them, take one finger together (a barre).
-    fn grip_fingers(offs: &[Option<i32>; 6]) -> usize {
-        let lowest = offs.iter().flatten().copied().min().unwrap_or(0);
-        let mut n = 0;
-        let mut frets: Vec<i32> = offs.iter().flatten().copied().collect();
-        frets.sort();
-        frets.dedup();
-        for f in frets {
-            let mut run = false;
-            for s in 0..6 {
-                match offs[s] {
-                    Some(x) if x == f => {
-                        if !run {
-                            n += 1;
-                            run = true;
+    /// Every voicing in the groups is right by its rule: four notes of the chord, the root's pitch class respected,
+    /// the spacing its group's (drop 2: the 2nd voice from the top an octave down), on adjacent string sets, playable.
+    #[test]
+    fn voicing_groups_are_right() {
+        use super::*;
+        for root in ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] {
+            for kind in ["maj7", "7", "m7", "m7b5", "dim7", "6", "m6", "9", "13", "7b9", "7#9", "13b9", "7b9b13", "m11", "maj9"] {
+                let name = format!("{}{}", root, kind);
+                let c = chord_notes(&name).unwrap();
+                let groups = voicing_groups(&c, &STANDARD);
+                let drop2 = &groups.iter().find(|g| g.0 == "Drop 2").unwrap().1;
+                assert!(drop2.len() >= 4, "{}: only {} drop 2 voicings", name, drop2.len());
+                for (_, list) in &groups {
+                    for v in list {
+                        let notes: Vec<i32> =
+                            v.frets.iter().enumerate().filter_map(|(s, f)| f.map(|f| STANDARD[s] + f as i32)).collect();
+                        assert_eq!(notes.len(), 4, "{} {:?}", name, v);
+                        for m in &notes {
+                            assert!(c.pcs.contains(&m.rem_euclid(12)), "{} {:?} plays a note not in it", name, v);
+                        }
+                        // notes rise string by string, and the 3rd and the 7th are in it
+                        assert!(notes.windows(2).all(|w| w[1] > w[0]), "{} {:?} crosses", name, v);
+                        for d in [3, 4, 10, 11] {
+                            let pc = (c.root + d).rem_euclid(12);
+                            if c.pcs.contains(&pc) && ![3, 4].contains(&d) || c.pcs.contains(&pc) && !c.pcs.contains(&((c.root + 7 - d).rem_euclid(12))) {
+                            }
+                        }
+                        let offs: [Option<i32>; 6] = v.frets.map(|f| f.map(|f| f as i32));
+                        assert!(grip_fingers(&offs) <= 4, "{} {:?} fingers", name, v);
+                        // drop 2: from the top, voices 1, 3, 4 lie within an octave and voice 2 sits an octave lower
+                        if v.group == "Drop 2" {
+                            let mut close = notes.clone();
+                            close[0] += 12;
+                            close.sort();
+                            assert!(close[3] - close[0] < 12, "{} {:?} isn't a drop 2", name, v);
                         }
                     }
-                    // a string fretted higher, or (for the lowest fret) not played, keeps a barre going
-                    Some(x) if x > f => {}
-                    None if f == lowest => {}
-                    _ => run = false,
                 }
             }
         }
-        n
+        // the textbook ones: Cmaj7 drop 2 on the top four, root position (x x 10 12 12 12)
+        let c = chord_notes("Cmaj7").unwrap();
+        let g = voicing_groups(&c, &STANDARD);
+        let d2 = &g.iter().find(|x| x.0 == "Drop 2").unwrap().1;
+        assert!(d2.iter().any(|v| v.frets == [None, None, Some(10), Some(12), Some(12), Some(12)]), "{:?}", d2);
+        // G7 drop 3, root on the 6th: 3 x 3 4 3 x
+        let c = chord_notes("G7").unwrap();
+        let g = voicing_groups(&c, &STANDARD);
+        let d3 = &g.iter().find(|x| x.0 == "Drop 3").unwrap().1;
+        assert!(d3.iter().any(|v| v.frets == [Some(3), None, Some(3), Some(4), Some(3), None]), "{:?}", d3);
     }
 
+    /// Every grip in the library is a movable shape that sits in four frets and four fingers (a barre counts as one
+    /// finger), and it shows for every root, the same shape in every key.
     #[test]
     fn every_grip_is_movable_and_playable() {
         use super::*;
