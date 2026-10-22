@@ -163,12 +163,12 @@ fn finish(dry: &[f32], peak: f32) -> Vec<f32> {
 /// Candidate opening sounds, quieter and softer than the old chime (by name, for choosing one).
 /// The opening sounds to choose from, by name: Ember (the default) first, the old chime last.
 pub const SOUNDS: [&str; 10] =
-    ["Ember", "Aero", "Lift", "Daybreak", "Glass Rain", "Skylight", "Homecoming", "Frost", "Bellglass", "Classic"];
+    ["Ember", "Aero", "Lift", "Daybreak", "Glass Rain", "Skylight", "Homecoming", "Frost", "Bellglass", "Original"];
 
 /// Opening sound `i` of SOUNDS (stereo).
 pub fn sound(i: usize) -> Vec<f32> {
     let name = SOUNDS[i.min(SOUNDS.len() - 1)];
-    if name == "Classic" {
+    if name == "Original" {
         return chime();
     }
     candidates().into_iter().find(|c| c.0 == name).map(|c| c.1).unwrap_or_else(chime)
