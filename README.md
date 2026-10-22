@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Typing a tune name and pressing Enter offers the songs you might mean, spelled right, or keep it as typed
 - Focus timer and metronome as pills in the practice window that open full panels
 - Chord grips with a capo, and movable grips grouped by root string
 - The chord engine checked against standard theory: every common chord spelling reads right, notes spelt from the root
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - DIARY > ROUTINE - a session tune a week (a different kind each time, or gospel), with daily steps that open the tool set up for them: listen, melody by ear, changes with the band, a lick through 12 keys, a recorded solo, listening back
 - RECORD in the practice panel - your interface or mic over the band, a loop or a song, a live waveform, every take kept (you over the band, and you alone) with ALL TAKES to play, tag or delete them
 - FOLLOW and RADIO on artist pages, their bio (VIEW MORE for the rest, names you can click), and new releases from artists you follow in your ARTISTS tab
-- SCALE HARMONY in CHORDS - every chord a scale makes, its mode, a grip, what to solo with (triad pairs too) and a vamp the band loops
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
