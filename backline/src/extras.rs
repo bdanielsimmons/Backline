@@ -2097,8 +2097,13 @@ impl App {
             Action::Section(s) => {
                 if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies) {
                     self.last_practice = s;
-                    // a practice page turns practice mode on (its panel opens); a music page leaves it as it is
-                    if crate::PRACTICE && !self.practice {
+                    // coming over from a music page, a practice page turns practice mode on (its panel opens); between
+                    // practice pages your Listen / Practice choice stays as you set it
+                    let from_music = !matches!(
+                        self.sec,
+                        Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies
+                    );
+                    if crate::PRACTICE && !self.practice && from_music {
                         self.practice = true;
                         self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
                         self.sync_loop();
