@@ -2095,8 +2095,14 @@ impl App {
             }
             Action::TakeDelete(id) => self.take_delete(id),
             Action::Section(s) => {
-                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines) {
+                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies) {
                     self.last_practice = s;
+                    // a practice page turns practice mode on (its panel opens); a music page leaves it as it is
+                    if crate::PRACTICE && !self.practice {
+                        self.practice = true;
+                        self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
+                        self.sync_loop();
+                    }
                 } else {
                     self.last_music = s;
                 }

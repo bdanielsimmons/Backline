@@ -1043,7 +1043,7 @@ impl App {
         if self.wa_art.is_some() && !self.mini && crate::winamp_ui::chrome_on() {
             // (the page margin all round: nothing touches the window's edges)
             let all = crate::page_rect(ui.max_rect());
-            let sw = (190.0 * font::ui_scale()).clamp(140.0, (all.width() * 0.3).max(140.0));
+            let sw = (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0));
             let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
             self.side_nav(ui, side, acts);
             tour::mark("TABS", side);
@@ -1073,7 +1073,9 @@ impl App {
         crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
         ptext(&p, Pos2::new(gem.max.x + 8.0, gem.center().y), Align::Min, "Backline", 2.2, pal().ink);
         let gem =
-            Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 8.0 + self.window_icons(ui, r, gem.max.y + 8.0, acts)));
+            Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 8.0 + self.mode_switch(ui, r, gem.max.y + 8.0, acts)));
+        let gem =
+            Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 6.0 + self.window_icons(ui, r, gem.max.y + 6.0, acts)));
 
         let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
         let on_lib = self.page.as_ref().is_some_and(|p| p.library);
@@ -1179,6 +1181,51 @@ impl App {
 
     /// The window's own switches as a row of icons (a skin worn): online, focus, practice, the mini player, on top, the
     /// skin's guide. Returns the row's height.
+    /// Listen / Practice: the app's two modes as a switch with words, under the name (returns its height).
+    fn mode_switch(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
+        if !PRACTICE {
+            return 0.0;
+        }
+        let h = 30.0 * font::ui_scale();
+        let area = Rect::from_min_max(Pos2::new(r.min.x + 10.0, y), Pos2::new(r.max.x - 10.0, y + h));
+        let p = ui.painter().clone();
+        p.rect_filled(area, h / 2.0, pal().beige.lerp_to_gamma(pal().lcd, 0.35));
+        p.rect_stroke(area, h / 2.0, Stroke::new(1.0_f32, pal().beige_h));
+        let half = area.width() / 2.0;
+        for (k, (icon, word, on)) in
+            [("note", "LISTEN", !self.practice), ("guitar", "PRACTICE", self.practice)].into_iter().enumerate()
+        {
+            let cell = Rect::from_min_size(Pos2::new(area.min.x + k as f32 * half, area.min.y), Vec2::new(half, h)).shrink(3.0);
+            let resp = ui
+                .interact(cell, ui.id().with(("mode", k)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .tip(if k == 0 {
+                    "Just listening: no loop, no slowing down."
+                } else {
+                    "Practice: loop, slow down, the band and your tools.  (P)"
+                });
+            if on {
+                p.rect_filled(cell, cell.height() / 2.0, pal().ink);
+            } else if resp.hovered() {
+                p.rect_filled(cell, cell.height() / 2.0, Color32::from_white_alpha(14));
+            }
+            let col = if on { pal().lcd } else { pal().ink2 };
+            let tw = text_w(word, 1.4);
+            let x0 = cell.center().x - (tw + 18.0) / 2.0;
+            crate::vicon::named(&p, Rect::from_center_size(Pos2::new(x0 + 7.0, cell.center().y), Vec2::splat(12.0)), icon, col);
+            crate::winamp_ui::as_title(|| {
+                crate::ui_text(&p, Pos2::new(x0 + 18.0, cell.center().y), Align::Min, word, 1.4, cell.width() - (x0 + 18.0 - cell.min.x), col)
+            });
+            if k == 1 {
+                tour::mark("CHIP", cell);
+            }
+            if resp.clicked() && !on {
+                acts.push(Action::TogglePractice);
+            }
+        }
+        h
+    }
+
     fn window_icons(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
         let p = ui.painter().clone();
         let off = self.go_offline || self.net_down;
@@ -1196,22 +1243,37 @@ impl App {
         )];
         if PRACTICE {
             items.push(("focus", self.focus_mode, "Focus: just the player, your tools and the chart.".into(), 2));
-            items.push((
-                "guitar",
-                self.practice,
-                if self.practice { "Practice mode is on. Click to just listen." } else { "Practice mode: loop and slow down." }
-                    .into(),
-                3,
-            ));
         }
         items.push(("mini", false, "Mini player.".into(), 4));
         items.push(("pin", self.pinned, "Keep this window on top.".into(), 5));
         items.push(("guide", self.wa_guide, "Outline and name each of this skin's buttons.".into(), 6));
         let d = 26.0 * font::ui_scale();
-        let mut x = r.min.x + 10.0;
+        let names = self.icon_names;
+        // (with names: the icons spread across the list's width, a word under each)
+        let n = items.len() as f32;
+        let step = if names { ((r.width() - 20.0) / n).max(d + 3.0) } else { d + 3.0 };
+        let mut x = r.min.x + 10.0 + if names { (step - d) / 2.0 } else { 0.0 };
         for (icon, on, tip, key) in items {
             let b = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(d));
-            x += d + 3.0;
+            x += step;
+            if names {
+                let word = match key {
+                    1 => {
+                        if self.go_offline || self.net_down {
+                            "Offline"
+                        } else {
+                            "Online"
+                        }
+                    }
+                    2 => "Focus",
+                    4 => "Mini",
+                    5 => "On top",
+                    _ => "Guide",
+                };
+                font::keep_caps(|| {
+                    ptext_fit(&p, Pos2::new(b.center().x, b.max.y + 7.0), Align::Center, word, 0.95, step - 4.0, pal().ink2)
+                });
+            }
             if b.max.x > r.max.x - 6.0 {
                 break;
             }
@@ -1249,7 +1311,11 @@ impl App {
                 }
             }
         }
-        d
+        if self.icon_names {
+            d + 14.0
+        } else {
+            d
+        }
     }
 
     /// The library's page: the places' tabs (`tabs`: when there is no side list), the search row, the page itself.

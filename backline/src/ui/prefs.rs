@@ -373,6 +373,13 @@ impl App {
                             crate::skin::LOOP_SAFE.store(!safe, std::sync::atomic::Ordering::Relaxed);
                             self.dirty = true;
                         }
+                        if check_box(ui, "NAMES UNDER THE WINDOW ICONS", self.icon_names)
+                            .tip("Shows a word under each small icon at the top of the side list (Online, Focus, Mini...).")
+                            .clicked()
+                        {
+                            self.icon_names = !self.icon_names;
+                            self.dirty = true;
+                        }
                         let calm = crate::skin::calm();
                         if check_box(ui, "REDUCE MOTION", calm)
                             .tip("Stops the spinning record, the tilting cover and the scrolling song titles.")

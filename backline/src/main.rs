@@ -2271,6 +2271,8 @@ struct App {
     thumb: Option<media::ThumbBar>,
     thumb_tried: bool,
     tour_seen: bool,
+    /// the names under the window icons at the top of the side list
+    icon_names: bool,
     /// the very first run: Backline's sleek look goes on once the window is up
     first_look: bool,
     /// the library's own zoom (ctrl + wheel or ctrl +/- over it)
@@ -3080,6 +3082,7 @@ impl App {
             thumb: None,
             thumb_tried: false,
             tour_seen: false,
+            icon_names: true,
             first_look: false,
             lib_zoom: 1.0,
             lib_rect: Rect::NOTHING,
@@ -3571,6 +3574,9 @@ impl App {
         if let Some(b) = st["tour_seen"].as_bool() {
             app.tour_seen = b;
         }
+        if let Some(b) = st["icon_names"].as_bool() {
+            app.icon_names = b;
+        }
         // watch the sound outputs: something plugged in or out, or a Bluetooth device coming or going, and Backline
         // moves with it (the list is always up to date)
         {
@@ -4034,6 +4040,7 @@ impl App {
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
             "tour_seen": self.tour_seen,
+            "icon_names": self.icon_names,
             "icon_build": update::build(),
             "auto_restart": self.auto_restart,
             "intro": self.intro,
