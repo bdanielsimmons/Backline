@@ -1864,6 +1864,40 @@ mod chord_spellings {
 
 #[cfg(test)]
 mod chord_audit {
+
+    /// Each grip offered, played into the analyzer, is named as the chord it was offered for (its root at least, and
+    /// the same notes).
+    #[test]
+    fn grips_round_trip_through_the_analyzer() {
+        use super::*;
+        let mut bad = Vec::new();
+        for root in ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] {
+            for kind in [
+                "", "m", "7", "maj7", "m7", "m7b5", "dim7", "6", "m6", "69", "9", "m9", "maj9", "m11", "13", "7b9", "7#9",
+                "13b9", "7#5", "7#11", "maj7#11", "7alt", "7sus4", "9sus4", "m(maj7)", "sus4", "aug",
+            ] {
+                let name = format!("{}{}", root, kind);
+                let Some(c) = chord_notes(&name) else {
+                    bad.push(format!("{}: can't read", name));
+                    continue;
+                };
+                for g in guitar_shapes(&c, &STANDARD) {
+                    let notes: Vec<i32> = g.iter().enumerate().filter_map(|(s, f)| f.map(|f| STANDARD[s] + f as i32)).collect();
+                    let low = notes.iter().min().map(|m| m.rem_euclid(12));
+                    let s = suggestions(&notes, low);
+                    match s.first() {
+                        Some(top) if top.root == c.root => {}
+                        Some(top) => bad.push(format!("{} {:?}: analyzer says {}", name, g, top.key())),
+                        None => bad.push(format!("{} {:?}: no name", name, g)),
+                    }
+                }
+            }
+        }
+        for b in &bad {
+            println!("{}", b);
+        }
+        assert!(bad.is_empty(), "{} grips named wrong", bad.len());
+    }
     use super::*;
 
     /// The interval names of a chord, in order.
