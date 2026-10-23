@@ -5648,8 +5648,34 @@ impl App {
                             .chain(self.store.yt.iter())
                             .chain(self.store.sc.iter())
                             .chain(self.sc_results.iter())
+                            .chain(self.yt_results.iter())
+                            .chain(self.store.lists.iter().flat_map(|l| l.items.iter()))
                             .find(|e| e.id == t.id)
-                            .cloned();
+                            .cloned()
+                            // (anywhere else it shows: made from the song and where it plays from)
+                            .or_else(|| match self.srcmap.get(&t.id) {
+                                Some(Src::Yt(src)) => Some(store::Ext {
+                                    kind: "yt".into(),
+                                    id: t.id,
+                                    src: src.clone(),
+                                    title: t.title.clone(),
+                                    artist: t.artist.clone(),
+                                    album: t.album.clone(),
+                                    dur: t.duration,
+                                    cover: t.cover.clone(),
+                                }),
+                                Some(Src::File(p)) => Some(store::Ext {
+                                    kind: "file".into(),
+                                    id: t.id,
+                                    src: p.to_string_lossy().to_string(),
+                                    title: t.title.clone(),
+                                    artist: t.artist.clone(),
+                                    album: t.album.clone(),
+                                    dur: t.duration,
+                                    cover: t.cover.clone(),
+                                }),
+                                None => None,
+                            });
                         if let Some(e) = found {
                             self.store.hearts.push(e);
                             self.liked.insert(t.id);
