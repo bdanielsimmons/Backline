@@ -587,6 +587,46 @@ pub struct Store {
     pub listened: HashMap<String, u32>,
     /// EAR: each drill's record (by the drill's key)
     pub ear: HashMap<String, EarStats>,
+    /// CHORD QUALITIES: what's in play and how the chords are played
+    pub ear_chords: EarChords,
+    /// ear training: no chime after an answer
+    pub ear_quiet: bool,
+}
+
+/// The CHORD QUALITIES drill's choices: what's in play (0 levels, 1 look-alikes, 2 my set), the levels ticked and
+/// how many of each level's chords are in play (0: the first four), the look-alike set (past the last: your
+/// mix-ups), the chords of MY SET (by label), and the voicing (an index of `ear::VOICINGS`), the same root each
+/// time, no bass note, the top-note question, the ii-V before the chord.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct EarChords {
+    pub mode: u8,
+    pub levels: Vec<usize>,
+    pub grown: Vec<usize>,
+    pub alike: usize,
+    pub mine: Vec<String>,
+    pub voicing: u8,
+    pub same_root: bool,
+    pub no_bass: bool,
+    pub top: bool,
+    pub context: bool,
+}
+
+impl Default for EarChords {
+    fn default() -> Self {
+        EarChords {
+            mode: 0,
+            levels: vec![1],
+            grown: Vec::new(),
+            alike: 0,
+            mine: Vec::new(),
+            voicing: 5,
+            same_root: false,
+            no_bass: false,
+            top: false,
+            context: false,
+        }
+    }
 }
 
 /// One ear-training drill's record: how many answers are in play, each answer asked and got right, which answer
@@ -599,6 +639,8 @@ pub struct EarStats {
     pub right: HashMap<String, u32>,
     pub mixups: HashMap<String, u32>,
     pub sessions: Vec<(i64, u32, u32)>,
+    /// the most answers right in a row
+    pub best: u32,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).
