@@ -20,16 +20,16 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- The chord ear drill has 51 chords in five levels, from triads to upper structures, with look-alike sets, your own set, voicing and top-note options, and a ii-V lead-in.
+- Ear training says CORRECT!, shows how the chord you picked differs, counts your streak and best run, and can chime.
+- Offline mode lists every Tidal song saved on this computer by name, not only your liked ones.
+- The triad map only uses open strings in shapes down by the nut, so there's no more open string paired with a hand at the 8th fret.
+- Locked to a song, the metronome's clicks are now part of the song's own sound, so they can't slowly drift off and come back.
 - Ear training page under Practice: chord qualities, intervals, progressions, scale degrees, guide tones, scales and modes, bass notes and playing a lick back
 - Ember, a soft pad with quiet glass pings, opens Backline; nine more in Preferences (Aero, Lift, Daybreak, Glass Rain, Skylight, Homecoming, Frost, Bellglass, Classic)
 - In the mini player, EQ and PL drop the skin's equalizer and playlist under the deck, like classic Winamp
 - Typing a tune name and pressing Enter offers the songs you might mean, spelled right, or keep it as typed
 - Focus timer and metronome as pills in the practice window that open full panels
-- Chord grips with a capo, and movable grips grouped by root string
-- The chord engine checked against standard theory: every common chord spelling reads right, notes spelt from the root
-- Brazilian songbook in the recommended tunes: Jobim, Bonfá, Baden Powell, Edu Lobo, Milton, João Bosco, Hermeto, choro
-- With a skin, the library lists its places down the side, like Spotify
-- Play, shuffle and queue are icons, with the rest under "..."
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
