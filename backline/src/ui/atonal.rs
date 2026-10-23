@@ -24,6 +24,9 @@ pub(crate) struct AtNote {
     pub len: f32,
     #[serde(default, skip_serializing_if = "is_false")]
     pub unsure: bool,
+    /// sounds with the note before it (a chord on the page; kept, though the line plays its notes one by one)
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub chord: bool,
 }
 
 fn sixteenth() -> f32 {
@@ -555,7 +558,7 @@ impl App {
             line.notes[i].unsure = false;
         }
         if add {
-            let copy = AtNote { unsure: false, ..line.notes[i].clone() };
+            let copy = AtNote { unsure: false, chord: false, ..line.notes[i].clone() };
             line.notes.insert(i + 1, copy);
             self.at.sel = Some(i + 1);
         }
@@ -834,7 +837,7 @@ mod tests {
                 header: "C-5 | A+4-9".to_string(),
                 source: "a lesson page".to_string(),
                 gaps: String::new(),
-                notes: vec![AtNote { midi: 61, len: 0.25, unsure: true }, AtNote { midi: 64, len: 0.25, unsure: false }],
+                notes: vec![AtNote { midi: 61, len: 0.25, unsure: true, chord: false }, AtNote { midi: 64, len: 0.25, unsure: false, chord: true }],
             }],
         };
         let text = to_text(&f);
@@ -844,7 +847,7 @@ mod tests {
         // written by hand: the length and the format may be left out
         let hand = parse(r#"{"lines":[{"name":"x","notes":[{"midi":60},{"midi":62,"unsure":true}]}]}"#).unwrap();
         assert_eq!(hand.format, 1);
-        assert_eq!(hand.lines[0].notes[0], AtNote { midi: 60, len: 0.25, unsure: false });
+        assert_eq!(hand.lines[0].notes[0], AtNote { midi: 60, len: 0.25, unsure: false, chord: false });
         assert!(hand.lines[0].notes[1].unsure);
         assert!(parse("not a file").is_none());
     }
