@@ -890,8 +890,8 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
             && core.contains('-');
         // an ordinal ("4TH", "2ND") reads 4th
         let ordinal = {
-            // (and plural: "7THS" reads 7ths)
-            let o = core.strip_suffix('S').filter(|o| o.ends_with("TH")).unwrap_or(core);
+            // (and plural: "7THS" reads 7ths, "3RDS" 3rds)
+            let o = core.strip_suffix('S').filter(|o| ["TH", "RD", "ND", "ST"].iter().any(|e| o.ends_with(e))).unwrap_or(core);
             o.is_ascii()
                 && o.len() > 2
                 && o[..o.len() - 2].chars().all(|c| c.is_ascii_digit())

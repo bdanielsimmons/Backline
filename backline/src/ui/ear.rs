@@ -1,8 +1,10 @@
 //! EAR (PRACTICE): ear training. One drill at a time, picked from one menu, most important first: chord
 //! qualities, intervals, progressions in numerals, scale degrees in a key, guide-tone lines, scales and modes, the
-//! bass note of a chord, and playing a short lick back. A question plays (as often as you like), you pick the
-//! answer; 20 questions make a session. Each drill starts with four answers in play and adds more once you get 80%
-//! in a session; the answers you miss come up more often. Your record per drill is kept in `store.ear`, and each
+//! bass note of a chord, and playing a short lick back; then the atonal ones, after Dennis Sandole's teaching: free
+//! intervals out to a 10th, tetrachord and trichord cells, exotic scales sung in intervals (moveable Do, fixed Do or
+//! La), scales stacked in 3rds, and sight-singing a generated atonal line. A question plays (as often as you like),
+//! you pick the answer (or, sung, mark yourself); 20 questions make a session. Each drill starts with four answers
+//! in play and adds more once you get 80% in a session; the answers you miss come up more often. Your record per drill is kept in `store.ear`, and each
 //! finished session's minutes go in the practice diary.
 
 use super::*;
@@ -27,7 +29,7 @@ pub(crate) struct Drill {
     pub about: &'static str,
 }
 
-pub(crate) const DRILLS: [Drill; 8] = [
+pub(crate) const DRILLS: [Drill; 13] = [
     Drill {
         name: "CHORD QUALITIES",
         key: "quality",
@@ -67,6 +69,32 @@ pub(crate) const DRILLS: [Drill; 8] = [
         name: "PLAY IT BACK",
         key: "back",
         about: "The key's chord plays, then a short lick. Play it back on your guitar, then click its notes on the neck, in order.",
+    },
+    // atonal
+    Drill {
+        name: "FREE INTERVALS",
+        key: "free",
+        about: "Two notes from anywhere, with no key around them. Name the distance, out to a 10th. SING FIRST: see the interval, sing it from the first note, then hear it.",
+    },
+    Drill {
+        name: "CELLS",
+        key: "cell",
+        about: "Four notes up or down from any note: name the tetrachord, the cell scales are joined from. Or three notes: name the set.",
+    },
+    Drill {
+        name: "SCALE IN INTERVALS",
+        key: "sung",
+        about: "Sing the scale in 3rds, then 4ths, out to 10ths. Use the syllables shown, then go on to the next scale, and mark yourself after each run.",
+    },
+    Drill {
+        name: "VERTICALS",
+        key: "vertical",
+        about: "A scale stacked in 3rds plays as one arpeggio. Name the chord it makes.",
+    },
+    Drill {
+        name: "SIGHT-SING",
+        key: "sight",
+        about: "A new line each day, its first note Do. Hear the first note, sing the line, then hear it and mark yourself. NEXT NOTE: a line stops; sing the note that comes next.",
     },
 ];
 
@@ -584,6 +612,7 @@ pub(crate) fn build_chord(chord: usize, root: i32, seed: u64, o: ChordOpts) -> Q
             .zip(spelt.iter())
             .map(|(m, n)| (n.clone(), tone_of(c, m - root).map_or("?", |t| tone_label(c, t)), tone_of(c, m - root).unwrap_or(0)))
             .collect(),
+        ..Default::default()
     };
     if o.context {
         // a ii-V into it; a dominant is heard as the V of its own ii-V
@@ -601,9 +630,12 @@ pub(crate) fn build_chord(chord: usize, root: i32, seed: u64, o: ChordOpts) -> Q
         let steps = voice_prog(root, &lead);
         let gap = 1.1;
         let at = steps.len() as f32 * gap + 0.1;
-        q.parts = vec![Part { at: 0.0, steps, gap, clean: false }, Part { at, steps: vec![notes], gap: 1.6, clean: false }];
+        q.parts = vec![
+            Part { at: 0.0, steps, gap, clean: false, tick: false },
+            Part { at, steps: vec![notes], gap: 1.6, clean: false, tick: false },
+        ];
     } else {
-        q.parts = vec![Part { at: 0.0, steps: vec![notes], gap: 1.0, clean: false }];
+        q.parts = vec![Part { at: 0.0, steps: vec![notes], gap: 1.0, clean: false, tick: false }];
     }
     q
 }
@@ -783,11 +815,543 @@ pub(crate) fn answers(drill: usize) -> Vec<&'static str> {
         0 => CHORDS.iter().map(|c| c.label).collect(),
         1 => INTERVALS.iter().map(|i| i.0).collect(),
         2 => PROGS.iter().map(|p| p.label).collect(),
-        3 | 7 => DEGREES.iter().map(|d| d.0).collect(),
         4 => GUIDES.iter().map(|g| g.0).collect(),
         5 => SCALES.iter().map(|s| s.0).collect(),
-        _ => BASS.to_vec(),
+        6 => BASS.to_vec(),
+        8 => FREE.iter().map(|f| f.0).collect(),
+        9 => TETRACHORDS.iter().map(|t| t.0).collect(),
+        10 => EXOTICS.iter().map(|e| e.name).collect(),
+        11 => vertical_scales().iter().map(|i| EXOTICS[*i].name).collect(),
+        12 => SIGHT_MODES.to_vec(),
+        TRICHORD => TRICHORDS.iter().map(|t| t.0).collect(),
+        _ => DEGREES.iter().map(|d| d.0).collect(),
     }
+}
+
+// ------------------------------------------------------------------ the atonal drills
+
+/// Where the atonal drills start in DRILLS (the menu heads them ATONAL).
+pub(crate) const ATONAL: usize = 8;
+/// CELLS played as three-note sets: a drill of its own in the record.
+pub(crate) const TRICHORD: usize = 13;
+/// The record's name for the three-note sets.
+const TRICHORD_KEY: &str = "trichord";
+
+/// FREE INTERVALS: out to a major 10th, the ones easiest to tell apart first: the answer, its name in words,
+/// semitones.
+pub(crate) const FREE: [(&str, &str, i32); 16] = [
+    ("M3", "MAJOR 3RD", 4),
+    ("m3", "MINOR 3RD", 3),
+    ("P5", "PERFECT 5TH", 7),
+    ("P4", "PERFECT 4TH", 5),
+    ("P8", "OCTAVE", 12),
+    ("M2", "MAJOR 2ND", 2),
+    ("m7", "MINOR 7TH", 10),
+    ("M6", "MAJOR 6TH", 9),
+    ("m2", "MINOR 2ND", 1),
+    ("M7", "MAJOR 7TH", 11),
+    ("TRITONE", "TRITONE", 6),
+    ("m6", "MINOR 6TH", 8),
+    ("m9", "MINOR 9TH", 13),
+    ("M9", "MAJOR 9TH", 14),
+    ("m10", "MINOR 10TH", 15),
+    ("M10", "MAJOR 10TH", 16),
+];
+
+/// An interval out to a 10th in words, in small letters ("minor 6th"), with "a" or "an" before it.
+fn interval_words(semis: i32) -> String {
+    let w = FREE.iter().find(|f| f.2 == semis.abs()).map_or("unison", |f| f.1).to_lowercase();
+    format!("{} {}", if w.starts_with('o') { "an" } else { "a" }, w)
+}
+
+/// CELLS: the tetrachords, the four-note cells scales are joined from, the ones most unlike each other first: name,
+/// semitones over the first note. (The Lydian one is the whole-tone one too: whole, whole, whole.)
+pub(crate) const TETRACHORDS: [(&str, [i32; 4]); 8] = [
+    ("MAJOR", [0, 2, 4, 5]),
+    ("PHRYGIAN", [0, 1, 3, 5]),
+    ("LYDIAN", [0, 2, 4, 6]),
+    ("HARMONIC", [0, 1, 4, 5]),
+    ("MINOR", [0, 2, 3, 5]),
+    ("DIMINISHED", [0, 1, 3, 4]),
+    ("HUNGARIAN", [0, 2, 3, 6]),
+    ("CHROMATIC", [0, 1, 2, 5]),
+];
+
+/// CELLS as three-note sets: all twelve, by their prime forms (the most packed way of writing the set, from 0), the
+/// ones most unlike each other first.
+pub(crate) const TRICHORDS: [(&str, [i32; 3]); 12] = [
+    ("0 3 7", [0, 3, 7]),
+    ("0 1 2", [0, 1, 2]),
+    ("0 4 8", [0, 4, 8]),
+    ("0 2 7", [0, 2, 7]),
+    ("0 3 6", [0, 3, 6]),
+    ("0 2 4", [0, 2, 4]),
+    ("0 1 5", [0, 1, 5]),
+    ("0 1 6", [0, 1, 6]),
+    ("0 1 3", [0, 1, 3]),
+    ("0 1 4", [0, 1, 4]),
+    ("0 2 5", [0, 2, 5]),
+    ("0 2 6", [0, 2, 6]),
+];
+
+/// A step between neighbouring notes of a cell, in words.
+fn step_word(semis: i32) -> &'static str {
+    match semis {
+        1 => "half",
+        2 => "whole",
+        3 => "minor 3rd",
+        4 => "major 3rd",
+        5 => "4th",
+        6 => "tritone",
+        _ => "?",
+    }
+}
+
+/// A cell's steps in words: "half, whole, whole".
+fn cell_steps(cell: &[i32]) -> String {
+    cell.windows(2).map(|w| step_word(w[1] - w[0])).collect::<Vec<_>>().join(", ")
+}
+
+/// A name in capitals as a word in a sentence: HUNGARIAN MAJOR -> Hungarian Major.
+fn title_words(name: &str) -> String {
+    name.split(' ')
+        .map(|w| {
+            let mut c = w.chars();
+            c.next().map_or(String::new(), |f| f.to_string() + &c.as_str().to_lowercase())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A scale for the atonal drills: its name, each note as a degree of the major scale (1 to 7) and how far it is moved
+/// from it (-1 flat, 1 sharp), and for a scale built from two tetrachords, which (places in TETRACHORDS: the one on
+/// the root, the one on the 5th).
+pub(crate) struct Exotic {
+    pub name: &'static str,
+    pub degs: &'static [(usize, i32)],
+    pub built: Option<(usize, usize)>,
+}
+
+const fn ex(name: &'static str, degs: &'static [(usize, i32)]) -> Exotic {
+    Exotic { name, degs, built: None }
+}
+
+/// The major scale, the degrees the scales are written against.
+const MAJOR_STEPS: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+
+/// The scales sung in intervals (and the 7-note ones stacked in VERTICALS), in the order they are sung.
+pub(crate) const EXOTICS: [Exotic; 12] = [
+    ex("DOUBLE HARMONIC", &[(1, 0), (2, -1), (3, 0), (4, 0), (5, 0), (6, -1), (7, 0)]),
+    ex("HUNGARIAN MAJOR", &[(1, 0), (2, 1), (3, 0), (4, 1), (5, 0), (6, 0), (7, -1)]),
+    // C D# E G Ab B: a minor 3rd and a half step, three times over
+    ex("SIX-TONE SYMMETRICAL", &[(1, 0), (2, 1), (3, 0), (5, 0), (6, -1), (7, 0)]),
+    ex("ENIGMATIC", &[(1, 0), (2, -1), (3, 0), (4, 1), (5, 1), (6, 1), (7, 0)]),
+    ex("LYDIAN DOMINANT", &[(1, 0), (2, 0), (3, 0), (4, 1), (5, 0), (6, 0), (7, -1)]),
+    ex("HUNGARIAN MINOR", &[(1, 0), (2, 0), (3, -1), (4, 1), (5, 0), (6, -1), (7, 0)]),
+    ex("NEAPOLITAN MAJOR", &[(1, 0), (2, -1), (3, -1), (4, 0), (5, 0), (6, 0), (7, 0)]),
+    ex("NEAPOLITAN MINOR", &[(1, 0), (2, -1), (3, -1), (4, 0), (5, 0), (6, -1), (7, 0)]),
+    ex("PERSIAN", &[(1, 0), (2, -1), (3, 0), (4, 0), (5, -1), (6, -1), (7, 0)]),
+    // built: a tetrachord on the root, another on the 5th (Lydian on G ends on C#, sung as the scale's Db)
+    Exotic {
+        name: "LYDIAN + LYDIAN",
+        degs: &[(1, 0), (2, -1), (2, 0), (3, 0), (4, 1), (5, 0), (6, 0), (7, 0)],
+        built: Some((2, 2)),
+    },
+    Exotic { name: "LYDIAN + HARMONIC", degs: &[(1, 0), (2, 0), (3, 0), (4, 1), (5, 0), (6, -1), (7, 0)], built: Some((2, 3)) },
+    Exotic {
+        name: "DIMINISHED + DIMINISHED",
+        degs: &[(1, 0), (2, -1), (3, -1), (3, 0), (5, 0), (6, -1), (7, -1), (7, 0)],
+        built: Some((5, 5)),
+    },
+];
+
+/// A scale's notes as semitones over its root, low to high.
+pub(crate) fn exotic_steps(e: &Exotic) -> Vec<i32> {
+    e.degs.iter().map(|(d, a)| MAJOR_STEPS[(d - 1) % 7] + a).collect()
+}
+
+/// The keys, as a singer reads them (an index is the key's pitch class).
+pub(crate) const KEYS: [&str; 12] = ["C", "D\u{266D}", "D", "E\u{266D}", "E", "F", "F#", "G", "A\u{266D}", "A", "B\u{266D}", "B"];
+
+/// A scale's notes spelt in a key (an index of KEYS), each by its own degree's letter: C D# E F# G A B\u{266D}.
+pub(crate) fn exotic_names(e: &Exotic, key: usize) -> Vec<String> {
+    let k = KEYS[key % 12].replace('\u{266D}', "b");
+    let root = (key % 12) as i32;
+    e.degs
+        .iter()
+        .zip(exotic_steps(e))
+        .map(|((d, _), s)| {
+            theory::spell_degree(&k, root + s, *d)
+                .unwrap_or_else(|| theory::note_name(root + s, false).to_string())
+                .replace('b', "\u{266D}")
+        })
+        .collect()
+}
+
+/// The syllable systems: moveable Do (from the scale's root, or a line's first note), fixed Do (C is always Do), or
+/// every note on La.
+pub(crate) const SYLLABLES: [&str; 3] = ["MOVEABLE DO", "FIXED DO", "LA"];
+/// Chromatic syllables over Do: going up (raised), coming down (lowered).
+const RISING: [&str; 12] = ["Do", "Di", "Re", "Ri", "Mi", "Fa", "Fi", "Sol", "Si", "La", "Li", "Ti"];
+const FALLING: [&str; 12] = ["Do", "Ra", "Re", "Me", "Mi", "Fa", "Se", "Sol", "Le", "La", "Te", "Ti"];
+
+/// The moveable-Do syllable of a degree (1 to 7) moved by `alt`: Do Re Mi Fa Sol La Ti, raised Di Ri Fi Si Li, lowered
+/// Ra Me Se Le Te. None for the ones no singer uses (a sharp 3rd or 7th, a flat root or 4th).
+pub(crate) fn degree_syllable(deg: usize, alt: i32) -> Option<&'static str> {
+    const PLAIN: [&str; 7] = ["Do", "Re", "Mi", "Fa", "Sol", "La", "Ti"];
+    const UP: [&str; 7] = ["Di", "Ri", "", "Fi", "Si", "Li", ""];
+    const DOWN: [&str; 7] = ["", "Ra", "Me", "", "Se", "Le", "Te"];
+    let row = match alt {
+        0 => PLAIN,
+        1 => UP,
+        -1 => DOWN,
+        _ => return None,
+    };
+    row.get(deg.wrapping_sub(1)).copied().filter(|s| !s.is_empty())
+}
+
+/// The fixed-Do syllable of a note written `name` ("C", "F#", "B\u{266D}"): its letter's syllable, raised or lowered
+/// as written. A note there is no syllable for (E#, B#, F\u{266D}, C\u{266D}) is sung as the note it sounds.
+pub(crate) fn fixed_syllable(name: &str) -> &'static str {
+    let name = name.replace('\u{266D}', "b");
+    let letter = "CDEFGAB".find(name.chars().next().unwrap_or('C')).unwrap_or(0);
+    let alt = if name.ends_with('#') {
+        1
+    } else if name.len() > 1 && name.ends_with('b') {
+        -1
+    } else {
+        0
+    };
+    degree_syllable(letter + 1, alt).unwrap_or_else(|| {
+        let pc = (MAJOR_STEPS[letter] + alt).rem_euclid(12) as usize;
+        if alt > 0 {
+            RISING[pc]
+        } else {
+            FALLING[pc]
+        }
+    })
+}
+
+/// SCALE IN INTERVALS: the intervals a scale is sung in, one after another.
+pub(crate) const RUN_INTERVALS: [&str; 8] = ["3RDS", "4THS", "5THS", "6THS", "7THS", "OCTAVES", "9THS", "10THS"];
+/// SING WITH the guitar, or AHEAD of it.
+pub(crate) const SING_HOW: [&str; 2] = ["SING WITH", "SING AHEAD"];
+pub(crate) const SPEEDS: [&str; 3] = ["SLOW", "MEDIUM", "FAST"];
+/// Seconds a note at each speed.
+const SPEED_SECS: [f32; 3] = [0.95, 0.7, 0.5];
+pub(crate) const RANGES: [&str; 2] = ["LOW VOICE", "HIGH VOICE"];
+/// The notes each voice sings comfortably: A2 to E4, A3 to E5.
+const VOICES: [(i32, i32); 2] = [(45, 64), (57, 76)];
+
+/// How many notes up a scale's partner note is for interval `i` (an index of RUN_INTERVALS) in a scale of `n` notes:
+/// every other note for 3rds, the same note an octave up for octaves (a 6-note scale's 7ths are its 6ths).
+pub(crate) fn run_offset(i: usize, n: usize) -> usize {
+    match i {
+        0..=4 => (i + 2).min(n - 1),
+        5 => n,
+        _ => n + i - 5,
+    }
+}
+
+/// SCALE IN INTERVALS where you are: the scale (an index of EXOTICS) in an interval on a key, the pairs to sing from
+/// the root up to the octave and back down, each pair's names and the syllables to sing it on. Sung with the guitar,
+/// each pair plays as you sing it; ahead, a bar is counted in, then you sing each pair on two beats and the guitar
+/// plays it on the next two, to check.
+pub(crate) fn build_run(a: &crate::store::EarAtonal) -> Question {
+    let e = &EXOTICS[a.scale.min(EXOTICS.len() - 1)];
+    let key = a.key % 12;
+    let steps = exotic_steps(e);
+    let names = exotic_names(e, key);
+    let n = steps.len();
+    let off = run_offset(a.interval.min(RUN_INTERVALS.len() - 1), n);
+    let (lo, _) = VOICES[(a.range as usize).min(1)];
+    let mut base = at_or_above(key as i32, lo);
+    // (the top pair kept on the guitar)
+    if base + 12 + steps[off % n] + 12 * (off / n) as i32 > 84 {
+        base -= 12;
+    }
+    let at = |i: usize| base + steps[i % n] + 12 * (i / n) as i32;
+    let syl = |i: usize| match a.syllables {
+        0 => degree_syllable(e.degs[i % n].0, e.degs[i % n].1).unwrap_or("?"),
+        1 => fixed_syllable(&names[i % n]),
+        _ => "La",
+    };
+    // up to the octave, then back down
+    let mut pairs: Vec<(usize, usize)> = (0..=n).map(|i| (i, i + off)).collect();
+    pairs.extend((0..n).rev().map(|i| (i, i + off)));
+    let g = SPEED_SECS[(a.speed as usize).min(2)];
+    let mut q = Question { answer: a.scale, root: key as i32, opt: a.interval as u8, ..Default::default() };
+    q.cols =
+        pairs.iter().map(|(x, y)| (format!("{} {}", names[x % n], names[y % n]), format!("{} {}", syl(*x), syl(*y)))).collect();
+    let mut notes: Vec<Vec<i32>> = Vec::new();
+    if a.ahead {
+        // a bar counted in; each pair: two beats you sing, two the guitar plays
+        for (x, y) in &pairs {
+            notes.extend([vec![], vec![], vec![at(*x)], vec![at(*y)]]);
+        }
+        q.cues = (0..pairs.len()).map(|k| 4.0 * g + 4.0 * g * k as f32).collect();
+        q.parts = vec![
+            Part { at: 0.0, steps: vec![vec![]; 4], gap: g, clean: false, tick: true },
+            Part { at: 4.0 * g, steps: notes, gap: g, clean: false, tick: false },
+        ];
+    } else {
+        // each pair, then a breath
+        for (x, y) in &pairs {
+            notes.extend([vec![at(*x)], vec![at(*y)], vec![]]);
+        }
+        q.cues = (0..pairs.len()).map(|k| 3.0 * g * k as f32).collect();
+        q.parts = vec![Part { at: 0.0, steps: notes, gap: g, clean: false, tick: false }];
+    }
+    // (the key just before the notes, so a key of A reads as the note)
+    q.reveal = format!("{} IN {} ON {}: {}", e.name, RUN_INTERVALS[q.opt as usize], KEYS[key], names.join(" "));
+    if let Some((low, high)) = e.built {
+        // and the two cells it is joined from
+        let k = KEYS[key].replace('\u{266D}', "b");
+        let fifth = theory::spell_degree(&k, key as i32 + 7, 5).unwrap_or_else(|| "G".to_string());
+        let cell = |t: usize, from: &str, at: i32| -> String {
+            TETRACHORDS[t]
+                .1
+                .iter()
+                .enumerate()
+                .map(|(j, x)| {
+                    theory::spell_degree(from, at + x, j + 1)
+                        .unwrap_or_else(|| theory::note_name(at + x, false).to_string())
+                        .replace('b', "\u{266D}")
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        q.reveal = format!("{}\n{} + {}", q.reveal, cell(low, &k, key as i32), cell(high, &fifth, key as i32 + 7));
+    }
+    q
+}
+
+/// A 7-note scale stacked in 3rds from its note `mode` (0: its root): every other note, seven of them (1 3 5 7 9 11
+/// 13), as semitones over the lowest.
+pub(crate) fn stack(e: &Exotic, mode: usize) -> Vec<i32> {
+    let s = exotic_steps(e);
+    let n = s.len();
+    (0..7)
+        .map(|j| {
+            let k = mode % n + 2 * j;
+            s[k % n] + 12 * (k / n) as i32 - s[mode % n]
+        })
+        .collect()
+}
+
+/// The chord a stack in 3rds makes, as jazz players write it after the root: the 7th chord, then the 9th, 11th and
+/// 13th (a natural 9 and 13 go in the number: 13#11). None when a note has no name a chord symbol uses (a flat 11, a
+/// sharp 13).
+pub(crate) fn stack_symbol(r: &[i32]) -> Option<String> {
+    if r.len() != 7 {
+        return None;
+    }
+    let t = |k: usize| r[k] - if k >= 4 { 12 } else { 0 };
+    let (prefix, digit, fifth) = match (t(1), t(2), t(3)) {
+        (4, 7, 10) => ("", "7", ""),
+        (4, 7, 11) => ("\u{0394}", "7", ""),
+        (3, 7, 10) => ("-", "7", ""),
+        (3, 7, 11) => ("-\u{0394}", "7", ""),
+        (3, 6, 10) => ("-", "7", "\u{266D}5"),
+        (3, 6, 9) => ("\u{00b0}", "7", ""),
+        (4, 8, 10) => ("", "7", "#5"),
+        (4, 8, 11) => ("\u{0394}", "7", "#5"),
+        (4, 6, 10) => ("", "7", "\u{266D}5"),
+        (4, 6, 11) => ("\u{0394}", "7", "\u{266D}5"),
+        (3, 8, 10) => ("-", "7", "#5"),
+        (3, 8, 11) => ("-\u{0394}", "7", "#5"),
+        (3, 6, 11) => ("-\u{0394}", "7", "\u{266D}5"),
+        (4, 7, 9) => ("", "6", ""),
+        (3, 7, 9) => ("-", "6", ""),
+        _ => return None,
+    };
+    let mut nine = match t(4) {
+        1 => "\u{266D}9",
+        2 => "9",
+        3 => "#9",
+        _ => return None,
+    };
+    let eleven = match t(5) {
+        5 => "11",
+        6 => "#11",
+        _ => return None,
+    };
+    let mut thirteen = match t(6) {
+        8 => "\u{266D}13",
+        9 => "13",
+        _ => return None,
+    };
+    let mut digit = digit;
+    if digit == "7" && prefix != "\u{00b0}" && nine == "9" {
+        digit = "9";
+        nine = "";
+        if thirteen == "13" {
+            digit = "13";
+            thirteen = "";
+        }
+    }
+    let mut out = format!("{}{}{}", prefix, digit, fifth);
+    for x in [nine, eleven, thirteen] {
+        // (a plain number after another stands apart: 7#9#11 13)
+        if x.starts_with(|c: char| c.is_ascii_digit()) {
+            out.push(' ');
+        }
+        out.push_str(x);
+    }
+    Some(out)
+}
+
+/// The modes of a 7-note scale whose stack in 3rds has a chord name.
+fn named_modes(e: &Exotic) -> Vec<usize> {
+    if e.degs.len() != 7 {
+        return Vec::new();
+    }
+    (0..7).filter(|m| stack_symbol(&stack(e, *m)).is_some()).collect()
+}
+
+/// The scales VERTICALS stacks (7-note ones whose stack from the root has a name), in the order they come into play.
+pub(crate) fn vertical_scales() -> Vec<usize> {
+    (0..EXOTICS.len()).filter(|i| named_modes(&EXOTICS[*i]).contains(&0)).collect()
+}
+
+/// A stack's notes from this root (a pitch class): the lowest from E2 up.
+fn stack_notes(scale: usize, mode: usize, root: i32) -> Vec<i32> {
+    let low = at_or_above(root, 40);
+    stack(&EXOTICS[scale], mode).iter().map(|s| low + s).collect()
+}
+
+/// A stack's chord name on this root: C7#9#11 13.
+fn stack_name(scale: usize, mode: usize, root: i32) -> String {
+    let sym = stack_symbol(&stack(&EXOTICS[scale], mode)).unwrap_or_default();
+    format!("{}{}", nm(root, lines::key_sharps(root)), sym)
+}
+
+/// Which note of the scale a mode starts on, in words.
+const MODE_WORDS: [&str; 7] = ["ROOT", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH"];
+
+/// `v` in an order picked by `rng`.
+fn shuffled<T>(mut v: Vec<T>, rng: &mut Rng) -> Vec<T> {
+    for i in (1..v.len()).rev() {
+        v.swap(i, rng.below(i + 1));
+    }
+    v
+}
+
+/// SIGHT-SING: an atonal line of `len` notes from `lo` to `hi`: steps and small leaps mostly, a bigger one now and
+/// then, never one note twice running or any note more than twice. It keeps out of any key: its notes are never all
+/// of one major scale, and it doesn't come home (it ends away from its first note, and not by a 4th or 5th).
+pub(crate) fn atonal_line(len: usize, lo: i32, hi: i32, seed: u64) -> Vec<i32> {
+    let mut rng = Rng::new(seed);
+    let mut line: Vec<i32> = Vec::new();
+    for _ in 0..500 {
+        line.clear();
+        line.push(lo + 3 + rng.below((hi - lo - 6).max(1) as usize) as i32);
+        let mut tries = 0;
+        while line.len() < len && tries < 60 {
+            tries += 1;
+            let last = *line.last().unwrap();
+            let r = rng.unit();
+            let size = if r < 0.45 {
+                1 + rng.below(2)
+            } else if r < 0.8 {
+                3 + rng.below(3)
+            } else {
+                6 + rng.below(4)
+            } as i32;
+            let up = rng.below(2) == 0;
+            let mut m = if up { last + size } else { last - size };
+            if m > hi || m < lo {
+                m = if up { last - size } else { last + size };
+            }
+            let twice = line.iter().filter(|x| (*x - m).rem_euclid(12) == 0).count() >= 2;
+            if (lo..=hi).contains(&m) && !twice {
+                line.push(m);
+            }
+        }
+        if line.len() == len && line_ok(&line) {
+            return line;
+        }
+    }
+    line
+}
+
+/// A line keeps out of any key: not all of one major scale, ending away from its first note, not by a 4th or 5th.
+fn line_ok(line: &[i32]) -> bool {
+    let n = line.len();
+    if n < 3 {
+        return false;
+    }
+    let home = (line[n - 1] - line[0]).rem_euclid(12) == 0;
+    let cadence = matches!((line[n - 1] - line[n - 2]).abs(), 5 | 7);
+    let diatonic = (0..12).any(|k| line.iter().all(|m| MAJOR_STEPS.contains(&(m - k).rem_euclid(12))));
+    !home && !cadence && !diatonic
+}
+
+/// Each note of a line spelt the way it moves (sharps going up, flats coming down) with the syllable to sing it on:
+/// moveable Do from the first note (Di Ri Fi Si Li going up, Ra Me Se Le Te coming down), fixed Do by its name, or La.
+pub(crate) fn line_words(line: &[i32], syl: u8) -> Vec<(String, &'static str)> {
+    line.iter()
+        .enumerate()
+        .map(|(k, m)| {
+            let up = k > 0 && *m > line[k - 1];
+            let name = nm(*m, up);
+            let s = match syl {
+                0 => (if up { RISING } else { FALLING })[(m - line[0]).rem_euclid(12) as usize],
+                1 => fixed_syllable(&name),
+                _ => "La",
+            };
+            (name, s)
+        })
+        .collect()
+}
+
+pub(crate) const SIGHT_MODES: [&str; 2] = ["SIGHT-SING", "NEXT NOTE"];
+
+/// SIGHT-SING: a line from `seed` in the voice range, its names and syllables shown; only its first note plays, the
+/// whole line is the check. NEXT NOTE: the line plays but for its last note, which you sing, then hear.
+pub(crate) fn build_sight(seed: u64, next: bool, range: u8, syl: u8, speed: u8) -> Question {
+    let (lo, hi) = VOICES[(range as usize).min(1)];
+    let mut rng = Rng::new(seed);
+    let len = if next { 5 + rng.below(4) } else { 6 + rng.below(5) };
+    let line = atonal_line(len, lo, hi, rng.next());
+    let words = line_words(&line, syl);
+    let g = SPEED_SECS[(speed as usize).min(2)];
+    let mut q = Question { answer: next as usize, root: line[0], seed, ..Default::default() };
+    q.cols = words.iter().map(|(n, s)| (n.clone(), s.to_string())).collect();
+    q.arp = vec![Part { at: 0.0, steps: line.iter().map(|m| vec![*m]).collect(), gap: g, clean: false, tick: false }];
+    if next {
+        let n = line.len();
+        q.parts =
+            vec![Part { at: 0.0, steps: line[..n - 1].iter().map(|m| vec![*m]).collect(), gap: g, clean: false, tick: false }];
+        let jump = line[n - 1] - line[n - 2];
+        q.prompt = match syl {
+            2 => format!("Sing the next note: {} {}", if jump > 0 { "up" } else { "down" }, interval_words(jump)),
+            _ => format!("Sing the next note: {}", words[n - 1].1),
+        };
+    } else {
+        q.parts = vec![Part { at: 0.0, steps: vec![vec![line[0]]], gap: 1.5, clean: false, tick: false }];
+        q.prompt = "Sing the line from its first note, then hear it".to_string();
+    }
+    q.reveal = words.iter().map(|w| w.0.clone()).collect::<Vec<_>>().join(" ");
+    q.lick = line;
+    q
+}
+
+/// A soft wash of noise, swelling and fading over `secs`: between questions, to clear the last notes from your ear.
+fn wash_sound(secs: f32, seed: u64) -> Vec<i16> {
+    let n = (secs * band::RATE) as usize;
+    let mut rng = Rng::new(seed);
+    let (mut a, mut b) = (0.0f32, 0.0f32);
+    let raw: Vec<f32> = (0..n)
+        .map(|i| {
+            // softened twice over: a hush, not a hiss
+            a += 0.1 * (rng.unit() * 2.0 - 1.0 - a);
+            b += 0.1 * (a - b);
+            b * (std::f32::consts::PI * i as f32 / n.max(1) as f32).sin()
+        })
+        .collect();
+    let peak = raw.iter().fold(0.0f32, |m, x| m.max(x.abs())).max(1e-6);
+    raw.iter().map(|x| (x / peak * 2600.0) as i16).collect()
 }
 
 // ------------------------------------------------------------------ questions
@@ -822,18 +1386,20 @@ fn clock_seed() -> u64 {
 }
 
 /// Something to play: from `at` seconds, these steps (each a chord or a note) `gap` seconds apart; clean ones are
-/// short single notes (a line), the others ring.
+/// short single notes (a line), the others ring; a tick part is a bar counted in, a click a step.
 #[derive(Clone, Debug)]
 pub(crate) struct Part {
     pub at: f32,
     pub steps: Vec<Vec<i32>>,
     pub gap: f32,
     pub clean: bool,
+    pub tick: bool,
 }
 
 /// A question: the drill, the right answer, the root or key it is built on and the seed for the rest (so another
-/// answer can be built the same way), what plays, the arpeggio version (empty: none), and the lick to play back.
-#[derive(Clone, Debug)]
+/// answer can be built the same way), what plays, the arpeggio version (empty: none; for a sung drill, the check you
+/// hear after singing), and the lick to play back.
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Question {
     pub answer: usize,
     pub root: i32,
@@ -857,6 +1423,15 @@ pub(crate) struct Question {
     pub spelt: String,
     /// each note low to high: its name, its degree, its tone (semitones over the root)
     pub named: Vec<(String, &'static str, i32)>,
+    /// VERTICALS: the chord names to pick from, each one's scale and mode, and the right one
+    pub choices: Vec<String>,
+    pub choice_src: Vec<(usize, usize)>,
+    pub right: usize,
+    /// the sung drills: what to sing, the columns shown (names over syllables), and when each column's turn comes
+    /// (seconds into what plays)
+    pub prompt: String,
+    pub cols: Vec<(String, String)>,
+    pub cues: Vec<f32>,
 }
 
 /// A note name for jazz eyes (flat sign, not "b").
@@ -909,7 +1484,7 @@ pub(crate) fn voice_prog(key: i32, chords: &[(i32, &[i32])]) -> Vec<Vec<i32>> {
 fn arpeggio(chord: &[i32]) -> Vec<Part> {
     let mut v = chord.to_vec();
     v.sort();
-    vec![Part { at: 0.0, steps: v.into_iter().map(|m| vec![m]).collect(), gap: 0.45, clean: false }]
+    vec![Part { at: 0.0, steps: v.into_iter().map(|m| vec![m]).collect(), gap: 0.45, clean: false, tick: false }]
 }
 
 /// The question for drill `drill` with this answer, on this root (a pitch class, or for intervals the low note),
@@ -938,8 +1513,9 @@ pub(crate) fn build(drill: usize, answer: usize, root: i32, seed: u64, opt: u8, 
         top: 0,
         spelt: String::new(),
         named: Vec::new(),
+        ..Default::default()
     };
-    let one = |steps: Vec<Vec<i32>>, gap: f32, clean: bool| vec![Part { at: 0.0, steps, gap, clean }];
+    let one = |steps: Vec<Vec<i32>>, gap: f32, clean: bool| vec![Part { at: 0.0, steps, gap, clean, tick: false }];
     match drill {
         // two notes, up, down or together
         1 => {
@@ -982,8 +1558,8 @@ pub(crate) fn build(drill: usize, answer: usize, root: i32, seed: u64, opt: u8, 
             let note = at_or_above(root + semis, 60);
             let gap = 0.8;
             q.parts = vec![
-                Part { at: 0.0, steps: cad, gap, clean: false },
-                Part { at: 4.0 * gap + 0.7, steps: vec![vec![note]], gap: 1.6, clean: false },
+                Part { at: 0.0, steps: cad, gap, clean: false, tick: false },
+                Part { at: 4.0 * gap + 0.7, steps: vec![vec![note]], gap: 1.6, clean: false, tick: false },
             ];
             let sharps = lines::key_sharps(root);
             q.reveal = format!("KEY OF {}: THE NOTE WAS {}", nm(root, sharps), nm(note, sharps));
@@ -1009,8 +1585,8 @@ pub(crate) fn build(drill: usize, answer: usize, root: i32, seed: u64, opt: u8, 
             }
             let gap = 1.3;
             q.parts = vec![
-                Part { at: 0.0, steps: voiced, gap, clean: false },
-                Part { at: 3.0 * gap + 0.8, steps: line.iter().map(|m| vec![*m]).collect(), gap: 0.9, clean: false },
+                Part { at: 0.0, steps: voiced, gap, clean: false, tick: false },
+                Part { at: 3.0 * gap + 0.8, steps: line.iter().map(|m| vec![*m]).collect(), gap: 0.9, clean: false, tick: false },
             ];
             let sharps = lines::key_sharps(if minor { root + 3 } else { root });
             let names: Vec<String> = chords.iter().map(|c| format!("{}{}", nm(root + c.0, sharps), c.2)).collect();
@@ -1049,6 +1625,128 @@ pub(crate) fn build(drill: usize, answer: usize, root: i32, seed: u64, opt: u8, 
             q.arp = arpeggio(&chord);
             q.parts = one(vec![chord], 1.0, false);
         }
+        // FREE INTERVALS: two notes from anywhere, or (sung first) the first of them, the two to check
+        8 => {
+            let (label, words, semis) = FREE[answer.min(FREE.len() - 1)];
+            let sing = opt & 4 != 0;
+            let dir = if opt & 3 == 3 { rng.below(if sing { 2 } else { 3 }) as u8 } else { opt & 3 };
+            // (sung, two notes together are sung up)
+            let dir = if sing && dir == 2 { 0 } else { dir };
+            let (lo, hi) = (root, root + semis);
+            let (a, b) = (nm(lo, false), nm(hi, false));
+            let (first, second) = if dir == 1 { (hi, lo) } else { (lo, hi) };
+            let melodic = one(vec![vec![first], vec![second]], 1.0, false);
+            if sing {
+                q.parts = one(vec![vec![first]], 1.5, false);
+                q.arp = melodic;
+                let way = if dir == 1 { "down" } else { "up" };
+                q.prompt = format!("Sing {} {} from this note", way, interval_words(semis));
+            } else if dir == 2 {
+                q.parts = one(vec![vec![lo, hi]], 1.0, false);
+                q.arp = one(vec![vec![lo], vec![hi]], 1.0, false);
+            } else {
+                q.parts = melodic;
+            }
+            q.reveal = match dir {
+                1 => format!("{} DOWN TO {}  ({}, {})", b, a, label, words),
+                2 => format!("{} AND {}  ({}, {})", a, b, label, words),
+                _ => format!("{} UP TO {}  ({}, {})", a, b, label, words),
+            };
+        }
+        // CELLS: a tetrachord (or a three-note set, either way up) from any note, up, down or together
+        9 | TRICHORD => {
+            let cell: Vec<i32> = if drill == 9 {
+                TETRACHORDS[answer.min(TETRACHORDS.len() - 1)].1.to_vec()
+            } else {
+                let t = TRICHORDS[answer.min(TRICHORDS.len() - 1)].1;
+                // its prime form or turned upside down: the same set
+                if rng.below(2) == 0 {
+                    t.to_vec()
+                } else {
+                    vec![0, t[2] - t[1], t[2]]
+                }
+            };
+            let start = at_or_above(root, 52);
+            let notes: Vec<i32> = cell.iter().map(|x| start + x).collect();
+            let dir = if opt >= 3 { rng.below(3) as u8 } else { opt };
+            let up: Vec<Vec<i32>> = notes.iter().map(|m| vec![*m]).collect();
+            match dir {
+                0 => q.parts = one(up, 0.55, false),
+                1 => q.parts = one(up.into_iter().rev().collect(), 0.55, false),
+                _ => {
+                    q.parts = one(vec![notes.clone()], 1.2, false);
+                    q.arp = one(up, 0.55, false);
+                }
+            }
+            // a tetrachord spelt on four letters in a row (C D\u{266D} E\u{266D} F; from F# rather than G\u{266D} when
+            // that keeps them in a row), a set by plain names
+            let spell = |sharp: bool| -> Vec<String> {
+                let first = theory::note_name(start, sharp);
+                notes
+                    .iter()
+                    .enumerate()
+                    .map(|(k, m)| {
+                        let by_letter = if drill == 9 { theory::spell_degree(first, *m, k + 1) } else { None };
+                        by_letter.unwrap_or_else(|| theory::note_name(*m, false).to_string()).replace('b', "\u{266D}")
+                    })
+                    .collect()
+            };
+            let in_row = |v: &Vec<String>| {
+                let li = |n: &String| "CDEFGAB".find(n.chars().next().unwrap_or('C')).unwrap_or(0);
+                v.windows(2).all(|w| (li(&w[1]) + 7 - li(&w[0])) % 7 == 1)
+            };
+            // (and with the fewest notes nobody reads easily: E#, B#, C\u{266D}, F\u{266D})
+            let odd = |v: &Vec<String>| v.iter().filter(|n| ["E#", "B#", "C\u{266D}", "F\u{266D}"].contains(&n.as_str())).count();
+            let pref = lines::key_sharps(start);
+            let names = [spell(pref), spell(!pref)].into_iter().min_by_key(|v| (!in_row(v), odd(v))).unwrap_or_default();
+            q.spelt = names.join(" ");
+            let what = if drill == 9 { cell_steps(&cell).to_uppercase() } else { TRICHORDS[answer.min(11)].0.to_string() };
+            q.reveal = format!("{}   ({})", q.spelt, what);
+        }
+        // VERTICALS: a scale stacked in 3rds as one arpeggio; four chord names to pick from
+        11 => {
+            let pool = vertical_scales();
+            let si = pool[answer.min(pool.len() - 1)];
+            let root = root.rem_euclid(12);
+            q.root = root;
+            let mode_for = |s: usize, rng: &mut Rng| {
+                let m = named_modes(&EXOTICS[s]);
+                if opt == 1 && !m.is_empty() {
+                    m[rng.below(m.len())]
+                } else {
+                    0
+                }
+            };
+            let mode = mode_for(si, &mut rng);
+            let mut picks: Vec<(String, (usize, usize))> = vec![(stack_name(si, mode, root), (si, mode))];
+            // the others: the scales in play first, then the rest, then any mode of any of them
+            let cut = level.min(pool.len());
+            let mut others: Vec<usize> = shuffled(pool[..cut].iter().copied().filter(|s| *s != si).collect(), &mut rng);
+            others.extend(shuffled(pool[cut..].iter().copied().filter(|s| *s != si).collect(), &mut rng));
+            for s in others {
+                let m = mode_for(s, &mut rng);
+                let n = stack_name(s, m, root);
+                if picks.len() < 4 && !picks.iter().any(|p| p.0 == n) {
+                    picks.push((n, (s, m)));
+                }
+            }
+            for s in pool.iter().copied() {
+                for m in named_modes(&EXOTICS[s]) {
+                    let n = stack_name(s, m, root);
+                    if picks.len() < 4 && !picks.iter().any(|p| p.0 == n) {
+                        picks.push((n, (s, m)));
+                    }
+                }
+            }
+            let picks = shuffled(picks, &mut rng);
+            q.right = picks.iter().position(|p| p.1 == (si, mode)).unwrap_or(0);
+            q.choices = picks.iter().map(|p| p.0.clone()).collect();
+            q.choice_src = picks.iter().map(|p| p.1).collect();
+            let notes = stack_notes(si, mode, root);
+            q.parts = one(notes.iter().map(|m| vec![*m]).collect(), 0.38, false);
+            q.arp = one(vec![notes], 1.2, false);
+            q.reveal = vertical_reveal(si, mode, root);
+        }
         // the key's chord, then a short lick from the degrees in play
         _ => {
             let pool = level.clamp(START, DEGREES.len());
@@ -1082,8 +1780,8 @@ pub(crate) fn build(drill: usize, answer: usize, root: i32, seed: u64, opt: u8, 
             }
             let tonic = voice_prog(root, &[(0, TRIAD)]);
             q.parts = vec![
-                Part { at: 0.0, steps: tonic, gap: 1.6, clean: false },
-                Part { at: 1.9, steps: q.lick.iter().map(|m| vec![*m]).collect(), gap: 0.6, clean: true },
+                Part { at: 0.0, steps: tonic, gap: 1.6, clean: false, tick: false },
+                Part { at: 1.9, steps: q.lick.iter().map(|m| vec![*m]).collect(), gap: 0.6, clean: true, tick: false },
             ];
             let sharps = lines::key_sharps(root);
             let notes: Vec<String> = q.lick.iter().map(|m| nm(*m, sharps)).collect();
@@ -1098,8 +1796,16 @@ pub(crate) fn build(drill: usize, answer: usize, root: i32, seed: u64, opt: u8, 
 pub(crate) fn ask(drill: usize, level: usize, weights: &[f32], opt: u8, seed: u64) -> Question {
     let mut rng = Rng::new(seed);
     let answer = pick_weighted(weights, &mut rng);
-    // a root anywhere in the octave; an interval's low note from E3 to C#4
-    let root = if drill == 1 { 52 + rng.below(10) as i32 } else { rng.below(12) as i32 };
+    // a root anywhere in the octave; an interval's low note from E3 to C#4 (sung first, where the voice can sing both)
+    let root = if drill == 8 && opt & 4 != 0 {
+        let (lo, hi) = VOICES[((opt >> 3) & 1) as usize];
+        let semis = FREE[answer.min(FREE.len() - 1)].2;
+        lo + rng.below((hi - lo - semis + 1).max(1) as usize) as i32
+    } else if drill == 1 || drill == 8 {
+        52 + rng.below(10) as i32
+    } else {
+        rng.below(12) as i32
+    };
     build(drill, answer, root, rng.next(), opt, level)
 }
 
@@ -1127,7 +1833,13 @@ fn length(parts: &[Part]) -> f32 {
 fn render(parts: &[Part]) -> Vec<i16> {
     let mut out: Vec<i32> = Vec::new();
     for p in parts {
-        let pcm = if p.clean { band::line_sound(&p.steps, p.gap) } else { band::sequence_sound(&p.steps, p.gap) };
+        let pcm = if p.tick {
+            band::count_in(p.steps.len() as u32, 60.0 / p.gap.max(0.1))
+        } else if p.clean {
+            band::line_sound(&p.steps, p.gap)
+        } else {
+            band::sequence_sound(&p.steps, p.gap)
+        };
         let off = (p.at * band::RATE) as usize;
         if out.len() < off + pcm.len() {
             out.resize(off + pcm.len(), 0);
@@ -1216,6 +1928,42 @@ fn wrong_hint(drill: usize, q: &Question, pool: &[usize], given: usize) -> Optio
             let (an, as_) = INTERVALS.get(q.answer)?;
             Some(format!("You picked {}: {} half steps\n{}: {} half steps", pn, ps, an, as_))
         }
+        8 => {
+            let (pn, _, ps) = FREE.get(given)?;
+            let (an, _, as_) = FREE.get(q.answer)?;
+            Some(format!("You picked {}: {} half steps\n{}: {} half steps", pn, ps, an, as_))
+        }
+        // the steps of each, and the notes heard
+        9 => {
+            let (pn, pc) = TETRACHORDS.get(given)?;
+            let (an, ac) = TETRACHORDS.get(q.answer)?;
+            let word = |n: &str| if n == "LYDIAN" { "Lydian (whole-tone)".to_string() } else { title_words(n) };
+            Some(format!("You picked {}: {}\n{}: {} ({})", word(pn), cell_steps(pc), word(an), cell_steps(ac), q.spelt))
+        }
+        TRICHORD => {
+            let (pn, pc) = TRICHORDS.get(given)?;
+            let (an, ac) = TRICHORDS.get(q.answer)?;
+            Some(format!("You picked {}: {}\n{}: {} (or upside down)", pn, cell_steps(pc), an, cell_steps(ac)))
+        }
+        // the scale each chord comes from
+        11 => {
+            let (ps, pm) = *q.choice_src.get(given)?;
+            let (as_, am) = *q.choice_src.get(q.right)?;
+            let from = |s: usize, m: usize| {
+                if m == 0 {
+                    title_words(EXOTICS[s].name)
+                } else {
+                    format!("{}, from its {}", title_words(EXOTICS[s].name), MODE_WORDS[m].to_lowercase())
+                }
+            };
+            Some(format!(
+                "You picked {}: {}\n{}: {}",
+                q.choices.get(given)?,
+                from(ps, pm),
+                q.choices.get(q.right)?,
+                from(as_, am)
+            ))
+        }
         _ => None,
     }
 }
@@ -1280,12 +2028,42 @@ fn tone_col(t: i32) -> Color32 {
 
 /// Each drill's colour, a dot beside the drill menu.
 fn drill_col(d: usize) -> Color32 {
+    if d >= ATONAL {
+        // the atonal ones all purple
+        return tone_col(14);
+    }
     tone_col([0, 4, 7, 10, 14, 3, 19, 11][d % 8])
 }
 
 /// Answer `i` is right: the one asked, or (CHORD QUALITIES) a chord the notes heard spell just as well.
 fn answer_right(drill: usize, q: &Question, pool: &[usize], i: usize) -> bool {
+    if drill == 11 {
+        return i == q.right;
+    }
     i == q.answer || (drill == 0 && pool.get(i).is_some_and(|c| fits(&CHORDS[*c], &q.pcs)))
+}
+
+/// The answer pill that is right: the one asked, or for VERTICALS the right chord name among the four.
+fn right_pill(drill: usize, q: &Question) -> usize {
+    if drill == 11 {
+        q.right
+    } else {
+        q.answer
+    }
+}
+
+/// VERTICALS, what it was: the scale, where the stack starts, its notes spelt.
+fn vertical_reveal(scale: usize, mode: usize, root: i32) -> String {
+    let e = &EXOTICS[scale];
+    let tonic = (root - exotic_steps(e)[mode]).rem_euclid(12) as usize;
+    let names = exotic_names(e, tonic);
+    let notes: Vec<String> = (0..7).map(|j| names[(mode + 2 * j) % 7].clone()).collect();
+    // (the key just before the notes, so a key of A reads as the note)
+    if mode == 0 {
+        format!("{} IN 3RDS ON {}: {}", e.name, KEYS[tonic], notes.join(" "))
+    } else {
+        format!("{} FROM ITS {}, ON {}: {}", e.name, MODE_WORDS[mode], KEYS[tonic], notes.join(" "))
+    }
 }
 
 /// How likely each answer in play is to come up: the ones you miss more often, the one just asked less.
@@ -1354,43 +2132,106 @@ pub(crate) struct Ear {
     pub streak: u32,
     /// this session, each answer right or not (the bar under the question count)
     pub marks: Vec<bool>,
+    /// the sung drills: the check heard (HEAR IT), and how you marked yourself (right or not)
+    pub heard: bool,
+    pub marked: Option<bool>,
 }
 
 impl App {
-    /// A test copy opened on a drill (BACKLINE_EAR=drill number) with a question asked and answered wrong.
+    /// A test copy opened on a drill (BACKLINE_EAR=drill number) with a question asked and answered wrong (a sung
+    /// one sung and marked right).
     pub(crate) fn ear_demo(&mut self, drill: usize) {
         self.ear = Ear { drill: drill.min(DRILLS.len() - 1), ..Default::default() };
+        let kind = self.ear_kind();
         let (_, level, pool) = self.ear_in_play();
-        let q = if self.ear.drill == 0 {
-            ask_chord(&pool, &vec![1.0; level], self.ear_copts(), None, 11)
-        } else {
-            ask(self.ear.drill, level, &vec![1.0; level], 0, 11)
+        let q = match kind {
+            0 => ask_chord(&pool, &vec![1.0; level], self.ear_copts(), None, 11),
+            10 => build_run(&self.store.ear_atonal),
+            12 => self.ear_line(),
+            _ => ask(kind, level, &vec![1.0; level], self.ear_opt(), 11),
         };
+        let right = right_pill(kind, &q);
+        let count = if kind == 11 { q.choices.len() } else { level };
         if self.ear.drill == 7 {
             self.ear.played = q.lick.iter().map(|m| m + 2).collect();
             self.ear.checked = true;
+        } else if self.ear_sung() {
+            self.ear.heard = true;
+            self.ear.marked = Some(true);
+            self.ear.streak = 3;
         } else if std::env::var("BACKLINE_EAR_OK").is_ok() {
             // (BACKLINE_EAR_OK: answered right, five in a row, waiting on "what's on top?")
-            self.ear.given = Some(q.answer);
+            self.ear.given = Some(right);
             self.ear.streak = 5;
             self.store.ear_chords.top = true;
         } else {
-            self.ear.given = Some((q.answer + 1) % level);
+            self.ear.given = Some((right + 1) % count.max(1));
         }
-        self.ear.n = 6;
-        self.ear.right = 4;
-        self.ear.marks = vec![true, true, false, true, true, false];
+        self.ear.n = 6.min(self.ear_session() - 1);
+        self.ear.right = 4.min(self.ear.n);
+        self.ear.marks = [true, true, false, true, true, false][..self.ear.n as usize].to_vec();
         self.ear.q = Some(q);
     }
 
+    /// The drill the questions are built for: the one picked, or CELLS as three-note sets.
+    fn ear_kind(&self) -> usize {
+        let d = self.ear.drill.min(DRILLS.len() - 1);
+        if d == 9 && self.store.ear_atonal.trichords {
+            TRICHORD
+        } else {
+            d
+        }
+    }
+
+    /// The drill is sung: you mark yourself right or not.
+    fn ear_sung(&self) -> bool {
+        let k = self.ear_kind();
+        k == 10 || k == 12 || (k == 8 && self.store.ear_atonal.sing_first)
+    }
+
+    /// Questions in a session: fewer for the sung scales and lines.
+    fn ear_session(&self) -> u32 {
+        match self.ear_kind() {
+            10 => 4,
+            12 if !self.store.ear_atonal.next_note => 5,
+            12 => 10,
+            _ => SESSION,
+        }
+    }
+
+    /// How a question is asked (its `opt`): the direction; FREE INTERVALS sung first (+4), in the high voice (+8);
+    /// VERTICALS from any mode (1).
+    fn ear_opt(&self) -> u8 {
+        let a = &self.store.ear_atonal;
+        match self.ear_kind() {
+            8 => self.ear.dir + if a.sing_first { 4 } else { 0 } + if a.range == 1 { 8 } else { 0 },
+            11 => a.modes as u8,
+            _ => self.ear.dir,
+        }
+    }
+
+    /// SIGHT-SING's line: the day's (the same all day, until you ask for a new one), or for NEXT NOTE a new one.
+    fn ear_line(&mut self) -> Question {
+        let today = crate::store::today_days();
+        if self.store.ear_atonal.line_day != today {
+            self.store.ear_atonal.line_day = today;
+            self.store.ear_atonal.line_n = 0;
+            self.store_dirty = true;
+        }
+        let a = self.store.ear_atonal.clone();
+        // (seeds two apart: the number maker takes a seed and the one after it for the same)
+        let seed = if a.next_note { clock_seed() } else { (a.line_day as u64 * 7919 + a.line_n as u64) << 1 };
+        build_sight(seed, a.next_note, a.range, a.syllables, a.speed)
+    }
+
     fn ear_stats(&mut self) -> &mut EarStats {
-        let key = DRILLS[self.ear.drill.min(DRILLS.len() - 1)].key;
+        let key = if self.ear_kind() == TRICHORD { TRICHORD_KEY } else { DRILLS[self.ear.drill.min(DRILLS.len() - 1)].key };
         self.store.ear.entry(key.to_string()).or_default()
     }
 
     /// The answers in play: their names, how many, and for CHORD QUALITIES the chords (places in CHORDS).
     fn ear_in_play(&mut self) -> (Vec<&'static str>, usize, Vec<usize>) {
-        let drill = self.ear.drill.min(DRILLS.len() - 1);
+        let drill = self.ear_kind();
         let st = self.ear_stats().clone();
         if drill == 0 {
             let pool = chord_pool(&self.store.ear_chords, &st);
@@ -1421,12 +2262,25 @@ impl App {
 
     /// Play these parts (a question, its arpeggio, an answer to compare).
     fn ear_play(&mut self, parts: &[Part]) {
+        self.ear_play_after(parts, 0.0);
+    }
+
+    /// Play these parts after a soft wash of `wash` seconds (none: straight away).
+    fn ear_play_after(&mut self, parts: &[Part], wash: f32) {
         if parts.is_empty() {
             return;
         }
+        let lead = if wash > 0.0 { wash + 0.35 } else { 0.0 };
+        let mut pcm = if wash > 0.0 { wash_sound(wash, clock_seed()) } else { Vec::new() };
+        let off = (lead * band::RATE) as usize;
+        let tune = render(parts);
+        pcm.resize(pcm.len().max(off + tune.len()), 0);
+        for (i, x) in tune.iter().enumerate() {
+            pcm[off + i] = pcm[off + i].saturating_add(*x);
+        }
         self.player.send(Cmd::StopOnce);
-        self.player.send(Cmd::Once(render(parts), 0.9));
-        self.seq_play = Some((Instant::now(), length(parts), "ear".to_string(), 1));
+        self.player.send(Cmd::Once(pcm, 0.9));
+        self.seq_play = Some((Instant::now(), lead + length(parts), "ear".to_string(), 1));
     }
 
     /// A soft two notes up for a right answer, one low quiet note for a wrong one, after what is still ringing.
@@ -1442,7 +2296,7 @@ impl App {
         self.player.send(Cmd::Once(pcm, 0.5));
     }
 
-    /// The next question, played straight away.
+    /// The next question, played straight away (after a soft wash, where the drill clears your ear between them).
     fn ear_next(&mut self) {
         if self.ear.done.is_some() {
             self.ear.done = None;
@@ -1453,28 +2307,85 @@ impl App {
             self.ear.top_n = (0, 0);
             self.ear.marks.clear();
         }
-        let drill = self.ear.drill;
+        let kind = self.ear_kind();
         let (names, level, pool) = self.ear_in_play();
         let last = self.ear.q.as_ref().map(|q| q.answer);
         let st = self.ear_stats().clone();
-        let w = if drill == 7 { vec![1.0] } else { weights(&st, &names[..level], last) };
-        let q = if drill == 0 {
-            let root = if self.store.ear_chords.same_root {
-                Some(*self.ear.same_root.get_or_insert(Rng::new(clock_seed()).below(12) as i32))
-            } else {
-                None
-            };
-            ask_chord(&pool, &w, self.ear_copts(), root, clock_seed())
-        } else {
-            ask(drill, level, &w, self.ear.dir, clock_seed())
+        let w = if matches!(kind, 7 | 10 | 12) { vec![1.0] } else { weights(&st, &names[..level], last) };
+        let q = match kind {
+            0 => {
+                let root = if self.store.ear_chords.same_root {
+                    Some(*self.ear.same_root.get_or_insert(Rng::new(clock_seed()).below(12) as i32))
+                } else {
+                    None
+                };
+                ask_chord(&pool, &w, self.ear_copts(), root, clock_seed())
+            }
+            10 => build_run(&self.store.ear_atonal),
+            12 => self.ear_line(),
+            _ => ask(kind, level, &w, self.ear_opt(), clock_seed()),
         };
-        self.ear_play(&q.parts.clone());
+        let wash = matches!(kind, 8 | 9 | 11 | TRICHORD) && self.store.ear_atonal.reset && self.ear.q.is_some();
+        self.ear_play_after(&q.parts.clone(), if wash { 1.2 } else { 0.0 });
         self.ear.q = Some(q);
         self.ear.given = None;
         self.ear.top_given = None;
         self.ear.played.clear();
         self.ear.checked = false;
+        self.ear.heard = false;
+        self.ear.marked = None;
+        if kind == 10 {
+            self.ear.heard = true;
+        }
         self.ear_mark();
+    }
+
+    /// A new question wanted, not played: the answers or the way of asking changed (a scale to sing, or the day's
+    /// line, is built again to look at).
+    fn ear_fresh(&mut self) {
+        self.ear.q = None;
+        self.ear.given = None;
+        self.ear.top_given = None;
+        self.ear.played.clear();
+        self.ear.checked = false;
+        self.ear.heard = false;
+        self.ear.marked = None;
+    }
+
+    /// SCALE IN INTERVALS, on to the next: the next interval, the next scale after 10ths, the next key (up a 4th)
+    /// after the last scale; played straight away.
+    fn ear_run_next(&mut self) {
+        let a = &mut self.store.ear_atonal;
+        a.interval += 1;
+        if a.interval >= RUN_INTERVALS.len() {
+            a.interval = 0;
+            a.scale += 1;
+            if a.scale >= EXOTICS.len() {
+                a.scale = 0;
+                a.key = (a.key + 5) % 12;
+            }
+        }
+        self.store_dirty = true;
+        self.ear_next();
+    }
+
+    /// A sung question marked: right or not, noted against what was sung (the scale in its interval, the line, the
+    /// interval).
+    fn ear_self(&mut self, ok: bool) {
+        let Some(q) = self.ear.q.clone() else { return };
+        self.ear.marked = Some(ok);
+        let kind = self.ear_kind();
+        let asked = match kind {
+            10 => format!("{} IN {}", EXOTICS[q.answer.min(EXOTICS.len() - 1)].name, RUN_INTERVALS[(q.opt as usize).min(7)]),
+            12 => SIGHT_MODES[q.answer.min(1)].to_string(),
+            _ => answers(kind).get(q.answer).copied().unwrap_or("?").to_string(),
+        };
+        let st = self.ear_stats();
+        *st.asked.entry(asked.clone()).or_insert(0) += 1;
+        if ok {
+            *st.right.entry(asked).or_insert(0) += 1;
+        }
+        self.ear_scored(ok);
     }
 
     /// Note one answer in the drill's record (asked, given).
@@ -1499,7 +2410,7 @@ impl App {
         let st = self.ear_stats();
         st.best = st.best.max(streak);
         self.ear_chime(ok);
-        if self.ear.n >= SESSION {
+        if self.ear.n >= self.ear_session() {
             let (right, n) = (self.ear.right, self.ear.n);
             let secs = self.ear.secs.round() as u32;
             let today = crate::store::today_days();
@@ -1530,16 +2441,30 @@ impl App {
             // the drill's colour
             let (r, _) = ui.allocate_exact_size(Vec2::new(12.0, bh()), Sense::hover());
             ui.painter().circle_filled(r.center(), 5.0, drill_col(drill));
-            if let Some(i) = crate::dropdown(ui, "ear_drill", "DRILL", &names, drill, 0.0) {
+            // the menu in two groups, each drill with its colour
+            let dots: Vec<Color32> = (0..DRILLS.len()).map(drill_col).collect();
+            let heads = [(0, "TONAL"), (ATONAL, "ATONAL")];
+            if let Some(i) = crate::dropdown_grouped(ui, "ear_drill", "DRILL", &names, drill, &heads, &dots) {
                 if i != drill {
                     self.ear = Ear { drill: i, dir: self.ear.dir, ..Default::default() };
                     acts.push(Action::StopSequence);
                 }
             }
-            if drill == 1 {
-                if let Some(i) = crate::dropdown(ui, "ear_dir", "PLAYED", &DIRECTIONS, self.ear.dir as usize, 0.0) {
-                    self.ear.dir = i as u8;
+            if drill == 1 || drill == 8 || drill == 9 {
+                let sung = drill == 8 && self.store.ear_atonal.sing_first;
+                if !sung {
+                    if let Some(i) = crate::dropdown(ui, "ear_dir", "PLAYED", &DIRECTIONS, self.ear.dir as usize, 0.0) {
+                        if i as u8 != self.ear.dir {
+                            self.ear.dir = i as u8;
+                            if drill != 1 {
+                                self.ear_fresh();
+                            }
+                        }
+                    }
                 }
+            }
+            if drill >= ATONAL {
+                self.ear_atonal_options(ui, acts, drill);
             }
             if check_box(ui, "CHIME", !self.store.ear_quiet).tip("A soft sound after each answer").clicked() {
                 self.store.ear_quiet = !self.store.ear_quiet;
@@ -1681,18 +2606,40 @@ impl App {
         }
     }
 
-    /// Layout A: the big PLAY, where you are in the session, the answers, then hear again / arpeggio / next.
+    /// Layout A: the big PLAY, where you are in the session, the answers (or, sung, what to sing), then hear again /
+    /// arpeggio / next.
     fn ear_question(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let drill = self.ear.drill.min(DRILLS.len() - 1);
+        let kind = self.ear_kind();
+        let sung = self.ear_sung();
+        let session = self.ear_session();
+        let next_note = self.store.ear_atonal.next_note;
+        // a scale to sing, or the day's line to read, is there to look at before anything plays
+        if self.ear.q.is_none() && (kind == 10 || (kind == 12 && !next_note)) {
+            let q = if kind == 10 { build_run(&self.store.ear_atonal) } else { self.ear_line() };
+            self.ear.q = Some(q);
+        }
         let (names, level, pool) = self.ear_in_play();
         let top_on = drill == 0 && self.store.ear_chords.top;
         let mut top_pick: Option<usize> = None;
         let playing = self.seq_on("ear");
-        let answered = self.ear.given.is_some() || self.ear.checked;
+        let answered = self.ear.given.is_some() || self.ear.checked || self.ear.marked.is_some();
         let mut play = false;
         let mut next = false;
         let mut arp = false;
         let mut pick: Option<usize> = None;
+        let mut mark: Option<bool> = None;
+        let mut again = false;
+        let mut new_line = false;
+        let mut place = self.store.ear_atonal.clone();
+        // the pair whose turn it is, while a scale in intervals plays
+        let lit = match (&self.ear.q, &self.seq_play) {
+            (Some(q), Some((t0, _, tag, _))) if kind == 10 && tag == "ear" => {
+                let el = t0.elapsed().as_secs_f32();
+                q.cues.iter().rposition(|c| *c <= el)
+            }
+            _ => None,
+        };
         ui.vertical_centered(|ui| {
             // the big round PLAY (STOP while it sounds)
             let d = 96.0;
@@ -1729,11 +2676,17 @@ impl App {
                 }
             };
             line(ui, DRILLS[drill].name, 2.2, pal().ink);
-            let shown = (self.ear.n + (!answered && self.ear.q.is_some() && self.ear.done.is_none()) as u32).clamp(1, SESSION);
+            let shown = (self.ear.n + (!answered && self.ear.q.is_some() && self.ear.done.is_none()) as u32).clamp(1, session);
+            // (a scale is a run, the day's line a try)
+            let word = match kind {
+                10 => "RUN",
+                12 if !next_note => "TRY",
+                _ => "QUESTION",
+            };
             let at = if self.ear.q.is_none() {
                 "PRESS PLAY TO START".to_string()
             } else {
-                format!("QUESTION {} OF {}", shown, SESSION)
+                format!("{} {} OF {}", word, shown, session)
             };
             line(ui, &at, 1.0, pal().ink2);
             if self.ear.q.is_some() {
@@ -1742,8 +2695,8 @@ impl App {
                 let w = ui.available_width().min(280.0);
                 let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
                 let x0 = r.center().x - w / 2.0;
-                let seg = w / SESSION as f32;
-                for k in 0..SESSION as usize {
+                let seg = w / session as f32;
+                for k in 0..session as usize {
                     let cell = Rect::from_min_size(Pos2::new(x0 + k as f32 * seg + 1.0, r.min.y), Vec2::new(seg - 2.0, 6.0));
                     let col = match self.ear.marks.get(k) {
                         Some(true) => ok_col(),
@@ -1758,14 +2711,29 @@ impl App {
             if let Some(q) = self.ear.q.clone() {
                 if drill == 7 {
                     self.ear_neck(ui, acts, &q);
+                } else if kind == 10 {
+                    // where you are, then the pairs to sing, each over its syllables
+                    place_row(ui, &mut place);
+                    ui.add_space(10.0);
+                    cols_row(ui, &q.cols, lit, false);
+                } else if sung {
+                    // what to sing (and the line, names over syllables)
+                    line(ui, &q.prompt, 1.5, pal().ink);
+                    if kind == 12 {
+                        ui.add_space(8.0);
+                        // (NEXT NOTE keeps its last note to itself until you have heard it)
+                        cols_row(ui, &q.cols, None, next_note && !self.ear.heard && !answered);
+                    }
                 } else {
                     // the answers in play: after answering, the right one lit, a wrong pick marked; a click on any of
                     // them then plays it on the same root, to compare
-                    let labels: Vec<&str> = names[..level].to_vec();
+                    let labels: Vec<&str> =
+                        if kind == 11 { q.choices.iter().map(|c| c.as_str()).collect() } else { names[..level].to_vec() };
                     let given = self.ear.given;
-                    let right = |i: usize| answer_right(drill, &q, &pool, i);
+                    let right = |i: usize| answer_right(kind, &q, &pool, i);
+                    let rp = right_pill(kind, &q);
                     if let Some(i) = centred_pills(ui, "ear_ans", &labels, |i| {
-                        let lit = answered && (i == q.answer || (given == Some(i) && right(i)));
+                        let lit = answered && (i == rp || (given == Some(i) && right(i)));
                         (lit, answered && given == Some(i) && !right(i))
                     }) {
                         pick = Some(i);
@@ -1775,18 +2743,29 @@ impl App {
                 // what it was
                 if answered {
                     // (what was asked: the chord itself, for CHORD QUALITIES)
-                    let asked = if drill == 0 { CHORDS[q.chord.min(CHORDS.len() - 1)].label } else { names[q.answer] };
+                    let asked = if drill == 0 {
+                        CHORDS[q.chord.min(CHORDS.len() - 1)].label
+                    } else if kind == 11 {
+                        q.choices.get(q.right).map_or("?", |c| c.as_str())
+                    } else {
+                        names.get(q.answer).copied().unwrap_or("?")
+                    };
+                    // (a cell's name as a word: "it was Harmonic")
+                    let worded = title_words(asked);
+                    let asked = if kind == 9 { worded.as_str() } else { asked };
                     let ok = if drill == 7 {
                         self.ear.played.len() == q.lick.len()
                             && self.ear.played.iter().zip(q.lick.iter()).all(|(a, b)| (a - b).rem_euclid(12) == 0)
+                    } else if sung {
+                        self.ear.marked == Some(true)
                     } else {
-                        self.ear.given.is_some_and(|g| answer_right(drill, &q, &pool, g))
+                        self.ear.given.is_some_and(|g| answer_right(kind, &q, &pool, g))
                     };
-                    let head = if ok && self.ear.given.is_some_and(|g| g != q.answer) {
+                    let head = if ok && !sung && self.ear.given.is_some_and(|g| g != right_pill(kind, &q)) {
                         format!("Correct: the same notes as {}", asked)
                     } else if ok {
                         "CORRECT!".to_string()
-                    } else if drill == 7 {
+                    } else if drill == 7 || sung {
                         "NOT QUITE".to_string()
                     } else {
                         // (numerals keep their case, so the words after the colon are written in normal case:
@@ -1795,8 +2774,8 @@ impl App {
                     };
                     line(ui, &head, if ok { 2.6 } else { 2.0 }, if ok { ok_col() } else { bad_col() });
                     // what sets the one you picked apart
-                    if !ok {
-                        if let Some(h) = self.ear.given.and_then(|g| wrong_hint(drill, &q, &pool, g)) {
+                    if !ok && !sung {
+                        if let Some(h) = self.ear.given.and_then(|g| wrong_hint(kind, &q, &pool, g)) {
                             line(ui, &h, 1.0, pal().ink);
                         }
                     }
@@ -1810,7 +2789,10 @@ impl App {
                             line(ui, word, 1.8, hi);
                         }
                     }
-                    line(ui, &q.reveal, 1.0, pal().ink2);
+                    // (a sung line is already there, names over syllables)
+                    if kind != 12 {
+                        line(ui, &q.reveal, 1.0, pal().ink2);
+                    }
                     if drill == 0 && top_on && !q.tops.is_empty() {
                         // the second question: the note on top
                         ui.add_space(8.0);
@@ -1836,23 +2818,46 @@ impl App {
                     if drill == 0 && (!top_on || self.ear.top_given.is_some()) {
                         named_row(ui, &q.named);
                     }
-                    if drill != 7 {
+                    if drill != 7 && !sung {
                         line(ui, "CLICK ANY ANSWER TO HEAR IT ON THE SAME ROOT", 1.0, pal().dim);
                     }
                     ui.add_space(8.0);
                 }
-                // hear again, as an arpeggio, next
-                let mut row: Vec<&str> = vec!["HEAR AGAIN"];
-                if !q.arp.is_empty() {
-                    row.push("HEAR AS ARPEGGIO");
-                }
-                if answered {
-                    row.push(if self.ear.done.is_some() { "NEW SESSION" } else { "NEXT" });
+                // hear again, as an arpeggio, next; sung: hear it, then mark yourself
+                let mut row: Vec<&str> = Vec::new();
+                if kind == 10 {
+                    if answered {
+                        row.extend(["SAME AGAIN", "NEXT"]);
+                    } else if self.ear.heard {
+                        row.extend(["GOT IT", "MISSED IT"]);
+                    }
+                } else if sung {
+                    row.push(if kind == 12 && !next_note { "FIRST NOTE" } else { "HEAR AGAIN" });
+                    row.push("HEAR IT");
+                    if answered && kind == 12 && !next_note {
+                        row.extend(["TRY AGAIN", "NEW LINE"]);
+                    } else if answered {
+                        row.push("NEXT");
+                    } else if self.ear.heard {
+                        row.extend(["GOT IT", "MISSED IT"]);
+                    }
+                } else {
+                    row.push("HEAR AGAIN");
+                    if !q.arp.is_empty() {
+                        row.push(if kind == 11 { "HEAR AS A CHORD" } else { "HEAR AS ARPEGGIO" });
+                    }
+                    if answered {
+                        row.push(if self.ear.done.is_some() { "NEW SESSION" } else { "NEXT" });
+                    }
                 }
                 if let Some(i) = centred_pills(ui, "ear_row", &row, |_| (false, false)) {
                     match row[i] {
-                        "HEAR AGAIN" => play = true,
-                        "HEAR AS ARPEGGIO" => arp = true,
+                        "HEAR AGAIN" | "FIRST NOTE" => play = true,
+                        "HEAR AS ARPEGGIO" | "HEAR AS A CHORD" | "HEAR IT" => arp = true,
+                        "GOT IT" => mark = Some(true),
+                        "MISSED IT" => mark = Some(false),
+                        "SAME AGAIN" | "TRY AGAIN" => again = true,
+                        "NEW LINE" => new_line = true,
                         _ => next = true,
                     }
                 }
@@ -1860,7 +2865,7 @@ impl App {
                     ui.add_space(10.0);
                     let pct = right * 100 / n.max(1);
                     line(ui, &format!("SESSION DONE: {} OF {} RIGHT ({}%)", right, n, pct), 2.0, pal().ink);
-                    let more = if pct >= 80 && level < names.len() { "  -  READY FOR MORE ANSWERS" } else { "" };
+                    let more = if pct >= 80 && level < names.len() && !sung { "  -  READY FOR MORE ANSWERS" } else { "" };
                     line(ui, &format!("{} MIN IN YOUR PRACTICE DIARY{}", mins.max(1), more), 1.0, pal().ink2);
                 }
             }
@@ -1870,6 +2875,9 @@ impl App {
                 Some(q) => {
                     self.ear_play(&q.parts);
                     self.ear_mark();
+                    if kind == 10 {
+                        self.ear.heard = true;
+                    }
                 }
                 None => self.ear_next(),
             }
@@ -1878,25 +2886,64 @@ impl App {
             if let Some(q) = self.ear.q.clone() {
                 self.ear_play(&q.arp);
                 self.ear_mark();
+                if sung {
+                    self.ear.heard = true;
+                }
             }
         }
-        if next {
+        if let Some(ok) = mark {
+            self.ear_self(ok);
+        }
+        if again {
             self.ear_next();
+        }
+        if new_line {
+            self.store.ear_atonal.line_n += 1;
+            self.store_dirty = true;
+            self.ear_next();
+        }
+        if next {
+            if kind == 10 {
+                self.ear_run_next();
+            } else {
+                self.ear_next();
+            }
+        }
+        if place != self.store.ear_atonal {
+            // somewhere else in the scales: the new place to look at, nothing playing
+            self.store.ear_atonal = place;
+            self.store_dirty = true;
+            self.ear_fresh();
+            acts.push(Action::StopSequence);
         }
         if let (Some(i), Some(q)) = (pick, self.ear.q.clone()) {
             if self.ear.given.is_none() {
                 self.ear.given = Some(i);
-                let ok = answer_right(drill, &q, &pool, i);
-                self.ear_note(names[q.answer], if ok { names[q.answer] } else { names[i] });
+                let ok = answer_right(kind, &q, &pool, i);
+                // (VERTICALS: what you took it for is the scale the chord you picked comes from)
+                let given = if kind == 11 { q.choice_src.get(i).and_then(|c| answers(11).get(c.0).copied()) } else { None };
+                let given = given.or_else(|| names.get(i).copied()).unwrap_or("?");
+                let asked = names.get(q.answer).copied().unwrap_or("?");
+                self.ear_note(asked, if ok { asked } else { given });
                 self.ear_scored(ok);
             } else {
                 // the answer picked, built the same way on the same root
-                let other = if drill == 0 {
-                    build_chord(pool.get(i).copied().unwrap_or(0), q.root, q.seed, q.copts)
-                } else {
-                    build(drill, i, q.root, q.seed, q.opt, level)
+                let other = match kind {
+                    0 => build_chord(pool.get(i).copied().unwrap_or(0), q.root, q.seed, q.copts).parts,
+                    11 => {
+                        let (s, m) = q.choice_src.get(i).copied().unwrap_or((0, 0));
+                        let notes = stack_notes(s, m, q.root);
+                        vec![Part {
+                            at: 0.0,
+                            steps: notes.iter().map(|m| vec![*m]).collect(),
+                            gap: 0.38,
+                            clean: false,
+                            tick: false,
+                        }]
+                    }
+                    _ => build(kind, i, q.root, q.seed, q.opt, level).parts,
                 };
-                self.ear_play(&other.parts);
+                self.ear_play(&other);
             }
         }
         if let (Some(i), Some(q)) = (top_pick, self.ear.q.clone()) {
@@ -1977,9 +3024,11 @@ impl App {
 
     /// Layout B: this session and this week, the answers in play (and MORE ANSWERS), what you mix up most.
     fn ear_scores(&mut self, ui: &mut egui::Ui) {
-        let drill = self.ear.drill.min(DRILLS.len() - 1);
+        let drill = self.ear_kind();
         let (_, level, pool) = self.ear_in_play();
         let names = answers(drill);
+        // (the sung scales and lines have no answers to grow or mix up)
+        let sung = drill == 10 || drill == 12;
         let st = self.ear_stats().clone();
         section_header(ui, "YOUR SCORE");
         ui.add_space(6.0);
@@ -1995,6 +3044,9 @@ impl App {
         let play_tile = match drill {
             0 => (level.to_string(), "CHORDS IN PLAY"),
             7 => (format!("{} OF {}", level, names.len()), "NOTES IN PLAY"),
+            10 => (format!("{} OF {}", self.store.ear_atonal.scale.min(EXOTICS.len() - 1) + 1, EXOTICS.len()), "SCALE"),
+            11 => (format!("{} OF {}", level, names.len()), "SCALES IN PLAY"),
+            12 => (st.asked.values().sum::<u32>().to_string(), "SUNG"),
             _ => (format!("{} OF {}", level, names.len()), "ANSWERS IN PLAY"),
         };
         let tiles = [
@@ -2019,7 +3071,7 @@ impl App {
         let last_ok = st.sessions.last().is_some_and(|s| s.2 > 0 && s.1 * 100 >= s.2 * 80);
         if drill == 0 {
             self.ear_chord_growth(ui, now_ok || last_ok);
-        } else {
+        } else if !sung {
             if level < names.len() {
                 ui.horizontal_wrapped(|ui| {
                     if now_ok || last_ok {
@@ -2067,6 +3119,28 @@ impl App {
                 crate::views::dim_line(ui, &format!("WHAT'S ON TOP: {} OF {} RIGHT THIS SESSION", r, n), 1.0, pal().ink2);
             }
         }
+        if sung {
+            // what you miss most, the weakest first
+            ui.add_space(10.0);
+            section_header(ui, "MISSED MOST");
+            let mut how: Vec<(u32, String)> = st
+                .asked
+                .iter()
+                .filter(|(_, n)| **n > 0)
+                .map(|(k, n)| {
+                    let r = st.right.get(k).copied().unwrap_or(0).min(*n);
+                    (r * 100 / n, format!("{}  {}%", k, r * 100 / n))
+                })
+                .filter(|h| h.0 < 100)
+                .collect();
+            how.sort();
+            if how.is_empty() {
+                crate::views::dim_line(ui, "NOTHING YET. MARK YOURSELF AFTER EACH RUN.", 1.0, pal().dim);
+            } else {
+                chips(ui, &how.into_iter().take(4).map(|h| h.1).collect::<Vec<_>>());
+            }
+            return;
+        }
         // what you take for what, most often first
         ui.add_space(10.0);
         section_header(ui, "MIXED UP MOST");
@@ -2091,6 +3165,79 @@ impl App {
                 "THESE COME UP MORE OFTEN UNTIL YOU GET THEM."
             };
             crate::views::dim_line(ui, hint, 1.0, pal().dim);
+        }
+    }
+
+    /// The atonal drills' choices, in the row with the drill menu. A change asks afresh.
+    fn ear_atonal_options(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, drill: usize) {
+        let mut a = self.store.ear_atonal.clone();
+        let syllables = |ui: &mut egui::Ui, a: &mut crate::store::EarAtonal| {
+            if let Some(i) = crate::dropdown(ui, "ear_syl", "SYLLABLES", &SYLLABLES, (a.syllables as usize).min(2), 0.0) {
+                a.syllables = i as u8;
+            }
+        };
+        let voice = |ui: &mut egui::Ui, a: &mut crate::store::EarAtonal| {
+            if let Some(i) = crate::dropdown(ui, "ear_speed", "SPEED", &SPEEDS, (a.speed as usize).min(2), 0.0) {
+                a.speed = i as u8;
+            }
+            if let Some(i) = crate::dropdown(ui, "ear_range", "", &RANGES, (a.range as usize).min(1), 0.0) {
+                a.range = i as u8;
+            }
+        };
+        match drill {
+            8 => {
+                if check_box(ui, "SING FIRST", a.sing_first)
+                    .tip("See the interval, hear the first note, sing the other, then hear it")
+                    .clicked()
+                {
+                    a.sing_first = !a.sing_first;
+                }
+                if a.sing_first {
+                    if let Some(i) = crate::dropdown(ui, "ear_range", "", &RANGES, (a.range as usize).min(1), 0.0) {
+                        a.range = i as u8;
+                    }
+                }
+            }
+            9 => {
+                if let Some(i) = crate::dropdown(ui, "ear_cells", "", &["TETRACHORDS", "TRICHORDS"], a.trichords as usize, 0.0) {
+                    a.trichords = i == 1;
+                }
+            }
+            10 => {
+                syllables(ui, &mut a);
+                if let Some(i) = crate::dropdown(ui, "ear_how", "", &SING_HOW, a.ahead as usize, 0.0) {
+                    a.ahead = i == 1;
+                }
+                voice(ui, &mut a);
+            }
+            11 => {
+                if let Some(i) = crate::dropdown(ui, "ear_modes", "", &["FROM THE ROOT", "FROM ANY MODE"], a.modes as usize, 0.0)
+                {
+                    a.modes = i == 1;
+                }
+            }
+            _ => {
+                if let Some(i) = crate::dropdown(ui, "ear_sight", "", &SIGHT_MODES, a.next_note as usize, 0.0) {
+                    a.next_note = i == 1;
+                }
+                syllables(ui, &mut a);
+                voice(ui, &mut a);
+            }
+        }
+        if matches!(drill, 8 | 9 | 11)
+            && check_box(ui, "RESET", a.reset).tip("A soft wash of sound between questions, to clear your ear").clicked()
+        {
+            a.reset = !a.reset;
+        }
+        if a != self.store.ear_atonal {
+            // (the wash alone changes nothing about the question)
+            let only_wash = crate::store::EarAtonal { reset: a.reset, ..self.store.ear_atonal.clone() } == a;
+            self.store.ear_atonal = a;
+            self.store_dirty = true;
+            if !only_wash {
+                self.ear_fresh();
+                acts.push(Action::StopSequence);
+            }
         }
     }
 
@@ -2168,6 +3315,70 @@ fn named_row(ui: &mut egui::Ui, named: &[(String, &'static str, i32)]) {
             ptext(p, Pos2::new(cx, r.min.y + hn / 2.0), Align::Center, n, 1.5, col);
             ptext(p, Pos2::new(cx, r.min.y + hn + hd / 2.0 - 2.0), Align::Center, d, 1.0, col);
             x += cols[i];
+        }
+    }
+}
+
+/// SCALE IN INTERVALS: where you are (the scale, the interval, the key), three dropdowns centred in a row.
+fn place_row(ui: &mut egui::Ui, a: &mut crate::store::EarAtonal) {
+    let scales: Vec<&str> = EXOTICS.iter().map(|e| e.name).collect();
+    let (si, ii, ki) = (a.scale.min(scales.len() - 1), a.interval.min(RUN_INTERVALS.len() - 1), a.key % 12);
+    let texts = [format!("SCALE: {}", scales[si]), format!("IN: {}", RUN_INTERVALS[ii]), format!("KEY: {}", KEYS[ki])];
+    let w: f32 = texts.iter().map(|t| text_w(t, 2.0) + 38.0).sum::<f32>() + 16.0;
+    let avail = ui.available_width();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.add_space(((avail - w) / 2.0).max(0.0));
+        if let Some(i) = crate::dropdown(ui, "ear_scale", "SCALE", &scales, si, 0.0) {
+            a.scale = i;
+        }
+        if let Some(i) = crate::dropdown(ui, "ear_iv", "IN", &RUN_INTERVALS, ii, 0.0) {
+            a.interval = i;
+        }
+        if let Some(i) = crate::dropdown(ui, "ear_key", "KEY", &KEYS, ki, 0.0) {
+            a.key = i;
+        }
+    });
+}
+
+/// Columns of names over the syllables to sing them on, centred, as many rows as they need: `lit` the one whose turn
+/// it is (in the accent), `hide_last` keeps the last one a question mark.
+fn cols_row(ui: &mut egui::Ui, cols: &[(String, String)], lit: Option<usize>, hide_last: bool) {
+    if cols.is_empty() {
+        return;
+    }
+    let shown: Vec<(String, String)> = cols
+        .iter()
+        .enumerate()
+        .map(|(i, c)| if hide_last && i + 1 == cols.len() { ("?".to_string(), "?".to_string()) } else { c.clone() })
+        .collect();
+    let gap = 20.0;
+    let widths: Vec<f32> = shown.iter().map(|(a, b)| text_w(a, 1.5).max(text_w(b, 1.5)) + gap).collect();
+    let room = (ui.available_width() - 24.0).max(60.0);
+    let mut rows: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut w = 0.0;
+    for (i, cw) in widths.iter().enumerate() {
+        if w + cw > room && !rows.last().unwrap().is_empty() {
+            rows.push(Vec::new());
+            w = 0.0;
+        }
+        rows.last_mut().unwrap().push(i);
+        w += cw;
+    }
+    let h = 7.0 * spx(1.5) + 6.0;
+    for row in rows {
+        let total: f32 = row.iter().map(|i| widths[*i]).sum();
+        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 2.0 * h + 6.0), Sense::hover());
+        let mut x = r.center().x - total / 2.0;
+        let p = ui.painter();
+        for i in row {
+            let (top, low) = &shown[i];
+            let cx = x + widths[i] / 2.0;
+            let on = lit == Some(i);
+            let (c1, c2) = if on { (acc_col(), acc_col()) } else { (pal().ink, pal().ink2) };
+            ptext(p, Pos2::new(cx, r.min.y + h / 2.0), Align::Center, top, 1.5, c1);
+            ptext(p, Pos2::new(cx, r.min.y + h + h / 2.0), Align::Center, low, 1.5, c2);
+            x += widths[i];
         }
     }
 }
@@ -2914,7 +4125,7 @@ mod tests {
         let w = weights(&st, &["\u{0394}7", "-7", "7", "-7\u{266D}5"], Some(3));
         assert!(w[1] > w[0] && w[0] == w[2] && w[3] < w[0]);
         // every drill asks only answers it has
-        for drill in 0..8 {
+        for drill in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, TRICHORD] {
             let n = answers(drill).len();
             for seed in 0..50 {
                 let level = START.min(n);
@@ -2925,5 +4136,486 @@ mod tests {
         }
         assert_eq!(level_of(&EarStats::default(), 6), 4);
         assert_eq!(level_of(&EarStats { level: 99, ..Default::default() }, 0), CHORDS.len());
+    }
+
+    // ------------------------------------------------------------------ the atonal drills
+
+    #[test]
+    fn free_intervals_are_that_far_apart() {
+        for (a, (label, words, semis)) in FREE.iter().enumerate() {
+            assert!(*semis >= 1 && *semis <= 16, "{}", label);
+            assert!(!words.is_empty());
+            for lo in 48..60 {
+                for dir in 0..4u8 {
+                    for seed in 0..4 {
+                        let q = build(8, a, lo, seed, dir, 99);
+                        let notes: Vec<i32> = q.parts[0].steps.concat();
+                        assert_eq!(notes.len(), 2);
+                        let (min, max) = (*notes.iter().min().unwrap(), *notes.iter().max().unwrap());
+                        assert_eq!(max - min, *semis, "{}", label);
+                        // sung first: the first note alone, the check both, the way asked
+                        let q = build(8, a, lo, seed, dir + 4, 99);
+                        let first: Vec<i32> = q.parts[0].steps.concat();
+                        let both: Vec<i32> = q.arp[0].steps.concat();
+                        assert_eq!(first.len(), 1);
+                        assert_eq!(both.len(), 2);
+                        assert_eq!(both[0], first[0]);
+                        assert_eq!((both[1] - both[0]).abs(), *semis);
+                        if dir == 1 {
+                            assert!(both[1] < both[0]);
+                        } else if dir != 3 {
+                            assert!(both[1] > both[0]);
+                        }
+                        assert!(q.prompt.contains(&words.to_lowercase()), "{}", q.prompt);
+                    }
+                }
+            }
+        }
+        // sung first, both notes are where the voice is
+        for voice in 0..2u8 {
+            let (lo, hi) = VOICES[voice as usize];
+            for seed in 0..200 {
+                let q = ask(8, FREE.len(), &[1.0; 16], 4 + 3 + voice * 8, seed);
+                assert!(q.arp[0].steps.concat().iter().all(|m| (lo..=hi).contains(m)), "{:?}", q.arp);
+            }
+        }
+        assert_eq!(interval_words(12), "an octave");
+        assert_eq!(interval_words(-8), "a minor 6th");
+        let q = build(8, 1, 52, 1, 0, 99);
+        assert_eq!(wrong_hint(8, &q, &[], 0).unwrap(), "You picked M3: 4 half steps\nm3: 3 half steps");
+        // the wash: soft, and something to hear
+        let w = wash_sound(1.2, 3);
+        assert_eq!(w.len(), (1.2 * band::RATE) as usize);
+        assert!(w.iter().all(|s| s.abs() <= 2600) && w.iter().any(|s| s.abs() > 1000));
+        assert!(w[0].abs() < 50 && w[w.len() - 1].abs() < 50);
+    }
+
+    /// The prime form of a set of pitch classes: its most packed form from 0, the set or turned upside down.
+    fn prime_form(set: &[i32]) -> Vec<i32> {
+        let mut best: Option<Vec<i32>> = None;
+        for flip in [false, true] {
+            let mut pcs: Vec<i32> = set.iter().map(|x| if flip { (-x).rem_euclid(12) } else { x.rem_euclid(12) }).collect();
+            pcs.sort();
+            pcs.dedup();
+            for k in 0..pcs.len() {
+                let mut v: Vec<i32> = pcs.iter().map(|x| (x - pcs[k]).rem_euclid(12)).collect();
+                v.sort();
+                // packed most to the left: smallest span, then smallest steps from the bottom
+                let key = |v: &Vec<i32>| {
+                    let mut k = vec![*v.last().unwrap()];
+                    k.extend(v.iter().copied());
+                    k
+                };
+                if best.as_ref().map_or(true, |b| key(&v) < key(b)) {
+                    best = Some(v);
+                }
+            }
+        }
+        best.unwrap()
+    }
+
+    #[test]
+    fn cells_are_the_cells_they_say() {
+        // tetrachords: four notes inside a tritone, each its own step pattern, as named
+        let want = [
+            ("MAJOR", "whole, whole, half"),
+            ("MINOR", "whole, half, whole"),
+            ("PHRYGIAN", "half, whole, whole"),
+            ("HARMONIC", "half, minor 3rd, half"),
+            ("LYDIAN", "whole, whole, whole"),
+            ("DIMINISHED", "half, whole, half"),
+            ("HUNGARIAN", "whole, half, minor 3rd"),
+            ("CHROMATIC", "half, half, minor 3rd"),
+        ];
+        assert_eq!(TETRACHORDS.len(), want.len());
+        for (name, steps) in want {
+            let t = TETRACHORDS.iter().find(|t| t.0 == name).unwrap_or_else(|| panic!("{}", name));
+            assert_eq!(cell_steps(&t.1), steps, "{}", name);
+        }
+        for (i, a) in TETRACHORDS.iter().enumerate() {
+            assert_eq!(a.1[0], 0);
+            assert!(a.1.windows(2).all(|w| w[1] > w[0]) && a.1[3] <= 6, "{}", a.0);
+            for b in TETRACHORDS[i + 1..].iter() {
+                assert_ne!(a.1, b.1, "{} and {}", a.0, b.0);
+            }
+        }
+        // trichords: all twelve three-note sets, each by its prime form, none twice
+        let mut all: Vec<Vec<i32>> = Vec::new();
+        for a in 0..12 {
+            for b in a + 1..12 {
+                for c in b + 1..12 {
+                    let p = prime_form(&[a, b, c]);
+                    if !all.contains(&p) {
+                        all.push(p);
+                    }
+                }
+            }
+        }
+        assert_eq!(all.len(), 12);
+        for (label, t) in TRICHORDS.iter() {
+            assert_eq!(prime_form(t), t.to_vec(), "{} is a prime form", label);
+            assert_eq!(*label, t.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" "));
+            assert!(all.contains(&t.to_vec()));
+        }
+        let mut labels: Vec<&str> = TRICHORDS.iter().map(|t| t.0).collect();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(labels.len(), 12);
+        // the questions play the cell asked, from any note, up, down or together
+        for (a, (name, cell)) in TETRACHORDS.iter().enumerate() {
+            for root in 0..12 {
+                for dir in 0..4u8 {
+                    let q = build(9, a, root, 7, dir, 99);
+                    let notes = all_notes(&q);
+                    let low = *notes.iter().min().unwrap();
+                    assert_eq!(low.rem_euclid(12), root);
+                    let mut rel: Vec<i32> = notes.iter().map(|m| m - low).collect();
+                    rel.sort();
+                    assert_eq!(rel, cell.to_vec(), "{} on {}", name, root);
+                    if dir == 1 {
+                        assert!(q.parts[0].steps.concat().windows(2).all(|w| w[1] < w[0]));
+                    }
+                    // spelt on four letters in a row (the chromatic and diminished ones, inside a 3rd, can't be
+                    // without a double flat)
+                    if *name == "CHROMATIC" || *name == "DIMINISHED" {
+                        continue;
+                    }
+                    let letters: Vec<char> = q.spelt.split(' ').map(|n| n.chars().next().unwrap()).collect();
+                    let li = |c: char| "CDEFGAB".find(c).unwrap();
+                    assert!(letters.windows(2).all(|w| (li(w[1]) + 7 - li(w[0])) % 7 == 1), "{} {}", name, q.spelt);
+                }
+            }
+        }
+        let q = build(9, 1, 0, 1, 0, 99);
+        assert_eq!(q.spelt, "C D\u{266D} E\u{266D} F");
+        assert_eq!(
+            wrong_hint(9, &q, &[], 0).unwrap(),
+            "You picked Major: whole, whole, half\nPhrygian: half, whole, whole (C D\u{266D} E\u{266D} F)"
+        );
+        for (a, (label, t)) in TRICHORDS.iter().enumerate() {
+            for root in 0..12 {
+                for seed in 0..6 {
+                    let q = build(TRICHORD, a, root, seed, 3, 99);
+                    assert_eq!(prime_form(&all_notes(&q)), t.to_vec(), "{}", label);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_exotic_scale_is_spelt_right() {
+        let want = [
+            ("DOUBLE HARMONIC", "C D\u{266D} E F G A\u{266D} B"),
+            ("HUNGARIAN MAJOR", "C D# E F# G A B\u{266D}"),
+            ("SIX-TONE SYMMETRICAL", "C D# E G A\u{266D} B"),
+            ("ENIGMATIC", "C D\u{266D} E F# G# A# B"),
+            ("LYDIAN DOMINANT", "C D E F# G A B\u{266D}"),
+            ("HUNGARIAN MINOR", "C D E\u{266D} F# G A\u{266D} B"),
+            ("NEAPOLITAN MAJOR", "C D\u{266D} E\u{266D} F G A B"),
+            ("NEAPOLITAN MINOR", "C D\u{266D} E\u{266D} F G A\u{266D} B"),
+            ("PERSIAN", "C D\u{266D} E F G\u{266D} A\u{266D} B"),
+            ("LYDIAN + LYDIAN", "C D\u{266D} D E F# G A B"),
+            ("LYDIAN + HARMONIC", "C D E F# G A\u{266D} B"),
+            ("DIMINISHED + DIMINISHED", "C D\u{266D} E\u{266D} E G A\u{266D} B\u{266D} B"),
+        ];
+        assert_eq!(EXOTICS.len(), want.len());
+        for (e, (name, notes)) in EXOTICS.iter().zip(want) {
+            assert_eq!(e.name, name);
+            assert_eq!(exotic_names(e, 0).join(" "), notes, "{}", name);
+            let s = exotic_steps(e);
+            assert!(s.windows(2).all(|w| w[1] > w[0]) && s[0] == 0 && *s.last().unwrap() < 12, "{}", name);
+            // a built scale is its two cells, the second on the 5th
+            if let Some((a, b)) = e.built {
+                let mut joined: Vec<i32> =
+                    TETRACHORDS[a].1.iter().copied().chain(TETRACHORDS[b].1.iter().map(|x| (x + 7) % 12)).collect();
+                joined.sort();
+                joined.dedup();
+                assert_eq!(s, joined, "{}", name);
+            }
+            // every note has a moveable-Do syllable, and in every key a fixed-Do one
+            for (d, a) in e.degs {
+                assert!(degree_syllable(*d, *a).is_some(), "{} {} {}", name, d, a);
+            }
+            for key in 0..12 {
+                let names = exotic_names(e, key);
+                for (n, st) in names.iter().zip(s.iter()) {
+                    let f = fixed_syllable(n);
+                    let pc = (key as i32 + st).rem_euclid(12) as usize;
+                    assert!(f == RISING[pc] || f == FALLING[pc], "{} in {}: {} sung {}", name, key, n, f);
+                }
+            }
+        }
+        // the famous ones are their tetrachords joined
+        let tet = |n: &str| TETRACHORDS.iter().find(|t| t.0 == n).unwrap().1;
+        let join = |a: [i32; 4], b: [i32; 4]| {
+            let mut v: Vec<i32> = a.iter().copied().chain(b.iter().map(|x| (x + 7) % 12)).collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        let steps = |n: &str| exotic_steps(EXOTICS.iter().find(|e| e.name == n).unwrap());
+        assert_eq!(steps("DOUBLE HARMONIC"), join(tet("HARMONIC"), tet("HARMONIC")));
+        assert_eq!(steps("HUNGARIAN MINOR"), join(tet("HUNGARIAN"), tet("HARMONIC")));
+        assert_eq!(steps("NEAPOLITAN MINOR"), join(tet("PHRYGIAN"), tet("HARMONIC")));
+        assert_eq!(steps("NEAPOLITAN MAJOR"), join(tet("PHRYGIAN"), tet("MAJOR")));
+        assert_eq!(steps("LYDIAN DOMINANT"), join(tet("LYDIAN"), tet("MINOR")));
+        // six-tone symmetrical: the same up a major 3rd
+        let six = steps("SIX-TONE SYMMETRICAL");
+        let mut up: Vec<i32> = six.iter().map(|x| (x + 4) % 12).collect();
+        up.sort();
+        assert_eq!(six, up);
+    }
+
+    #[test]
+    fn syllables_are_the_right_ones() {
+        // moveable Do by degree
+        assert_eq!(degree_syllable(1, 0), Some("Do"));
+        assert_eq!(degree_syllable(2, 1), Some("Ri"));
+        assert_eq!(degree_syllable(2, -1), Some("Ra"));
+        assert_eq!(degree_syllable(3, -1), Some("Me"));
+        assert_eq!(degree_syllable(4, 1), Some("Fi"));
+        assert_eq!(degree_syllable(5, -1), Some("Se"));
+        assert_eq!(degree_syllable(5, 1), Some("Si"));
+        assert_eq!(degree_syllable(6, -1), Some("Le"));
+        assert_eq!(degree_syllable(6, 1), Some("Li"));
+        assert_eq!(degree_syllable(7, -1), Some("Te"));
+        assert_eq!(degree_syllable(5, 0), Some("Sol"));
+        assert_eq!(degree_syllable(3, 1), None);
+        // fixed Do by name, spelt as written
+        for (n, want) in [
+            ("C", "Do"),
+            ("C#", "Di"),
+            ("D\u{266D}", "Ra"),
+            ("D#", "Ri"),
+            ("E\u{266D}", "Me"),
+            ("E", "Mi"),
+            ("F", "Fa"),
+            ("F#", "Fi"),
+            ("G\u{266D}", "Se"),
+            ("G", "Sol"),
+            ("G#", "Si"),
+            ("A\u{266D}", "Le"),
+            ("A", "La"),
+            ("A#", "Li"),
+            ("Bb", "Te"),
+            ("B", "Ti"),
+            ("E#", "Fa"),
+            ("B#", "Do"),
+            ("C\u{266D}", "Ti"),
+            ("F\u{266D}", "Mi"),
+        ] {
+            assert_eq!(fixed_syllable(n), want, "{}", n);
+        }
+        // a scale in its key: Hungarian major on C, moveable Do and fixed Do the same; on D, fixed Do moves
+        let hm = &EXOTICS[1];
+        let mut a = crate::store::EarAtonal { scale: 1, interval: 0, key: 0, syllables: 0, ..Default::default() };
+        let q = build_run(&a);
+        assert_eq!(q.cols[0], ("C E".to_string(), "Do Mi".to_string()));
+        assert_eq!(q.cols[1], ("D# F#".to_string(), "Ri Fi".to_string()));
+        a.syllables = 1;
+        assert_eq!(build_run(&a).cols[1].1, "Ri Fi");
+        a.key = 2;
+        let names = exotic_names(hm, 2);
+        assert_eq!(names.join(" "), "D E# F# G# A B C");
+        let q = build_run(&a);
+        assert_eq!(q.cols[1], ("E# G#".to_string(), "Fa Si".to_string()));
+        a.syllables = 0;
+        assert_eq!(build_run(&a).cols[1].1, "Ri Fi");
+        a.syllables = 2;
+        assert_eq!(build_run(&a).cols[1].1, "La La");
+    }
+
+    #[test]
+    fn scales_sung_in_intervals() {
+        for (si, e) in EXOTICS.iter().enumerate() {
+            let n = e.degs.len();
+            let steps = exotic_steps(e);
+            for interval in 0..RUN_INTERVALS.len() {
+                let off = run_offset(interval, n);
+                if n == 7 {
+                    assert_eq!(off, interval + 2);
+                }
+                for ahead in [false, true] {
+                    for key in [0usize, 5, 11] {
+                        let a = crate::store::EarAtonal { scale: si, interval, key, ahead, ..Default::default() };
+                        let q = build_run(&a);
+                        // up to the octave and back down
+                        assert_eq!(q.cols.len(), 2 * n + 1, "{}", e.name);
+                        assert_eq!(q.cues.len(), q.cols.len());
+                        assert!(q.cues.windows(2).all(|w| w[1] > w[0]));
+                        let notes: Vec<i32> =
+                            q.parts.iter().filter(|p| !p.tick).flat_map(|p| p.steps.iter().flatten().copied()).collect();
+                        assert_eq!(notes.len(), 2 * q.cols.len());
+                        for (k, pair) in notes.chunks(2).enumerate() {
+                            // each pair that many notes of the scale apart
+                            let i = if k <= n { k } else { 2 * n - k };
+                            let at = |j: usize| steps[j % n] + 12 * (j / n) as i32;
+                            assert_eq!(
+                                pair[1] - pair[0],
+                                at(i + off) - at(i),
+                                "{} {} pair {}",
+                                e.name,
+                                RUN_INTERVALS[interval],
+                                k
+                            );
+                            assert_eq!((pair[0] - key as i32 - steps[i % n]).rem_euclid(12), 0);
+                        }
+                        assert!(notes.iter().all(|m| (33..=88).contains(m)), "{:?}", notes);
+                        // ahead: a bar counted in first
+                        assert_eq!(q.parts[0].tick, ahead);
+                        if ahead {
+                            assert_eq!(q.parts[0].steps.len(), 4);
+                        }
+                    }
+                }
+            }
+        }
+        // the place moves on: interval, then scale after the 10ths, then key after the last scale
+        let mut a = crate::store::EarAtonal::default();
+        let step = |a: &mut crate::store::EarAtonal| {
+            a.interval += 1;
+            if a.interval >= RUN_INTERVALS.len() {
+                a.interval = 0;
+                a.scale += 1;
+                if a.scale >= EXOTICS.len() {
+                    a.scale = 0;
+                    a.key = (a.key + 5) % 12;
+                }
+            }
+        };
+        for _ in 0..RUN_INTERVALS.len() {
+            step(&mut a);
+        }
+        assert_eq!((a.scale, a.interval, a.key), (1, 0, 0));
+    }
+
+    #[test]
+    fn verticals_spell_their_stacks() {
+        let pool = vertical_scales();
+        assert!(pool.len() >= 6);
+        assert_eq!(answers(11).len(), pool.len());
+        // every stack with a name: the name, read back by Backline's chord reader, is exactly the stacked notes
+        for (si, e) in EXOTICS.iter().enumerate() {
+            for mode in named_modes(e) {
+                let st = stack(e, mode);
+                assert_eq!(st.len(), 7);
+                assert!(st.windows(2).all(|w| w[1] - w[0] >= 1 && w[1] - w[0] <= 5), "{} {:?}", e.name, st);
+                for root in 0..12 {
+                    let name = stack_name(si, mode, root);
+                    let read = theory::chord_notes(&name).unwrap_or_else(|| panic!("{} not read", name));
+                    let mut want: Vec<i32> = st.iter().map(|x| (x + root).rem_euclid(12)).collect();
+                    want.sort();
+                    let mut got = read.pcs.clone();
+                    got.sort();
+                    assert_eq!(got, want, "{} mode {} on {}: {}", e.name, mode, root, name);
+                    assert_eq!(read.root, root);
+                }
+            }
+        }
+        // the ones a player checks
+        let name = |n: &str| stack_name(EXOTICS.iter().position(|e| e.name == n).unwrap(), 0, 0);
+        assert_eq!(name("HUNGARIAN MAJOR"), "C7#9#11 13");
+        assert_eq!(name("LYDIAN DOMINANT"), "C13#11");
+        assert_eq!(name("HUNGARIAN MINOR"), "C-\u{0394}9#11\u{266D}13");
+        assert_eq!(name("DOUBLE HARMONIC"), "C\u{0394}7\u{266D}9 11\u{266D}13");
+        assert_eq!(name("NEAPOLITAN MAJOR"), "C-\u{0394}7\u{266D}9 11 13");
+        assert_eq!(name("LYDIAN + HARMONIC"), "C\u{0394}9#11\u{266D}13");
+        // Hungarian major from C, spelt: C E G Bb D# F# A
+        let hm = EXOTICS.iter().position(|e| e.name == "HUNGARIAN MAJOR").unwrap();
+        assert!(vertical_reveal(hm, 0, 0).ends_with("C E G B\u{266D} D# F# A"), "{}", vertical_reveal(hm, 0, 0));
+        // the questions: four different names, the right one the notes that play, from the root or a mode
+        for (a, si) in pool.iter().enumerate() {
+            for modes in [0u8, 1] {
+                for root in 0..12 {
+                    for seed in 0..4 {
+                        let q = build(11, a, root, seed, modes, 4);
+                        assert_eq!(q.choices.len(), 4);
+                        let mut d = q.choices.clone();
+                        d.sort();
+                        d.dedup();
+                        assert_eq!(d.len(), 4, "{:?}", q.choices);
+                        assert_eq!(q.choice_src[q.right].0, *si);
+                        if modes == 0 {
+                            assert_eq!(q.choice_src[q.right].1, 0);
+                        }
+                        let notes = all_notes(&q);
+                        assert_eq!(notes.len(), 7);
+                        assert!(notes.windows(2).all(|w| w[1] > w[0]));
+                        assert!(notes.iter().all(|m| (40..=76).contains(m)), "{:?}", notes);
+                        let read = theory::chord_notes(&q.choices[q.right]).unwrap();
+                        assert_eq!(set_over(&read.pcs, 0), set_over(&notes, 0), "{}", q.choices[q.right]);
+                        assert_eq!(notes[0].rem_euclid(12), root);
+                        assert!(answer_right(11, &q, &[], q.right));
+                        assert!(!answer_right(11, &q, &[], (q.right + 1) % 4));
+                        assert_eq!(right_pill(11, &q), q.right);
+                        let h = wrong_hint(11, &q, &[], (q.right + 1) % 4).unwrap();
+                        assert_eq!(h.lines().count(), 2, "{}", h);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn atonal_lines_stay_singable() {
+        for (lo, hi) in VOICES {
+            for len in 4..=10 {
+                for seed in 0..300u64 {
+                    let line = atonal_line(len, lo, hi, seed);
+                    assert_eq!(line.len(), len);
+                    assert!(line.iter().all(|m| (lo..=hi).contains(m)), "{:?}", line);
+                    // never the same note twice running, leaps no wider than a major 6th
+                    assert!(line.windows(2).all(|w| w[0] != w[1] && (w[1] - w[0]).abs() <= 9), "{:?}", line);
+                    assert!(line_ok(&line), "{:?}", line);
+                    for m in &line {
+                        assert!(line.iter().filter(|x| (*x - m).rem_euclid(12) == 0).count() <= 2, "{:?}", line);
+                    }
+                }
+            }
+        }
+        // mostly steps and small leaps
+        let lines: Vec<Vec<i32>> = (0..400).map(|s| atonal_line(8, 45, 64, s)).collect();
+        let moves: Vec<i32> = lines.iter().flat_map(|l| l.windows(2).map(|w| (w[1] - w[0]).abs()).collect::<Vec<_>>()).collect();
+        let small = moves.iter().filter(|m| **m <= 5).count();
+        assert!(small * 10 >= moves.len() * 6, "{} of {}", small, moves.len());
+        assert!(moves.iter().any(|m| *m >= 6));
+        // the same seed, the same line (one a day)
+        assert_eq!(atonal_line(8, 45, 64, 99), atonal_line(8, 45, 64, 99));
+        // sight-singing: the first note is Do and plays alone; the whole line is the check
+        for seed in 0..100 {
+            let q = build_sight(seed, false, 0, 0, 1);
+            assert!((6..=10).contains(&q.lick.len()));
+            assert_eq!(q.cols[0].1, "Do");
+            assert_eq!(q.parts[0].steps.concat(), vec![q.lick[0]]);
+            assert_eq!(q.arp[0].steps.concat(), q.lick);
+            // moveable Do: each syllable is the note's distance over the first
+            for (k, m) in q.lick.iter().enumerate() {
+                let pc = (m - q.lick[0]).rem_euclid(12) as usize;
+                assert!(q.cols[k].1 == RISING[pc] || q.cols[k].1 == FALLING[pc]);
+                let up = k > 0 && *m > q.lick[k - 1];
+                assert_eq!(q.cols[k].1, if up { RISING[pc] } else { FALLING[pc] });
+            }
+            // fixed Do: by the note's name
+            let q = build_sight(seed, false, 1, 1, 1);
+            for (k, m) in q.lick.iter().enumerate() {
+                let pc = m.rem_euclid(12) as usize;
+                assert!(q.cols[k].1 == RISING[pc] || q.cols[k].1 == FALLING[pc], "{:?}", q.cols[k]);
+                assert!(q.lick.iter().all(|m| (57..=76).contains(m)));
+            }
+            // next note: all but the last plays; the prompt names the last
+            let q = build_sight(seed, true, 0, 0, 1);
+            let n = q.lick.len();
+            assert!((5..=8).contains(&n));
+            assert_eq!(q.parts[0].steps.concat(), q.lick[..n - 1].to_vec());
+            assert!(q.prompt.ends_with(q.cols[n - 1].1.as_str()), "{}", q.prompt);
+            let q = build_sight(seed, true, 0, 2, 1);
+            assert!(q.prompt.contains(" up ") || q.prompt.contains(" down "), "{}", q.prompt);
+            assert!(q.cols.iter().all(|c| c.1 == "La"));
+        }
+        let words = line_words(&[60, 61, 63, 62, 58], 0);
+        let syl: Vec<&str> = words.iter().map(|w| w.1).collect();
+        assert_eq!(syl, ["Do", "Di", "Ri", "Re", "Te"]);
+        assert_eq!(words[2].0, "D#");
+        assert_eq!(words[4].0, "B\u{266D}");
     }
 }

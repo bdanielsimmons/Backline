@@ -591,6 +591,8 @@ pub struct Store {
     pub ear_chords: EarChords,
     /// ear training: no chime after an answer
     pub ear_quiet: bool,
+    /// the atonal drills: their choices, and where you are in SCALE IN INTERVALS
+    pub ear_atonal: EarAtonal,
 }
 
 /// The CHORD QUALITIES drill's choices: what's in play (0 levels, 1 look-alikes, 2 my set), the levels ticked and
@@ -625,6 +627,51 @@ impl Default for EarChords {
             no_bass: false,
             top: false,
             context: false,
+        }
+    }
+}
+
+/// The atonal ear drills' choices: FREE INTERVALS sung first, CELLS as three-note sets, the soft wash between
+/// questions, the voice range (0 low, 1 high) and the speed (0 slow, 1 medium, 2 fast) of the sung drills; SCALE IN
+/// INTERVALS' place (the scale, the interval: 0 3rds to 7 10ths, the key: 0 C to 11 B), the syllables (0 moveable Do,
+/// 1 fixed Do, 2 La) and singing ahead of the guitar; VERTICALS from any mode; SIGHT-SING's NEXT NOTE, and the day's
+/// line (the day, and how many new lines you asked for that day).
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct EarAtonal {
+    pub sing_first: bool,
+    pub trichords: bool,
+    pub reset: bool,
+    pub range: u8,
+    pub speed: u8,
+    pub scale: usize,
+    pub interval: usize,
+    pub key: usize,
+    pub syllables: u8,
+    pub ahead: bool,
+    pub modes: bool,
+    pub next_note: bool,
+    pub line_day: i64,
+    pub line_n: u32,
+}
+
+impl Default for EarAtonal {
+    fn default() -> Self {
+        EarAtonal {
+            sing_first: false,
+            trichords: false,
+            reset: true,
+            range: 0,
+            speed: 1,
+            scale: 0,
+            interval: 0,
+            key: 0,
+            syllables: 0,
+            ahead: false,
+            modes: false,
+            next_note: false,
+            line_day: 0,
+            line_n: 0,
         }
     }
 }

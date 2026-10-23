@@ -44,7 +44,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | LINES improvising tab PENTATONICS & MORE: pentatonic / hexatonic (triad pairs) / diminished / chromatic options families, `family_scales()`, exercises; PENTATONICS (boxes, `positions()` for any scale / notes per string, `neck_view`) | `ui/improv.rs` |
 | LINES tab ARPEGGIOS: a chord's notes inside its scale's positions (the chords of a scale, or any chord), exercises, through a tune (guide tones, arpeggios, 3-5-7-9) | `ui/arpeggios.rs` |
 | READING (sight reading) | `ui/reading.rs` |
-| EAR (PRACTICE): ear-training drills from one menu (chord qualities, intervals, progressions, scale degrees, guide tones, scales & modes, bass note, play it back on a clickable neck); question builders `build`/`ask` (tested per drill), sounds mixed from `band::sequence_sound`/`line_sound`; per-drill record `store.ear` (`EarStats`: answers in play, misses, mix-ups, sessions, `best` run); chord qualities: `CHORDS` table in five `LEVELS`, look-alike sets `ALIKES`, your own set `store.ear_chords`, pool from `chord_pool`, voicings from `build_chord` (required notes, range rules, drop/rootless), wrong-answer hints `chord_hint`/`wrong_hint`, optional chime; finished sessions add "Ear training" time to the diary | `ui/ear.rs` |
+| EAR (PRACTICE): ear-training drills from one menu (chord qualities, intervals, progressions, scale degrees, guide tones, scales & modes, bass note, play it back on a clickable neck); question builders `build`/`ask` (tested per drill), sounds mixed from `band::sequence_sound`/`line_sound`; per-drill record `store.ear` (`EarStats`: answers in play, misses, mix-ups, sessions, `best` run); chord qualities: `CHORDS` table in five `LEVELS`, look-alike sets `ALIKES`, your own set `store.ear_chords`, pool from `chord_pool`, voicings from `build_chord` (required notes, range rules, drop/rootless), wrong-answer hints `chord_hint`/`wrong_hint`, optional chime; finished sessions add "Ear training" time to the diary. The menu (`dropdown_grouped`) heads them TONAL and ATONAL (from `ATONAL` = 8): FREE INTERVALS (`FREE`, SING FIRST, a soft `wash_sound` between questions), CELLS (`TETRACHORDS`, `TRICHORDS` as drill `TRICHORD`), SCALE IN INTERVALS (`EXOTICS`, `build_run`, syllables `degree_syllable`/`fixed_syllable`, your place in `store.ear_atonal`), VERTICALS (`stack`, `stack_symbol`), SIGHT-SING & NEXT NOTE (`atonal_line`, `build_sight`, the day's line); sung ones are self-marked (`ear_self`) | `ui/ear.rs` |
 | Music theory (chord notes, names, grips, scales) | `data/theory.rs` |
 | Neck and piano drawings | `ui/fretboard.rs` (shared with the phone app) |
 | Drawing kit (buttons, tabs, LCD, dropdowns, check boxes, list rows) | `ui/widgets.rs`; text `ui/font.rs` |
@@ -80,7 +80,8 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
 - `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops groups prog news mini mini_eq_pl mine yt diary
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
-  fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine ear.
+  fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine ear
+  (BACKLINE_EAR=<drill index 0-12> opens a drill with a question answered; the atonal ones are 8-12).
 - CHORD MELODIES only: `BACKLINE_CM_SCROLL=<px>` opens the bars scrolled down; `BACKLINE_CM_PICK=<kind>` opens the
   first move of that kind (its index in `KINDS`) in the panel.
 - Unit tests: `cargo test --release` in `backline/`.

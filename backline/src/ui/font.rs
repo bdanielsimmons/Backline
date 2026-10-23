@@ -607,6 +607,16 @@ pub fn ptext_fit(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32,
         while k > px * 0.5 && text_w(text, k) > max_w {
             k -= 0.05;
         }
+        // still too long at half size: cut with "..."
+        let mut t: Vec<char> = text.chars().collect();
+        if text_w(text, k) > max_w {
+            while !t.is_empty() && text_w(&format!("{}...", t.iter().collect::<String>()), k) > max_w {
+                t.pop();
+            }
+            let cut: String = t.iter().collect::<String>().trim_end().to_string() + "...";
+            ptext(p, anchor, h, &cut, k, color);
+            return;
+        }
         ptext(p, anchor, h, text, k, color);
         return;
     }

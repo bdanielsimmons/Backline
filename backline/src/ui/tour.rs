@@ -254,7 +254,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "EARVIEW",
         scene: Scene::Ear,
         title: "14. EAR TRAINING",
-        text: "Eight drills, from chord qualities and intervals to progressions and playing a lick back. You start with four answers and get more as you get them right; the ones you mix up come back more often.",
+        text: "Tonal drills, from chord qualities to playing a lick back, and atonal ones: free intervals, scales sung in intervals, sight-singing. You start with four answers and get more as you get them right; the ones you mix up come back more often.",
         ..BASE
     },
     Step {

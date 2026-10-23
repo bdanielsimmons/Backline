@@ -921,6 +921,36 @@ pub(crate) fn dropdown_at(
     min_w: f32,
     fixed: bool,
 ) -> Option<usize> {
+    dropdown_list(ui, id, title, items, sel, min_w, fixed, &[], &[])
+}
+
+/// A dropdown whose list is in headed groups (`heads`: the item each group starts at, and its heading), each item
+/// with a coloured dot before it when `dots` has one for it. Returns the index chosen this frame.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn dropdown_grouped(
+    ui: &mut egui::Ui,
+    id: &str,
+    title: &str,
+    items: &[&str],
+    sel: usize,
+    heads: &[(usize, &str)],
+    dots: &[Color32],
+) -> Option<usize> {
+    dropdown_list(ui, id, title, items, sel, 0.0, false, heads, dots)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dropdown_list(
+    ui: &mut egui::Ui,
+    id: &str,
+    title: &str,
+    items: &[&str],
+    sel: usize,
+    min_w: f32,
+    fixed: bool,
+    heads: &[(usize, &str)],
+    dots: &[Color32],
+) -> Option<usize> {
     let cur = items.get(sel).copied().unwrap_or("");
     let text = if title.is_empty() { cur.to_string() } else { format!("{}: {}", title, cur) };
     let w = if fixed { min_w } else { (text_w(&text, 2.0) + 38.0).max(min_w) };
@@ -962,24 +992,37 @@ pub(crate) fn dropdown_at(
         // never taller than the room on screen: under the button, or above it when there is more room there;
         // a long list scrolls, opening on the item chosen now
         let screen = ui.ctx().screen_rect();
-        let full = items.len() as f32 * 24.0 + 4.0;
+        let full = items.len() as f32 * 24.0 + heads.len() as f32 * 22.0 + 4.0;
         let below = screen.max.y - rect.max.y - 10.0;
         let above = rect.min.y - screen.min.y - 10.0;
         let up = full > below && above > below;
         let room = if up { above } else { below }.max(120.0);
         let h = full.min(room);
         let at = if up { Pos2::new(rect.min.x, rect.min.y - 1.0 - h) } else { Pos2::new(rect.min.x, rect.max.y + 1.0) };
-        let iw = items.iter().map(|it| text_w(it, 2.0) + 28.0).fold(w - 4.0, f32::max) + if full > room { 12.0 } else { 0.0 };
+        // (room for the dots, when there are any)
+        let indent = if dots.is_empty() { 0.0 } else { 16.0 };
+        let iw =
+            items.iter().map(|it| text_w(it, 2.0) + 28.0 + indent).fold(w - 4.0, f32::max) + if full > room { 12.0 } else { 0.0 };
         let area = egui::Area::new(key.with("area")).order(egui::Order::Foreground).fixed_pos(at).show(ui.ctx(), |ui| {
             egui::Frame::none().fill(pal().beige_lt).stroke(egui::Stroke::new(2.0_f32, pal().edge)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 egui::ScrollArea::vertical().max_height(h - 4.0).auto_shrink([true, true]).show(ui, |ui| {
                     for (i, it) in items.iter().enumerate() {
+                        // a group's heading, small and quiet, above its first item
+                        if let Some((_, h)) = heads.iter().find(|h| h.0 == i) {
+                            let (r, _) = ui.allocate_exact_size(Vec2::new(iw, 22.0), Sense::hover());
+                            font::keep_caps(|| {
+                                ptext(ui.painter(), Pos2::new(r.min.x + 10.0, r.center().y + 2.0), Align::Min, h, 1.0, pal().dim)
+                            });
+                        }
                         let (r, rr) = ui.allocate_exact_size(Vec2::new(iw, 24.0), Sense::click());
                         if i == sel || rr.hovered() {
                             fill_rect(ui.painter(), r, pal().sel);
                         }
-                        ptext(ui.painter(), Pos2::new(r.min.x + 10.0, r.center().y), Align::Min, it, 2.0, pal().ink);
+                        if let Some(c) = dots.get(i) {
+                            ui.painter().circle_filled(Pos2::new(r.min.x + 16.0, r.center().y), 4.0, *c);
+                        }
+                        ptext(ui.painter(), Pos2::new(r.min.x + 10.0 + indent, r.center().y), Align::Min, it, 2.0, pal().ink);
                         if i == sel && just_opened {
                             rr.scroll_to_me(Some(Align::Center));
                         }
@@ -1082,10 +1125,13 @@ fn about_line(ui: &mut egui::Ui, text: &str) {
         .map_or(text.as_str(), |(i, _)| &text[..i + 1]);
     let px = 1.5;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 10.0), Sense::hover());
-    let p = ui.painter();
+    // (up to what is in view: a page in a scroll area can be wider than its window; nothing drawn past it)
+    let room = rect.width().min(ui.clip_rect().max.x - rect.min.x - 14.0) - 12.0;
+    let p = ui.painter().with_clip_rect(Rect::from_min_size(rect.min, Vec2::new(room + 12.0, rect.height())).intersect(ui.clip_rect()));
+    let p = &p;
     let hot = resp.hovered();
     let col = if hot { pal().ink } else { pal().ink2 };
-    ptext_fit(p, Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, first, px, rect.width() - 12.0, col);
+    ptext_fit(p, Pos2::new(rect.min.x + 6.0, rect.center().y), Align::Min, first, px, room, col);
     if first.len() < text.len() {
         resp.on_hover_ui(|ui| {
             ui.set_max_width(420.0);
