@@ -24,6 +24,28 @@ pub(crate) fn next_speed(pct: u32) -> u32 {
 }
 
 // text-field ids for the boxes below (the lists use 1..13)
+/// The boxes that hold a number (tempo, beats, times...): no cut/copy/paste menu on them.
+pub fn is_number_field(id: u32) -> bool {
+    matches!(
+        id,
+        F_FOCUS..=F_SPEED
+            | F_TR_LOOPS
+            | F_TR_STEP
+            | F_BAND_BPM
+            | F_UNIT
+            | F_INFO_KEY
+            | F_INFO_BPM
+            | F_T_YEAR
+            | F_LN_BPM
+            | F_LN_SUB
+            | F_RD_BPM
+            | F_PR_BPM
+            | F_PITCH
+            | F_LONG_EVERY
+            | F_LONG_MINS
+    )
+}
+
 pub const F_FOCUS: u32 = 30;
 pub const F_REST: u32 = 31;
 pub const F_BLOCKS: u32 = 32;

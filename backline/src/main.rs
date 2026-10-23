@@ -286,6 +286,8 @@ struct Ed {
     id: u32,
     cur: usize,
     anchor: Option<usize>,
+    /// picked from the box's right-click menu (cut, copy, paste): done as if typed, the next frame
+    menu: Option<egui::Event>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -461,6 +463,10 @@ enum Action {
     ScSets,
     ScOpenSet(String),
     CopyLink(String),
+    /// a song's "Artist - Title", copied (to paste into a search elsewhere)
+    CopyName(String),
+    /// a song off this computer: your own file to the Recycle Bin, or the saved copy of a streamed song
+    DeleteSong(Track),
     ApplyUpdate,
     ToggleHelp,
     SetMode(u8),
@@ -1482,6 +1488,16 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
     }
     if t.id > 0 && menu_item(ui, "Add to a Tidal playlist...") {
         acts.push(Action::PlaylistPickTidal(t.clone()));
+        ui.close_menu();
+    }
+    if menu_item(ui, "Copy name") {
+        let who = t.artists_text();
+        acts.push(Action::CopyName(if who.is_empty() { t.title.clone() } else { format!("{} - {}", who, t.title) }));
+        ui.close_menu();
+    }
+    // (your own files have numbers below zero; a streamed song only when a copy of it is saved here)
+    if (t.id < 0 || cache::has(t.id)) && menu_item(ui, "Delete from this computer") {
+        acts.push(Action::DeleteSong(t.clone()));
         ui.close_menu();
     }
 }

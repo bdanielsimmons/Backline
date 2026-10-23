@@ -132,6 +132,45 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
     let mut chars: Vec<char> = text.chars().collect();
+    // right-click: cut, copy, paste and select all - in boxes for words and links (not the number boxes)
+    if !crate::tools::is_number_field(id) {
+        let has_sel = ed.id == id && ed.anchor.is_some_and(|a| a != ed.cur);
+        let n = chars.len();
+        // (what was picked: an edit to do as if typed, or select all)
+        let mut picked: Option<(Option<egui::Event>, bool)> = None;
+        resp.context_menu(|ui| {
+            if has_sel && menu_item(ui, "Cut") {
+                picked = Some((Some(egui::Event::Cut), false));
+            }
+            if has_sel && menu_item(ui, "Copy") {
+                picked = Some((Some(egui::Event::Copy), false));
+            }
+            let clip = arboard::Clipboard::new().ok().and_then(|mut c| c.get_text().ok()).filter(|s| !s.trim().is_empty());
+            if let Some(c) = clip {
+                if menu_item(ui, "Paste") {
+                    picked = Some((Some(egui::Event::Paste(c)), false));
+                }
+            }
+            if n > 0 && menu_item(ui, "Select all") {
+                picked = Some((None, true));
+            }
+            if picked.is_some() {
+                ui.close_menu();
+            }
+        });
+        if let Some((ev, all)) = picked {
+            if ed.id != id {
+                ed.id = id;
+                ed.cur = n;
+                ed.anchor = None;
+            }
+            ed.menu = ev;
+            if all {
+                ed.anchor = Some(0);
+                ed.cur = n;
+            }
+        }
+    }
     let focused = ed.id == id;
     ed.cur = if focused { ed.cur.min(chars.len()) } else { ed.cur };
 
@@ -203,7 +242,10 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         // the system's text input on (accents from dead keys, other alphabets): it composes "^ e" into "ê" and hands
         // it over as one piece
         ui.ctx().output_mut(|o| o.ime = Some(egui::output::IMEOutput { rect, cursor_rect: rect }));
-        let events = ui.input(|i| i.events.clone());
+        let mut events = ui.input(|i| i.events.clone());
+        if let Some(ev) = ed.menu.take() {
+            events.insert(0, ev);
+        }
         let mut cur = ed.cur.min(chars.len());
         let mut anchor = ed.anchor.map(|a| a.min(chars.len()));
         let mut edited = false;

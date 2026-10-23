@@ -911,6 +911,29 @@ impl App {
         new
     }
 
+    /// A song off this computer: your own file goes to the Recycle Bin (and out of Backline's lists), a streamed
+    /// song's saved copy is deleted (it is downloaded again when played).
+    fn delete_song(&mut self, t: &Track) {
+        let name = t.title.to_uppercase();
+        if let Some(Src::File(p)) = self.srcmap.get(&t.id).cloned() {
+            if self.cur_track().map(|c| c.id) == Some(t.id) {
+                self.player.send(Cmd::Stop);
+            }
+            match trash::delete(&p) {
+                Ok(()) => {
+                    self.file_gone(t.id);
+                    self.set_note(&format!("MOVED TO THE RECYCLE BIN: {}", name));
+                }
+                Err(e) => self.set_err(format!("Couldn't delete {}: {}", p.display(), e)),
+            }
+        } else if cache::has(t.id) {
+            cache::remove(t.id);
+            self.set_note(&format!("SAVED COPY DELETED: {} (IT DOWNLOADS AGAIN WHEN PLAYED)", name));
+        } else {
+            self.set_note("NOTHING OF THIS SONG IS SAVED ON THIS COMPUTER");
+        }
+    }
+
     /// A file of yours that is no longer on disk: out of the file list, likes, playlists, tunes and the queue
     /// (its loops and notes stay, in case it comes back under the same path).
     fn file_gone(&mut self, id: i64) {
@@ -2270,6 +2293,11 @@ impl App {
                     ctx.request_repaint();
                 });
             }
+            Action::CopyName(name) => {
+                self.ctx.output_mut(|o| o.copied_text = name.clone());
+                self.set_note(&format!("COPIED: {}", name));
+            }
+            Action::DeleteSong(t) => self.delete_song(&t),
             Action::CopyLink(url) => {
                 self.ctx.output_mut(|o| o.copied_text = url.clone());
                 self.set_note(&format!("LINK COPIED: {}", url.trim_start_matches("https://")));
