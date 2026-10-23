@@ -139,14 +139,18 @@ impl App {
         }
 
         // ---- mild tilt, only while the mouse is on or right next to the cover
-        let reach = a / 2.0 * 1.35;
-        let target = match hover.filter(|_| !crate::skin::calm()) {
+        // (it starts to lean a little way out from the cover, and lifts a touch while the mouse is on it)
+        let reach = a / 2.0 * 1.5;
+        let calm = crate::skin::calm();
+        let target = match hover.filter(|_| !calm) {
             Some(pp) if (pp.x - center.x).abs() < reach && (pp.y - center.y).abs() < reach => {
-                Vec2::new(((pp.x - center.x) / reach).clamp(-1.0, 1.0), ((pp.y - center.y) / reach).clamp(-1.0, 1.0)) * 0.45
+                Vec2::new(((pp.x - center.x) / reach).clamp(-1.0, 1.0), ((pp.y - center.y) / reach).clamp(-1.0, 1.0)) * 0.62
             }
             _ => Vec2::ZERO,
         };
-        let k = 1.0 - (-dt * 9.0).exp();
+        let on_cover = !calm && hover.is_some_and(|pp| Rect::from_center_size(center, Vec2::splat(a)).contains(pp));
+        let lift = ui.ctx().animate_bool_with_time(ui.id().with("art_lift"), on_cover, 0.18);
+        let k = 1.0 - (-dt * 12.0).exp();
         self.art_tilt += (target - self.art_tilt) * k;
         let tilt = self.art_tilt;
         // a rigid card in 3D, gently pushed by the mouse: the corner nearest it sinks back, the far one comes
@@ -161,7 +165,7 @@ impl App {
             Pos2::new(center.x + push.x + x * cy * sc, center.y + push.y + y * cx * sc)
         };
         let corners = |h: f32| [xf(-h, -h), xf(h, -h), xf(h, h), xf(-h, h)];
-        let h = a / 2.0;
+        let h = a / 2.0 * (1.0 + 0.025 * lift);
 
         {
             // click the cover to put it on a record (and back)
