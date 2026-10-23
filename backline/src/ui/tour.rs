@@ -89,7 +89,7 @@ const BASIC: &[Step] = &[
     Step {
         key: "PLAYER",
         title: "THE PLAYER",
-        text: "Play, pause, skip, seek and set the volume. It also shows the song's tempo and key. Click the little screen to change the visualizer.",
+        text: "Play, pause, skip, seek and set the volume. It shows the song's tempo and key, too. EQ and PL open the equalizer and the playlist.",
         ..BASE
     },
     Step {
@@ -109,7 +109,7 @@ const BASIC: &[Step] = &[
     Step {
         key: "LIBRARY",
         title: "THE LIBRARY",
-        text: "Everything you can play: Tidal, SoundCloud, YouTube, your files and your own lists. Click a song to play it, or right-click for more.",
+        text: "Everything you can play, down the side: Tidal, your files, SoundCloud, YouTube and your own lists. Click a song to play it, or right-click for more.",
         ..BASE
     },
     Step {
@@ -122,13 +122,13 @@ const BASIC: &[Step] = &[
         key: "ARTBTNS",
         scene: Scene::Album,
         title: "NOW PLAYING",
-        text: "Press A, or click the song under the library, to see it big. Click a line of the lyrics to jump there. ESC takes you back.",
+        text: "Press A, or click the song at the foot of the library, to see it big. Shuffle and repeat light up when on. Click a lyric line to jump there; ESC takes you back.",
         ..BASE
     },
     Step {
         key: "APPMENU",
         title: "GETTING AROUND",
-        text: "MUSIC has your songs and where they come from. PRACTICE has your tunes, diary and tools. SETTINGS has skins, preferences and help. CTRL+K finds any action by typing.",
+        text: "The list down the side: MUSIC has your songs, PRACTICE your tunes and tools, SETTINGS your skins and preferences. LISTEN and PRACTICE under the name switch modes. CTRL+K finds anything by typing.",
         ..BASE
     },
     Step {
@@ -143,14 +143,14 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "CHIP",
         scene: Scene::PracticeOff,
         title: "PRACTICE MODE",
-        text: "Tools for learning music from recordings. Press P, or click the lit switch, to turn them on.",
+        text: "Tools for learning music from recordings. Click PRACTICE under the Backline name, or press P. Opening a practice page from MUSIC turns them on too.",
         ..BASE
     },
     Step {
         key: "LOOPROW",
         scene: Scene::Practice,
         title: "1. LOOP A SPOT",
-        text: "Loop a few seconds to hear them again. Set A and B with the [ and ] keys, then press \\ to loop. SAVE LOOP keeps it with the song.",
+        text: "Loop a few seconds to hear them again. Press A and B (or [ and ]), or shift-drag on the waveform. The arrows move the whole loop on to the next phrase. Name it and SAVE LOOP to keep it.",
         ab: true,
         ..BASE
     },
@@ -187,16 +187,23 @@ const PRACTICE_TOUR: &[Step] = &[
         ..BASE
     },
     Step {
+        key: "MOREBOX",
+        scene: Scene::PracticeMore(3),
+        title: "6. MARK YOUR PLACES",
+        text: "BOOKMARKS mark the spots you come back to: the solo, the bridge, the bar you keep missing. Alt-click the waveform to add one, then name it.",
+        ..BASE
+    },
+    Step {
         key: "TIMEBTNS",
         scene: Scene::Practice,
-        title: "6. KEEP TIME",
-        text: "A focus timer, and a metronome that can lock to the song's beat.",
+        title: "7. KEEP TIME",
+        text: "The two pills at the top: a focus timer with rests, and a metronome for any meter that can lock to the song's beat. Click the dot to start, the words to open it.",
         ..BASE
     },
     Step {
         key: "ARTPRACTICE",
         scene: Scene::AlbumPractice,
-        title: "7. PRACTICE IN NOW PLAYING",
+        title: "8. PRACTICE IN NOW PLAYING",
         text: "The loop and speed come with you to the big cover.",
         ab: true,
         ..BASE
@@ -204,15 +211,15 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "CHORDSVIEW",
         scene: Scene::Chords,
-        title: "8. CHORDS",
-        text: "See any chord's notes, grips and the scales that fit. The tabs come in three groups: FIND & NAME, SHAPES and HARMONY.",
+        title: "9. CHORDS",
+        text: "Any chord's notes, the scales that fit, and its grips as a chord book lays them out: the ones to know first, open, movable by root string, with a capo, and every drop voicing.",
         act: 1,
         ..BASE
     },
     Step {
         key: "CHORDSVIEW",
         scene: Scene::Analyzer,
-        title: "9. NAME A CHORD",
+        title: "10. NAME A CHORD",
         text: "Click notes on a neck or a piano to name the chord. This one is Dm7.",
         act: 4,
         ..BASE
@@ -220,7 +227,7 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "CHORDSVIEW",
         scene: Scene::Harmony,
-        title: "10. THE CHORDS OF A SCALE",
+        title: "11. THE CHORDS OF A SCALE",
         text: "See every chord a scale makes, with its mode and a grip. Here it is G melodic minor. Pick a chord to see what to solo over it. You are hearing a triad pair, C then D.",
         act: 5,
         ..BASE
@@ -228,7 +235,7 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "LINESVIEW",
         scene: Scene::Lines,
-        title: "11. LINES",
+        title: "12. LINES",
         text: "Scales, arpeggios, pentatonics and Slonimsky's Diary in notation and tab. Play them alone or over the band.",
         act: 2,
         ..BASE
@@ -236,16 +243,16 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "SHEET",
         scene: Scene::Sheet,
-        title: "12. THE LEAD SHEET AND THE BAND",
-        text: "Every tune can have a chart, and a little band plays it at your tempo. Here it is Cherokee.",
+        title: "13. THE LEAD SHEET AND THE BAND",
+        text: "Every tune can have a chart, and a little band plays it at your tempo. Drag across bars to loop just those. Here it is Cherokee.",
         act: 3,
         ..BASE
     },
     Step {
         key: "TABS",
         scene: Scene::Practice,
-        title: "13. KEEP TRACK",
-        text: "PRACTICE lists your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
+        title: "14. KEEP TRACK",
+        text: "PRACTICE in the side list holds your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
         ..BASE
     },
 ];
@@ -1087,7 +1094,7 @@ mod tests {
         // the MORE steps open MORE, each on its own tab
         let tabs: Vec<u8> =
             PRACTICE_TOUR.iter().filter_map(|s| if let Scene::PracticeMore(t) = s.scene { Some(t) } else { None }).collect();
-        assert_eq!(tabs, vec![0, 1, 2], "trainer, pitch and stems each get a step");
+        assert_eq!(tabs, vec![0, 1, 2, 3], "trainer, pitch, stems and bookmarks each get a step");
         assert!(BASIC.iter().any(|s| s.scene == Scene::Album), "the main tour visits the album view");
         assert!(BASIC.last().unwrap().scene == Scene::Normal, "and comes back from it");
     }
