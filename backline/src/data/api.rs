@@ -70,23 +70,63 @@ pub fn plain(e: &str) -> String {
     }
 }
 
+fn track_row(t: &Track) -> Value {
+    json!({
+        "id": t.id, "title": t.title, "artist": t.artist, "album": t.album, "cover": t.cover,
+        "duration": t.duration, "artists": t.artists.iter().map(|a| json!([a.0, a.1])).collect::<Vec<_>>(),
+    })
+}
+
 /// Your Tidal liked songs as last loaded, kept on this computer so the library still shows with no internet.
 pub fn save_liked(tracks: &[Track]) {
-    let rows: Vec<Value> = tracks
-        .iter()
-        .map(|t| {
-            json!({
-                "id": t.id, "title": t.title, "artist": t.artist, "album": t.album, "cover": t.cover,
-                "duration": t.duration, "artists": t.artists.iter().map(|a| json!([a.0, a.1])).collect::<Vec<_>>(),
-            })
-        })
-        .collect();
+    let rows: Vec<Value> = tracks.iter().map(track_row).collect();
     let _ = std::fs::write(config_dir().join("tidal_liked.json"), Value::Array(rows).to_string());
 }
 
 /// The liked songs kept by `save_liked` (empty if none).
 pub fn load_liked() -> Vec<Track> {
-    let Ok(b) = std::fs::read(config_dir().join("tidal_liked.json")) else { return Vec::new() };
+    load_tracks("tidal_liked.json")
+}
+
+/// The names of the Tidal songs played on this computer (the stored copies are named by number only), so every
+/// song stored here can be listed with its name with no internet, liked or not.
+fn names() -> &'static Mutex<std::collections::HashMap<i64, Track>> {
+    static N: std::sync::OnceLock<Mutex<std::collections::HashMap<i64, Track>>> = std::sync::OnceLock::new();
+    N.get_or_init(|| Mutex::new(load_tracks("saved_names.json").into_iter().map(|t| (t.id, t)).collect()))
+}
+
+/// Keep Tidal songs' names (written in the background, only when one is new or changed).
+pub fn remember_names(tracks: &[Track]) {
+    let rows = {
+        let Ok(mut n) = names().lock() else { return };
+        let mut changed = false;
+        for t in tracks.iter().filter(|t| t.id > 0 && !t.title.is_empty()) {
+            if !n.get(&t.id).is_some_and(|o| o.title == t.title && o.artist == t.artist && o.album == t.album && o.cover == t.cover) {
+                n.insert(t.id, Track { qid: 0, ..t.clone() });
+                changed = true;
+            }
+        }
+        if !changed {
+            return;
+        }
+        Value::Array(n.values().map(track_row).collect()).to_string()
+    };
+    std::thread::spawn(move || {
+        let p = config_dir().join("saved_names.json");
+        let tmp = p.with_extension("json.part");
+        if std::fs::write(&tmp, rows).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
+    });
+}
+
+/// Every Tidal song name kept by `remember_name`.
+pub fn saved_names() -> Vec<Track> {
+    names().lock().map(|n| n.values().cloned().collect()).unwrap_or_default()
+}
+
+fn load_tracks(file: &str) -> Vec<Track> {
+    let Ok(b) = std::fs::read(config_dir().join(file)) else { return Vec::new() };
     let Ok(Value::Array(rows)) = serde_json::from_slice::<Value>(&b) else { return Vec::new() };
     rows.iter()
         .map(|v| Track {

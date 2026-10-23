@@ -1831,17 +1831,19 @@ fn page_view(
                 let mut liked_total = page.total.max(page.tracks.len());
                 let all: &[Track] = if crate::api::OFFLINE.load(Ordering::Relaxed) {
                     // every liked song stored on this computer, also the ones the library hadn't loaded yet (from the
-                    // list of liked songs kept from last time, read once)
+                    // list of liked songs kept from last time, read once), then every other Tidal song stored here
+                    // (saved from a playlist, an album, a search: their names kept as they were played)
                     thread_local! {
-                        static SAVED: std::cell::OnceCell<Vec<Track>> = const { std::cell::OnceCell::new() };
+                        static SAVED: std::cell::OnceCell<(Vec<Track>, Vec<Track>)> = const { std::cell::OnceCell::new() };
                     }
-                    let saved = SAVED.with(|s| s.get_or_init(crate::api::load_liked).clone());
+                    let (saved, others) = SAVED.with(|s| s.get_or_init(|| (crate::api::load_liked(), crate::api::saved_names())).clone());
                     liked_total = liked_total.max(saved.len());
                     let mut seen: HashSet<i64> = HashSet::new();
                     here = page
                         .tracks
                         .iter()
                         .chain(saved.iter())
+                        .chain(others.iter())
                         .filter(|t| cache::has(t.id) && seen.insert(t.id))
                         .cloned()
                         .collect();
@@ -3920,6 +3922,9 @@ impl App {
             }
         }
         cache::scan();
+        // the songs played lately, from before their names were kept: kept now, so they list offline too
+        let recent: Vec<Track> = app.store.recent.iter().filter(|(v, _)| v.kind == "tidal").map(|(v, _)| v.to_track()).collect();
+        crate::api::remember_names(&recent);
         app.player.send(Cmd::Volume(app.volume * app.volume));
         app.apply_eq();
         // Windows' media controls (not while recording a demo, which plays in the background); the hotkeys only
@@ -4823,6 +4828,10 @@ impl App {
         // kept for RECENT (the same song again moves to the top)
         if !self.is_demo(t.id) {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            if !self.srcmap.contains_key(&t.id) && !self.is_demo(t.id) {
+                // (a Tidal song: its stored copy is named by number only)
+                crate::api::remember_names(std::slice::from_ref(&t));
+            }
             let v = self.version_of(&t);
             self.store.recent.retain(|(r, _)| r.id != t.id);
             self.store.recent.insert(0, (v, now));
