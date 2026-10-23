@@ -1283,7 +1283,8 @@ impl App {
     pub(crate) fn files_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "MY FILES", 3.0, pal().ink);
-        title_line(ui, &format!("{} files, played from where they are", self.store.files.len()), 2.0, pal().ink2);
+        let n = self.store.files.len();
+        title_line(ui, &format!("{} {}, played from where they are", n, if n == 1 { "file" } else { "files" }), 2.0, pal().ink2);
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "ADD FILES", false).clicked() {

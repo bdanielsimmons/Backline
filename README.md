@@ -14,6 +14,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 | ![The player, library and playlist](screenshots/player.png) | ![The equalizer](screenshots/equalizer.png) |
 | ![The album view](screenshots/album-view.png) | ![Practice: loop a spot](screenshots/practice.png) |
 | ![Name a chord from the neck or piano](screenshots/chord-namer.png) | ![The lead sheet and the band](screenshots/lead-sheet.png) |
+| ![Ear training: chord qualities](screenshots/ear-training.png) | |
 <!-- shots:end -->
 
 ## What's new
