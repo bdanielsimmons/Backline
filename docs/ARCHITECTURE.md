@@ -14,6 +14,8 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 - **Saved data.** Settings (window, skin, toggles) in `settings.json`; everything you build up (tunes, loops,
   playlists, diary days, hearts, YouTube/SoundCloud lists) in `library.json` via `data/store.rs` (`Store`). Both under
   `%APPDATA%\Backline` (`api::config_dir()`; `BACKLINE_HOME` overrides it for test profiles).
+  Stored Tidal songs are `cache/<track id>.<ext>` (no tags); their names for offline use come from
+  `tidal_liked.json` (`api::save_liked`) and `saved_names.json` (`api::remember_names`, every Tidal song played).
 
 ## Where things live
 
@@ -41,7 +43,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | LINES improvising tab PENTATONICS & MORE: pentatonic / hexatonic (triad pairs) / diminished / chromatic options families, `family_scales()`, exercises; PENTATONICS (boxes, `positions()` for any scale / notes per string, `neck_view`) | `ui/improv.rs` |
 | LINES tab ARPEGGIOS: a chord's notes inside its scale's positions (the chords of a scale, or any chord), exercises, through a tune (guide tones, arpeggios, 3-5-7-9) | `ui/arpeggios.rs` |
 | READING (sight reading) | `ui/reading.rs` |
-| EAR (PRACTICE): ear-training drills from one menu (chord qualities, intervals, progressions, scale degrees, guide tones, scales & modes, bass note, play it back on a clickable neck); question builders `build`/`ask` (tested per drill), sounds mixed from `band::sequence_sound`/`line_sound`; per-drill record `store.ear` (`EarStats`: answers in play, misses, mix-ups, sessions); finished sessions add "Ear training" time to the diary | `ui/ear.rs` |
+| EAR (PRACTICE): ear-training drills from one menu (chord qualities, intervals, progressions, scale degrees, guide tones, scales & modes, bass note, play it back on a clickable neck); question builders `build`/`ask` (tested per drill), sounds mixed from `band::sequence_sound`/`line_sound`; per-drill record `store.ear` (`EarStats`: answers in play, misses, mix-ups, sessions, `best` run); chord qualities: `CHORDS` table in five `LEVELS`, look-alike sets `ALIKES`, your own set `store.ear_chords`, pool from `chord_pool`, voicings from `build_chord` (required notes, range rules, drop/rootless), wrong-answer hints `chord_hint`/`wrong_hint`, optional chime; finished sessions add "Ear training" time to the diary | `ui/ear.rs` |
 | Music theory (chord notes, names, grips, scales) | `data/theory.rs` |
 | Neck and piano drawings | `ui/fretboard.rs` (shared with the phone app) |
 | Drawing kit (buttons, tabs, LCD, dropdowns, check boxes, list rows) | `ui/widgets.rs`; text `ui/font.rs` |
