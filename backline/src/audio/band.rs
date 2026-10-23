@@ -77,34 +77,47 @@ impl Mix {
     fn pluck(&mut self, t: f32, d: f32, midi: i32, vel: f32) {
         let s = self.start(t);
         let f = freq(midi);
-        // the averaging filter delays half a sample; the rest of the period is a whole and a fractional part
-        let total = RATE / f - 0.5;
+        // nylon loses its highs fast: each pass round the string is softened a little more than steel's (a filter that
+        // delays the sound by 1 - DAMP of a sample; the rest of the period is a whole and a fractional part)
+        const DAMP: f32 = 0.62;
+        let total = RATE / f - (1.0 - DAMP);
         let n = (total.floor() as usize).max(2);
         let frac = total - n as f32;
         let c = (1.0 - frac) / (1.0 + frac);
-        // the pick: noise, softened (a pick, not a harpsichord quill), struck a fifth of the way along the string
+        // the touch: a nylon string under the flesh of the thumb - noise softened twice over (no pick's click), struck
+        // a third of the way along, nearer the middle, where the string gives a round, hollow tone
         let mut burst = vec![0.0f32; n];
-        let mut lp = 0.0;
+        let (mut lp, mut lp2) = (0.0, 0.0);
         for b in burst.iter_mut() {
-            lp += 0.55 * (self.noise() - lp);
-            *b = lp;
+            lp += 0.3 * (self.noise() - lp);
+            lp2 += 0.3 * (lp - lp2);
+            *b = lp2;
         }
-        let at = ((n as f32 * 0.2) as usize).max(1);
+        let at = ((n as f32 * 0.32) as usize).max(1);
         let mut line: Vec<f32> = (0..n).map(|k| burst[k] - if k >= at { burst[k - at] } else { 0.0 }).collect();
         let mean = line.iter().sum::<f32>() / n as f32;
         let peak = line.iter().fold(0.0f32, |a, x| a.max((x - mean).abs())).max(1e-6);
         for x in line.iter_mut() {
             *x = (*x - mean) / peak;
         }
-        // low strings ring longer than high ones
-        let t60 = (4.0 - (midi - 40) as f32 * 0.06).clamp(1.2, 4.0);
+        // low strings ring longer than high ones; nylon a little shorter than steel
+        let t60 = (3.4 - (midi - 40) as f32 * 0.05).clamp(1.1, 3.4);
         let rho = 0.001f32.powf(1.0 / (f * t60));
+        let damp = DAMP;
         let len = ((d * self.spb) as usize).clamp(1, (RATE * 4.5) as usize);
         let fade = ((RATE * 0.06) as usize).min(len);
         let (mut idx, mut prev, mut ax, mut ay, mut warm) = (0usize, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        // the guitar's body: two soft wooden resonances (about 100 and 200 Hz), a little of each under the string
+        let body = |f0: f32, q: f32| {
+            let w = std::f32::consts::TAU * f0 / RATE;
+            let r = 1.0 - w / q;
+            (2.0 * r * w.cos(), -r * r)
+        };
+        let ((b1a, b1b), (b2a, b2b)) = (body(98.0, 9.0), body(204.0, 9.0));
+        let (mut r1, mut r1p, mut r2, mut r2p) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
         for i in 0..len {
             let cur = line[idx];
-            let avg = 0.5 * (cur + prev) * rho;
+            let avg = (damp * cur + (1.0 - damp) * prev) * rho;
             prev = cur;
             // an allpass for the fractional part, so every note is in tune
             let y = c * avg + ax - c * ay;
@@ -112,10 +125,16 @@ impl Mix {
             ay = y;
             line[idx] = y;
             idx = (idx + 1) % n;
-            // a touch of warmth, and a short fade where it is cut off
-            warm += 0.7 * (cur - warm);
+            // warm and round (nylon has little top), the body under it, and a short fade where it is cut off
+            warm += 0.32 * (cur - warm);
+            let n1 = b1a * r1 + b1b * r1p + warm * 0.02;
+            r1p = r1;
+            r1 = n1;
+            let n2 = b2a * r2 + b2b * r2p + warm * 0.015;
+            r2p = r2;
+            r2 = n2;
             let env = if len - i < fade { (len - i) as f32 / fade as f32 } else { 1.0 };
-            self.add(s, i, warm * env * 0.2 * vel * self.lv[1]);
+            self.add(s, i, (warm + r1 * 0.5 + r2 * 0.35) * env * 0.2 * vel * self.lv[1]);
         }
     }
 
@@ -1076,13 +1095,13 @@ fn render_raw(chart: &Chart, order: &[usize], bpm: f32, style: u8, lv: [f32; 3],
 
 /// A chord struck once and left to ring (the CHORDS tab's PLAY): `midis` spread a little, like a strum.
 pub fn chord_sound(midis: &[i32]) -> Vec<i16> {
-    // strummed: low string to high, 40 ms apart (one note is just that note)
+    // rolled with the thumb: low string to high, 55 ms apart, the top notes a touch softer (one note is just that note)
     let mut notes: Vec<i32> = midis.to_vec();
     notes.sort();
     let mut mix = Mix::new(3.5, 60.0);
     for (j, m) in notes.iter().enumerate() {
-        let at = 0.02 + j as f32 * 0.04;
-        mix.pluck(at, 3.4 - at, *m, 1.0);
+        let at = 0.02 + j as f32 * 0.055;
+        mix.pluck(at, 3.4 - at, *m, 0.95 - j as f32 * 0.04);
     }
     mix.finish()
 }
@@ -1326,6 +1345,17 @@ mod tests {
         println!("tempo {:.1} first {:.2}s beats {} odd gaps {}", 60.0 / period, first, grid.len(), off);
     }
 
+    /// Writes a nylon chord and a single note as WAV files to $BACKLINE_GUITAR (a folder), to listen to.
+    #[test]
+    #[ignore]
+    fn write_guitar() {
+        let Ok(dir) = std::env::var("BACKLINE_GUITAR") else { return };
+        for (name, notes) in [("Cmaj9 chord", vec![48, 52, 59, 62, 67]), ("Dm7 chord", vec![50, 57, 60, 65]), ("single note", vec![64]), ("low note", vec![43])] {
+            let s = chord_sound(&notes);
+            std::fs::write(format!("{}/{}.wav", dir, name), crate::tour::wav(&s, RATE as u32, 1)).unwrap();
+        }
+    }
+
     /// Clicks laid on a beat list land where the beats are (at speed, and shifted).
     #[test]
     fn grid_clicks_land_on_the_beats() {
@@ -1487,7 +1517,10 @@ mod pluck_tests {
             mix.pluck(0.0, 1.0, midi, 1.0);
             let x = &mix.buf[4000..12000];
             let want = RATE / freq(midi);
-            let best = (20..1200)
+            // (searched round the note: a warm, smooth tone also matches itself a few samples on)
+            let lo = (want * 0.6) as usize;
+            let hi = (want * 1.4) as usize;
+            let best = (lo..hi)
                 .max_by(|a, b| {
                     let c = |lag: usize| x.iter().zip(&x[lag..]).map(|(p, q)| p * q).sum::<f32>();
                     c(*a).partial_cmp(&c(*b)).unwrap()
