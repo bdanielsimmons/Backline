@@ -488,8 +488,33 @@ pub fn read_playlist_file(p: &Path) -> Option<(String, Vec<PathBuf>)> {
     Some((name, out))
 }
 
+/// A YouTube link to a playlist: a playlist page, or a video played from a playlist (watch?v=...&list=...). A video
+/// played from a Mix (list=RD..., made up by YouTube around that video) stays that one video.
 pub fn is_yt_list(s: &str) -> bool {
-    s.contains("youtu") && s.contains("playlist?list=")
+    let s = s.trim();
+    match yt_list_id(s) {
+        Some(id) => s.contains("youtu") && (s.contains("playlist?list=") || !id.starts_with("RD")),
+        None => false,
+    }
+}
+
+/// The playlist a YouTube link points to (its list=...).
+pub fn yt_list_id(s: &str) -> Option<String> {
+    let i = s.find("list=")?;
+    let prev = s[..i].chars().last();
+    if !matches!(prev, Some('?') | Some('&')) {
+        return None;
+    }
+    let id: String = s[i + 5..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    (!id.is_empty()).then_some(id)
+}
+
+/// A playlist link as a plain playlist page (so a video link with a list= reads the whole playlist).
+pub fn yt_list_url(s: &str) -> String {
+    match yt_list_id(s) {
+        Some(id) => format!("https://www.youtube.com/playlist?list={}", id),
+        None => s.trim().to_string(),
+    }
 }
 
 /// A readable name from a link's last part: ".../sets/my-cool-mix" -> "My Cool Mix".
@@ -969,8 +994,16 @@ mod tests {
     #[test]
     fn playlist_links_and_names() {
         assert!(is_yt_list("https://www.youtube.com/playlist?list=PLabc"));
-        // a single video that sits in a playlist is still a single video
-        assert!(!is_yt_list("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc"));
+        // a video played from a playlist reads the whole playlist
+        let v = "https://www.youtube.com/watch?v=YYC5enmW69o&list=PLVbKYLGZgn8GIHg6A-3tW-v06arFGWdXy";
+        assert!(is_yt_list(v));
+        assert_eq!(yt_list_url(v), "https://www.youtube.com/playlist?list=PLVbKYLGZgn8GIHg6A-3tW-v06arFGWdXy");
+        assert!(is_yt_list("https://www.youtube.com/watch?list=PLabc&v=dQw4w9WgXcQ&t=42s"));
+        // ...but one played from a Mix (made up by YouTube around it) is that one video
+        assert!(!is_yt_list("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ&start_radio=1"));
+        assert!(is_yt_list("https://www.youtube.com/playlist?list=RDCLAK5uy_abc"));
+        assert!(!is_yt_list("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        assert!(!is_yt_list("https://www.youtube.com/watch?v=dQw4w9WgXcQ&playlist=x"));
         assert_eq!(list_name("https://soundcloud.com/someone/sets/my-cool_mix?si=1"), "My Cool Mix");
         assert_eq!(list_name("https://soundcloud.com/someone/sets/late-night/"), "Late Night");
         assert_eq!(list_name("https://soundcloud.com/---"), "Playlist");

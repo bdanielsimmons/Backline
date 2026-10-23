@@ -2202,7 +2202,7 @@ impl App {
                     }
                     self.yt_busy = true;
                     self.yt_msg = "READING THE PLAYLIST...".to_string();
-                    let url = self.yt_in.trim().to_string();
+                    let url = sources::yt_list_url(&self.yt_in);
                     let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                     std::thread::spawn(move || {
                         let r = sources::yt_list(&url);
