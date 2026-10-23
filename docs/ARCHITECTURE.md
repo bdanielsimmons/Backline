@@ -14,8 +14,9 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 - **Saved data.** Settings (window, skin, toggles) in `settings.json`; everything you build up (tunes, loops,
   playlists, diary days, hearts, YouTube/SoundCloud lists) in `library.json` via `data/store.rs` (`Store`). Both under
   `%APPDATA%\Backline` (`api::config_dir()`; `BACKLINE_HOME` overrides it for test profiles).
-  Stored Tidal songs are `cache/<track id>.<ext>` (no tags); their names for offline use come from
-  `tidal_liked.json` (`api::save_liked`) and `saved_names.json` (`api::remember_names`, every Tidal song played).
+  Stored songs are `cache/<track id>.<ext>`; their title, artist, album and cover are written into the file's own tags
+  in the background (`cache::know` / `start_tagging`, from the liked list, playlists and songs played), and offline
+  the songs are listed from those tags (`cache::tagged`).
 
 ## Where things live
 

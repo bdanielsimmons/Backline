@@ -81,7 +81,10 @@ impl App {
             para(ui, label, pal().ink2);
             match credits {
                 None => para(ui, "Asking Tidal...", pal().ink2),
-                Some(Err(e)) => para(ui, &format!("Could not get the credits: {}", e), pal().red),
+                Some(Err(e)) if e == crate::api::OFFLINE_MSG || crate::api::no_internet(e) => {
+                    para(ui, "Credits aren't available offline.", pal().ink2)
+                }
+                Some(Err(e)) => para(ui, &format!("Couldn't load the credits. {}", e), pal().red),
                 Some(Ok(list)) if list.is_empty() => para(ui, "Tidal has nothing on this track.", pal().ink2),
                 Some(Ok(list)) => {
                     egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {

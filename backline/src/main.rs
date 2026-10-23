@@ -1834,9 +1834,11 @@ fn page_view(
                     // list of liked songs kept from last time, read once), then every other Tidal song stored here
                     // (saved from a playlist, an album, a search: their names kept as they were played)
                     thread_local! {
-                        static SAVED: std::cell::OnceCell<(Vec<Track>, Vec<Track>)> = const { std::cell::OnceCell::new() };
+                        static SAVED: std::cell::OnceCell<Vec<Track>> = const { std::cell::OnceCell::new() };
                     }
-                    let (saved, others) = SAVED.with(|s| s.get_or_init(|| (crate::api::load_liked(), crate::api::saved_names())).clone());
+                    let saved = SAVED.with(|s| s.get_or_init(crate::api::load_liked).clone());
+                    // (Tidal songs only: YouTube and SoundCloud copies have their own lists)
+                    let others: Vec<Track> = cache::tagged().into_iter().filter(|t| t.id > 0).collect();
                     liked_total = liked_total.max(saved.len());
                     let mut seen: HashSet<i64> = HashSet::new();
                     here = page
@@ -3922,9 +3924,29 @@ impl App {
             }
         }
         cache::scan();
-        // the songs played lately, from before their names were kept: kept now, so they list offline too
-        let recent: Vec<Track> = app.store.recent.iter().filter(|(v, _)| v.kind == "tidal").map(|(v, _)| v.to_track()).collect();
-        crate::api::remember_names(&recent);
+        // every stored song gets its details in its own tags (from the liked list, the lists you made and the songs
+        // played lately), in the background; offline, the songs are listed from those tags
+        let mut known: Vec<Track> = crate::api::load_liked();
+        known.extend(app.store.recent.iter().filter(|(v, _)| v.kind != "file").map(|(v, _)| v.to_track()));
+        for pl in &app.store.playlists {
+            known.extend(pl.items.iter().filter(|v| v.kind != "file").map(|v| v.to_track()));
+        }
+        known.extend(app.store.yt.iter().chain(app.store.sc.iter()).map(|e| e.to_track()));
+        // (the names list an earlier version kept, folded in once)
+        let old = api::config_dir().join("saved_names.json");
+        if old.exists() {
+            known.extend(crate::api::load_tracks_file("saved_names.json"));
+            let _ = std::fs::remove_file(old);
+        }
+        cache::know(&known);
+        cache::start_tagging(|t| {
+            if t.cover.is_empty() {
+                return None;
+            }
+            [640, 320, 1280, 160, 80]
+                .iter()
+                .find_map(|s| std::fs::read(cover_path(&api::cover_url(&t.cover, *s))).ok().filter(|b| b.len() > 100))
+        });
         app.player.send(Cmd::Volume(app.volume * app.volume));
         app.apply_eq();
         // Windows' media controls (not while recording a demo, which plays in the background); the hotkeys only
@@ -4828,9 +4850,9 @@ impl App {
         // kept for RECENT (the same song again moves to the top)
         if !self.is_demo(t.id) {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-            if !self.srcmap.contains_key(&t.id) && !self.is_demo(t.id) {
-                // (a Tidal song: its stored copy is named by number only)
-                crate::api::remember_names(std::slice::from_ref(&t));
+            if !matches!(self.srcmap.get(&t.id), Some(Src::File(_))) && !self.is_demo(t.id) {
+                // (its stored copy is named by number only: its details go into the file's tags)
+                cache::know(std::slice::from_ref(&t));
             }
             let v = self.version_of(&t);
             self.store.recent.retain(|(r, _)| r.id != t.id);
