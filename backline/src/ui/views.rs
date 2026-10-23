@@ -578,12 +578,13 @@ impl App {
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
     /// Each group comes back to the list you last had open in it. The plain build has only MUSIC, so only its row shows.
     pub(crate) fn section_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        const PRACTICE_SECS: [(Sec, &str); 7] = [
+        const PRACTICE_SECS: [(Sec, &str); 8] = [
             (Sec::Tunes, "TUNES"),
             (Sec::Diary, "DIARY"),
             (Sec::Loops, "LOOPS"),
             (Sec::Reading, "READING"),
             (Sec::Chords, "CHORDS"),
+            (Sec::Ear, "EAR"),
             (Sec::Lines, "LINES"),
             (Sec::Melodies, "CHORD MELODIES"),
         ];

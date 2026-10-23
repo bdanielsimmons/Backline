@@ -1065,6 +1065,7 @@ impl App {
                 ("loop", "Loops", here(Sec::Loops), 12),
                 ("book", "Reading", here(Sec::Reading), 13),
                 ("chords", "Chords", here(Sec::Chords), 14),
+                ("ear", "Ear", here(Sec::Ear), 17),
                 ("lines", "Lines", here(Sec::Lines), 15),
                 ("melody", "Chord Melodies", here(Sec::Melodies), 16),
             ]);
@@ -1138,6 +1139,7 @@ impl App {
             Some(14) => acts.push(Action::Section(Sec::Chords)),
             Some(15) => acts.push(Action::Section(Sec::Lines)),
             Some(16) => acts.push(Action::Section(Sec::Melodies)),
+            Some(17) => acts.push(Action::Section(Sec::Ear)),
             Some(20) => acts.push(Action::BacklinePage),
             Some(21) => acts.push(Action::WaOpen),
             Some(22) => acts.push(Action::ShowLog),
@@ -1321,7 +1323,7 @@ impl App {
             // HOME: Tidal home in MUSIC (your files when not signed in), your tunes in PRACTICE
             if !side && tabs {
                 let in_practice =
-                    matches!(self.sec, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines);
+                    matches!(self.sec, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Ear);
                 let tip = if in_practice {
                     "Your tunes."
                 } else if self.offline {
@@ -1520,6 +1522,7 @@ impl App {
                         Sec::Chords => self.chords_view(ui, acts),
                         Sec::Lines => self.lines_view(ui, acts),
                         Sec::Melodies => {}
+                        Sec::Ear => self.ear_view(ui, acts),
                         Sec::Lists => self.playlists_view(ui, acts),
                         Sec::Mine => self.mine_view(ui, acts),
                     });

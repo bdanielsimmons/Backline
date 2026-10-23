@@ -68,6 +68,8 @@ mod chords;
 mod clusters;
 #[path = "ui/credits.rs"]
 mod credits;
+#[path = "ui/ear.rs"]
+mod ear;
 #[path = "ui/font.rs"]
 mod font;
 #[path = "data/gp.rs"]
@@ -269,6 +271,8 @@ enum Sec {
     Mine,
     /// CHORD MELODIES: transcriptions (SONGS) and the moves in them (MOVES)
     Melodies,
+    /// EAR: ear training drills
+    Ear,
 }
 
 /// The sources Backline plays from: (key, name). A song's source is "tidal" for Tidal, otherwise its kind
@@ -2659,6 +2663,8 @@ struct App {
     hm_deg: u8,
     hm_solo: u8,
     hm_vamp: Vec<u8>,
+    /// EAR: the drill, the question, this session
+    ear: ear::Ear,
     si_any: bool,
     si_pick: u8,
     si_kind: u8,
@@ -3398,6 +3404,7 @@ impl App {
             hm_deg: 2,
             hm_solo: 0,
             hm_vamp: Vec::new(),
+            ear: Default::default(),
             si_any: false,
             si_pick: 0,
             si_kind: 0,
@@ -3632,7 +3639,9 @@ impl App {
         // a first install (no settings yet) has nothing to catch up on
         let installed_before = st.as_object().is_some_and(|o| !o.is_empty());
         // (not over a demo being recorded or a test copy)
-        let quiet = ["BACKLINE_DEMO", "BACKLINE_OPEN", "BACKLINE_SHOT"].iter().any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()));
+        let quiet = ["BACKLINE_DEMO", "BACKLINE_OPEN", "BACKLINE_SHOT"]
+            .iter()
+            .any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()));
         if update::build() > 0 && app.seen_build != update::build() && !quiet {
             if installed_before {
                 app.apply(Action::News);
@@ -4037,6 +4046,13 @@ impl App {
                 app.ln_tab = 1;
             }
             Ok("melodies") => app.sec = Sec::Melodies,
+            Ok("ear") => {
+                app.sec = Sec::Ear;
+                // BACKLINE_EAR=<drill>: a question already answered
+                if let Some(d) = std::env::var("BACKLINE_EAR").ok().and_then(|s| s.parse::<usize>().ok()) {
+                    app.ear_demo(d);
+                }
+            }
             Ok("sc") => app.sec = Sec::Sc,
             Ok("settings") => app.show_tl = true,
             Ok("skins") => app.show_winamp = true,

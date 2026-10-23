@@ -1350,7 +1350,12 @@ mod tests {
     #[ignore]
     fn write_guitar() {
         let Ok(dir) = std::env::var("BACKLINE_GUITAR") else { return };
-        for (name, notes) in [("Cmaj9 chord", vec![48, 52, 59, 62, 67]), ("Dm7 chord", vec![50, 57, 60, 65]), ("single note", vec![64]), ("low note", vec![43])] {
+        for (name, notes) in [
+            ("Cmaj9 chord", vec![48, 52, 59, 62, 67]),
+            ("Dm7 chord", vec![50, 57, 60, 65]),
+            ("single note", vec![64]),
+            ("low note", vec![43]),
+        ] {
             let s = chord_sound(&notes);
             std::fs::write(format!("{}/{}.wav", dir, name), crate::tour::wav(&s, RATE as u32, 1)).unwrap();
         }

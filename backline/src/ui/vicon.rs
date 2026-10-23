@@ -329,6 +329,16 @@ pub fn named(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
             }
             pen.dot(0.5, 0.41, 0.07);
         }
+        "ear" => {
+            // the outer rim down to the lobe, and the curl inside
+            let mut rim = pen.arc(0.5, 0.4, 0.3, 180.0, 390.0);
+            rim.extend([(0.64, 0.68), (0.6, 0.8)]);
+            rim.extend(pen.arc(0.49, 0.8, 0.11, 0.0, 160.0));
+            pen.line(&rim);
+            let mut curl = pen.arc(0.5, 0.42, 0.13, 190.0, 380.0);
+            curl.push((0.5, 0.6));
+            pen.line(&curl);
+        }
         "lines" => pen.line(&[(0.06, 0.7), (0.26, 0.3), (0.44, 0.62), (0.62, 0.22), (0.8, 0.56), (0.94, 0.4)]),
         "melody" => {
             pen.line(&[(0.3, 0.8), (0.3, 0.2), (0.6, 0.3)]);

@@ -2121,13 +2121,16 @@ impl App {
             }
             Action::TakeDelete(id) => self.take_delete(id),
             Action::Section(s) => {
-                if matches!(s, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies) {
+                if matches!(
+                    s,
+                    Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies | Sec::Ear
+                ) {
                     self.last_practice = s;
                     // coming over from a music page, a practice page turns practice mode on (its panel opens); between
                     // practice pages your Listen / Practice choice stays as you set it
                     let from_music = !matches!(
                         self.sec,
-                        Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies
+                        Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies | Sec::Ear
                     );
                     if crate::PRACTICE && !self.practice && from_music {
                         self.practice = true;

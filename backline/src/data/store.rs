@@ -585,6 +585,20 @@ pub struct Store {
     pub routine_set: HashMap<String, String>,
     /// LISTENING: close listens per record ("artist - album")
     pub listened: HashMap<String, u32>,
+    /// EAR: each drill's record (by the drill's key)
+    pub ear: HashMap<String, EarStats>,
+}
+
+/// One ear-training drill's record: how many answers are in play, each answer asked and got right, which answer
+/// you took for which ("asked>given"), and each finished session (day number, right, asked).
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct EarStats {
+    pub level: usize,
+    pub asked: HashMap<String, u32>,
+    pub right: HashMap<String, u32>,
+    pub mixups: HashMap<String, u32>,
+    pub sessions: Vec<(i64, u32, u32)>,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).
