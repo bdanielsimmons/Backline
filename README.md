@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Every song Backline saves now has its title, artist, album and cover written into the file, so it shows its name in Explorer and other players; songs already saved get theirs in the background.
 - The chord ear drill has 51 chords in five levels, from triads to upper structures, with look-alike sets, your own set, voicing and top-note options, and a ii-V lead-in.
 - Ear training says CORRECT!, shows how the chord you picked differs, counts your streak and best run, and can chime.
 - Offline mode lists every Tidal song saved on this computer by name, not only your liked ones.
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Ember, a soft pad with quiet glass pings, opens Backline; nine more in Preferences (Aero, Lift, Daybreak, Glass Rain, Skylight, Homecoming, Frost, Bellglass, Classic)
 - In the mini player, EQ and PL drop the skin's equalizer and playlist under the deck, like classic Winamp
 - Typing a tune name and pressing Enter offers the songs you might mean, spelled right, or keep it as typed
-- Focus timer and metronome as pills in the practice window that open full panels
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
