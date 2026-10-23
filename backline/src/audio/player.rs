@@ -79,6 +79,23 @@ pub struct Ctl {
     wraps: AtomicU32,
     count_in: AtomicU32,
     bpm10: AtomicU32,
+    /// clicks on the song's own beats, mixed into the song itself (so they can never drift from it); None: off
+    clicks: Mutex<Option<Arc<SongClicks>>>,
+    /// bumped whenever `clicks` changes, so the audio side picks the new ones up without locking every sample
+    clicks_gen: AtomicU32,
+    /// how loud the in-song clicks are against the song (f32 bits): the metronome's volume over the song's, so they
+    /// keep the metronome's own level as the song is turned up or down
+    click_lvl: AtomicU32,
+}
+
+/// Clicks laid on a song's beats: each beat's time (song seconds), whether it is the accented one, the two click
+/// sounds (mono, at the song's rate is not needed: they are short and played sample by sample), and how loud.
+pub struct SongClicks {
+    pub beats: Vec<f64>,
+    pub accent: Vec<bool>,
+    pub hi: Vec<f32>,
+    pub lo: Vec<f32>,
+    pub gain: f32,
 }
 
 impl Ctl {
@@ -96,7 +113,26 @@ impl Ctl {
             wraps: AtomicU32::new(0),
             count_in: AtomicU32::new(0),
             bpm10: AtomicU32::new(0),
+            clicks: Mutex::new(None),
+            clicks_gen: AtomicU32::new(0),
+            click_lvl: AtomicU32::new(1.25f32.to_bits()),
         }
+    }
+
+    fn set_click_level(&self, metro: f32, song: f32) {
+        self.click_lvl.store((metro / song.max(0.05)).min(4.0).to_bits(), Ordering::Relaxed);
+    }
+
+
+    /// Clicks mixed into the song on its own beats (None: off).
+    pub fn set_song_clicks(&self, c: Option<SongClicks>) {
+        if let Ok(mut g) = self.clicks.lock() {
+            if c.is_none() && g.is_none() {
+                return;
+            }
+            *g = c.map(Arc::new);
+        }
+        self.clicks_gen.fetch_add(1, Ordering::Release);
     }
 
     /// Transpose in cents, 100 per semitone (speed is unaffected).
@@ -151,6 +187,12 @@ struct Looper<S: Source<Item = i16>> {
     rate: u32,
     frame: u64,
     sub: u16,
+    /// the song's clicks as last seen, the generation they came with, the next beat to sound and the click sounding
+    clicks: Option<Arc<SongClicks>>,
+    clicks_gen: u32,
+    next_beat: usize,
+    sounding: Option<(bool, usize)>,
+    click_val: f32,
 }
 
 impl<S: Source<Item = i16>> Looper<S> {
@@ -159,7 +201,45 @@ impl<S: Source<Item = i16>> Looper<S> {
         let rate = inner.sample_rate().max(1);
         ctl.rate.store(rate, Ordering::Relaxed);
         ctl.pos_fr.store(0, Ordering::Relaxed);
-        Looper { inner, ctl, ch, rate, frame: 0, sub: 0 }
+        Looper { inner, ctl, ch, rate, frame: 0, sub: 0, clicks: None, clicks_gen: u32::MAX, next_beat: 0, sounding: None, click_val: 0.0 }
+    }
+
+    /// The first beat at or after the current frame (after a seek, a loop jump or new clicks).
+    fn find_next_beat(&mut self) {
+        let now = self.frame as f64 / self.rate as f64;
+        self.next_beat = self.clicks.as_ref().map_or(0, |c| c.beats.partition_point(|b| *b < now - 0.0005));
+        self.sounding = None;
+    }
+
+    /// Once per frame: new clicks picked up, a beat reached starts its click, the click sounding steps on.
+    fn click_frame(&mut self) {
+        let g = self.ctl.clicks_gen.load(Ordering::Acquire);
+        if g != self.clicks_gen {
+            self.clicks_gen = g;
+            self.clicks = self.ctl.clicks.lock().ok().and_then(|c| c.clone());
+            self.find_next_beat();
+        }
+        self.click_val = 0.0;
+        let Some(c) = self.clicks.clone() else { return };
+        let now = self.frame as f64 / self.rate as f64;
+        if let Some(b) = c.beats.get(self.next_beat) {
+            if now >= *b {
+                self.sounding = Some((c.accent.get(self.next_beat).copied().unwrap_or(false), 0));
+                self.next_beat += 1;
+            }
+        }
+        if let Some((hi, k)) = self.sounding {
+            // the click's sound was made at 44.1 kHz: stepped at the song's rate
+            let at = (k as f64 * 44100.0 / self.rate as f64) as usize;
+            let snd = if hi { &c.hi } else { &c.lo };
+            match snd.get(at) {
+                Some(v) => {
+                    self.click_val = v * c.gain * f32::from_bits(self.ctl.click_lvl.load(Ordering::Relaxed));
+                    self.sounding = Some((hi, k + 1));
+                }
+                None => self.sounding = None,
+            }
+        }
     }
 
     fn jump_to_a(&mut self) -> bool {
@@ -168,6 +248,7 @@ impl<S: Source<Item = i16>> Looper<S> {
             self.frame = a_ms * self.rate as u64 / 1000;
             self.sub = 0;
             self.ctl.wraps.fetch_add(1, Ordering::Relaxed);
+            self.find_next_beat();
             true
         } else {
             false
@@ -196,6 +277,11 @@ impl<S: Source<Item = i16>> Iterator for Looper<S> {
                 }
             }
         };
+        if self.sub == 0 {
+            self.click_frame();
+        }
+        // the click, mixed into every channel of the song
+        let s = if self.click_val != 0.0 { (s as f32 + self.click_val * 32767.0).clamp(-32768.0, 32767.0) as i16 } else { s };
         self.sub += 1;
         if self.sub >= self.ch {
             self.sub = 0;
@@ -224,6 +310,7 @@ impl<S: Source<Item = i16>> Source for Looper<S> {
         self.frame = (pos.as_secs_f64() * self.rate as f64) as u64;
         self.sub = 0;
         self.ctl.pos_fr.store(self.frame, Ordering::Relaxed);
+        self.find_next_beat();
         Ok(())
     }
 }
@@ -1374,6 +1461,7 @@ impl Player {
                     }
                     Ok(Cmd::Volume(v)) => {
                         vol = v;
+                        ctl_t.set_click_level(metro_vol, vol);
                         if let Some(s) = &sink {
                             s.set_volume(out(v));
                         }
@@ -1384,6 +1472,7 @@ impl Player {
                     }
                     Ok(Cmd::MetroVolume(v)) => {
                         metro_vol = v.clamp(0.0, 1.0);
+                        ctl_t.set_click_level(metro_vol, vol);
                         if let Some((m, _)) = &slots[0] {
                             m.set_volume(out(metro_vol));
                         }
@@ -1519,6 +1608,45 @@ pub fn render<S: Source<Item = i16>>(src: S, fx: &Fx) -> (Vec<i16>, u16, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn song_clicks_land_on_their_beats_after_seeks_and_loops() {
+        // a silent 48 kHz stereo song, clicks at 0.5 s, 1.25 s and 2.0 s: each starts on its exact frame, in both
+        // channels, after a seek and after the loop jumps back
+        let silent = rodio::buffer::SamplesBuffer::new(2, 48000, vec![0i16; 48000 * 2 * 3]);
+        let ctl = Arc::new(Ctl::new());
+        let one = vec![0.5f32; 100];
+        ctl.set_song_clicks(Some(SongClicks { beats: vec![0.5, 1.25, 2.0], accent: vec![true, false, false], hi: one.clone(), lo: one, gain: 1.0 }));
+        let mut l = Looper::new(silent, ctl.clone());
+        // the source frame the next click starts on
+        let first_on = |l: &mut Looper<_>| -> u64 {
+            // (past the end of a click still sounding)
+            while l.sounding.is_some() {
+                l.next();
+                l.next();
+            }
+            loop {
+                let f = l.frame;
+                let a = l.next().unwrap();
+                let b = l.next().unwrap();
+                if a != 0 {
+                    assert_eq!(a, b, "both channels");
+                    return f;
+                }
+            }
+        };
+        assert_eq!(first_on(&mut l), 24000);
+        assert_eq!(first_on(&mut l), 60000);
+        l.try_seek(Duration::from_millis(1900)).unwrap();
+        assert_eq!(first_on(&mut l), 96000);
+        // a loop from 1.2 s to 1.5 s: the 1.25 s click comes on again each time round
+        ctl.set_loop(true, 1.2, 1.5);
+        l.try_seek(Duration::from_millis(1300)).unwrap();
+        for _ in 0..3 {
+            assert_eq!(first_on(&mut l), 60000);
+        }
+        assert!(ctl.wraps() >= 2);
+    }
 
     fn tone(secs: f32) -> rodio::buffer::SamplesBuffer<i16> {
         let n = (secs * 44100.0) as usize;

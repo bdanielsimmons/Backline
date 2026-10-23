@@ -591,6 +591,15 @@ impl App {
     /// Keep the metronome and the band going: tempo changes, speed-up drill, locking to the track.
     fn update_metro(&mut self, playing: bool) {
         self.band_tick();
+        let tid = self.cur_track().map(|t| t.id);
+        let ratio = if self.practice && playing { self.speed as f32 / 100.0 } else { 1.0 };
+        // the song's beats known and the song at its own speed: the clicks go into the song itself (see below)
+        let in_song = self.mt.on && self.mt.sync && playing && (ratio - 1.0).abs() < 0.001
+            && self.beat.map_or(false, |b| Some(b.0) == tid)
+            && self.beat_grid.as_ref().is_some_and(|g| Some(g.0) == tid);
+        if !in_song {
+            self.player.ctl.set_song_clicks(None);
+        }
         if !self.mt.on {
             if self.mt_sig != 0 {
                 self.player.send(Cmd::Pcm(0, Vec::new(), Vec::new(), 0.0));
@@ -599,7 +608,6 @@ impl App {
             }
             return;
         }
-        let tid = self.cur_track().map(|t| t.id);
         // locking needs the track's beat: look for it by itself once the audio is stored
         let sync_wanted = self.mt.sync && !tid.map_or(false, |t| self.beat_failed.contains(&t));
         if sync_wanted && playing && !self.beat_busy && self.beat.map(|b| b.0) != tid {
@@ -620,7 +628,6 @@ impl App {
             }
             return;
         }
-        let ratio = if self.practice && playing { self.speed as f32 / 100.0 } else { 1.0 };
         if !locked && self.mt.ramp_bars > 0 {
             let tempo = self.metro_tempo(playing);
             let bar = self.mt.beats as f32 * 60.0 / self.mt.pulse(tempo.max(20.0));
@@ -643,7 +650,8 @@ impl App {
             } else {
                 self.mt_sync_at.elapsed().as_secs() >= 12
             };
-            if jumped || due {
+            // (in the song, the audio side follows seeks and loops by itself)
+            if (jumped || due) && !in_song {
                 self.mt_gen += 1;
                 self.mt_sync_at = Instant::now();
             }
@@ -693,8 +701,21 @@ impl App {
             }
         }
         let mut body = band::click_loop(&cfg, tempo);
-        // the song's beats known: 40 seconds of clicks laid exactly on them (the band speeding up or slowing down is
-        // in it), then the steady loop carries on until they are laid again
+        // the song's beats known and the song at its own speed: the clicks go into the song itself, on its beats, so
+        // nothing can drift; the separate click stream stays quiet. (Slowed down, the song is stretched, which would
+        // smear a click inside it: then the laid-out stream below is used.)
+        if in_song {
+            if let Some((_, grid, _)) = self.beat_grid.as_ref() {
+                let (hi, lo) = band::click_sounds();
+                let beats: Vec<f64> = grid.iter().map(|b| *b as f64 + self.mt.shift_ms as f64 / 1000.0).collect();
+                let n = self.mt.beats.max(1) as usize;
+                let accent: Vec<bool> = (0..beats.len()).map(|k| k % n == 0).collect();
+                self.player.ctl.set_song_clicks(Some(crate::player::SongClicks { beats, accent, hi, lo, gain: 0.8 }));
+            }
+            self.mt_vis = Some((Instant::now() + Duration::from_secs_f32(wait), period, 1));
+            self.player.send(Cmd::Pcm(0, Vec::new(), Vec::new(), 0.0));
+            return;
+        }
         if locked {
             if let Some((_, grid, _)) = self.beat_grid.as_ref().filter(|g| Some(g.0) == tid) {
                 let pos = self.pos();

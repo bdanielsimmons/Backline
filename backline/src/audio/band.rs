@@ -390,6 +390,16 @@ pub fn grid_clicks(grid: &[f32], from: f32, secs: f32, ratio: f32, shift: f32, b
     v
 }
 
+/// The metronome's two clicks as sounds (the accented one higher), for mixing into a song on its beats.
+pub fn click_sounds() -> (Vec<f32>, Vec<f32>) {
+    let make = |f: f32, vel: f32| {
+        let mut v = vec![0i16; (RATE * 0.06) as usize];
+        click(&mut v, 0, f, vel);
+        v.iter().map(|s| *s as f32 / 32768.0).collect::<Vec<f32>>()
+    };
+    (make(1650.0, 1.0), make(1250.0, 0.7))
+}
+
 /// A bar of plain clicks, played once before the band starts.
 pub fn count_in(beats: u32, bpm: f32) -> Vec<i16> {
     click_loop(&Metro { beats, ..Metro::default() }, bpm)
