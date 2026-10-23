@@ -715,6 +715,7 @@ impl App {
 
     /// EAR: the drill menu, the question (A), your scores (B).
     pub(crate) fn ear_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        crate::tour::mark("EARVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
         title_line(ui, "EAR TRAINING", 3.0, pal().ink);

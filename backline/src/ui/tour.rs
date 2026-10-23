@@ -55,6 +55,8 @@ enum Scene {
     Harmony,
     /// practice mode, LINES on Slonimsky's Diary
     Lines,
+    /// practice mode, the EAR training page
+    Ear,
     /// practice mode, the lead sheet on the right with a ii-V-I on it
     Sheet,
 }
@@ -249,9 +251,16 @@ const PRACTICE_TOUR: &[Step] = &[
         ..BASE
     },
     Step {
+        key: "EARVIEW",
+        scene: Scene::Ear,
+        title: "14. EAR TRAINING",
+        text: "Eight drills, from chord qualities and intervals to progressions and playing a lick back. You start with four answers and get more as you get them right; the ones you mix up come back more often.",
+        ..BASE
+    },
+    Step {
         key: "TABS",
         scene: Scene::Practice,
-        title: "14. KEEP TRACK",
+        title: "15. KEEP TRACK",
         text: "PRACTICE in the side list holds your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
         ..BASE
     },
@@ -539,6 +548,7 @@ impl App {
             | Scene::Analyzer
             | Scene::Harmony
             | Scene::Lines
+            | Scene::Ear
             | Scene::Sheet => true,
             _ => practice,
         };
@@ -570,6 +580,9 @@ impl App {
             Scene::Lines => {
                 self.sec = crate::Sec::Lines;
                 self.ln_tab = 0;
+            }
+            Scene::Ear => {
+                self.sec = crate::Sec::Ear;
             }
             Scene::Sheet => {
                 self.rtab = 1;
@@ -1075,6 +1088,7 @@ mod tests {
             include_str!("chords.rs"),
             include_str!("lines.rs"),
             include_str!("tools.rs"),
+            include_str!("ear.rs"),
         ]
         .concat();
         for s in BASIC.iter().chain(PRACTICE_TOUR) {
