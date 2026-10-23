@@ -19,6 +19,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Ear training page under Practice: chord qualities, intervals, progressions, scale degrees, guide tones, scales and modes, bass notes and playing a lick back
 - Ember, a soft pad with quiet glass pings, opens Backline; nine more in Preferences (Aero, Lift, Daybreak, Glass Rain, Skylight, Homecoming, Frost, Bellglass, Classic)
 - In the mini player, EQ and PL drop the skin's equalizer and playlist under the deck, like classic Winamp
 - Typing a tune name and pressing Enter offers the songs you might mean, spelled right, or keep it as typed
@@ -28,7 +29,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Brazilian songbook in the recommended tunes: Jobim, Bonfá, Baden Powell, Edu Lobo, Milton, João Bosco, Hermeto, choro
 - With a skin, the library lists its places down the side, like Spotify
 - Play, shuffle and queue are icons, with the rest under "..."
-- DIARY > ROUTINE - a session tune a week (a different kind each time, or gospel), with daily steps that open the tool set up for them: listen, melody by ear, changes with the band, a lick through 12 keys, a recorded solo, listening back
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
