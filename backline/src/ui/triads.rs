@@ -956,6 +956,8 @@ mod tests {
         }
         // the open-position C on strings 3-2-1 (G C E: 0 1 0) is one of them
         assert!(grips.iter().any(|g| g[3] == Some(0) && g[4] == Some(1) && g[5] == Some(0)));
+        // but never an open string under a hand up the neck (open G, E at the 5th, C at the 8th)
+        assert!(!grips.iter().any(|g| g[3] == Some(0) && g.iter().flatten().any(|f| *f > 4)), "{:?}", grips);
     }
 
     /// Stacks keep their order: D G C (4ths) on strings 4-3-2 comes out low to high in that order.

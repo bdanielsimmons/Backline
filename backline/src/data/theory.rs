@@ -136,7 +136,8 @@ const TYPES: &[(&str, &[i32])] = &[
 
 /// Every way to play these pitch classes one to a string on `strings` (low to high) with the notes climbing:
 /// `ordered` keeps them in the order given (a stack), else any order (inversions). Fretted notes within `reach`
-/// frets of each other; open strings are free. Lowest on the neck first.
+/// frets of each other; open strings only in a shape down by the nut (an open string under a hand at the 8th fret
+/// isn't a shape anyone plays). Lowest on the neck first.
 pub fn grips_on(pcs: &[i32], strings: &[usize], ordered: bool, reach: u8) -> Vec<[Option<u8>; 6]> {
     fn search(
         k: usize,
@@ -150,7 +151,8 @@ pub fn grips_on(pcs: &[i32], strings: &[usize], ordered: bool, reach: u8) -> Vec
         if k == strings.len() {
             let fretted: Vec<u8> = cur.iter().copied().filter(|f| *f > 0).collect();
             let span = fretted.iter().max().unwrap_or(&0) - fretted.iter().min().unwrap_or(&0);
-            if span <= reach {
+            let open_ok = !cur.contains(&0) || fretted.iter().all(|f| *f <= reach);
+            if span <= reach && open_ok {
                 let mut g = [None; 6];
                 for (j, s) in strings.iter().enumerate() {
                     g[*s] = Some(cur[j]);
