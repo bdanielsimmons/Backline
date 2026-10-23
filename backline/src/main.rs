@@ -62,6 +62,8 @@ pub(crate) use widgets::*;
 mod album_view;
 #[path = "ui/arpeggios.rs"]
 mod arpeggios;
+#[path = "ui/atonal.rs"]
+mod atonal;
 #[path = "ui/chords.rs"]
 mod chords;
 #[path = "ui/clusters.rs"]
@@ -2720,6 +2722,9 @@ struct App {
     hm_vamp: Vec<u8>,
     /// EAR: the drill, the question, this session
     ear: ear::Ear,
+    /// LINES > ATONAL: your lines (from the private file) or generated ones, the note being fixed, the generator's
+    /// choices
+    at: atonal::AtState,
     si_any: bool,
     si_pick: u8,
     si_kind: u8,
@@ -3460,6 +3465,7 @@ impl App {
             hm_solo: 0,
             hm_vamp: Vec::new(),
             ear: Default::default(),
+            at: Default::default(),
             si_any: false,
             si_pick: 0,
             si_kind: 0,
@@ -4151,7 +4157,21 @@ impl App {
             Ok("tunes") => app.sec = Sec::Tunes,
             Ok("reading") => app.sec = Sec::Reading,
             Ok("chords") => app.sec = Sec::Chords,
-            Ok("lines") => app.sec = Sec::Lines,
+            Ok("lines") => {
+                app.sec = Sec::Lines;
+                // BACKLINE_LN_TAB=<tab number>: that LINES tab (5 = ATONAL)
+                if let Some(t) = std::env::var("BACKLINE_LN_TAB").ok().and_then(|s| s.parse::<u8>().ok()) {
+                    app.ln_tab = t.min(5);
+                }
+            }
+            Ok("atonal") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 5;
+                // BACKLINE_AT_VIEW=1: the generated lines
+                app.at.view = std::env::var("BACKLINE_AT_VIEW").ok().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0).min(1);
+                // BACKLINE_AT_SEL=<note>: that note of your first line open to fix
+                app.at.sel = std::env::var("BACKLINE_AT_SEL").ok().and_then(|s| s.parse::<usize>().ok());
+            }
             Ok("files") => app.sec = Sec::Files,
             Ok("slonimsky") => {
                 app.sec = Sec::Lines;

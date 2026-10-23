@@ -66,9 +66,28 @@ pub(crate) fn line_score(
     lit: Option<usize>,
     tab: Option<Vec<Option<(usize, u8)>>>,
 ) {
+    line_score_marked(ui, acts, notes, group, sharps, lit, tab, &[], None);
+}
+
+/// The same, with some notes in a colour of their own (`marks`, by place in the line) and one boxed (`sel`).
+/// Returns the note clicked, if one was.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn line_score_marked(
+    ui: &mut egui::Ui,
+    acts: &mut Vec<Action>,
+    notes: &[i32],
+    group: usize,
+    sharps: bool,
+    lit: Option<usize>,
+    tab: Option<Vec<Option<(usize, u8)>>>,
+    marks: &[Option<Color32>],
+    sel: Option<usize>,
+) -> Option<usize> {
     if notes.is_empty() {
-        return;
+        return None;
     }
+    let mark = |i: usize| marks.get(i).copied().flatten();
+    let mut clicked = None;
     // the book's fingering when there is one, else one worked out
     let fing = tab.unwrap_or_else(|| lines::finger_line(notes, &theory::STANDARD));
     let g = 7.0_f32; // the gap between staff lines
@@ -129,7 +148,14 @@ pub(crate) fn line_score(
             let i = row * per + k;
             let (x, y, step) = heads[k];
             let on = lit == Some(i);
-            let col = if on { pal().red } else { pal().ink };
+            let col = if on { pal().red } else { mark(i).unwrap_or(pal().ink) };
+            if sel == Some(i) {
+                p.rect_stroke(
+                    Rect::from_min_max(Pos2::new(x - slot / 2.0, rect.min.y + 4.0), Pos2::new(x + slot / 2.0, rect.max.y - 4.0)),
+                    2.0,
+                    Stroke::new(1.5_f32, mark(i).unwrap_or(pal().ink)),
+                );
+            }
             if on {
                 p.rect_filled(
                     Rect::from_min_max(Pos2::new(x - slot / 2.0, rect.min.y + 4.0), Pos2::new(x + slot / 2.0, rect.max.y - 4.0)),
@@ -172,7 +198,8 @@ pub(crate) fn line_score(
                     _ => "",
                 }
             );
-            ptext(p, Pos2::new(x, tab_y(0) + 16.0), Align::Center, &name, 1.0, if on { pal().red } else { pal().dim });
+            let name_col = if on { pal().red } else { mark(i).unwrap_or(pal().dim) };
+            ptext(p, Pos2::new(x, tab_y(0) + 16.0), Align::Center, &name, 1.0, name_col);
         }
         // stems and beams, a beat group at a time
         let mut k = 0;
@@ -189,7 +216,7 @@ pub(crate) fn line_score(
             };
             let dx = if up { g * 0.5 } else { -g * 0.5 };
             for (j, h) in grp.iter().enumerate() {
-                let col = if lit == Some(i + j) { pal().red } else { pal().ink };
+                let col = if lit == Some(i + j) { pal().red } else { mark(i + j).unwrap_or(pal().ink) };
                 p.line_segment([Pos2::new(h.0 + dx, h.1), Pos2::new(h.0 + dx, tip)], Stroke::new(1.3_f32, col));
             }
             let (a, b) = (grp[0].0 + dx, grp[grp.len() - 1].0 + dx);
@@ -226,11 +253,13 @@ pub(crate) fn line_score(
                 let k = ((pos.x - x0) / slot).floor();
                 if k >= 0.0 && (k as usize) < chunk.len() {
                     acts.push(Action::PlayNotes(vec![chunk[k as usize]]));
+                    clicked = Some(row * per + k as usize);
                 }
             }
         }
         ui.add_space(4.0);
     }
+    clicked
 }
 
 impl App {
@@ -268,9 +297,11 @@ impl App {
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
         // shown in this order; each tab keeps its own number (ARPEGGIOS came last)
-        const ORDER: [u8; 5] = [0, 1, 4, 2, 3];
+        const ORDER: [u8; 6] = [0, 1, 4, 2, 3, 5];
         let shown = ORDER.iter().position(|t| *t == self.ln_tab).unwrap_or(0);
-        if let Some(t) = tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES", "ARPEGGIOS", "PENTATONICS & MORE", "SUPERIMPOSE"], shown) {
+        if let Some(t) =
+            tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES", "ARPEGGIOS", "PENTATONICS & MORE", "SUPERIMPOSE", "ATONAL"], shown)
+        {
             self.ln_tab = ORDER[t];
         }
         ui.add_space(6.0);
@@ -281,6 +312,7 @@ impl App {
             1 => self.fingerings(ui, acts),
             2 => self.pentatonics(ui, acts),
             4 => self.arpeggios(ui, acts),
+            5 => self.atonal(ui, acts),
             _ => self.superimpose(ui, acts),
         }
     }

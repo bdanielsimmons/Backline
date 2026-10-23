@@ -894,6 +894,30 @@ pub(crate) const TRICHORDS: [(&str, [i32; 3]); 12] = [
     ("0 2 6", [0, 2, 6]),
 ];
 
+/// The prime form of a set of pitch classes: its most packed form from 0, the set or turned upside down.
+pub(crate) fn prime_form(set: &[i32]) -> Vec<i32> {
+    let mut best: Option<Vec<i32>> = None;
+    for flip in [false, true] {
+        let mut pcs: Vec<i32> = set.iter().map(|x| if flip { (-x).rem_euclid(12) } else { x.rem_euclid(12) }).collect();
+        pcs.sort();
+        pcs.dedup();
+        for k in 0..pcs.len() {
+            let mut v: Vec<i32> = pcs.iter().map(|x| (x - pcs[k]).rem_euclid(12)).collect();
+            v.sort();
+            // packed most to the left: smallest span, then smallest steps from the bottom
+            let key = |v: &Vec<i32>| {
+                let mut k = vec![*v.last().unwrap()];
+                k.extend(v.iter().copied());
+                k
+            };
+            if best.as_ref().map_or(true, |b| key(&v) < key(b)) {
+                best = Some(v);
+            }
+        }
+    }
+    best.unwrap()
+}
+
 /// A step between neighbouring notes of a cell, in words.
 fn step_word(semis: i32) -> &'static str {
     match semis {
@@ -2005,8 +2029,8 @@ fn bad_col() -> Color32 {
     }
 }
 
-/// The accent for a run of right answers.
-fn acc_col() -> Color32 {
+/// The accent for a run of right answers (and, in LINES > ATONAL, a note copied unsure).
+pub(crate) fn acc_col() -> Color32 {
     if dark_skin() {
         Color32::from_rgb(255, 176, 64)
     } else {
@@ -4188,30 +4212,6 @@ mod tests {
         assert_eq!(w.len(), (1.2 * band::RATE) as usize);
         assert!(w.iter().all(|s| s.abs() <= 2600) && w.iter().any(|s| s.abs() > 1000));
         assert!(w[0].abs() < 50 && w[w.len() - 1].abs() < 50);
-    }
-
-    /// The prime form of a set of pitch classes: its most packed form from 0, the set or turned upside down.
-    fn prime_form(set: &[i32]) -> Vec<i32> {
-        let mut best: Option<Vec<i32>> = None;
-        for flip in [false, true] {
-            let mut pcs: Vec<i32> = set.iter().map(|x| if flip { (-x).rem_euclid(12) } else { x.rem_euclid(12) }).collect();
-            pcs.sort();
-            pcs.dedup();
-            for k in 0..pcs.len() {
-                let mut v: Vec<i32> = pcs.iter().map(|x| (x - pcs[k]).rem_euclid(12)).collect();
-                v.sort();
-                // packed most to the left: smallest span, then smallest steps from the bottom
-                let key = |v: &Vec<i32>| {
-                    let mut k = vec![*v.last().unwrap()];
-                    k.extend(v.iter().copied());
-                    k
-                };
-                if best.as_ref().map_or(true, |b| key(&v) < key(b)) {
-                    best = Some(v);
-                }
-            }
-        }
-        best.unwrap()
     }
 
     #[test]
