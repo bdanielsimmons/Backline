@@ -3631,7 +3631,9 @@ impl App {
         // the first start of a new version: what changed (and in the few before it, for anyone who skipped some);
         // a first install (no settings yet) has nothing to catch up on
         let installed_before = st.as_object().is_some_and(|o| !o.is_empty());
-        if update::build() > 0 && app.seen_build != update::build() {
+        // (not over a demo being recorded or a test copy)
+        let quiet = ["BACKLINE_DEMO", "BACKLINE_OPEN", "BACKLINE_SHOT"].iter().any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()));
+        if update::build() > 0 && app.seen_build != update::build() && !quiet {
             if installed_before {
                 app.apply(Action::News);
             } else {

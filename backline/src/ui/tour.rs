@@ -5,7 +5,7 @@
 //! a slower speed, a loop, an EQ preset. When it ends, everything comes back: what was showing, the queue, the
 //! song and where it was, the speed, the loop and the equalizer.
 
-use crate::{pal, para, retro_btn, title_line, Action, App, PRACTICE};
+use crate::{pal, retro_btn, title_line, Action, App, PRACTICE};
 use eframe::egui::{self, Color32, Pos2, Rect};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -732,7 +732,8 @@ impl App {
                 for line in crate::wrap(&head, 2.5, ui.available_width() - 8.0) {
                     title_line(ui, &line, 2.5, Color32::from_rgb(240, 240, 236));
                 }
-                para(ui, step.text, Color32::from_rgb(225, 225, 220));
+                // (the whole text, plainly on the card - not folded to a line)
+                crate::wrapped(ui, step.text, Color32::from_rgb(225, 225, 220));
                 // the credit the song's licence asks for, while it plays
                 if self.tour_play.as_ref().is_some_and(|s| s.song.is_some()) {
                     // scrolling at the same speed as the song's name in the player
