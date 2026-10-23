@@ -9,14 +9,19 @@ impl App {
         window_deco(ui, inner, "BACKLINE");
         let p = ui.painter();
         let c = inner.center();
-        logo_mark(p, c + Vec2::new(-214.0, -102.0), 4.0);
-        logo_mark(p, c + Vec2::new(178.0, -102.0), 4.0);
-        ptext(p, c + Vec2::new(0.0, -84.0), Align::Center, "BACKLINE", 7.0, pal().ink);
+        // the name with a mark either side of it, sized to the name (not to a fixed spot)
+        let (title, tpx, ty) = ("BACKLINE", 4.0, c.y - 88.0);
+        let half = crate::font::text_w(title, tpx) / 2.0;
+        let mpx = 2.4;
+        let m = mpx * 9.0;
+        logo_mark(p, Pos2::new(c.x - half - 14.0 - m, ty - m / 2.0), mpx);
+        logo_mark(p, Pos2::new(c.x + half + 14.0, ty - m / 2.0), mpx);
+        ptext(p, Pos2::new(c.x, ty), Align::Center, title, tpx, pal().ink);
         if PRACTICE {
-            ptext(p, c + Vec2::new(0.0, -50.0), Align::Center, "A retro player for Tidal and more", 2.0, pal().ink2);
-            ptext(p, c + Vec2::new(0.0, -32.0), Align::Center, "PRACTICE EDITION: LOOP, SLOW DOWN, LEARN TUNES", 1.0, pal().dim);
+            ptext(p, c + Vec2::new(0.0, -56.0), Align::Center, "A retro player for Tidal and more", 2.0, pal().ink2);
+            ptext(p, c + Vec2::new(0.0, -36.0), Align::Center, "PRACTICE EDITION: LOOP, SLOW DOWN, LEARN TUNES", 1.0, pal().dim);
         } else {
-            ptext(p, c + Vec2::new(0.0, -40.0), Align::Center, "A retro player for Tidal and more", 2.0, pal().ink2);
+            ptext(p, c + Vec2::new(0.0, -50.0), Align::Center, "A retro player for Tidal and more", 2.0, pal().ink2);
         }
         match self.auth {
             Auth::LoggingIn => match &self.login_code {
