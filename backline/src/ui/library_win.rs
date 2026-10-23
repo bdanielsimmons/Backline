@@ -1065,7 +1065,7 @@ impl App {
                 ("loop", "Loops", here(Sec::Loops), 12),
                 ("book", "Reading", here(Sec::Reading), 13),
                 ("chords", "Chords", here(Sec::Chords), 14),
-                ("ear", "Ear", here(Sec::Ear), 17),
+                ("ear", "Ear Training", here(Sec::Ear), 17),
                 ("lines", "Lines", here(Sec::Lines), 15),
                 ("melody", "Chord Melodies", here(Sec::Melodies), 16),
             ]);
