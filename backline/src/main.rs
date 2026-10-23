@@ -178,6 +178,8 @@ enum Msg {
     Page(Page, bool),
     /// an artist followed or unfollowed (their id, followed now?, how it went)
     Followed(String, bool, Result<(), String>),
+    /// an album or playlist saved to (true) or removed from your Tidal albums / playlists
+    CardSaved(Card, bool, Result<(), String>),
     MoreTracks(u64, Vec<Track>),
     Err(String),
     Audio(u64, i64, Vec<u8>),
@@ -304,6 +306,8 @@ enum Action {
     Open(Card),
     /// follow (true) or unfollow an artist on Tidal: their id
     Follow(String, bool),
+    /// keep (true) or drop (false) an album or a playlist in your Tidal albums / playlists
+    SaveCard(Card, bool),
     /// RECORD: start a take, or stop and keep it
     RecToggle,
     /// the last take, not listened to yet: keep it (true) or delete it, then start the new one
@@ -1972,10 +1976,41 @@ fn page_view(
             }
             ui.vertical(|ui| {
                 title_line(ui, &page.title, 3.0, pal().ink);
-                title_line(ui, &page.subtitle, 2.0, pal().ink2);
+                match &page.by {
+                    // an album's artist: their name opens their page
+                    Some(by) => {
+                        let top = ui.cursor().min;
+                        title_line(ui, &page.subtitle, 2.0, pal().ink2);
+                        let w = crate::font::text_w(&page.subtitle, 2.0).min(ui.available_width());
+                        let rect = Rect::from_min_max(top, Pos2::new(top.x + w, ui.cursor().min.y));
+                        let r = ui.interact(rect, ui.id().with("page_by"), Sense::click());
+                        if r.hovered() {
+                            let y = r.rect.max.y - 1.0;
+                            ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(1.0_f32, pal().ink2));
+                        }
+                        if r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Go to the artist.").clicked() {
+                            acts.push(Action::Open(by.clone()));
+                        }
+                    }
+                    None => {
+                        title_line(ui, &page.subtitle, 2.0, pal().ink2);
+                    }
+                }
                 ui.add_space(6.0);
                 if !page.tracks.is_empty() {
                     play_buttons(ui, &page.tracks, acts, false);
+                }
+                // an album or someone else's playlist: keep it in your Tidal albums / playlists
+                if let (Some(c), Some(saved)) = (&page.card, page.saved) {
+                    let (on_txt, off_txt, tip) = if c.kind == Kind::Album {
+                        ("IN MY ALBUMS", "+ ADD TO MY ALBUMS", "Keep this album in your albums on Tidal.")
+                    } else {
+                        ("IN MY PLAYLISTS", "+ ADD TO MY PLAYLISTS", "Keep this playlist in your playlists on Tidal.")
+                    };
+                    let tip = if saved { "In your Tidal library. Click to remove it." } else { tip };
+                    if retro_btn(ui, if saved { on_txt } else { off_txt }, saved).tip(tip).clicked() {
+                        acts.push(Action::SaveCard(c.clone(), !saved));
+                    }
                 }
                 if page.artist && !page.artist_id.is_empty() {
                     ui.horizontal(|ui| {
@@ -4643,6 +4678,34 @@ impl App {
                     self.loading = false;
                     self.set_err(e);
                 }
+                Msg::CardSaved(c, on, r) => match r {
+                    Ok(()) => {
+                        // the page shows it, and the library's ALBUMS / PLAYLISTS list follows along
+                        if let Some(p) = self.page.as_mut().filter(|p| p.card.as_ref().is_some_and(|pc| pc.id == c.id)) {
+                            Arc::make_mut(p).saved = Some(on);
+                        }
+                        let row_name = if c.kind == Kind::Album { "Albums" } else { "Playlists" };
+                        if let Some(lp) = self.lib_page.as_mut() {
+                            let lp = Arc::make_mut(lp);
+                            match lp.rows.iter_mut().find(|r| r.0 == row_name) {
+                                Some(row) => {
+                                    row.1.retain(|x| x.id != c.id);
+                                    if on {
+                                        row.1.insert(0, c.clone());
+                                    }
+                                }
+                                None => {
+                                    if on {
+                                        lp.rows.push((row_name.to_string(), vec![c.clone()]));
+                                    }
+                                }
+                            }
+                        }
+                        let what = if c.kind == Kind::Album { "ALBUMS" } else { "PLAYLISTS" };
+                        self.set_note(&if on { format!("SAVED TO YOUR {}", what) } else { format!("REMOVED FROM YOUR {}", what) });
+                    }
+                    Err(e) => self.set_err(format!("Couldn't {} on Tidal: {}", if on { "save it" } else { "remove it" }, e)),
+                },
                 Msg::Followed(id, on, r) => match r {
                     Ok(()) => {
                         // the artist's page shows it, and the library's ARTISTS list follows along
@@ -5212,6 +5275,14 @@ impl App {
             }
             Action::BioOpen(id, open) => {
                 self.ctx.data_mut(|d| d.insert_temp(egui::Id::new(("bio_open", id)), open));
+            }
+            Action::SaveCard(c, on) => {
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = api.save_card(&c, on);
+                    let _ = tx.send(Msg::CardSaved(c, on, r));
+                    ctx.request_repaint();
+                });
             }
             Action::Follow(id, on) => {
                 let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());

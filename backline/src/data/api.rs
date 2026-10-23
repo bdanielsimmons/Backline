@@ -274,6 +274,11 @@ pub struct Page {
     pub following: bool,
     /// Total number of liked songs on Tidal (only set on the library page).
     pub total: usize,
+    /// an album or playlist page: what was opened, whether it is in your Tidal albums / playlists (None: it is one
+    /// of your own playlists, nothing to save), and the album's artist (the name under the title opens them)
+    pub card: Option<Card>,
+    pub saved: Option<bool>,
+    pub by: Option<Card>,
 }
 
 pub struct DeviceCode {
@@ -916,11 +921,52 @@ impl Api {
 
     /// The ids of the artists you follow.
     pub fn followed_artists(&self) -> Res<Vec<String>> {
+        self.fav_ids("ARTIST")
+    }
+
+    /// The ids of what you keep on Tidal of one kind (ARTIST, ALBUM, PLAYLIST, TRACK).
+    fn fav_ids(&self, kind: &str) -> Res<Vec<String>> {
         let v = self.get(&format!("/users/{}/favorites/ids", self.uid()), &[])?;
-        Ok(arr(&v["ARTIST"])
+        Ok(arr(&v[kind])
             .iter()
             .filter_map(|x| x.as_str().map(str::to_string).or_else(|| x.as_i64().map(|n| n.to_string())))
             .collect())
+    }
+
+    /// Save (true) or remove (false) an album or a playlist in your Tidal albums / playlists.
+    pub fn save_card(&self, c: &Card, on: bool) -> Res<()> {
+        guard()?;
+        let (what, key) = match c.kind {
+            Kind::Album => ("albums", "albumIds"),
+            Kind::Playlist => ("playlists", "uuids"),
+            _ => return Err("only albums and playlists can be saved".to_string()),
+        };
+        let _ = self.get(&format!("/users/{}/favorites/ids", self.uid()), &[])?; // a fresh login first, as any request
+        let (tok, country, uid) = {
+            let s = self.session.lock().unwrap();
+            (s.access_token.clone(), s.country.clone(), s.user_id)
+        };
+        let base = format!("{}/users/{}/favorites/{}", API, uid, what);
+        let r = if on {
+            self.http
+                .post(&base)
+                .bearer_auth(&tok)
+                .query(&[("countryCode", country.as_str())])
+                .form(&[(key, c.id.as_str()), ("onArtifactNotFound", "SKIP")])
+                .send()
+        } else {
+            self.http.delete(format!("{}/{}", base, c.id)).bearer_auth(&tok).query(&[("countryCode", country.as_str())]).send()
+        };
+        let r = r.map_err(e2s)?;
+        let st = r.status();
+        log(&format!("{} favorite {} {} -> {}", if on { "POST" } else { "DELETE" }, what, c.id, st.as_u16()));
+        if st.is_success() {
+            Ok(())
+        } else {
+            let t = r.text().unwrap_or_default();
+            log(&format!("  error body: {}", t.chars().take(300).collect::<String>()));
+            Err(format!("{}: {}", st.as_u16(), t.chars().take(120).collect::<String>()))
+        }
     }
 
     /// Follow (true) or unfollow (false) an artist on Tidal.
@@ -1322,10 +1368,27 @@ impl Api {
             Kind::Album => {
                 let items = self.paged(&format!("/albums/{}/items", c.id), &[], 500)?;
                 p.tracks = tracks_from(&items);
+                p.card = Some(c.clone());
+                p.saved = Some(self.fav_ids("ALBUM").map(|ids| ids.contains(&c.id)).unwrap_or(false));
+                if let Ok(a) = self.get(&format!("/albums/{}", c.id), &[]) {
+                    let artist = &a["artist"];
+                    let id = artist["id"].as_i64().map(|n| n.to_string()).or_else(|| artist["id"].as_str().map(str::to_string));
+                    if let (Some(id), Some(name)) = (id, artist["name"].as_str()) {
+                        p.by = Some(Card { kind: Kind::Artist, id, title: name.to_string(), subtitle: "Artist".to_string(), image: String::new() });
+                    }
+                }
             }
             Kind::Playlist => {
                 let items = self.paged(&format!("/playlists/{}/items", c.id), &[], 1000)?;
                 p.tracks = tracks_from(&items);
+                p.card = Some(c.clone());
+                // (one of your own playlists has nothing to save)
+                let mine = self
+                    .get(&format!("/playlists/{}", c.id), &[])
+                    .ok()
+                    .and_then(|v| v["creator"]["id"].as_i64())
+                    .is_some_and(|id| id == self.uid());
+                p.saved = if mine { None } else { Some(self.fav_ids("PLAYLIST").map(|ids| ids.contains(&c.id)).unwrap_or(false)) };
             }
             Kind::Artist => {
                 p.artist = true;
