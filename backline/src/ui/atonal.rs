@@ -90,6 +90,23 @@ fn save(f: &AtFile) -> std::io::Result<()> {
     std::fs::write(file_path(), to_text(f))
 }
 
+/// Save one line: the file is read again first and only that line (by its name) is replaced, so lines added to the
+/// file meanwhile (by another copy, by hand) are kept. The file as it now is.
+fn save_line(line: &AtLine) -> std::io::Result<AtFile> {
+    let mut f = load().unwrap_or(AtFile { format: 1, lines: Vec::new() });
+    match f.lines.iter_mut().find(|l| l.name == line.name) {
+        Some(l) => *l = line.clone(),
+        None => f.lines.push(line.clone()),
+    }
+    save(&f)?;
+    Ok(f)
+}
+
+/// When the private file was last written (to read it again when it changes).
+fn file_time() -> Option<std::time::SystemTime> {
+    std::fs::metadata(file_path()).and_then(|m| m.modified()).ok()
+}
+
 // ------------------------------------------------------------------ generated lines
 
 /// The ways a line is generated.
@@ -314,9 +331,9 @@ pub(crate) struct AtState {
     pub view: u8,
     pub line: usize,
     pub sel: Option<usize>,
-    /// the private file, read once it is first needed
+    /// the private file, read again whenever it changes on disk (new lines show up while the tab is open)
     pub file: Option<AtFile>,
-    pub loaded: bool,
+    pub seen: Option<Option<std::time::SystemTime>>,
     /// what went wrong saving, if anything
     pub msg: String,
     pub kind: u8,
@@ -334,7 +351,7 @@ impl Default for AtState {
             line: 0,
             sel: None,
             file: None,
-            loaded: false,
+            seen: None,
             msg: String::new(),
             kind: 0,
             key: 0,
@@ -388,9 +405,17 @@ impl App {
     /// YOUR LINES: the lines in the private file, each played and written out, the unsure notes marked; a note
     /// clicked can be fixed, deleted or have one added after it, and the file is saved.
     fn atonal_mine(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        if !self.at.loaded {
+        let now = file_time();
+        if self.at.seen != Some(now) {
+            // (the open line stays open by its name)
+            let open = self.at.file.as_ref().and_then(|f| f.lines.get(self.at.line)).map(|l| l.name.clone());
             self.at.file = load();
-            self.at.loaded = true;
+            self.at.seen = Some(now);
+            if let (Some(name), Some(f)) = (open, self.at.file.as_ref()) {
+                if let Some(k) = f.lines.iter().position(|l| l.name == name) {
+                    self.at.line = k;
+                }
+            }
         }
         // a file of lines dropped on the window is taken in (copied into Backline's folder)
         let dropped: Vec<std::path::PathBuf> =
@@ -566,10 +591,16 @@ impl App {
             line.notes.remove(i);
             self.at.sel = if line.notes.is_empty() { None } else { Some(i.min(line.notes.len() - 1)) };
         }
-        self.at.msg = match save(file) {
-            Ok(()) => String::new(),
-            Err(e) => format!("Couldn't save the change: {}", e),
-        };
+        let edited = line.clone();
+        match save_line(&edited) {
+            Ok(fresh) => {
+                self.at.line = fresh.lines.iter().position(|l| l.name == edited.name).unwrap_or(li);
+                self.at.file = Some(fresh);
+                self.at.seen = Some(file_time());
+                self.at.msg = String::new();
+            }
+            Err(e) => self.at.msg = format!("Couldn't save the change: {}", e),
+        }
     }
 
     /// GENERATED LINES: a line made from the rules, in a key, from a scale (or two tetrachords, or an interval).
