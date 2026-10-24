@@ -136,39 +136,43 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
     if !crate::tools::is_number_field(id) {
         let has_sel = ed.id == id && ed.anchor.is_some_and(|a| a != ed.cur);
         let n = chars.len();
-        // (what was picked: an edit to do as if typed, or select all)
+        // (what was picked: an edit to do as if typed, whether it takes the whole text, a paste)
         let mut picked: Option<(Option<egui::Event>, bool)> = None;
+        let mut paste = false;
         resp.context_menu(|ui| {
-            if has_sel && menu_item(ui, "Cut") {
-                picked = Some((Some(egui::Event::Cut), false));
+            if (has_sel || n > 0) && menu_item(ui, "Cut") {
+                picked = Some((Some(egui::Event::Cut), !has_sel));
             }
-            if has_sel && menu_item(ui, "Copy") {
-                picked = Some((Some(egui::Event::Copy), false));
+            if (has_sel || n > 0) && menu_item(ui, "Copy") {
+                picked = Some((Some(egui::Event::Copy), !has_sel));
             }
-            let clip = arboard::Clipboard::new().ok().and_then(|mut c| c.get_text().ok()).filter(|s| !s.trim().is_empty());
-            if let Some(c) = clip {
-                if menu_item(ui, "Paste") {
-                    picked = Some((Some(egui::Event::Paste(c)), false));
-                }
+            if menu_item(ui, "Paste") {
+                paste = true;
             }
             if n > 0 && menu_item(ui, "Select all") {
                 picked = Some((None, true));
             }
-            if picked.is_some() {
+            if picked.is_some() || paste {
                 ui.close_menu();
             }
         });
-        if let Some((ev, all)) = picked {
+        if picked.is_some() || paste {
             if ed.id != id {
                 ed.id = id;
                 ed.cur = n;
                 ed.anchor = None;
             }
+        }
+        if let Some((ev, all)) = picked {
             ed.menu = ev;
             if all {
                 ed.anchor = Some(0);
                 ed.cur = n;
             }
+        }
+        if paste {
+            // (the window reads the clipboard and hands the text over next frame, as Ctrl+V does)
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
     }
     let focused = ed.id == id;
