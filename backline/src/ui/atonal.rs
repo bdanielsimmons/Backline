@@ -323,6 +323,113 @@ fn note_label(m: i32) -> String {
     )
 }
 
+// ------------------------------------------------------------------ every string, every finger
+
+/// The strings by name, low E first (as the tuning lists them).
+const STRING_NAMES: [&str; 6] = ["LOW E", "A", "D", "G", "B", "HIGH E"];
+
+/// Every place on the neck (frets 1 to 20) where a line starting on `first` (sounding) can start: that note in any
+/// octave, low E string first.
+pub(crate) fn starts(first: i32) -> Vec<(usize, u8)> {
+    let mut out = Vec::new();
+    for s in 0..6 {
+        for f in 1..=20u8 {
+            if (theory::STANDARD[s] + f as i32 - first).rem_euclid(12) == 0 {
+                out.push((s, f));
+            }
+        }
+    }
+    out
+}
+
+/// The hand position (the fret under the first finger) when the line's first note at `start` is played with
+/// `finger` (1 to 4); none when that would be off the end of the neck.
+pub(crate) fn position_of(start: (usize, u8), finger: u8) -> Option<u8> {
+    let p = start.1 as i32 - (finger as i32 - 1);
+    (p >= 1).then_some(p as u8)
+}
+
+/// The line (sounding) played from `start` in position `pos`: moved by octaves so it starts there (a note that
+/// would fall off the neck moved an octave back on), every note fingered as close to the position as it goes.
+/// The notes as played, where each is, and which were moved an octave.
+pub(crate) fn finger_from(notes: &[i32], start: (usize, u8), pos: u8) -> (Vec<i32>, Vec<(usize, u8)>, Vec<bool>) {
+    let tuning = &theory::STANDARD;
+    let (lo, hi) = (tuning[0], tuning[5] + 22);
+    let shift = tuning[start.0] + start.1 as i32 - notes[0];
+    let mut played = Vec::with_capacity(notes.len());
+    let mut moved = Vec::with_capacity(notes.len());
+    for m in notes {
+        let mut x = m + shift;
+        let was = x;
+        while x < lo {
+            x += 12;
+        }
+        while x > hi {
+            x -= 12;
+        }
+        played.push(x);
+        moved.push(x != was);
+    }
+    // the cost of a spot: frets out of the four-fret box cost more the further out (one fret's stretch is cheap)
+    let boxed = |sp: (usize, u8)| -> f32 {
+        let f = sp.1 as i32;
+        let (a, b) = (pos as i32, pos as i32 + 3);
+        let out = if f == 0 { (a - 1).max(0) } else if f < a { a - f } else if f > b { f - b } else { 0 };
+        match out {
+            0 => 0.0,
+            1 => 1.0,
+            n => 1.0 + (n - 1) as f32 * 4.0,
+        }
+    };
+    let step = |a: (usize, u8), b: (usize, u8)| (a.0 as f32 - b.0 as f32).abs() * 0.3 + (a.1 as f32 - b.1 as f32).abs() * 0.1;
+    let opts: Vec<Vec<(usize, u8)>> = played
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            if i == 0 {
+                return vec![start];
+            }
+            (0..6).filter_map(|s| {
+                let f = m - tuning[s];
+                (0..=24).contains(&f).then_some((s, f as u8))
+            })
+            .collect()
+        })
+        .collect();
+    // best cost to reach each choice of each note, and where it came from
+    let mut best: Vec<Vec<(f32, usize)>> = vec![vec![(0.0, 0)]];
+    for i in 1..opts.len() {
+        let row = opts[i]
+            .iter()
+            .map(|sp| {
+                opts[i - 1]
+                    .iter()
+                    .enumerate()
+                    .map(|(k, q)| (best[i - 1][k].0 + step(*q, *sp) + boxed(*sp), k))
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+                    .unwrap_or((0.0, 0))
+            })
+            .collect();
+        best.push(row);
+    }
+    let mut spots = vec![start; opts.len()];
+    let mut k = (0..best[opts.len() - 1].len()).min_by(|a, b| best[opts.len() - 1][*a].0.total_cmp(&best[opts.len() - 1][*b].0)).unwrap_or(0);
+    for i in (0..opts.len()).rev() {
+        spots[i] = opts[i][k];
+        k = best[i][k].1;
+    }
+    (played, spots, moved)
+}
+
+/// The finger for a fret in position `pos`: one finger a fret, a stretch taken by the first or fourth; 0 open.
+pub(crate) fn finger_for(fret: u8, pos: u8) -> u8 {
+    if fret == 0 {
+        0
+    } else {
+        (fret as i32 - pos as i32 + 1).clamp(1, 4) as u8
+    }
+}
+
 // ------------------------------------------------------------------ the tab
 
 /// Where the ATONAL tab is: which lines, the line open, the note being fixed, and the generator's choices.
@@ -342,6 +449,9 @@ pub(crate) struct AtState {
     pub lower: usize,
     pub upper: usize,
     pub cycle: u8,
+    /// EVERY STRING, EVERY FINGER: which starting place (by its order on the neck) and which finger
+    pub start: usize,
+    pub finger: u8,
 }
 
 impl Default for AtState {
@@ -360,6 +470,8 @@ impl Default for AtState {
             lower: 0,
             upper: 3,
             cycle: 0,
+            start: 0,
+            finger: 1,
         }
     }
 }
@@ -506,6 +618,7 @@ impl App {
         if let Some(i) = self.at.sel {
             self.atonal_fix(ui, acts, i, &sounding);
         }
+        self.atonal_neck(ui, &sounding, lit);
         self.atonal_analysis(ui, &written);
     }
 
@@ -675,7 +788,66 @@ impl App {
         self.line_player(ui, acts, &sounding, &key);
         let lit = self.seq_now("line");
         crate::lines_ui::line_score(ui, acts, &sounding, self.ln_sub as usize, false, lit, None);
+        self.atonal_neck(ui, &sounding, lit);
         self.atonal_analysis(ui, &notes);
+    }
+
+    /// EVERY STRING, EVERY FINGER under a line (sounding): pick where the first note goes and which finger plays it,
+    /// and the whole line is shown on the neck in that position, each note with its finger.
+    fn atonal_neck(&mut self, ui: &mut egui::Ui, sounding: &[i32], lit: Option<usize>) {
+        let Some(first) = sounding.first() else { return };
+        let all = starts(*first);
+        if all.is_empty() {
+            return;
+        }
+        ui.add_space(6.0);
+        section_header(ui, "EVERY STRING, EVERY FINGER");
+        crate::views::dim_line(ui, "FROM MEMORY: EACH START, EACH FINGER.", 1.0, pal().ink2);
+        self.at.start = self.at.start.min(all.len() - 1);
+        let names: Vec<String> = all.iter().map(|(s, f)| format!("{} STRING, FRET {}", STRING_NAMES[*s], f)).collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        if let Some(i) = crate::choice_line(ui, "at_start", "START", &names, self.at.start, 260.0) {
+            self.at.start = i;
+        }
+        let start = all[self.at.start];
+        let fingers: Vec<String> = (1..=4u8)
+            .map(|k| match position_of(start, k) {
+                Some(_) => format!("FINGER {}", k),
+                None => format!("FINGER {} - OFF THE NECK", k),
+            })
+            .collect();
+        let fingers: Vec<&str> = fingers.iter().map(String::as_str).collect();
+        let fi = (self.at.finger.clamp(1, 4) - 1) as usize;
+        if let Some(i) = crate::choice_line(ui, "at_finger", "FINGER", &fingers, fi, 260.0) {
+            self.at.finger = i as u8 + 1;
+        }
+        let Some(pos) = position_of(start, self.at.finger.clamp(1, 4)) else {
+            para(ui, "That finger can't reach this place: pick another finger or another place.", pal().ink2);
+            return;
+        };
+        let (_, spots, moved) = finger_from(sounding, start, pos);
+        let n_moved = moved.iter().filter(|m| **m).count();
+        let mut about = format!("POSITION {}: FINGER 1 ON FRET {}", pos, pos);
+        if n_moved > 0 {
+            about.push_str(&format!("  -  {} NOTE{} AN OCTAVE OVER (RINGED)", n_moved, if n_moved == 1 { "" } else { "S" }));
+        }
+        crate::views::dim_line(ui, &about, 1.0, pal().ink2);
+        let mut dots: Vec<crate::improv::NeckDot> = Vec::new();
+        for (i, sp) in spots.iter().enumerate() {
+            if dots.iter().any(|d| d.spot == *sp) {
+                continue;
+            }
+            let k = finger_for(sp.1, pos);
+            dots.push(crate::improv::NeckDot {
+                spot: *sp,
+                text: if k == 0 { "O".to_string() } else { k.to_string() },
+                col: pal().ink,
+                strength: 0.85,
+                ring: moved[i],
+                root: i == 0,
+            });
+        }
+        crate::improv::neck_view(ui, &dots, lit.and_then(|i| spots.get(i).copied()));
     }
 
     /// ANALYSIS under a line (written notes): its intervals, cells, the scales that hold it, its syllables.
@@ -857,6 +1029,35 @@ mod tests {
         let (m, f) = syllables(&[72, 70, 69]);
         assert_eq!(m, vec!["Do", "Te", "La"]);
         assert_eq!(f, vec!["Do", "Te", "La"]);
+    }
+
+    #[test]
+    fn every_string_every_finger() {
+        // middle C as written (C3 sounding): on the D string at fret 10, among others
+        let all = starts(48);
+        assert!(all.contains(&(2, 10)) && all.contains(&(3, 5)) && all.contains(&(4, 1)) && all.contains(&(1, 3)));
+        assert!(all.iter().all(|(s, f)| (theory::STANDARD[*s] + *f as i32 - 48).rem_euclid(12) == 0));
+        assert_eq!(position_of((2, 10), 1), Some(10));
+        assert_eq!(position_of((2, 10), 4), Some(7));
+        assert_eq!(position_of((4, 1), 2), None);
+        // the alternate triads line from the D string, first finger: it starts there and stays near 10th position
+        let line: Vec<i32> = vec![60, 63, 66, 62, 65, 69, 64, 67, 70, 73];
+        let (played, spots, moved) = finger_from(&line, (2, 10), 10);
+        assert_eq!(spots[0], (2, 10));
+        assert_eq!(played, line);
+        assert!(moved.iter().all(|m| !m));
+        for (m, sp) in played.iter().zip(&spots) {
+            assert_eq!(theory::STANDARD[sp.0] + sp.1 as i32, *m);
+            assert!((9..=14).contains(&sp.1), "{:?}", spots);
+        }
+        // from the B string, fret 13: every note an octave higher
+        let (played, spots, _) = finger_from(&line, (4, 13), 12);
+        assert!(played.iter().zip(&line).all(|(a, b)| a - b == 12));
+        assert_eq!(spots[0], (4, 13));
+        assert_eq!(finger_for(10, 10), 1);
+        assert_eq!(finger_for(13, 10), 4);
+        assert_eq!(finger_for(14, 10), 4);
+        assert_eq!(finger_for(0, 10), 0);
     }
 
     #[test]
