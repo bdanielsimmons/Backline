@@ -54,6 +54,9 @@ pub(crate) struct Week {
     /// which rung of the ladder (1 the first)
     #[serde(default)]
     pub rung: usize,
+    /// the project's step for each day, Monday first
+    #[serde(default)]
+    pub steps: Vec<String>,
 }
 
 /// A rung of the sing-then-play ladder: its name and exactly how to do it.
@@ -148,6 +151,8 @@ pub(crate) fn week_of(start: i64, today: i64) -> i64 {
 
 /// A block's text with the week's and day's things filled in.
 pub(crate) fn fill(text: &str, plan: &Plan, week: &Week, day: &Day) -> String {
+    let wd = plan.days.iter().position(|d| d.name == day.name).unwrap_or(0);
+    let step = week.steps.get(wd).cloned().unwrap_or_default();
     let rung = week.rung.max(1);
     let (rname, rhow) = plan
         .rungs
@@ -159,7 +164,142 @@ pub(crate) fn fill(text: &str, plan: &Plan, week: &Week, day: &Day) -> String {
         .replace("{line}", &week.line)
         .replace("{rung}", &rname)
         .replace("{rung_how}", &rhow)
+        .replace("{project_step}", &step)
         .replace("{project}", &week.project)
+}
+
+/// A block's colour, by what it is (from its name), the same wherever it is drawn.
+pub(crate) fn block_col(name: &str) -> Color32 {
+    let n = name.to_lowercase();
+    let pick = [
+        ("warm", (185, 160, 230)),
+        ("ear", (143, 179, 239)),
+        ("sandole", (239, 143, 176)),
+        ("tune", (111, 211, 211)),
+        ("project", (111, 207, 143)),
+        ("review", (163, 177, 198)),
+        ("bonus", (240, 180, 107)),
+        ("fun", (232, 210, 122)),
+        ("church", (217, 179, 140)),
+    ];
+    let (r, g, b) = pick.iter().find(|(k, _)| n.contains(k)).map(|x| x.1).unwrap_or((150, 156, 168));
+    Color32::from_rgb(r, g, b)
+}
+
+/// A phase's colour (by its place among the plan's phases).
+fn phase_col(k: usize) -> Color32 {
+    [Color32::from_rgb(111, 207, 143), Color32::from_rgb(143, 179, 239), Color32::from_rgb(239, 143, 176), Color32::from_rgb(240, 180, 107)][k % 4]
+}
+
+/// Text in a box only when it fits (else its first word when that fits, else nothing; the box's tip has it all).
+fn label_in(p: &egui::Painter, at: Pos2, text: &str, px: f32, room: f32, col: Color32) {
+    if text_w(text, px) <= room {
+        ptext(p, at, Align::Center, text, px, col);
+    } else if let Some(w) = text.split_whitespace().next().filter(|w| text_w(w, px) <= room) {
+        ptext(p, at, Align::Center, w, px, col);
+    }
+}
+
+/// The short name of a day (MON).
+fn short_day(name: &str) -> String {
+    name.chars().take(3).collect::<String>().to_uppercase()
+}
+
+/// Blocks drawn as one bar, each as wide as its minutes (out of `scale` minutes across the bar), in its colour and
+/// named; `cur` boxed, the `done` ones ticked and dimmed. Returns the block clicked.
+fn block_bar(ui: &mut egui::Ui, id: &str, blocks: &[Block], scale: u32, h: f32, cur: Option<usize>, done: &[u8]) -> Option<usize> {
+    let w = ui.available_width().min(1000.0);
+    let (bar, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+    let mut x = bar.min.x;
+    let mut clicked = None;
+    for (k, b) in blocks.iter().enumerate() {
+        let bw = bar.width() * b.min as f32 / scale.max(1) as f32;
+        let r = Rect::from_min_size(Pos2::new(x, bar.min.y), Vec2::new(bw, h)).shrink2(Vec2::new(1.0, 0.0));
+        let resp = ui.interact(r, ui.id().with((id, k)), Sense::click());
+        let is_done = done.contains(&(k as u8));
+        let is_cur = cur == Some(k);
+        let col = block_col(&b.name);
+        let fill_c = if is_cur {
+            col
+        } else if is_done || cur.is_some() {
+            col.gamma_multiply(0.45)
+        } else {
+            col.gamma_multiply(0.85)
+        };
+        ui.painter().rect_filled(r, 4.0, fill_c);
+        if is_cur {
+            ui.painter().rect_stroke(r.expand(1.5), 5.0, Stroke::new(2.5_f32, pal().ink));
+        } else if resp.hovered() {
+            ui.painter().rect_stroke(r, 4.0, Stroke::new(1.5_f32, pal().ink));
+        }
+        let ink = Color32::from_gray(14);
+        let label = if is_done && !is_cur { format!("{}  OK", b.name) } else { b.name.clone() };
+        if h >= 40.0 {
+            label_in(ui.painter(), Pos2::new(r.center().x, r.center().y - 8.0), &label, 1.5, r.width() - 6.0, ink);
+            label_in(ui.painter(), Pos2::new(r.center().x, r.center().y + 9.0), &format!("{} MIN", b.min), 1.2, r.width() - 6.0, ink);
+        } else {
+            label_in(ui.painter(), r.center(), &label, 1.4, r.width() - 6.0, ink);
+        }
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}: {} min", b.name, b.min)).clicked() {
+            clicked = Some(k);
+        }
+        x += bw;
+    }
+    clicked
+}
+
+/// The weeks as a strip of boxes coloured by phase (this week dotted, the one looked at boxed), the phases named
+/// under it. Returns the week clicked (1 the first).
+fn week_strip(ui: &mut egui::Ui, plan: &Plan, now_w: i64, shown: i64) -> Option<i64> {
+    let n = plan.weeks.len();
+    let mut phases: Vec<&str> = Vec::new();
+    for w in &plan.weeks {
+        if !phases.contains(&w.phase.as_str()) {
+            phases.push(&w.phase);
+        }
+    }
+    let w = ui.available_width().min(1000.0);
+    let (bar, _) = ui.allocate_exact_size(Vec2::new(w, 70.0), Sense::hover());
+    let bw = bar.width() / n as f32;
+    let mut clicked = None;
+    for (k, wk) in plan.weeks.iter().enumerate() {
+        let pk = phases.iter().position(|p| *p == wk.phase).unwrap_or(0);
+        let r = Rect::from_min_size(Pos2::new(bar.min.x + k as f32 * bw, bar.min.y), Vec2::new(bw, 44.0)).shrink2(Vec2::new(2.0, 0.0));
+        let resp = ui.interact(r, ui.id().with(("plan_wk", k)), Sense::click());
+        let num = k as i64 + 1;
+        let col = phase_col(pk);
+        let past = num < now_w;
+        ui.painter().rect_filled(r, 5.0, if num == shown { col } else { col.gamma_multiply(if past { 0.3 } else { 0.55 }) });
+        if num == shown {
+            ui.painter().rect_stroke(r.expand(1.5), 6.0, Stroke::new(2.5_f32, pal().ink));
+        } else if resp.hovered() {
+            ui.painter().rect_stroke(r, 5.0, Stroke::new(1.5_f32, pal().ink));
+        }
+        let ink = Color32::from_gray(14);
+        let label = if num == now_w { format!("W{} NOW", num) } else { format!("W{}", num) };
+        label_in(ui.painter(), Pos2::new(r.center().x, r.center().y - 7.0), &label, 1.6, r.width() - 4.0, ink);
+        label_in(ui.painter(), Pos2::new(r.center().x, r.center().y + 9.0), &wk.tune, 1.1, r.width() - 4.0, ink);
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Week {}: {}", num, wk.project)).clicked() {
+            clicked = Some(num);
+        }
+    }
+    // the phases, each under its weeks
+    let mut k = 0;
+    while k < n {
+        let ph = &plan.weeks[k].phase;
+        let mut e = k;
+        while e + 1 < n && plan.weeks[e + 1].phase == *ph {
+            e += 1;
+        }
+        let x0 = bar.min.x + k as f32 * bw + 2.0;
+        let x1 = bar.min.x + (e + 1) as f32 * bw - 2.0;
+        let y = bar.min.y + 52.0;
+        let pk = phases.iter().position(|p| *p == ph.as_str()).unwrap_or(0);
+        ui.painter().line_segment([Pos2::new(x0, y - 4.0), Pos2::new(x1, y - 4.0)], Stroke::new(2.0_f32, phase_col(pk)));
+        label_in(ui.painter(), Pos2::new((x0 + x1) / 2.0, y + 8.0), &ph.to_uppercase(), 1.2, x1 - x0, pal().ink2);
+        k = e + 1;
+    }
+    clicked
 }
 
 /// The blocks of a day: the core (when the day runs it), then the day's own.
@@ -386,19 +526,23 @@ impl App {
         // ---- the week looked at
         let shown = (now_w.clamp(1, n) + self.plan.look).clamp(1, n);
         ui.add_space(6.0);
-        section_header(ui, &format!("WEEK {} OF {}", shown, n));
+        section_header(ui, "THE WEEKS");
+        if let Some(w) = week_strip(ui, &plan, now_w, shown) {
+            self.plan.look = w - now_w.clamp(1, n);
+        }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "PREVIOUS WEEK", false).clicked() && shown > 1 {
+            if retro_btn(ui, "<", false).tip("The week before.").clicked() && shown > 1 {
                 self.plan.look -= 1;
             }
             if retro_btn(ui, "THIS WEEK", self.plan.look == 0).clicked() {
                 self.plan.look = 0;
             }
-            if retro_btn(ui, "NEXT WEEK", false).clicked() && shown < n {
+            if retro_btn(ui, ">", false).tip("The week after.").clicked() && shown < n {
                 self.plan.look += 1;
             }
         });
         let wk = &plan.weeks[(shown - 1) as usize];
+        title_line(ui, &format!("WEEK {}: {}", shown, wk.phase.to_uppercase()), 2.0, pal().ink);
         let ws = start + (shown - 1) * 7;
         let (y, m, d) = store::civil_from_days(ws);
         crate::views::dim_line(ui, &format!("STARTS {:04}-{:02}-{:02}", y, m, d), 1.0, pal().dim);
@@ -415,23 +559,66 @@ impl App {
         for f in &wk.focus {
             text_block(ui, &format!("-  {}", f), 2.0, pal().ink2, 6.0);
         }
+        if !wk.steps.is_empty() {
+            ui.add_space(4.0);
+            title_line(ui, "THE PROJECT, DAY BY DAY", 2.0, pal().ink);
+            let wd = weekday(today);
+            for (k, s) in wk.steps.iter().enumerate() {
+                let name = plan.days.get(k).map(|d| short_day(&d.name)).unwrap_or_default();
+                let here = shown == now_w && k == wd;
+                fact(ui, &name, &if here { format!("{}  (TODAY)", s) } else { s.clone() }, if here { pal().ink } else { pal().ink2 });
+            }
+        }
 
         // ---- the days of a week
         ui.add_space(6.0);
         section_header(ui, "EVERY WEEK");
         let wd = weekday(today);
+        let longest = plan.days.iter().map(|d| day_blocks(&plan, d).iter().map(|b| b.min).sum::<u32>()).max().unwrap_or(1);
         for (k, d) in plan.days.iter().enumerate() {
-            let mins: u32 = day_blocks(&plan, d).iter().map(|b| b.min).sum();
-            let mut what: Vec<String> = Vec::new();
-            if d.core {
-                what.push(format!("Core ({} min)", plan.blocks.iter().map(|b| b.min).sum::<u32>()));
+            let bl = day_blocks(&plan, d);
+            let mins: u32 = bl.iter().map(|b| b.min).sum();
+            let here = k == wd;
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(Vec2::new(text_w("WED 999 MIN", 1.5) + 14.0, 30.0), Sense::hover());
+                let c = if here { pal().ink } else { pal().ink2 };
+                ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y - 7.0), Align::Min, &short_day(&d.name), 1.8, c);
+                ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y + 8.0), Align::Min, &format!("{} MIN", mins), 1.2, pal().dim);
+                if bl.is_empty() {
+                    ptext(ui.painter(), Pos2::new(r.max.x + 6.0, r.center().y), Align::Min, "REST", 1.4, pal().dim);
+                    ui.add_space(40.0);
+                } else {
+                    block_bar(ui, &format!("plan_day{}", k), &bl, longest, 30.0, None, &[]);
+                }
+            });
+            if !d.note.is_empty() && bl.len() <= 1 {
+                text_block(ui, &d.note, 1.5, pal().ink2, 6.0);
             }
-            what.extend(d.blocks.iter().map(|b| format!("{} ({} min)", b.name, b.min)));
+        }
+        // the key: every kind of block once, in its colour
+        let mut kinds: Vec<(String, u32)> = Vec::new();
+        for d in &plan.days {
+            for b in day_blocks(&plan, d) {
+                if !kinds.iter().any(|k| k.0 == b.name) {
+                    kinds.push((b.name.clone(), b.min));
+                }
+            }
+        }
+        ui.horizontal_wrapped(|ui| {
+            for (name, min) in &kinds {
+                let txt = format!("{} {}", name, min);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(text_w(&txt, 1.4) + 30.0, 22.0), Sense::hover());
+                let sw = Rect::from_min_size(Pos2::new(r.min.x + 2.0, r.center().y - 6.0), Vec2::splat(12.0));
+                ui.painter().rect_filled(sw, 3.0, block_col(name));
+                ptext(ui.painter(), Pos2::new(sw.max.x + 6.0, r.center().y), Align::Min, &txt, 1.4, pal().ink2);
+            }
+        });
+        ui.add_space(4.0);
+        title_line(ui, "THE TUNE, DAY BY DAY", 2.0, pal().ink);
+        for (k, d) in plan.days.iter().enumerate() {
             if !d.tune_step.is_empty() {
-                what.push(format!("Tune: {}", d.tune_step));
+                fact(ui, &short_day(&d.name), &d.tune_step, if k == wd { pal().ink } else { pal().ink2 });
             }
-            let head = if mins > 0 { format!("{}  {} MIN", d.name.to_uppercase(), mins) } else { d.name.to_uppercase() };
-            fact(ui, &head, &what.join("  -  "), if k == wd { pal().ink } else { pal().ink2 });
         }
 
         // ---- the ladder
@@ -468,33 +655,11 @@ impl App {
         let total: u32 = blocks.iter().map(|b| b.min).sum::<u32>().max(1);
         let cur = self.plan.block.min(blocks.len() - 1);
         let running = self.plan.end.is_some();
-        // the bar
-        let w = ui.available_width().min(1000.0);
-        let (bar, _) = ui.allocate_exact_size(Vec2::new(w, 34.0), Sense::hover());
-        let mut x = bar.min.x;
-        let mut jump = None;
-        for (k, b) in blocks.iter().enumerate() {
-            let bw = bar.width() * b.min as f32 / total as f32;
-            let r = Rect::from_min_size(Pos2::new(x, bar.min.y), Vec2::new(bw, bar.height())).shrink2(Vec2::new(1.0, 0.0));
-            let resp = ui.interact(r, ui.id().with(("plan_seg", k)), Sense::click());
-            let is_done = done.contains(&(k as u8));
-            let fill_c = if k == cur {
-                pal().ink
-            } else if is_done {
-                pal().ink2.gamma_multiply(0.45)
-            } else {
-                pal().lcd
-            };
-            ui.painter().rect_filled(r, 3.0, fill_c);
-            ui.painter().rect_stroke(r, 3.0, Stroke::new(1.0_f32, if resp.hovered() { pal().ink } else { pal().edge }));
-            let tc = if k == cur { pal().lcd } else { pal().ink2 };
-            let label = if is_done && k != cur { format!("{} OK", b.name) } else { b.name.clone() };
-            ptext_fit(ui.painter(), r.center(), Align::Center, &label, 1.5, r.width() - 6.0, tc);
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}: {} min. Click to go to it.", b.name, b.min)).clicked() {
-                jump = Some(k);
-            }
-            x += bw;
-        }
+        // the bar: every block as wide as its minutes; click one to go to it
+        let jump = block_bar(ui, "plan_seg", blocks, total, 46.0, Some(cur), &done);
+        // the minutes along it
+        let mins_done: u32 = blocks.iter().enumerate().filter(|(k, _)| done.contains(&(*k as u8))).map(|(_, b)| b.min).sum();
+        crate::views::dim_line(ui, &format!("{} OF {} MIN DONE TODAY", mins_done, total), 1.0, pal().dim);
         if let Some(k) = jump {
             self.plan.go(blocks, k, running);
         }
@@ -595,7 +760,7 @@ mod tests {
                 Block { name: "Tune".into(), min: 10, what: "{tune}: {tune_step}. Ladder {rung}: {rung_how}".into() },
             ],
             days: vec![day("Mon", true), day("Tue", true), day("Wed", true), day("Thu", true), day("Fri", true), day("Sat", false), day("Sun", false)],
-            weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2 }],
+            weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2, steps: vec![] }],
             ladder_about: String::new(),
             rungs: vec![Rung { name: "One note".into(), how: "a".into() }, Rung { name: "Two notes".into(), how: "Sing two".into() }],
             notes: vec![],
