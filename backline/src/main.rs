@@ -64,6 +64,8 @@ mod album_view;
 mod arpeggios;
 #[path = "ui/atonal.rs"]
 mod atonal;
+#[path = "ui/plan.rs"]
+mod plan;
 #[path = "ui/chords.rs"]
 mod chords;
 #[path = "ui/clusters.rs"]
@@ -2725,6 +2727,8 @@ struct App {
     /// LINES > ATONAL: your lines (from the private file) or generated ones, the note being fixed, the generator's
     /// choices
     at: atonal::AtState,
+    /// DIARY > MY PLAN: your own plan (from the private file), the week looked at, today's session timer
+    plan: plan::PlanState,
     si_any: bool,
     si_pick: u8,
     si_kind: u8,
@@ -3466,6 +3470,7 @@ impl App {
             hm_vamp: Vec::new(),
             ear: Default::default(),
             at: Default::default(),
+            plan: Default::default(),
             si_any: false,
             si_pick: 0,
             si_kind: 0,
@@ -4114,6 +4119,10 @@ impl App {
             Ok("routine") => {
                 app.sec = Sec::Diary;
                 app.diary_tab = 1;
+            }
+            Ok("plan") => {
+                app.sec = Sec::Diary;
+                app.diary_tab = 4;
             }
             Ok("analyzer") => {
                 app.sec = Sec::Chords;

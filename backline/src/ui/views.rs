@@ -3139,11 +3139,18 @@ impl App {
     pub(crate) fn diary_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
-        if let Some(i) = tab_row(ui, &["DIARY", "ROUTINE", "LISTENING", "MASTERS"], self.diary_tab as usize) {
+        // MY PLAN only when there is a plan file of your own
+        let mine = crate::plan::have_plan();
+        let tabs: &[&str] = if mine { &["DIARY", "ROUTINE", "LISTENING", "MASTERS", "MY PLAN"] } else { &["DIARY", "ROUTINE", "LISTENING", "MASTERS"] };
+        if self.diary_tab as usize >= tabs.len() {
+            self.diary_tab = 0;
+        }
+        if let Some(i) = tab_row(ui, tabs, self.diary_tab as usize) {
             self.diary_tab = i as u8;
         }
         ui.add_space(6.0);
         match self.diary_tab {
+            4 => return self.plan_view(ui, acts),
             1 => return self.routine_view(ui, acts),
             2 => return self.listening_view(ui, acts),
             3 => return self.masters_view(ui),

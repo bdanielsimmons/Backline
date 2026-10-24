@@ -413,6 +413,7 @@ impl App {
         }
         self.update_metro(playing);
         self.pomo_tick();
+        self.plan_tick();
         if playing && self.last_cap.elapsed() > Duration::from_secs(10) {
             self.capture_last();
         }
