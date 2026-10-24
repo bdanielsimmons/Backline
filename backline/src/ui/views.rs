@@ -212,7 +212,11 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         best
     };
     let shift = ui.input(|i| i.modifiers.shift);
-    if resp.double_clicked() && focused {
+    if resp.triple_clicked() && focused {
+        // a triple click picks everything
+        ed.anchor = Some(0);
+        ed.cur = chars.len();
+    } else if resp.double_clicked() && focused {
         // a double click picks the word
         let c = ed.cur.min(chars.len());
         let word = |ch: &char| !ch.is_whitespace();
