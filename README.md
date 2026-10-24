@@ -20,16 +20,16 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- LINES has an ATONAL tab: Sandole-style lines (alternate triads, joined tetrachords, interval cycles) in any key, your own lines kept on this computer with notes you can fix, and an analysis of every line (intervals, cells, tetrachords, scales that hold it, syllables).
+- Atonal ear training: free intervals out to 10ths, tetrachord and trichord cells, scales sung in intervals (moveable Do, fixed Do or La), scales stacked into chords, and a daily atonal line to sight-sing.
+- Albums and other people's playlists have an ADD TO MY ALBUMS / ADD TO MY PLAYLISTS button that keeps them in your Tidal library.
+- Click the artist's name on an album page to go to their page.
+- Right-click a song to copy its name (to search for it elsewhere) or delete it from this computer (your own files go to the Recycle Bin).
+- Right-click a text box for Cut, Copy, Paste and Select All.
 - Every song Backline saves now has its title, artist, album and cover written into the file, so it shows its name in Explorer and other players; songs already saved get theirs in the background.
 - The chord ear drill has 51 chords in five levels, from triads to upper structures, with look-alike sets, your own set, voicing and top-note options, and a ii-V lead-in.
 - Ear training says CORRECT!, shows how the chord you picked differs, counts your streak and best run, and can chime.
 - Offline mode lists every Tidal song saved on this computer by name, not only your liked ones.
-- The triad map only uses open strings in shapes down by the nut, so there's no more open string paired with a hand at the 8th fret.
-- Locked to a song, the metronome's clicks are now part of the song's own sound, so they can't slowly drift off and come back.
-- Ear training page under Practice: chord qualities, intervals, progressions, scale degrees, guide tones, scales and modes, bass notes and playing a lick back
-- Ember, a soft pad with quiet glass pings, opens Backline; nine more in Preferences (Aero, Lift, Daybreak, Glass Rain, Skylight, Homecoming, Frost, Bellglass, Classic)
-- In the mini player, EQ and PL drop the skin's equalizer and playlist under the deck, like classic Winamp
-- Typing a tune name and pressing Enter offers the songs you might mean, spelled right, or keep it as typed
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
