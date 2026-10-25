@@ -19,6 +19,18 @@ pub(crate) struct Block {
     pub min: u32,
     #[serde(default)]
     pub what: String,
+    /// what to do when you are ahead of the plan, and when behind
+    #[serde(default)]
+    pub ahead: String,
+    #[serde(default)]
+    pub behind: String,
+}
+
+/// A tune's changes, a bar each (two chords in a bar with a space between).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub(crate) struct Changes {
+    pub name: String,
+    pub bars: Vec<String>,
 }
 
 /// A day of the week (Monday first): whether it runs the daily core, its own blocks (after the core, or alone),
@@ -57,6 +69,9 @@ pub(crate) struct Week {
     /// the project's step for each day, Monday first
     #[serde(default)]
     pub steps: Vec<String>,
+    /// the changes of the week's tunes, for the guide tones and arpeggios on the neck
+    #[serde(default)]
+    pub changes: Vec<Changes>,
 }
 
 /// A rung of the sing-then-play ladder: its name and exactly how to do it.
@@ -331,11 +346,16 @@ pub(crate) struct PlanState {
     pub day: i64,
     /// blocks done, by date
     pub log: Option<BTreeMap<String, Vec<u8>>>,
+    /// GUIDE TONES AND ARPEGGIOS: which (0 guide tones, 1 arpeggios), which tune of the week, which chord, where
+    pub gt_kind: u8,
+    pub gt_set: usize,
+    pub gt_chord: usize,
+    pub gt_area: u8,
 }
 
 impl Default for PlanState {
     fn default() -> PlanState {
-        PlanState { file: None, seen: None, look: 0, block: 0, end: None, left: 0, auto: true, day: -1, log: None }
+        PlanState { file: None, seen: None, look: 0, block: 0, end: None, left: 0, auto: true, day: -1, log: None, gt_kind: 0, gt_set: 0, gt_chord: 0, gt_area: 3 }
     }
 }
 
@@ -443,7 +463,179 @@ fn fact(ui: &mut egui::Ui, name: &str, text: &str, col: Color32) {
     ui.add_space(4.0);
 }
 
+/// The neck's areas to look in: a name and the frets (the whole neck last).
+const AREAS: [(&str, u8, u8); 6] =
+    [("FRETS 0-4", 0, 4), ("3-7", 3, 7), ("5-9", 5, 9), ("7-11", 7, 11), ("10-14", 10, 14), ("WHOLE NECK", 0, 15)];
+
+/// Each chord once, in the order it comes in the changes.
+pub(crate) fn chords_once(bars: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for c in bars.iter().flat_map(|b| b.split_whitespace()) {
+        if !out.iter().any(|o| o == c) {
+            out.push(c.to_string());
+        }
+    }
+    out
+}
+
+/// A chord's 3rd and 7th (guide tones) or its 1 3 5 7 (arpeggio), as intervals from the root (the 6th of a 6
+/// chord or the bb7 of a dim7 stands in for the 7th). With its root, or None when the chord can't be read.
+pub(crate) fn chord_parts(name: &str, arp: bool) -> Option<(i32, Vec<i32>)> {
+    let n = crate::theory::chord_notes(name)?;
+    let r = n.root.rem_euclid(12);
+    let has = |iv: i32| n.pcs.iter().any(|p| (p - r).rem_euclid(12) == iv);
+    let third = if has(4) { 4 } else if has(3) { 3 } else { 5 };
+    let fifth = if has(7) { 7 } else if has(6) { 6 } else if has(8) { 8 } else { 7 };
+    let seventh = [10, 11, 9].into_iter().find(|iv| has(*iv));
+    let mut v = if arp { vec![0, third, fifth] } else { vec![third] };
+    v.extend(seventh);
+    Some((r, v))
+}
+
+/// The dots for a chord on the neck in these frets: its guide tones (with the root dim, to find them by) or its
+/// arpeggio, each named by its degree and coloured by it.
+fn chord_dots(name: &str, arp: bool, lo: u8, hi: u8) -> Vec<crate::improv::NeckDot> {
+    const OPEN: [i32; 6] = [40, 45, 50, 55, 59, 64];
+    let Some((root, parts)) = chord_parts(name, arp) else { return vec![] };
+    let mut dots = Vec::new();
+    for (s, open) in OPEN.iter().enumerate() {
+        for f in lo..=hi {
+            let iv = (open + f as i32 - root).rem_euclid(12);
+            let on = parts.contains(&iv);
+            if !on && iv != 0 {
+                continue;
+            }
+            let (deg, col) = crate::fretboard::degree(iv, 0);
+            dots.push(crate::improv::NeckDot {
+                spot: (s, f),
+                text: deg.to_string(),
+                col,
+                strength: if on { 1.0 } else { 0.35 },
+                ring: false,
+                root: iv == 0,
+            });
+        }
+    }
+    dots
+}
+
 impl App {
+    /// GUIDE TONES AND ARPEGGIOS for a week's tunes: pick a tune, a chord and where on the neck; see the 3rd and
+    /// 7th (or 1 3 5 7) there, the walk through the changes, and hear it.
+    fn plan_guide_tones(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wk: &Week) {
+        if wk.changes.is_empty() {
+            return;
+        }
+        ui.add_space(6.0);
+        section_header(ui, "GUIDE TONES AND ARPEGGIOS");
+        text_block(
+            ui,
+            "Guide tones are each chord's 3rd and 7th: the two notes that say which chord it is. Learn them in one area of the neck first, then the next area. Sing each one before you play it.",
+            2.0,
+            pal().ink2,
+            6.0,
+        );
+        let set = self.plan.gt_set.min(wk.changes.len() - 1);
+        if wk.changes.len() > 1 {
+            let names: Vec<String> = wk.changes.iter().map(|c| c.name.to_uppercase()).collect();
+            let refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+            if let Some(i) = crate::choice_line(ui, "plan_gt_set", "TUNE", &refs, set, 320.0) {
+                self.plan.gt_set = i;
+                self.plan.gt_chord = 0;
+            }
+        }
+        let ch = &wk.changes[self.plan.gt_set.min(wk.changes.len() - 1)];
+        const KINDS: [&str; 2] = ["GUIDE TONES: 3RD AND 7TH", "ARPEGGIO: 1 3 5 7"];
+        if let Some(i) = crate::choice_line(ui, "plan_gt_kind", "SHOW", &KINDS, (self.plan.gt_kind as usize).min(1), 320.0) {
+            self.plan.gt_kind = i as u8;
+        }
+        let areas: Vec<&str> = AREAS.iter().map(|a| a.0).collect();
+        let area = (self.plan.gt_area as usize).min(AREAS.len() - 1);
+        if let Some(i) = crate::choice_line(ui, "plan_gt_area", "WHERE", &areas, area, 320.0) {
+            self.plan.gt_area = i as u8;
+        }
+        let area = (self.plan.gt_area as usize).min(AREAS.len() - 1);
+        let chords = chords_once(&ch.bars);
+        if chords.is_empty() {
+            return;
+        }
+        let pick = self.plan.gt_chord.min(chords.len() - 1);
+        ui.horizontal_wrapped(|ui| {
+            for (k, c) in chords.iter().enumerate() {
+                if retro_btn(ui, &crate::chart::pretty_chord(c), k == pick).clicked() {
+                    self.plan.gt_chord = k;
+                }
+            }
+        });
+        let pick = self.plan.gt_chord.min(chords.len() - 1);
+        let arp = self.plan.gt_kind == 1;
+        let (_, lo, hi) = AREAS[area];
+        let dots = chord_dots(&chords[pick], arp, lo, hi);
+        crate::improv::neck_view(ui, &dots, None);
+        crate::views::dim_line(
+            ui,
+            if arp { "THE ROOT IS THE SQUARE" } else { "THE DIM SQUARES ARE THE ROOT, TO FIND THEM BY" },
+            1.0,
+            pal().dim,
+        );
+        // the changes, four bars a line
+        let mut bars = String::new();
+        for (k, b) in ch.bars.iter().enumerate() {
+            let pretty: Vec<String> = b.split_whitespace().map(crate::chart::pretty_chord).collect();
+            bars.push_str(&format!("| {} ", pretty.join(" ")));
+            if k % 4 == 3 {
+                bars.push_str("|\n");
+            }
+        }
+        for l in bars.lines() {
+            text_block(ui, l, 1.8, pal().ink2, 6.0);
+        }
+        // the walk: each chord's nearest guide tone (or arpeggio), one after another, to hear
+        let flat: Vec<String> = ch.bars.iter().flat_map(|b| b.split_whitespace().map(|s| s.to_string())).collect();
+        let line = crate::arpeggios::tune_line(&flat, if arp { 1 } else { 0 });
+        if line.is_empty() {
+            return;
+        }
+        let sharps = crate::theory::chord_notes(&line[0].0).map_or(false, |c| crate::lines::key_sharps(c.root));
+        let gap = if arp { 60.0 / self.band_bpm() / 2.0 } else { 60.0 / self.band_bpm() * 2.0 };
+        ui.horizontal_wrapped(|ui| {
+            self.seq_button(
+                ui,
+                acts,
+                if arp { "PLAY THE ARPEGGIOS" } else { "PLAY THE GUIDE TONES" },
+                "Through the changes at the band's tempo, with each chord under its first note. Sing along, then play along.",
+                "plangt",
+                || {
+                    line.iter()
+                        .flat_map(|(_, root, shell, notes)| {
+                            notes.iter().enumerate().map(move |(k, m)| {
+                                let mut v = vec![*m];
+                                if k == 0 {
+                                    let bass = 40 + (root - 40).rem_euclid(12);
+                                    v.push(bass);
+                                    v.extend(shell.iter().map(|x| bass + x));
+                                }
+                                v
+                            })
+                        })
+                        .collect()
+                },
+                gap,
+            );
+        });
+        let walk: Vec<String> = line
+            .iter()
+            .map(|(name, root, _, notes)| {
+                let degs: Vec<String> = notes
+                    .iter()
+                    .map(|m| format!("{} {}", crate::theory::note_name(*m, sharps), crate::fretboard::degree(m.rem_euclid(12), *root).0))
+                    .collect();
+                format!("{}: {}", crate::chart::pretty_chord(name), degs.join(" "))
+            })
+            .collect();
+        text_block(ui, &walk.join("   >   "), 1.8, pal().ink, 6.0);
+    }
+
     /// The session timer, every frame: when a block is up, a chime, it is ticked, and the next one comes (started
     /// on its own when AUTO NEXT is on).
     pub(crate) fn plan_tick(&mut self) {
@@ -473,7 +665,7 @@ impl App {
         self.dirty = true;
     }
 
-    pub(crate) fn plan_view(&mut self, ui: &mut egui::Ui, _acts: &mut Vec<Action>) {
+    pub(crate) fn plan_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         self.plan.load();
         let plan = match &self.plan.file {
             Some(Ok(p)) => p.clone(),
@@ -510,7 +702,12 @@ impl App {
         } else {
             format!("WEEK {} OF {}  -  {}", now_w, n, plan.days[weekday(today)].name.to_uppercase())
         };
-        crate::views::dim_line(ui, &status, 1.0, pal().ink2);
+        ui.horizontal_wrapped(|ui| {
+            crate::views::dim_line(ui, &status, 1.0, pal().ink2);
+            if retro_btn(ui, "RELOAD", false).tip("Reads the plan file again. It does this on its own when the file changes, too.").clicked() {
+                self.plan.seen = None;
+            }
+        });
 
         // ---- today
         section_header(ui, &format!("TODAY  -  {}", day.name.to_uppercase()));
@@ -569,6 +766,8 @@ impl App {
                 fact(ui, &name, &if here { format!("{}  (TODAY)", s) } else { s.clone() }, if here { pal().ink } else { pal().ink2 });
             }
         }
+        let wk = wk.clone();
+        self.plan_guide_tones(ui, acts, &wk);
 
         // ---- the days of a week
         ui.add_space(6.0);
@@ -743,6 +942,9 @@ impl App {
         }
         ui.add_space(4.0);
         text_block(ui, &fill(&b.what, plan, week, day), 2.0, pal().ink, 6.0);
+        let ink2 = pal().ink2;
+        fact(ui, "AHEAD?", &fill(&b.ahead, plan, week, day), ink2);
+        fact(ui, "BEHIND?", &fill(&b.behind, plan, week, day), ink2);
     }
 }
 
@@ -756,11 +958,11 @@ mod tests {
             title: "T".into(),
             start: "2026-10-26".into(),
             blocks: vec![
-                Block { name: "Warm-up".into(), min: 5, what: "Go".into() },
-                Block { name: "Tune".into(), min: 10, what: "{tune}: {tune_step}. Ladder {rung}: {rung_how}".into() },
+                Block { name: "Warm-up".into(), min: 5, what: "Go".into(), ahead: String::new(), behind: String::new() },
+                Block { name: "Tune".into(), min: 10, what: "{tune}: {tune_step}. Ladder {rung}: {rung_how}".into(), ahead: String::new(), behind: String::new() },
             ],
             days: vec![day("Mon", true), day("Tue", true), day("Wed", true), day("Thu", true), day("Fri", true), day("Sat", false), day("Sun", false)],
-            weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2, steps: vec![] }],
+            weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2, steps: vec![], changes: vec![] }],
             ladder_about: String::new(),
             rungs: vec![Rung { name: "One note".into(), how: "a".into() }, Rung { name: "Two notes".into(), how: "Sing two".into() }],
             notes: vec![],
@@ -808,5 +1010,25 @@ mod tests {
         let t = std::fs::read_to_string(file_path()).unwrap();
         let p = parse(&t).unwrap();
         assert!(!p.weeks.is_empty());
+        for w in &p.weeks {
+            for c in w.changes.iter().flat_map(|c| chords_once(&c.bars)) {
+                assert!(chord_parts(&c, true).is_some(), "can't read {}", c);
+            }
+        }
+    }
+
+    #[test]
+    fn guide_tones_and_arpeggios_on_the_neck() {
+        assert_eq!(chord_parts("F7", false), Some((5, vec![4, 10])));
+        assert_eq!(chord_parts("Gm7", true), Some((7, vec![0, 3, 7, 10])));
+        assert_eq!(chord_parts("Dm7b5", true), Some((2, vec![0, 3, 6, 10])));
+        assert_eq!(chord_parts("Bdim7", false), Some((11, vec![3, 9])));
+        // F7's A on the D string at the 7th fret and E flat on the G string at the 8th, lit; F (the root) dim
+        let dots = chord_dots("F7", false, 5, 9);
+        let at = |s: usize, f: u8| dots.iter().find(|d| d.spot == (s, f));
+        assert!(at(2, 7).is_some_and(|d| d.strength == 1.0 && d.text == "3"));
+        assert!(at(3, 8).is_some_and(|d| d.strength == 1.0));
+        assert!(at(3, 10).is_none() && at(1, 8).is_some_and(|d| d.root && d.strength < 1.0));
+        assert_eq!(chords_once(&["F7".into(), "Gm7 C7".into(), "F7 D7".into()]), vec!["F7", "Gm7", "C7", "D7"]);
     }
 }

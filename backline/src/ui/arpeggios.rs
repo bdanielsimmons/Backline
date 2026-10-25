@@ -89,7 +89,7 @@ fn near(pc: i32, to: i32) -> i32 {
 /// A tune's changes as a line: (chord, root, its 3rd and 7th an octave up (to hear the chord under the line),
 /// the notes). `kind`: 0 the guide tones - the 3rd or 7th nearest the last note, one a chord; 1 each arpeggio up
 /// 1 3 5 7 from the root nearest the last note; 2 3 5 7 9 up, then 5 3 1 7 down on the next chord, and so on.
-fn tune_line(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>, Vec<i32>)> {
+pub(crate) fn tune_line(changes: &[String], kind: usize) -> Vec<(String, i32, Vec<i32>, Vec<i32>)> {
     let mut out = Vec::new();
     let mut last = 62;
     let mut n_done = 0;
