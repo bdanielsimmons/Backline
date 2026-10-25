@@ -72,6 +72,9 @@ pub(crate) struct Week {
     /// the changes of the week's tunes, for the guide tones and arpeggios on the neck
     #[serde(default)]
     pub changes: Vec<Changes>,
+    /// a song of the week for a gig of your own ({song})
+    #[serde(default)]
+    pub song: String,
 }
 
 /// A rung of the sing-then-play ladder: its name and exactly how to do it.
@@ -187,6 +190,47 @@ pub(crate) struct Moves {
     pub tune_week: i64,
 }
 
+/// Something from the fun slot worth keeping (a lick, a phrase, a bit of a solo): the days you played it cold,
+/// and the last day it came up in Review. Kept in plan_keepers.json.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub(crate) struct Keeper {
+    pub text: String,
+    #[serde(default)]
+    pub added: String,
+    /// the days it was played cold, from memory
+    #[serde(default)]
+    pub played: Vec<String>,
+    /// the last day it came up (played or not)
+    #[serde(default)]
+    pub seen: String,
+}
+
+impl Keeper {
+    /// Solid: played cold on 3 days or more, a week or more apart from first to last.
+    pub(crate) fn solid(&self) -> bool {
+        let days: Vec<i64> = self.played.iter().filter_map(|d| day_number(d)).collect();
+        days.len() >= 3 && days.iter().max().unwrap_or(&0) - days.iter().min().unwrap_or(&0) >= 7
+    }
+}
+
+/// Today's keepers for Review: the ones already up today, then the longest unseen (new ones first), two in all.
+/// A solid one comes back only every two weeks.
+pub(crate) fn keepers_today(ks: &[Keeper], today: &str, n: usize) -> Vec<usize> {
+    let t = day_number(today).unwrap_or(0);
+    let mut out: Vec<usize> = (0..ks.len()).filter(|i| ks[*i].seen == today).take(n).collect();
+    let mut rest: Vec<usize> = (0..ks.len())
+        .filter(|i| ks[*i].seen != today)
+        .filter(|i| !ks[*i].solid() || day_number(&ks[*i].seen).map_or(true, |s| t - s >= 14))
+        .collect();
+    rest.sort_by_key(|i| (day_number(&ks[*i].seen).unwrap_or(i64::MIN), day_number(&ks[*i].added).unwrap_or(0)));
+    out.extend(rest.into_iter().take(n.saturating_sub(out.len())));
+    out
+}
+
+fn keepers_path() -> std::path::PathBuf {
+    crate::api::config_dir().join("plan_keepers.json")
+}
+
 fn moves_path() -> std::path::PathBuf {
     crate::api::config_dir().join("plan_moves.json")
 }
@@ -269,6 +313,7 @@ pub(crate) fn fill_moved(text: &str, plan: &Plan, week: &Week, day: &Day, mv: &M
         .replace("{rung_how}", &rhow)
         .replace("{project_step}", &step)
         .replace("{project}", &week.project)
+        .replace("{song}", &week.song)
 }
 
 /// A block's colour, by what it is (from its name), the same wherever it is drawn.
@@ -441,11 +486,14 @@ pub(crate) struct PlanState {
     pub gt_area: u8,
     /// how far ahead or behind you have moved (plan_moves.json)
     pub moves: Option<Moves>,
+    /// the keepers (plan_keepers.json), and the one being written
+    pub keepers: Option<Vec<Keeper>>,
+    pub keeper_new: String,
 }
 
 impl Default for PlanState {
     fn default() -> PlanState {
-        PlanState { file: None, seen: None, look: 0, block: 0, end: None, left: 0, auto: true, day: -1, log: None, gt_kind: 0, gt_set: 0, gt_chord: 0, gt_area: 3, moves: None }
+        PlanState { file: None, seen: None, look: 0, block: 0, end: None, left: 0, auto: true, day: -1, log: None, gt_kind: 0, gt_set: 0, gt_chord: 0, gt_area: 3, moves: None, keepers: None, keeper_new: String::new() }
     }
 }
 
@@ -476,6 +524,18 @@ impl PlanState {
             let _ = std::fs::write(moves_path(), t);
         }
         self.moves = Some(m);
+    }
+
+    fn keepers(&mut self) -> &mut Vec<Keeper> {
+        self.keepers.get_or_insert_with(|| {
+            std::fs::read_to_string(keepers_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        })
+    }
+
+    fn save_keepers(&mut self) {
+        if let Ok(t) = serde_json::to_string_pretty(self.keepers()) {
+            let _ = std::fs::write(keepers_path(), t);
+        }
     }
 
     fn done_today(&self) -> Vec<u8> {
@@ -625,6 +685,67 @@ fn chord_dots(name: &str, arp: bool, lo: u8, hi: u8) -> Vec<crate::improv::NeckD
 }
 
 impl App {
+    /// A box to write a new keeper in, and ADD (Enter works too).
+    fn keeper_add(&mut self, ui: &mut egui::Ui) {
+        let mut add = false;
+        ui.horizontal(|ui| {
+            let w = (ui.available_width() - text_w("ADD", 2.0) - 40.0).max(120.0);
+            let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+            let out = crate::views::field(ui, &mut self.ed, crate::tools::F_PLAN_KEEPER, &mut self.plan.keeper_new, r, "a keeper: the lick, phrase or solo bit, and where it's from", false);
+            add = out.enter;
+            if retro_btn(ui, "ADD", false).tip("Keep it: Review brings it back until you can play it cold.").clicked() {
+                add = true;
+            }
+        });
+        let text = self.plan.keeper_new.trim().to_string();
+        if add && !text.is_empty() {
+            self.plan.keepers().push(Keeper { text, added: store::today_str(), played: vec![], seen: String::new() });
+            self.plan.save_keepers();
+            self.plan.keeper_new.clear();
+            self.set_note("KEPT. REVIEW BRINGS IT BACK");
+        }
+    }
+
+    /// Today's two keepers to play from memory: PLAYED IT COLD, or NOT YET (it comes back tomorrow).
+    fn keepers_review(&mut self, ui: &mut egui::Ui) {
+        let today = store::today_str();
+        let ks = self.plan.keepers().clone();
+        title_line(ui, "TODAY'S KEEPERS", 2.0, pal().ink);
+        if ks.is_empty() {
+            text_block(ui, "No keepers yet. In the fun slot, write down what's worth keeping, and it comes up here.", 2.0, pal().ink2, 6.0);
+            return;
+        }
+        let mut hit: Option<(usize, bool)> = None;
+        for i in keepers_today(&ks, &today, 2) {
+            let k = &ks[i];
+            let state = if k.played.contains(&today) {
+                "  - PLAYED COLD TODAY"
+            } else if k.seen == today {
+                "  - NOT YET, BACK TOMORROW"
+            } else {
+                ""
+            };
+            text_block(ui, &format!("{}{}", k.text, state), 2.0, if k.seen == today { pal().ink2 } else { pal().ink }, 6.0);
+            ui.horizontal_wrapped(|ui| {
+                if retro_btn(ui, "PLAYED IT COLD", k.played.contains(&today)).tip("From memory, first go, no peeking.").clicked() {
+                    hit = Some((i, true));
+                }
+                if retro_btn(ui, "NOT YET", false).tip("It comes back tomorrow.").clicked() {
+                    hit = Some((i, false));
+                }
+            });
+        }
+        if let Some((i, cold)) = hit {
+            let k = &mut self.plan.keepers()[i];
+            k.seen = today.clone();
+            k.played.retain(|d| *d != today);
+            if cold {
+                k.played.push(today.clone());
+            }
+            self.plan.save_keepers();
+        }
+    }
+
     /// GUIDE TONES AND ARPEGGIOS for a week's tunes: pick a tune, a chord and where on the neck; see the 3rd and
     /// 7th (or 1 3 5 7) there, the walk through the changes, and hear it.
     fn plan_guide_tones(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wk: &Week) {
@@ -854,6 +975,7 @@ impl App {
         fact(ui, "DONE WHEN", &wk.done, ink);
         fact(ui, "TUNE", &wk.tune, ink);
         fact(ui, "LINE", &wk.line, ink);
+        fact(ui, "SONG", &wk.song, ink);
         if wk.rung > 0 {
             let r = plan.rungs.get(wk.rung - 1).map(|r| r.name.clone()).unwrap_or_default();
             fact(ui, "EAR LADDER", &format!("Rung {}: {}", wk.rung, r), ink);
@@ -874,6 +996,35 @@ impl App {
         }
         let wk = wk.clone();
         self.plan_guide_tones(ui, acts, &wk);
+
+        // ---- the keepers
+        ui.add_space(6.0);
+        section_header(ui, "KEEPERS");
+        text_block(ui, "What's worth keeping from the fun slot. Review brings back two a day. A keeper is solid once you've played it cold on 3 days, a week apart; then it comes back every two weeks.", 2.0, pal().ink2, 6.0);
+        self.keeper_add(ui);
+        let ks = self.plan.keepers().clone();
+        let mut gone: Option<usize> = None;
+        for (i, k) in ks.iter().enumerate().rev() {
+            let state = if k.solid() {
+                "SOLID".to_string()
+            } else if k.played.is_empty() {
+                "NEW".to_string()
+            } else {
+                format!("COLD {} DAY{}", k.played.len(), if k.played.len() == 1 { "" } else { "S" })
+            };
+            ui.horizontal(|ui| {
+                if retro_btn(ui, "X", false).tip("Let it go.").clicked() {
+                    gone = Some(i);
+                }
+                let (r, _) = ui.allocate_exact_size(Vec2::new(text_w("COLD 9 DAYS", 1.4) + 14.0, 22.0), Sense::hover());
+                ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &state, 1.4, if k.solid() { pal().ink } else { pal().dim });
+                ui.vertical(|ui| text_block(ui, &k.text, 2.0, pal().ink, 0.0));
+            });
+        }
+        if let Some(i) = gone {
+            self.plan.keepers().remove(i);
+            self.plan.save_keepers();
+        }
 
         // ---- the days of a week
         ui.add_space(6.0);
@@ -1054,6 +1205,13 @@ impl App {
         let ink2 = pal().ink2;
         fact(ui, "AHEAD?", &fill_moved(&b.ahead, plan, week, day, &mv, week_no), ink2);
         fact(ui, "BEHIND?", &fill_moved(&b.behind, plan, week, day, &mv, week_no), ink2);
+        let lname = b.name.to_lowercase();
+        if lname.contains("fun") {
+            title_line(ui, "A KEEPER?", 2.0, pal().ink);
+            self.keeper_add(ui);
+        } else if lname.contains("review") {
+            self.keepers_review(ui);
+        }
         // ahead or behind moves this block along: the rung, the project's step, the tune's step
         let Some(kind) = block_moves(b) else { return };
         let off = match kind {
@@ -1115,7 +1273,7 @@ mod tests {
                 Block { name: "Tune".into(), min: 10, what: "{tune}: {tune_step}. Ladder {rung}: {rung_how}".into(), ahead: String::new(), behind: String::new() },
             ],
             days: vec![day("Mon", true), day("Tue", true), day("Wed", true), day("Thu", true), day("Fri", true), day("Sat", false), day("Sun", false)],
-            weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2, steps: vec![], changes: vec![] }],
+            weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2, steps: vec![], changes: vec![], song: String::new() }],
             ladder_about: String::new(),
             rungs: vec![Rung { name: "One note".into(), how: "a".into() }, Rung { name: "Two notes".into(), how: "Sing two".into() }],
             notes: vec![],
@@ -1177,6 +1335,31 @@ mod tests {
         assert!(fill_moved("{tune_step}", &p, &w1, &p.days[0], &mv, 1).contains("Solar"));
         assert_eq!(block_moves(&p.blocks[1]), Some("rung"));
         assert_eq!(block_moves(&p.blocks[0]), None);
+    }
+
+    #[test]
+    fn keepers_come_back_until_they_are_solid() {
+        let k = |text: &str, added: &str, played: &[&str], seen: &str| Keeper {
+            text: text.into(),
+            added: added.into(),
+            played: played.iter().map(|s| s.to_string()).collect(),
+            seen: seen.into(),
+        };
+        let ks = vec![
+            k("old seen", "2026-10-01", &["2026-10-20"], "2026-10-20"),
+            k("new", "2026-10-22", &[], ""),
+            k("seen yesterday", "2026-10-02", &[], "2026-10-23"),
+            k("solid", "2026-09-01", &["2026-10-01", "2026-10-05", "2026-10-12"], "2026-10-20"),
+        ];
+        assert!(ks[3].solid() && !ks[0].solid());
+        assert_eq!(keepers_today(&ks, "2026-10-24", 2), vec![1, 0]);
+        // one already up today stays, and the next one fills in
+        let mut ks2 = ks.clone();
+        ks2[2].seen = "2026-10-24".into();
+        assert_eq!(keepers_today(&ks2, "2026-10-24", 2), vec![2, 1]);
+        // a solid one is back after two weeks
+        assert!(keepers_today(&ks, "2026-11-10", 4).contains(&3));
+        assert!(!keepers_today(&ks, "2026-10-24", 4).contains(&3));
     }
 
     #[test]

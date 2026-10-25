@@ -109,6 +109,8 @@ pub const F_INFO_BPM: u32 = 58;
 /// the focus timer's long rest: after how many blocks, and how long
 pub const F_LONG_EVERY: u32 = 96;
 pub const F_LONG_MINS: u32 = 97;
+/// MY PLAN: a new keeper
+pub const F_PLAN_KEEPER: u32 = 98;
 
 impl App {
     /// A box you can type into. Shows `shown`; returns the typed text when you press Enter or click away.
