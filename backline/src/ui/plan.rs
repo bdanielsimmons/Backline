@@ -106,6 +106,13 @@ pub(crate) struct Plan {
     pub notes: Vec<Notes>,
 }
 
+impl Plan {
+    /// This week's number (1 the first; less before the plan starts, more after it ends).
+    pub(crate) fn start_week(&self) -> i64 {
+        day_number(&self.start).map_or(0, |s| week_of(s, store::today_days()))
+    }
+}
+
 pub(crate) fn file_path() -> std::path::PathBuf {
     crate::api::config_dir().join("plan.json")
 }
@@ -165,17 +172,98 @@ pub(crate) fn week_of(start: i64, today: i64) -> i64 {
 }
 
 /// A block's text with the week's and day's things filled in.
+/// How far you have moved ahead of (or behind) the plan, block by block: the ladder's rung, the project's step
+/// (it carries on into the next week's steps) and the tune's step (this week only). Kept in plan_moves.json.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub(crate) struct Moves {
+    #[serde(default)]
+    pub rung: i32,
+    #[serde(default)]
+    pub project: i32,
+    #[serde(default)]
+    pub tune: i32,
+    /// the week the tune's move is for (it starts again each week)
+    #[serde(default)]
+    pub tune_week: i64,
+}
+
+fn moves_path() -> std::path::PathBuf {
+    crate::api::config_dir().join("plan_moves.json")
+}
+
+/// What a block moves along when you go ahead or back: the rung, the project's step or the tune's step (from what
+/// its text fills in), or nothing.
+pub(crate) fn block_moves(b: &Block) -> Option<&'static str> {
+    if b.what.contains("{rung}") {
+        Some("rung")
+    } else if b.what.contains("{project_step}") {
+        Some("project")
+    } else if b.what.contains("{tune_step}") {
+        Some("tune")
+    } else {
+        None
+    }
+}
+
+/// The rung you are on: the week's, moved.
+pub(crate) fn rung_now(plan: &Plan, week: &Week, mv: &Moves) -> usize {
+    (week.rung.max(1) as i32 + mv.rung).clamp(1, plan.rungs.len().max(1) as i32) as usize
+}
+
+/// The project's step for this day: every week's steps in a row, moved along them. The week it comes from (1 the
+/// first) and its place in that week, or None when there are no steps.
+pub(crate) fn project_at(plan: &Plan, week: &Week, wd: usize, mv: &Moves) -> Option<(usize, usize)> {
+    let wi = plan.weeks.iter().position(|w| w == week).unwrap_or(0);
+    let all: Vec<(usize, usize)> = plan.weeks.iter().enumerate().flat_map(|(i, w)| (0..w.steps.len()).map(move |k| (i, k))).collect();
+    if all.is_empty() {
+        return None;
+    }
+    let here = plan.weeks[..wi].iter().map(|w| w.steps.len()).sum::<usize>() + wd.min(week.steps.len().saturating_sub(1));
+    let g = (here as i32 + mv.project).clamp(0, all.len() as i32 - 1) as usize;
+    let (i, k) = all[g];
+    Some((i + 1, k))
+}
+
+/// The tune's step for this day, moved along the week's days; past the last one, on to the next week's tune.
+pub(crate) fn tune_step_at(plan: &Plan, week: &Week, wd: usize, mv: &Moves, week_no: i64) -> String {
+    let steps: Vec<&str> = plan.days.iter().map(|d| d.tune_step.as_str()).filter(|s| !s.is_empty()).collect();
+    if steps.is_empty() {
+        return String::new();
+    }
+    let off = if mv.tune_week == week_no { mv.tune } else { 0 };
+    let k = (wd.min(steps.len() - 1) as i32 + off).max(0) as usize;
+    if k < steps.len() {
+        return steps[k].to_string();
+    }
+    let wi = plan.weeks.iter().position(|w| w == week).unwrap_or(0);
+    match plan.weeks.get(wi + 1) {
+        Some(next) => format!("this week's melody is done. Start next week's tune, {}: {}", next.tune, steps[0]),
+        None => "every melody in the plan is done. Play them all from memory, and pick a new one.".to_string(),
+    }
+}
+
 pub(crate) fn fill(text: &str, plan: &Plan, week: &Week, day: &Day) -> String {
+    fill_moved(text, plan, week, day, &Moves::default(), 0)
+}
+
+/// A block's text filled in, with your moves ahead or behind in it.
+pub(crate) fn fill_moved(text: &str, plan: &Plan, week: &Week, day: &Day, mv: &Moves, week_no: i64) -> String {
     let wd = plan.days.iter().position(|d| d.name == day.name).unwrap_or(0);
-    let step = week.steps.get(wd).cloned().unwrap_or_default();
-    let rung = week.rung.max(1);
+    let wi = plan.weeks.iter().position(|w| w == week).unwrap_or(0);
+    let step = match project_at(plan, week, wd, mv) {
+        Some((w, k)) if w == wi + 1 => plan.weeks[w - 1].steps[k].clone(),
+        Some((w, k)) => format!("(from week {}) {}", w, plan.weeks[w - 1].steps[k]),
+        None => String::new(),
+    };
+    let tune_step = if mv.tune == 0 || mv.tune_week != week_no { day.tune_step.clone() } else { tune_step_at(plan, week, wd, mv, week_no) };
+    let rung = rung_now(plan, week, mv);
     let (rname, rhow) = plan
         .rungs
         .get(rung - 1)
         .map(|r| (format!("rung {}, {}", rung, r.name), r.how.clone()))
         .unwrap_or_else(|| (format!("rung {}", rung), String::new()));
     text.replace("{tune}", &week.tune)
-        .replace("{tune_step}", &day.tune_step)
+        .replace("{tune_step}", &tune_step)
         .replace("{line}", &week.line)
         .replace("{rung}", &rname)
         .replace("{rung_how}", &rhow)
@@ -351,11 +439,13 @@ pub(crate) struct PlanState {
     pub gt_set: usize,
     pub gt_chord: usize,
     pub gt_area: u8,
+    /// how far ahead or behind you have moved (plan_moves.json)
+    pub moves: Option<Moves>,
 }
 
 impl Default for PlanState {
     fn default() -> PlanState {
-        PlanState { file: None, seen: None, look: 0, block: 0, end: None, left: 0, auto: true, day: -1, log: None, gt_kind: 0, gt_set: 0, gt_chord: 0, gt_area: 3 }
+        PlanState { file: None, seen: None, look: 0, block: 0, end: None, left: 0, auto: true, day: -1, log: None, gt_kind: 0, gt_set: 0, gt_chord: 0, gt_area: 3, moves: None }
     }
 }
 
@@ -371,6 +461,21 @@ impl PlanState {
                 std::fs::read_to_string(log_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default(),
             );
         }
+    }
+
+    fn mv(&mut self) -> Moves {
+        self.moves
+            .get_or_insert_with(|| {
+                std::fs::read_to_string(moves_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+            })
+            .clone()
+    }
+
+    fn set_mv(&mut self, m: Moves) {
+        if let Ok(t) = serde_json::to_string_pretty(&m) {
+            let _ = std::fs::write(moves_path(), t);
+        }
+        self.moves = Some(m);
     }
 
     fn done_today(&self) -> Vec<u8> {
@@ -759,10 +864,11 @@ impl App {
         if !wk.steps.is_empty() {
             ui.add_space(4.0);
             title_line(ui, "THE PROJECT, DAY BY DAY", 2.0, pal().ink);
-            let wd = weekday(today);
+            let mv = self.plan.mv();
+            let on = project_at(&plan, &week_now, weekday(today), &mv);
             for (k, s) in wk.steps.iter().enumerate() {
                 let name = plan.days.get(k).map(|d| short_day(&d.name)).unwrap_or_default();
-                let here = shown == now_w && k == wd;
+                let here = on == Some((shown as usize, k));
                 fact(ui, &name, &if here { format!("{}  (TODAY)", s) } else { s.clone() }, if here { pal().ink } else { pal().ink2 });
             }
         }
@@ -827,7 +933,8 @@ impl App {
             if !plan.ladder_about.is_empty() {
                 text_block(ui, &plan.ladder_about, 2.0, pal().ink2, 6.0);
             }
-            let cur = week_now.rung;
+            let mv = self.plan.mv();
+            let cur = rung_now(&plan, &week_now, &mv);
             for (k, r) in plan.rungs.iter().enumerate() {
                 let here = k + 1 == cur;
                 let name = format!("RUNG {}: {}{}", k + 1, r.name.to_uppercase(), if here { "  - THIS WEEK" } else { "" });
@@ -941,10 +1048,56 @@ impl App {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
         }
         ui.add_space(4.0);
-        text_block(ui, &fill(&b.what, plan, week, day), 2.0, pal().ink, 6.0);
+        let mv = self.plan.mv();
+        let week_no = plan.start_week();
+        text_block(ui, &fill_moved(&b.what, plan, week, day, &mv, week_no), 2.0, pal().ink, 6.0);
         let ink2 = pal().ink2;
-        fact(ui, "AHEAD?", &fill(&b.ahead, plan, week, day), ink2);
-        fact(ui, "BEHIND?", &fill(&b.behind, plan, week, day), ink2);
+        fact(ui, "AHEAD?", &fill_moved(&b.ahead, plan, week, day, &mv, week_no), ink2);
+        fact(ui, "BEHIND?", &fill_moved(&b.behind, plan, week, day, &mv, week_no), ink2);
+        // ahead or behind moves this block along: the rung, the project's step, the tune's step
+        let Some(kind) = block_moves(b) else { return };
+        let off = match kind {
+            "rung" => mv.rung,
+            "project" => mv.project,
+            _ if mv.tune_week == week_no => mv.tune,
+            _ => 0,
+        };
+        let (back, fwd, unit) = match kind {
+            "rung" => ("DOWN A RUNG", "UP A RUNG", "RUNG"),
+            _ => ("STEP BACK", "NEXT STEP", "STEP"),
+        };
+        let mut step: i32 = 0;
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, back, false).tip("Behind? Go back one, and the plan carries on from there.").clicked() {
+                step = -1;
+            }
+            if retro_btn(ui, fwd, false).tip("Ahead? Move on one, and the plan carries on from there.").clicked() {
+                step = 1;
+            }
+            if off != 0 && retro_btn(ui, "BACK ON PLAN", false).tip("Back to where the plan has you today.").clicked() {
+                step = -off;
+            }
+            if off != 0 {
+                let s = if off.abs() == 1 { "" } else { "S" };
+                let txt = if off > 0 { format!("{} {}{} AHEAD OF THE PLAN", off, unit, s) } else { format!("{} {}{} BEHIND THE PLAN", -off, unit, s) };
+                crate::views::dim_line(ui, &txt, 1.0, pal().ink2);
+            }
+        });
+        if step != 0 {
+            let mut m = mv.clone();
+            match kind {
+                "rung" => m.rung += step,
+                "project" => m.project += step,
+                _ => {
+                    if m.tune_week != week_no {
+                        m.tune = 0;
+                        m.tune_week = week_no;
+                    }
+                    m.tune += step;
+                }
+            }
+            self.plan.set_mv(m);
+        }
     }
 }
 
@@ -990,6 +1143,40 @@ mod tests {
         assert_eq!(t, "Blue Bossa: Tue step. Ladder rung 2, Two notes: Sing two");
         assert_eq!(day_blocks(&p, &p.days[0]).len(), 2);
         assert!(day_blocks(&p, &p.days[6]).is_empty());
+    }
+
+    #[test]
+    fn going_ahead_or_behind_moves_the_block_along() {
+        let mut p = sample();
+        p.weeks[0].steps = vec!["a".into(), "b".into(), "c".into()];
+        let mut w2 = p.weeks[0].clone();
+        w2.tune = "Solar".into();
+        w2.steps = vec!["d".into(), "e".into()];
+        p.weeks.push(w2);
+        let mut mv = Moves::default();
+        let w1 = p.weeks[0].clone();
+        assert_eq!(project_at(&p, &w1, 1, &mv), Some((1, 1)));
+        mv.project = 2;
+        assert_eq!(project_at(&p, &w1, 1, &mv), Some((2, 0)));
+        assert_eq!(fill_moved("{project_step}", &p, &w1, &p.days[1], &mv, 1), "(from week 2) d");
+        mv.project = 99;
+        assert_eq!(project_at(&p, &w1, 1, &mv), Some((2, 1)));
+        mv.project = -9;
+        assert_eq!(project_at(&p, &w1, 1, &mv), Some((1, 0)));
+        // the rung stays on the ladder
+        mv.rung = 5;
+        assert_eq!(rung_now(&p, &w1, &mv), p.rungs.len());
+        mv.rung = -5;
+        assert_eq!(rung_now(&p, &w1, &mv), 1);
+        // the tune's step moves this week only
+        mv.tune = 1;
+        mv.tune_week = 1;
+        assert_eq!(fill_moved("{tune_step}", &p, &w1, &p.days[0], &mv, 1), "Tue step");
+        assert_eq!(fill_moved("{tune_step}", &p, &w1, &p.days[0], &mv, 2), "Mon step");
+        mv.tune = 30;
+        assert!(fill_moved("{tune_step}", &p, &w1, &p.days[0], &mv, 1).contains("Solar"));
+        assert_eq!(block_moves(&p.blocks[1]), Some("rung"));
+        assert_eq!(block_moves(&p.blocks[0]), None);
     }
 
     #[test]
