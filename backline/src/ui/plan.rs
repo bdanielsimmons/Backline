@@ -542,20 +542,24 @@ impl PlanState {
         self.log.as_ref().and_then(|l| l.get(&store::today_str())).cloned().unwrap_or_default()
     }
 
-    fn mark(&mut self, block: usize, on: bool) {
+    /// Tick a block done today (or not); true when it was newly ticked.
+    fn mark(&mut self, block: usize, on: bool) -> bool {
         let date = store::today_str();
         let log = self.log.get_or_insert_with(BTreeMap::new);
         let v = log.entry(date).or_default();
         let b = block as u8;
+        let mut new = false;
         if on && !v.contains(&b) {
             v.push(b);
             v.sort();
+            new = true;
         } else if !on {
             v.retain(|x| *x != b);
         }
         if let Ok(t) = serde_json::to_string_pretty(log) {
             let _ = std::fs::write(log_path(), t);
         }
+        new
     }
 
     /// Seconds left on the current block.
@@ -684,7 +688,111 @@ fn chord_dots(name: &str, arp: bool, lo: u8, hi: u8) -> Vec<crate::improv::NeckD
     dots
 }
 
+/// The minutes of plan done each day, from the log (each ticked block's minutes, from that weekday's blocks).
+pub(crate) fn plan_minutes(plan: &Plan, log: &BTreeMap<String, Vec<u8>>) -> BTreeMap<i64, u32> {
+    let mut out = BTreeMap::new();
+    for (date, done) in log {
+        let Some(d) = day_number(date) else { continue };
+        let blocks = day_blocks(plan, &plan.days[weekday(d)]);
+        let m: u32 = done.iter().filter_map(|k| blocks.get(*k as usize)).map(|b| b.min).sum();
+        if m > 0 {
+            out.insert(d, m);
+        }
+    }
+    out
+}
+
+/// Days in a row with some of the plan done, up to today (or yesterday, when today isn't started yet).
+pub(crate) fn streak(mins: &BTreeMap<i64, u32>, today: i64) -> u32 {
+    let mut d = if mins.contains_key(&today) { today } else { today - 1 };
+    let mut n = 0;
+    while mins.contains_key(&d) {
+        n += 1;
+        d -= 1;
+    }
+    n
+}
+
 impl App {
+    /// A block ticked done: its minutes go into today's diary, under "My Plan: " and its name.
+    fn plan_credit(&mut self, b: &Block) {
+        let date = store::today_str();
+        *self.store.day_mut(&date).secs.entry(format!("My Plan: {}", b.name)).or_insert(0) += b.min * 60;
+        self.store_dirty = true;
+    }
+
+    /// PROGRESS: every day since you started as a square (brighter for more of the plan done; click one to open it
+    /// in the diary), the days in a row, the minutes, the keepers gone solid, where you are on the ladder.
+    fn plan_progress(&mut self, ui: &mut egui::Ui, plan: &Plan, week: &Week) {
+        let log = self.plan.log.clone().unwrap_or_default();
+        let mins = plan_minutes(plan, &log);
+        let today = store::today_days();
+        ui.add_space(6.0);
+        section_header(ui, "PROGRESS");
+        let first = mins.keys().next().copied().unwrap_or(today).min(day_number(&plan.start).unwrap_or(today)).max(today - 55);
+        let total: u32 = mins.values().sum();
+        let ks = self.plan.keepers().clone();
+        let solid = ks.iter().filter(|k| k.solid()).count();
+        let mv = self.plan.mv();
+        let tiles = [
+            ("IN A ROW", { let s = streak(&mins, today); format!("{} DAY{}", s, if s == 1 { "" } else { "S" }) }),
+            ("DAYS PRACTISED", mins.len().to_string()),
+            ("PLAN TIME", format!("{}H {}M", total / 60, total % 60)),
+            ("KEEPERS SOLID", format!("{} OF {}", solid, ks.len())),
+            ("RUNG", rung_now(plan, week, &mv).to_string()),
+        ];
+        ui.horizontal_wrapped(|ui| {
+            for (name, val) in &tiles {
+                let w = text_w(name, 1.0).max(text_w(val, 2.0)) + 20.0;
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, 44.0), Sense::hover());
+                inset(ui.painter(), r, pal().lcd);
+                ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 12.0), Align::Center, name, 1.0, pal().dim);
+                ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 30.0), Align::Center, val, 2.0, pal().ink);
+            }
+        });
+        // the days as squares, a week a row (Monday first)
+        let busiest = mins.values().copied().max().unwrap_or(1).max(1);
+        let start_row = first - weekday(first) as i64;
+        let rows = ((today - start_row) / 7 + 1) as usize;
+        let cell = 26.0;
+        let (gr, _) = ui.allocate_exact_size(Vec2::new(cell * 7.0 + 40.0, 16.0 + rows as f32 * cell), Sense::hover());
+        for (k, n) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
+            ptext(ui.painter(), Pos2::new(gr.min.x + 40.0 + k as f32 * cell + cell / 2.0, gr.min.y + 7.0), Align::Center, n, 1.0, pal().dim);
+        }
+        let mut open: Option<i64> = None;
+        for d in start_row..=today {
+            let i = (d - start_row) as usize;
+            let r = Rect::from_min_size(
+                Pos2::new(gr.min.x + 40.0 + (i % 7) as f32 * cell + 2.0, gr.min.y + 16.0 + (i / 7) as f32 * cell + 2.0),
+                Vec2::splat(cell - 4.0),
+            );
+            if i % 7 == 0 {
+                let (_, m, dd) = store::civil_from_days(d);
+                ptext(ui.painter(), Pos2::new(gr.min.x, r.center().y), Align::Min, &format!("{}/{}", m, dd), 1.0, pal().dim);
+            }
+            if d < first {
+                continue;
+            }
+            let m = mins.get(&d).copied().unwrap_or(0);
+            let face = if m == 0 { pal().lcd } else { block_col("project").gamma_multiply(0.35 + 0.65 * m as f32 / busiest as f32) };
+            ui.painter().rect_filled(r, 3.0, face);
+            if d == today {
+                ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5_f32, pal().ink));
+            }
+            let resp = ui.interact(r, ui.id().with(("plan_day_sq", d)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.tip(format!("{}: {} min of the plan. Click to open the day in the diary (notes, times).", store::date_str(d), m)).clicked() {
+                open = Some(d);
+            }
+        }
+        if let Some(d) = open {
+            self.diary_tab = 0;
+            self.diary_sel = d;
+            let (y, m, _) = store::civil_from_days(d);
+            self.diary_ym = (y, m);
+        }
+        crate::views::dim_line(ui, "CLICK A DAY FOR ITS NOTES", 1.0, pal().dim);
+    }
+
     /// A box to write a new keeper in, and ADD (Enter works too).
     fn keeper_add(&mut self, ui: &mut egui::Ui) {
         let mut add = false;
@@ -876,7 +984,9 @@ impl App {
             return;
         };
         let k = self.plan.block;
-        self.plan.mark(k, true);
+        if self.plan.mark(k, true) {
+            self.plan_credit(&blocks[k]);
+        }
         self.player.send(Cmd::Chime);
         self.ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
         if k + 1 < blocks.len() {
@@ -945,6 +1055,7 @@ impl App {
         } else {
             self.plan_session(ui, &plan, &week_now, &day, &blocks);
         }
+        self.plan_progress(ui, &plan, &week_now);
 
         // ---- the week looked at
         let shown = (now_w.clamp(1, n) + self.plan.look).clamp(1, n);
@@ -1178,7 +1289,9 @@ impl App {
                 }
             }
             Some(3) => {
-                self.plan.mark(cur, true);
+                if self.plan.mark(cur, true) {
+                    self.plan_credit(b);
+                }
                 if cur + 1 < blocks.len() {
                     self.plan.go(blocks, cur + 1, running);
                 } else {
@@ -1360,6 +1473,25 @@ mod tests {
         // a solid one is back after two weeks
         assert!(keepers_today(&ks, "2026-11-10", 4).contains(&3));
         assert!(!keepers_today(&ks, "2026-10-24", 4).contains(&3));
+    }
+
+    #[test]
+    fn progress_counts_the_minutes_and_the_days_in_a_row() {
+        let mut p = sample();
+        p.days[0].blocks = vec![Block { name: "Fun".into(), min: 40, what: String::new(), ahead: String::new(), behind: String::new() }];
+        let mut log = BTreeMap::new();
+        // 2026-10-26 is a Monday: warm-up 5 and fun 40 (block 2) done; the Tuesday after, the tune block (10)
+        log.insert("2026-10-26".to_string(), vec![0, 2]);
+        log.insert("2026-10-27".to_string(), vec![1]);
+        log.insert("2026-10-29".to_string(), vec![]);
+        let m = plan_minutes(&p, &log);
+        let mon = day_number("2026-10-26").unwrap();
+        assert_eq!(m.get(&mon), Some(&45));
+        assert_eq!(m.get(&(mon + 1)), Some(&10));
+        assert_eq!(m.len(), 2);
+        assert_eq!(streak(&m, mon + 1), 2);
+        assert_eq!(streak(&m, mon + 2), 2);
+        assert_eq!(streak(&m, mon + 3), 0);
     }
 
     #[test]

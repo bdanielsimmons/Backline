@@ -111,6 +111,9 @@ pub const F_LONG_EVERY: u32 = 96;
 pub const F_LONG_MINS: u32 = 97;
 /// MY PLAN: a new keeper
 pub const F_PLAN_KEEPER: u32 = 98;
+/// DIARY: practice added by hand (what, minutes)
+pub const F_DIARY_ADD_NAME: u32 = 101;
+pub const F_DIARY_ADD_MIN: u32 = 102;
 
 impl App {
     /// A box you can type into. Shows `shown`; returns the typed text when you press Enter or click away.

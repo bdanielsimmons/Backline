@@ -3294,6 +3294,55 @@ impl App {
         }
         rows_d.sort_by(|a, b| b.1.cmp(&a.1));
         let tot: u32 = rows_d.iter().map(|r| r.1).sum();
+        // the day's times changed, or added by hand
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "EDIT TIMES", self.diary_edit).tip("Change this day's times, or add practice the app didn't see (guitar away from the computer).").clicked() {
+                self.diary_edit = !self.diary_edit;
+            }
+        });
+        if self.diary_edit {
+            let mut change: Option<(String, i64)> = None;
+            for (name, s) in &rows_d {
+                ui.horizontal(|ui| {
+                    if retro_btn(ui, "X", false).tip("Take this off the day.").clicked() {
+                        change = Some((name.clone(), -(*s as i64)));
+                    }
+                    if retro_btn(ui, "-5", false).clicked() {
+                        change = Some((name.clone(), -300));
+                    }
+                    if retro_btn(ui, "+5", false).clicked() {
+                        change = Some((name.clone(), 300));
+                    }
+                    dim_line(ui, &format!("{}  {}", name, mins_text(*s)), 2.0, pal().ink);
+                });
+            }
+            let mut add = false;
+            ui.horizontal(|ui| {
+                let w = (ui.available_width() - 150.0).max(120.0);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                add |= field(ui, &mut self.ed, crate::tools::F_DIARY_ADD_NAME, &mut self.diary_add.0, r, "what you practised", false).enter;
+                let (r, _) = ui.allocate_exact_size(Vec2::new(60.0, bh()), Sense::hover());
+                add |= field(ui, &mut self.ed, crate::tools::F_DIARY_ADD_MIN, &mut self.diary_add.1, r, "min", false).enter;
+                add |= retro_btn(ui, "ADD", false).tip("Add this many minutes to the day.").clicked();
+            });
+            if add {
+                let name = self.diary_add.0.trim().to_string();
+                if let (false, Ok(m)) = (name.is_empty(), self.diary_add.1.trim().parse::<u32>()) {
+                    change = Some((name, m as i64 * 60));
+                    self.diary_add = (String::new(), String::new());
+                }
+            }
+            if let Some((name, by)) = change {
+                let d = self.store.day_mut(&date);
+                let v = (*d.secs.get(&name).unwrap_or(&0) as i64 + by).max(0) as u32;
+                if v == 0 {
+                    d.secs.remove(&name);
+                } else {
+                    d.secs.insert(name, v);
+                }
+                self.store_dirty = true;
+            }
+        }
         if rows_d.is_empty() {
             dim_line(ui, "NO PRACTICE TIME TRACKED THIS DAY", 2.0, pal().ink2);
         }
@@ -3402,6 +3451,7 @@ impl App {
                 }
                 if retro_btn(ui, "CANCEL", false).clicked() {
                     self.show_form = false;
+                    self.entry_edit = None;
                     self.ed.id = 0;
                 }
             });
@@ -3413,8 +3463,17 @@ impl App {
         }
         ui.add_space(6.0);
         let mut any = false;
-        for e in self.store.entries.iter().rev().filter(|e| e.date == date) {
+        let mut pick: Option<(usize, bool)> = None;
+        for (i, e) in self.store.entries.iter().enumerate().rev().filter(|(_, e)| e.date == date) {
             any = true;
+            ui.horizontal(|ui| {
+                if retro_btn(ui, "EDIT", self.entry_edit == Some(i)).tip("Change this entry.").clicked() {
+                    pick = Some((i, false));
+                }
+                if retro_btn(ui, "X", false).tip("Delete this entry.").clicked() {
+                    pick = Some((i, true));
+                }
+            });
             let head = format!(
                 "{}{}{}",
                 e.tune,
@@ -3425,6 +3484,24 @@ impl App {
             if !e.note.is_empty() {
                 para(ui, &e.note, pal().ink2);
             }
+        }
+        match pick {
+            Some((i, true)) => {
+                self.store.entries.remove(i);
+                self.entry_edit = None;
+                self.show_form = false;
+                self.store_dirty = true;
+            }
+            Some((i, false)) => {
+                let e = self.store.entries[i].clone();
+                self.f_tune = e.tune;
+                self.f_mins = if e.mins > 0 { e.mins.to_string() } else { String::new() };
+                self.f_bpm = if e.bpm > 0 { e.bpm.to_string() } else { String::new() };
+                self.f_note = e.note;
+                self.entry_edit = Some(i);
+                self.show_form = true;
+            }
+            None => {}
         }
         if !any && self.store.entries.is_empty() {
             para(ui, "Practice time adds up by itself while you work on a loop in PRACTICE. To write down what you worked on and the tempo you reached, pick a day above and press LOG PRACTICE.", pal().ink2);

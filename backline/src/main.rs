@@ -2900,6 +2900,11 @@ struct App {
     /// Diary: month shown (year, month; 0 = this month) and the day picked (days since 1970; 0 = today)
     diary_ym: (i32, u32),
     diary_sel: i64,
+    /// DIARY: the picked day's times can be changed, and practice added by hand (what, minutes)
+    diary_edit: bool,
+    diary_add: (String, String),
+    /// DIARY: the journal entry being changed (its place in the store's entries)
+    entry_edit: Option<usize>,
     mt: band::Metro,
     mt_bpm: u32,
     mt_add: f32,
@@ -3588,6 +3593,9 @@ impl App {
             rec_ask: false,
             diary_ym: (0, 0),
             diary_sel: 0,
+            diary_edit: false,
+            diary_add: (String::new(), String::new()),
+            entry_edit: None,
             mt: band::Metro::default(),
             mt_bpm: 100,
             mt_add: 0.0,

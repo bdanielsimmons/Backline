@@ -3192,11 +3192,21 @@ impl App {
                 let mins = self.f_mins.trim().parse::<u32>().unwrap_or(default_mins);
                 let bpm = self.f_bpm.trim().parse::<u32>().unwrap_or(0);
                 let tune = if self.f_tune.trim().is_empty() { self.practice_label() } else { self.f_tune.trim().to_string() };
-                // a logged day with no tracked time still counts on the calendar
-                if mins > 0 && self.store.secs_on(&today) == 0 {
-                    *self.store.day_mut(&today).secs.entry(tune.clone()).or_insert(0) += mins * 60;
+                let note = self.f_note.trim().to_string();
+                match self.entry_edit.take().filter(|i| *i < self.store.entries.len()) {
+                    // an entry changed: it keeps its day
+                    Some(i) => {
+                        let e = &mut self.store.entries[i];
+                        (e.tune, e.mins, e.bpm, e.note) = (tune, mins, bpm, note);
+                    }
+                    None => {
+                        // a logged day with no tracked time still counts on the calendar
+                        if mins > 0 && self.store.secs_on(&today) == 0 {
+                            *self.store.day_mut(&today).secs.entry(tune.clone()).or_insert(0) += mins * 60;
+                        }
+                        self.store.entries.push(Entry { date: today, tune, mins, bpm, note });
+                    }
                 }
-                self.store.entries.push(Entry { date: today, tune, mins, bpm, note: self.f_note.trim().to_string() });
                 self.f_mins.clear();
                 self.f_bpm.clear();
                 self.f_note.clear();
