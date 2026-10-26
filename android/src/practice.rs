@@ -251,17 +251,21 @@ impl App {
         let w = ui.available_width();
         let mid_w = 70.0;
         let box_w = (w - mid_w - 16.0) / 2.0;
-        let (row, _) = ui.allocate_exact_size(Vec2::new(w, 96.0), Sense::hover());
+        let (row, _) = ui.allocate_exact_size(Vec2::new(w, 124.0), Sense::hover());
         for which in 0..2 {
             let x = if which == 0 { row.min.x } else { row.max.x - box_w };
-            let r = Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(box_w, 96.0));
+            let r = Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(box_w, 124.0));
             let v = if which == 0 { self.loop_a } else { self.loop_b };
             let p = ui.painter().clone();
             p.rect_filled(r, 10.0, pal().beige_lt);
             ptext(&p, Pos2::new(r.center().x, r.min.y + 14.0), Align::Center, if which == 0 { "Start (A)" } else { "End (B)" }, 1.1, pal().ink2);
-            ptext(&p, Pos2::new(r.center().x, r.min.y + 38.0), Align::Center, &v.map(fmt_t).unwrap_or_else(|| "tap to set".to_string()), if v.is_some() { 2.0 } else { 1.2 }, pal().ink);
+            ptext(&p, Pos2::new(r.center().x, r.min.y + 38.0), Align::Center, &v.map(fmt_t).unwrap_or_else(|| "-:--".to_string()), 2.0, pal().ink);
+            // SET A / SET B: here, where the song is
+            let setr = Rect::from_center_size(Pos2::new(r.center().x, r.min.y + 66.0), Vec2::new((box_w - 20.0).min(110.0), 28.0));
+            p.rect_filled(setr, 14.0, pal().ink);
+            ptext(&p, setr.center(), Align::Center, if which == 0 { "Set A" } else { "Set B" }, 1.3, pal().beige);
             // the top two thirds sets it where the song is; - and + along the foot nudge it a tenth
-            let set = ui.interact(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + 56.0)), ui.id().with(("ab_set", which)), Sense::click());
+            let set = ui.interact(setr, ui.id().with(("ab_set", which)), Sense::click());
             if set.clicked() {
                 // setting either end loops it straight away (an end with no start loops from the top)
                 if which == 0 {
@@ -278,7 +282,7 @@ impl App {
                 self.sync_player();
             }
             for (k, d) in [(-1i32, "-"), (1, "+")] {
-                let c = Pos2::new(r.center().x + k as f32 * 22.0, r.min.y + 76.0);
+                let c = Pos2::new(r.center().x + k as f32 * 22.0, r.min.y + 102.0);
                 let nr = Rect::from_center_size(c, Vec2::new(36.0, 26.0));
                 let resp = ui.interact(nr, ui.id().with(("ab_nudge", which, k)), Sense::click());
                 p.rect_filled(nr, 13.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
@@ -296,15 +300,15 @@ impl App {
             }
         }
         // the loop switch between them (hold it to clear the loop)
-        let lr = Rect::from_center_size(row.center(), Vec2::new(mid_w, 96.0));
+        let lr = Rect::from_center_size(row.center(), Vec2::new(mid_w, 124.0));
         let both = self.loop_a.is_some() && self.loop_b.is_some();
         let on = self.loop_on && both;
         let resp = ui.interact(lr, ui.id().with("loop_tog"), Sense::click());
         let p = ui.painter();
         p.rect_filled(lr, 10.0, if on { pal().row_sel } else { pal().beige });
         let col = if on { pal().bar_txt } else { pal().ink };
-        loop_glyph(p, Pos2::new(lr.center().x, lr.min.y + 38.0), col);
-        ptext(p, Pos2::new(lr.center().x, lr.min.y + 70.0), Align::Center, if on { "Loop on" } else { "Loop off" }, 1.1, col);
+        loop_glyph(p, Pos2::new(lr.center().x, lr.min.y + 50.0), col);
+        ptext(p, Pos2::new(lr.center().x, lr.min.y + 84.0), Align::Center, if on { "Loop on" } else { "Loop off" }, 1.1, col);
         if resp.clicked() && both {
             self.loop_on = !self.loop_on;
             self.sync_player();
