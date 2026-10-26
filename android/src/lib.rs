@@ -880,7 +880,7 @@ impl App {
             return;
         };
         // the cover
-        let side = r.width().min(r.height() - 330.0).max(120.0);
+        let side = r.width().min(r.height() - 370.0).max(120.0);
         let cv = Rect::from_min_size(Pos2::new(r.center().x - side / 2.0, back.max.y + 10.0), Vec2::splat(side));
         self.want_cover(&t);
         let p = ui.painter().clone();
@@ -901,14 +901,15 @@ impl App {
         y += 22.0;
         ptext_fit(&p, Pos2::new(r.min.x, y), Align::Min, &t.artists_text(), 1.4, r.width(), pal().trim);
         y += 18.0;
-        // the LCD strip: time and spectrum in the skin's LCD colours
-        let lcd = Rect::from_min_size(Pos2::new(r.min.x, y), Vec2::new(r.width(), 40.0));
+        // the LCD: the song scrolling by in the pixel font, and the spectrum the full width under it
+        let lcd = Rect::from_min_size(Pos2::new(r.min.x, y), Vec2::new(r.width(), 70.0));
         p.rect_filled(lcd, 8.0, pal().lcd);
         let pos = self.pos();
         font::set_modern(false);
-        ptext(&p, Pos2::new(lcd.min.x + 12.0, lcd.center().y), Align::Min, &format!("{}:{:02}", pos as u32 / 60, pos as u32 % 60), 2.6, pal().ink);
+        let name = Rect::from_min_size(lcd.min + Vec2::new(10.0, 6.0), Vec2::new(lcd.width() - 20.0, 18.0));
+        marquee(ui, name, &format!("{} - {}", t.artists_text(), t.title), 1.2, pal().ink);
         font::set_modern(true);
-        let sp = Rect::from_min_max(Pos2::new(lcd.max.x - 130.0, lcd.min.y + 6.0), lcd.max - Vec2::new(10.0, 6.0));
+        let sp = Rect::from_min_max(Pos2::new(lcd.min.x + 10.0, name.max.y + 4.0), lcd.max - Vec2::new(10.0, 6.0));
         viz::viz_draw(&p, sp, &self.bands, &self.peaks, &self.viz_wave, 0, 1.0, false, 1.0, None);
         y = lcd.max.y + 16.0;
         // the seek bar: drag or tap to move
@@ -949,20 +950,32 @@ impl App {
                 }
             }
         }
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(Pos2::new(r.min.x, play.max.y + 14.0), r.max)));
-        child.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "Practice", false).clicked() {
-                if !self.practice {
-                    self.practice = true;
-                    self.sync_player();
-                    self.save_settings();
+        // Practice and Metronome: two even buttons, an icon and a word each
+        let bw = (r.width() - 10.0) / 2.0;
+        for (k, (name, icon)) in [("Practice", 2), ("Metronome", 9)].iter().enumerate() {
+            let br = Rect::from_min_size(Pos2::new(r.min.x + k as f32 * (bw + 10.0), play.max.y + 16.0), Vec2::new(bw, 40.0));
+            let resp = ui.interact(br, ui.id().with(("now_btn", k)), Sense::click());
+            p.rect_filled(br, 20.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
+            let c = Pos2::new(br.center().x - text_w(name, 1.4) / 2.0 - 4.0, br.center().y);
+            if *icon == 9 {
+                metro_glyph(&p, c + Vec2::new(-8.0, 0.0), pal().ink);
+            } else {
+                tab_icon(&p, c + Vec2::new(-8.0, 0.0), *icon, pal().ink);
+            }
+            ptext(&p, Pos2::new(c.x + 8.0, br.center().y), Align::Min, name, 1.4, pal().ink);
+            if resp.clicked() {
+                if k == 0 {
+                    if !self.practice {
+                        self.practice = true;
+                        self.sync_player();
+                        self.save_settings();
+                    }
+                    self.tab = Tab::Practice;
+                } else {
+                    self.tab = Tab::Metro;
                 }
-                self.tab = Tab::Practice;
             }
-            if retro_btn(ui, "Metronome", false).clicked() {
-                self.tab = Tab::Metro;
-            }
-        });
+        }
     }
 
     /// A screen in the flat look: the skin's panel colour, rounded, its body padded inside.
@@ -1116,7 +1129,9 @@ impl eframe::App for App {
                 self.note.clear();
             }
         }
-        if !self.note.is_empty() || (self.cur.is_some() && !self.paused) || self.mt.on {
+        // (and after a pause, until the spectrum has fallen to nothing)
+        let falling = self.bands.iter().chain(self.peaks.iter()).any(|v| *v > 0.001);
+        if !self.note.is_empty() || (self.cur.is_some() && !self.paused) || self.mt.on || falling {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
         let fill = egui::Frame::none().fill(pal().app_bg);
@@ -1215,6 +1230,14 @@ fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
     let d = if fwd { 1.0 } else { -1.0 };
     p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0 * d, -8.0), c + Vec2::new(5.0 * d, 0.0), c + Vec2::new(-6.0 * d, 8.0)], col, Stroke::NONE));
     p.rect_filled(Rect::from_center_size(c + Vec2::new(7.0 * d, 0.0), Vec2::new(2.5, 16.0)), 1.0, col);
+}
+
+/// A metronome: the case and its arm.
+fn metro_glyph(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.6, col);
+    let pts = vec![c + Vec2::new(-6.0, 8.0), c + Vec2::new(-2.5, -8.0), c + Vec2::new(2.5, -8.0), c + Vec2::new(6.0, 8.0), c + Vec2::new(-6.0, 8.0)];
+    p.add(egui::Shape::line(pts, s));
+    p.line_segment([c + Vec2::new(0.0, 4.0), c + Vec2::new(5.0, -6.0)], s);
 }
 
 /// A down arrow (close Now Playing).
