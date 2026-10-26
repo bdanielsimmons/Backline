@@ -1228,7 +1228,7 @@ fn tab_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
     }
 }
 
-/// The Music page's source icons: Tidal (a sound wave), files (a folder), YouTube (a link), liked (a heart).
+/// The Music page's source icons: Tidal (a sound wave), files (a folder), YouTube (a video), liked (a heart).
 pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
     let s = Stroke::new(2.0, col);
     let at = |x: f32, y: f32| c + Vec2::new(x, y);
@@ -1243,8 +1243,9 @@ pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
             p.add(egui::Shape::line(pts, s));
         }
         2 => {
-            p.rect_stroke(Rect::from_center_size(at(-4.0, 3.0), Vec2::new(12.0, 7.0)), 3.5, s);
-            p.rect_stroke(Rect::from_center_size(at(4.0, -3.0), Vec2::new(12.0, 7.0)), 3.5, s);
+            // a video: a rounded screen with a play triangle in it
+            p.rect_stroke(Rect::from_center_size(c, Vec2::new(26.0, 18.0)), 5.0, s);
+            p.add(egui::Shape::convex_polygon(vec![at(-3.5, -5.0), at(5.5, 0.0), at(-3.5, 5.0)], col, Stroke::NONE));
         }
         _ => {
             let mut pts = Vec::new();
