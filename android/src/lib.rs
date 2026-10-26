@@ -188,7 +188,10 @@ pub(crate) struct App {
     // ---- library
     pub logged_in: bool,
     pub code: Option<(String, String)>,
+    /// MUSIC: 9 the home page (the source tiles and what was played lately), else 0 Tidal, 1 files, 2 YouTube
     pub lib_tab: u8,
+    /// what was played lately, newest first (this session)
+    pub recent: Vec<Track>,
     pub tidal_page: u8,
     pub query: String,
     pub searching: bool,
@@ -317,7 +320,8 @@ impl App {
             keyboard: false,
             zoom_set: false,
             code: None,
-            lib_tab: 0,
+            lib_tab: 9,
+            recent: Vec::new(),
             tidal_page: 0,
             query: String::new(),
             searching: false,
@@ -467,6 +471,9 @@ impl App {
     /// Play the queue's song `i`: its audio (Tidal, a file, a YouTube clip), the loop set back.
     pub(crate) fn play(&mut self, i: usize) {
         let Some(t) = self.queue.get(i).cloned() else { return };
+        self.recent.retain(|r| r.id != t.id || r.title != t.title);
+        self.recent.insert(0, t.clone());
+        self.recent.truncate(30);
         self.at_end = false;
         self.cur = Some(i);
         self.gen += 1;
@@ -1221,8 +1228,48 @@ fn tab_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
     }
 }
 
+/// The Music page's source icons: Tidal (a sound wave), files (a folder), YouTube (a link), liked (a heart).
+pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
+    let s = Stroke::new(2.0, col);
+    let at = |x: f32, y: f32| c + Vec2::new(x, y);
+    match k {
+        0 => {
+            for (x, h) in [(-9.0, 3.0), (-4.5, 8.0), (0.0, 12.0), (4.5, 6.0), (9.0, 9.0)] {
+                p.line_segment([at(x, -h), at(x, h)], s);
+            }
+        }
+        1 => {
+            let pts = vec![at(-11.0, -7.0), at(-4.0, -7.0), at(-2.0, -4.0), at(11.0, -4.0), at(11.0, 8.0), at(-11.0, 8.0), at(-11.0, -7.0)];
+            p.add(egui::Shape::line(pts, s));
+        }
+        2 => {
+            p.rect_stroke(Rect::from_center_size(at(-4.0, 3.0), Vec2::new(12.0, 7.0)), 3.5, s);
+            p.rect_stroke(Rect::from_center_size(at(4.0, -3.0), Vec2::new(12.0, 7.0)), 3.5, s);
+        }
+        _ => {
+            let mut pts = Vec::new();
+            for i in 0..=40 {
+                let a = i as f32 / 40.0 * std::f32::consts::TAU;
+                let (x, y) = (16.0 * a.sin().powi(3), -(13.0 * a.cos() - 5.0 * (2.0 * a).cos() - 2.0 * (3.0 * a).cos() - (4.0 * a).cos()));
+                pts.push(at(x * 0.62, y * 0.62 - 1.0));
+            }
+            p.add(egui::Shape::line(pts, s));
+        }
+    }
+}
+
+/// The loop sign: two arrows chasing round.
+pub(crate) fn loop_glyph(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(2.0, col);
+    let at = |x: f32, y: f32| c + Vec2::new(x, y);
+    p.add(egui::Shape::line(vec![at(-10.0, 4.0), at(-10.0, -6.0), at(8.0, -6.0)], s));
+    p.add(egui::Shape::line(vec![at(10.0, -4.0), at(10.0, 6.0), at(-8.0, 6.0)], s));
+    p.add(egui::Shape::convex_polygon(vec![at(8.0, -10.0), at(13.0, -6.0), at(8.0, -2.0)], col, Stroke::NONE));
+    p.add(egui::Shape::convex_polygon(vec![at(-8.0, 2.0), at(-13.0, 6.0), at(-8.0, 10.0)], col, Stroke::NONE));
+}
+
 /// A smooth play triangle, or pause bars.
-fn play_glyph(p: &egui::Painter, c: Pos2, pause: bool, col: Color32) {
+pub(crate) fn play_glyph(p: &egui::Painter, c: Pos2, pause: bool, col: Color32) {
     if pause {
         for x in [-4.0, 4.0] {
             p.rect_filled(Rect::from_center_size(c + Vec2::new(x, 0.0), Vec2::new(4.0, 14.0)), 1.0, col);

@@ -142,28 +142,52 @@ impl App {
 
     /// LOOP & SPEED: A and B (nudge them), the loop on / off, back 2 seconds, back to the start, the speed, and the
     /// song's saved loops.
+    /// LOOP & SPEED, top to bottom in the order you use it: 1 mark the bit (start, loop, end), 2 slow it down,
+    /// then play it, 3 keep it (the saved loops).
     fn loop_tab(&mut self, ui: &mut egui::Ui, t: &Track) {
         let pos = self.pos();
         let dur = t.duration;
-        for (which, name) in [(0, "A"), (1, "B")] {
-            ui.horizontal(|ui| {
-                let v = if which == 0 { self.loop_a } else { self.loop_b };
-                if retro_btn_w(ui, name, 40.0, false).clicked() {
-                    if which == 0 {
-                        self.loop_a = Some(pos);
-                    } else {
-                        self.loop_b = Some(pos);
-                        if self.loop_a.is_some_and(|a| pos > a) {
-                            self.loop_on = true;
-                        }
+        let step = |ui: &mut egui::Ui, text: &str| {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
+            ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, text, 1.1, pal().ink2);
+        };
+        // ---- 1 mark the bit
+        ui.horizontal(|ui| {
+            step(ui, "1  MARK THE BIT");
+        });
+        let w = ui.available_width();
+        let mid_w = 70.0;
+        let box_w = (w - mid_w - 16.0) / 2.0;
+        let (row, _) = ui.allocate_exact_size(Vec2::new(w, 96.0), Sense::hover());
+        for which in 0..2 {
+            let x = if which == 0 { row.min.x } else { row.max.x - box_w };
+            let r = Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(box_w, 96.0));
+            let v = if which == 0 { self.loop_a } else { self.loop_b };
+            let p = ui.painter().clone();
+            p.rect_filled(r, 10.0, pal().beige_lt);
+            ptext(&p, Pos2::new(r.center().x, r.min.y + 14.0), Align::Center, if which == 0 { "Start (A)" } else { "End (B)" }, 1.1, pal().ink2);
+            ptext(&p, Pos2::new(r.center().x, r.min.y + 38.0), Align::Center, &v.map(fmt_t).unwrap_or_else(|| "tap to set".to_string()), if v.is_some() { 2.0 } else { 1.2 }, pal().ink);
+            // the top two thirds sets it where the song is; - and + along the foot nudge it a tenth
+            let set = ui.interact(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + 56.0)), ui.id().with(("ab_set", which)), Sense::click());
+            if set.clicked() {
+                if which == 0 {
+                    self.loop_a = Some(pos);
+                } else {
+                    self.loop_b = Some(pos);
+                    if self.loop_a.is_some_and(|a| pos > a) {
+                        self.loop_on = true;
                     }
-                    self.sync_player();
                 }
-                let txt = v.map(fmt_t).unwrap_or_else(|| "-:--.-".to_string());
-                let d = stepper(ui, &txt, 86.0);
-                if d != 0 {
-                    let base = v.unwrap_or(pos);
-                    let nv = (base + d as f32 * 0.1).clamp(0.0, dur.max(0.1));
+                self.sync_player();
+            }
+            for (k, d) in [(-1i32, "-"), (1, "+")] {
+                let c = Pos2::new(r.center().x + k as f32 * 22.0, r.min.y + 76.0);
+                let nr = Rect::from_center_size(c, Vec2::new(36.0, 26.0));
+                let resp = ui.interact(nr, ui.id().with(("ab_nudge", which, k)), Sense::click());
+                p.rect_filled(nr, 13.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
+                ptext(&p, c, Align::Center, d, 1.6, pal().ink);
+                if resp.clicked() {
+                    let nv = (v.unwrap_or(pos) + k as f32 * 0.1).clamp(0.0, dur.max(0.1));
                     if which == 0 {
                         self.loop_a = Some(nv);
                     } else {
@@ -171,46 +195,71 @@ impl App {
                     }
                     self.sync_player();
                 }
-                if which == 0 {
-                    ui.add_space(4.0);
-                    let both = self.loop_a.is_some() && self.loop_b.is_some();
-                    if icon_btn_w(ui, &IC_REP, self.loop_on && both, pal().ink, 40.0).clicked() && both {
-                        self.loop_on = !self.loop_on;
-                        self.sync_player();
-                    }
-                    if icon_btn_w(ui, &IC_X, false, pal().ink, 40.0).clicked() {
-                        self.loop_a = None;
-                        self.loop_b = None;
-                        self.loop_on = false;
-                        self.sync_player();
-                    }
+            }
+        }
+        // the loop switch between them (hold it to clear the loop)
+        let lr = Rect::from_center_size(row.center(), Vec2::new(mid_w, 96.0));
+        let both = self.loop_a.is_some() && self.loop_b.is_some();
+        let on = self.loop_on && both;
+        let resp = ui.interact(lr, ui.id().with("loop_tog"), Sense::click());
+        let p = ui.painter();
+        p.rect_filled(lr, 10.0, if on { pal().row_sel } else { pal().beige });
+        let col = if on { pal().bar_txt } else { pal().ink };
+        loop_glyph(p, Pos2::new(lr.center().x, lr.min.y + 38.0), col);
+        ptext(p, Pos2::new(lr.center().x, lr.min.y + 70.0), Align::Center, if on { "Loop on" } else { "Loop off" }, 1.1, col);
+        if resp.clicked() && both {
+            self.loop_on = !self.loop_on;
+            self.sync_player();
+        }
+        if both {
+            ui.horizontal(|ui| {
+                if retro_btn(ui, "Clear the loop", false).clicked() {
+                    self.loop_a = None;
+                    self.loop_b = None;
+                    self.loop_on = false;
+                    self.sync_player();
                 }
             });
         }
+        ui.add_space(6.0);
+        // ---- 2 slow it down
+        step(ui, "2  SLOW IT DOWN");
         ui.horizontal_wrapped(|ui| {
-            if ibtn(ui, &IC_REW, "2 SEC", false).clicked() {
-                self.player.send(Cmd::Seek((pos - 2.0).max(0.0)));
-            }
-            if ibtn(ui, &IC_PREV, "RESTART", false).clicked() {
-                self.player.send(Cmd::Seek(self.loop_a.unwrap_or(0.0)));
+            for s in [50u32, 60, 75, 90, 100] {
+                if retro_btn(ui, &format!("{}%", s), self.speed == s).clicked() {
+                    self.speed = s;
+                    self.sync_player();
+                }
             }
         });
         ui.horizontal(|ui| {
-            label(ui, "SPEED", 56.0);
-            let names: Vec<String> = [25u32, 40, 50, 60, 70, 75, 80, 85, 90, 95, 100, 110, 125, 150].iter().map(|p| format!("{}%", p)).collect();
-            let names: Vec<&str> = names.iter().map(String::as_str).collect();
-            let speeds = [25u32, 40, 50, 60, 70, 75, 80, 85, 90, 95, 100, 110, 125, 150];
-            let cur = speeds.iter().position(|s| *s >= self.speed).unwrap_or(10);
-            if let Some(i) = dropdown(ui, "speed_dd", "", &names, cur, 34.0) {
-                self.speed = speeds[i];
-                self.sync_player();
-            }
+            label(ui, "Speed", 56.0);
             let d = stepper(ui, &format!("{}%", self.speed), 64.0);
             if d != 0 {
                 self.speed = (self.speed as i32 + d).clamp(25, 250) as u32;
                 self.sync_player();
             }
         });
+        // play it: back 2 seconds, play / pause, back to the loop's start
+        let (tr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 64.0), Sense::hover());
+        let mid = tr.center();
+        let p = ui.painter().clone();
+        p.circle_filled(mid, 28.0, pal().red);
+        play_glyph(&p, mid, !(self.paused || self.stopped), pal().bar_txt);
+        if ui.interact(Rect::from_center_size(mid, Vec2::splat(56.0)), ui.id().with("pr_play"), Sense::click()).clicked() {
+            self.play_pause();
+        }
+        for (dx, k) in [(-76.0, 0), (76.0, 1)] {
+            let c = mid + Vec2::new(dx, 0.0);
+            ptext(&p, c + Vec2::new(0.0, 0.0), Align::Center, if k == 0 { "-2s" } else { "|<" }, 1.6, pal().ink);
+            ptext(&p, c + Vec2::new(0.0, 20.0), Align::Center, if k == 0 { "back" } else { "restart" }, 1.0, pal().dim);
+            if ui.interact(Rect::from_center_size(c, Vec2::splat(52.0)), ui.id().with(("pr_t", k)), Sense::click()).clicked() {
+                self.player.send(Cmd::Seek(if k == 0 { (pos - 2.0).max(0.0) } else { self.loop_a.unwrap_or(0.0) }));
+            }
+        }
+        ui.add_space(6.0);
+        // ---- 3 keep it
+        step(ui, "3  KEEP IT");
         ui.add_space(4.0);
         // saved loops of this song
         ui.horizontal(|ui| {

@@ -7,17 +7,63 @@ use crate::*;
 
 impl App {
     pub(crate) fn library_ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(i) = tab_row(ui, &["TIDAL", "FILES", "YT"], self.lib_tab as usize) {
-            self.lib_tab = i as u8;
-            if i == 1 {
-                self.scan_files();
-            }
+        if self.lib_tab == 9 {
+            self.music_home(ui);
+            return;
+        }
+        // inside a source: a way back to the tiles, and its name
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+        let name = ["Tidal", "Files", "YouTube"][(self.lib_tab as usize).min(2)];
+        ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &format!("<  {}", name), 1.8, pal().ink);
+        if resp.clicked() {
+            self.lib_tab = 9;
+            return;
         }
         ui.add_space(4.0);
         match self.lib_tab {
             1 => self.files_ui(ui),
             2 => self.yt_ui(ui),
             _ => self.tidal_ui(ui),
+        }
+    }
+
+    /// MUSIC's home: four big tiles (Tidal, Files, YouTube, Liked), then what was played lately.
+    fn music_home(&mut self, ui: &mut egui::Ui) {
+        let tiles = [("Tidal", "Search, liked, playlists"), ("Files", "On this phone"), ("YouTube", "Paste a link"), ("Liked", "Your hearts")];
+        let w = (ui.available_width() - 10.0) / 2.0;
+        let h = 92.0;
+        let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 2.0 * h + 10.0), Sense::hover());
+        for (k, (name, sub)) in tiles.iter().enumerate() {
+            let r = Rect::from_min_size(area.min + Vec2::new((k % 2) as f32 * (w + 10.0), (k / 2) as f32 * (h + 10.0)), Vec2::new(w, h));
+            let resp = ui.interact(r, ui.id().with(("src", k)), Sense::click());
+            let p = ui.painter();
+            p.rect_filled(r, 10.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+            src_icon(p, Pos2::new(r.center().x, r.min.y + 26.0), k, pal().red);
+            ptext(p, Pos2::new(r.center().x, r.min.y + 56.0), Align::Center, name, 1.7, pal().ink);
+            ptext_fit(p, Pos2::new(r.center().x, r.min.y + 76.0), Align::Center, sub, 1.1, w - 12.0, pal().dim);
+            if resp.clicked() {
+                match k {
+                    3 => {
+                        self.lib_tab = 0;
+                        self.tidal_page = 1;
+                    }
+                    _ => {
+                        self.lib_tab = k as u8;
+                        if k == 1 {
+                            self.scan_files();
+                        }
+                    }
+                }
+            }
+        }
+        ui.add_space(14.0);
+        ptext(ui.painter(), ui.cursor().min + Vec2::new(2.0, 6.0), Align::Min, "RECENT", 1.1, pal().ink2);
+        ui.add_space(18.0);
+        if self.recent.is_empty() {
+            para(ui, "What you play shows up here.", pal().dim);
+        } else {
+            let recent = self.recent.clone();
+            self.song_list(ui, &recent, "recent");
         }
     }
 
