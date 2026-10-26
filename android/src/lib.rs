@@ -45,7 +45,11 @@ mod atonal_core;
 mod music_data;
 mod chords;
 mod deck;
+mod lines_ui;
+#[path = "../../backline/src/data/lines.rs"]
 mod lines;
+#[path = "../../backline/src/ui/triad_core.rs"]
+mod triad_core;
 mod menu;
 use menu::{Playlist, QTrack};
 mod library;
@@ -353,6 +357,11 @@ pub(crate) struct App {
     pub tr_q: usize,
     pub tr_set: usize,
     pub tr_sel: usize,
+    /// TRIADS: the page (map, voice leading, over a bass), the changes typed, where on the neck to start, the bass
+    pub tr_page: u8,
+    pub tr_prog: String,
+    pub tr_pos: u8,
+    pub tr_bass: i32,
     // ---- metronome
     pub mt: band::Metro,
     pub mt_bpm: u32,
@@ -534,6 +543,10 @@ impl App {
             tr_q: 0,
             tr_set: 0,
             tr_sel: 0,
+            tr_page: 0,
+            tr_prog: "1 6 2 5".to_string(),
+            tr_pos: 1,
+            tr_bass: 0,
             mt: band::Metro::default(),
             mt_bpm: st.mt_bpm,
             mt_vol: st.mt_vol,
@@ -1377,7 +1390,7 @@ impl App {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (k, name) in SKIN_NAMES.iter().enumerate() {
-                    if retro_btn(ui, &crate::lines::nice(name), k == cur).clicked() {
+                    if retro_btn(ui, &crate::lines_ui::nice(name), k == cur).clicked() {
                         SKIN.store(k, Ordering::Relaxed);
                         self.wear();
                         self.save_settings();
