@@ -695,7 +695,7 @@ impl App {
             });
         }
         if self.yt.is_empty() {
-            note_text(ui, "Copy a link in the YouTube app (Share > Copy link), then PASTE and ADD.", pal().ink2);
+            note_text(ui, "Copy a link in the YouTube app (Share > Copy link), then Paste and Add.", pal().ink2);
             return;
         }
         let playing = self.cur_track().map(|t| t.id);

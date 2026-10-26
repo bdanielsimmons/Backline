@@ -533,7 +533,7 @@ impl App {
                         format!("{}{} ({})", mark, theory::note_name(*p, sp.sharps), degree(*p, s.root).0)
                     })
                     .collect();
-                dim(ui, &format!("{}{}", s.name(sp), if s.exact { "   EXACT" } else { "" }), 2.0, pal().ink);
+                dim(ui, &format!("{}{}", s.name(sp), if s.exact { "   (exact)" } else { "" }), 1.3, pal().ink);
                 note_text(ui, &notes.join("  "), pal().ink2);
                 for w in &s.warnings {
                     ui.horizontal(|ui| {
