@@ -170,14 +170,17 @@ impl App {
             // the top two thirds sets it where the song is; - and + along the foot nudge it a tenth
             let set = ui.interact(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + 56.0)), ui.id().with(("ab_set", which)), Sense::click());
             if set.clicked() {
+                // setting either end loops it straight away (an end with no start loops from the top)
                 if which == 0 {
                     self.loop_a = Some(pos);
                 } else {
                     self.loop_b = Some(pos);
-                    if self.loop_a.is_some_and(|a| pos > a) {
-                        self.loop_on = true;
+                    if self.loop_a.is_none_or(|a| a >= pos) {
+                        self.loop_a = Some(0.0);
                     }
                 }
+                self.loop_on = self.loop_a.zip(self.loop_b).is_some_and(|(a, b)| b > a);
+                self.practice = true;
                 self.sync_player();
             }
             for (k, d) in [(-1i32, "-"), (1, "+")] {
