@@ -907,7 +907,14 @@ impl App {
         let pos = self.pos();
         font::set_modern(false);
         let name = Rect::from_min_size(lcd.min + Vec2::new(10.0, 6.0), Vec2::new(lcd.width() - 20.0, 18.0));
-        marquee(ui, name, &format!("{} - {}", t.artists_text(), t.title), 1.2, pal().ink);
+        // (always moving, Winamp's way, even when the name would fit)
+        let txt = format!("{} - {}  ***  ", t.artists_text(), t.title);
+        let clip = p.with_clip_rect(name);
+        let period = text_w(&txt, 1.2).max(name.width());
+        let off = (ui.input(|i| i.time) as f32 * 24.0) % period;
+        for k in 0..2 {
+            ptext(&clip, Pos2::new(name.min.x - off + k as f32 * period, name.center().y), Align::Min, &txt, 1.2, pal().ink);
+        }
         font::set_modern(true);
         let sp = Rect::from_min_max(Pos2::new(lcd.min.x + 10.0, name.max.y + 4.0), lcd.max - Vec2::new(10.0, 6.0));
         viz::viz_draw(&p, sp, &self.bands, &self.peaks, &self.viz_wave, 0, 1.0, false, 1.0, None);
