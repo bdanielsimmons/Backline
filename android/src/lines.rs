@@ -11,7 +11,7 @@ const CYCLES: [(&str, i32); 4] = [("Minor 3rds", 3), ("Major 3rds", 4), ("4ths",
 const FEELS: [(&str, u32); 7] = [("1/4", 1), ("1/8", 2), ("Triplets", 3), ("1/16", 4), ("Quintuplets", 5), ("Sextuplets", 6), ("Septuplets", 7)];
 
 /// A scale's name the phone's way: capitalised, not shouted.
-fn nice(name: &str) -> String {
+pub(crate) fn nice(name: &str) -> String {
     let low = name.to_lowercase();
     let mut c = low.chars();
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()

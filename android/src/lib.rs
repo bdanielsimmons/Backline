@@ -339,6 +339,8 @@ pub(crate) struct App {
     pub ln_bpm: u32,
     pub ln_sub: u32,
     pub ln_loop: bool,
+    /// the gear's page is open
+    pub settings_open: bool,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -518,6 +520,7 @@ impl App {
             ln_bpm: 100,
             ln_sub: 2,
             ln_loop: false,
+            settings_open: false,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],
@@ -1343,6 +1346,48 @@ impl App {
         }
     }
 
+    /// A screen: its title at the top with a gear (the skin) at the right, then the flat panel. Music has no
+    /// title (its switch is its heading); the gear sits at the top right all the same.
+    fn screen(&mut self, ui: &mut egui::Ui, r: Rect, title: &str, body: impl FnOnce(&mut Self, &mut egui::Ui)) {
+        let head = Rect::from_min_size(r.min, Vec2::new(r.width(), if title.is_empty() { 0.0 } else { 40.0 }));
+        if !title.is_empty() {
+            ptext(ui.painter(), Pos2::new(head.min.x + 14.0, head.center().y), Align::Min, title, 2.4, pal().bar_txt);
+            let g = Pos2::new(head.max.x - 26.0, head.center().y);
+            gear_glyph(ui.painter(), g, pal().trim);
+            if ui.interact(Rect::from_center_size(g, Vec2::splat(40.0)), ui.id().with("gear"), Sense::click()).clicked() {
+                self.settings_open = !self.settings_open;
+            }
+        }
+        let rest = Rect::from_min_max(Pos2::new(r.min.x, head.max.y), r.max);
+        if self.settings_open {
+            self.flat(ui, rest, |me, ui| me.settings_ui(ui));
+        } else {
+            self.flat(ui, rest, body);
+        }
+    }
+
+    /// SETTINGS (the gear): the skin.
+    fn settings_ui(&mut self, ui: &mut egui::Ui) {
+        ptext(ui.painter(), ui.cursor().min + Vec2::new(2.0, 10.0), Align::Min, "Skin", 1.6, pal().ink);
+        ui.add_space(24.0);
+        let cur = SKIN.load(Ordering::Relaxed);
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for (k, name) in SKIN_NAMES.iter().enumerate() {
+                    if retro_btn(ui, &crate::lines::nice(name), k == cur).clicked() {
+                        SKIN.store(k, Ordering::Relaxed);
+                        self.wear();
+                        self.save_settings();
+                    }
+                }
+            });
+            ui.add_space(10.0);
+            if retro_btn(ui, "Done", false).clicked() {
+                self.settings_open = false;
+            }
+        });
+    }
+
     /// A screen in the flat look: the skin's panel colour, rounded, its body padded inside.
     fn flat(&mut self, ui: &mut egui::Ui, outer: Rect, body: impl FnOnce(&mut Self, &mut egui::Ui)) {
         let inner = outer.shrink2(Vec2::new(6.0, 2.0));
@@ -1416,9 +1461,8 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
         let fill = egui::Frame::none().fill(pal().app_bg);
-        egui::TopBottomPanel::top("top")
-            .frame(fill.inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 30.0, bottom: 4.0 }))
-            .show(ctx, |ui| self.top_bar(ui));
+        // no top bar: just the room the phone's status bar needs
+        egui::TopBottomPanel::top("top").frame(fill.inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 30.0, bottom: 0.0 })).show(ctx, |_| {});
         let now = self.tab == Tab::Now;
         egui::TopBottomPanel::bottom("bottom")
             .frame(fill.inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 6.0, bottom: 26.0 }))
@@ -1444,12 +1488,12 @@ impl eframe::App for App {
         egui::CentralPanel::default().frame(fill).show(ctx, |ui| {
             let r = ui.max_rect();
             match self.tab {
-                Tab::Player => self.flat(ui, r, |me, ui| me.queue_ui(ui)),
-                Tab::Library => self.flat(ui, r, |me, ui| me.library_ui(ui)),
-                Tab::Practice => self.flat(ui, r, |me, ui| me.practice_ui(ui)),
-                Tab::Chords => self.flat(ui, r, |me, ui| me.chords_ui(ui)),
-                Tab::Lines => self.flat(ui, r, |me, ui| me.lines_ui(ui)),
-                Tab::Metro => self.flat(ui, r, |me, ui| me.metro_ui(ui)),
+                Tab::Player => self.screen(ui, r, "Queue", |me, ui| me.queue_ui(ui)),
+                Tab::Library => self.screen(ui, r, "", |me, ui| me.library_ui(ui)),
+                Tab::Practice => self.screen(ui, r, "Practice", |me, ui| me.practice_ui(ui)),
+                Tab::Chords => self.screen(ui, r, "Chords", |me, ui| me.chords_ui(ui)),
+                Tab::Lines => self.screen(ui, r, "Lines", |me, ui| me.lines_ui(ui)),
+                Tab::Metro => self.screen(ui, r, "Metronome", |me, ui| me.metro_ui(ui)),
                 Tab::Now => self.now_screen(ui, r),
             }
         });
@@ -1663,7 +1707,7 @@ pub(crate) fn play_glyph(p: &egui::Painter, c: Pos2, pause: bool, col: Color32) 
 }
 
 /// Skip back or on: a triangle and a bar.
-fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
+pub(crate) fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
     let d = if fwd { 1.0 } else { -1.0 };
     p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0 * d, -8.0), c + Vec2::new(5.0 * d, 0.0), c + Vec2::new(-6.0 * d, 8.0)], col, Stroke::NONE));
     p.rect_filled(Rect::from_center_size(c + Vec2::new(7.0 * d, 0.0), Vec2::new(2.5, 16.0)), 1.0, col);
@@ -1675,6 +1719,18 @@ fn metro_glyph(p: &egui::Painter, c: Pos2, col: Color32) {
     let pts = vec![c + Vec2::new(-6.0, 8.0), c + Vec2::new(-2.5, -8.0), c + Vec2::new(2.5, -8.0), c + Vec2::new(6.0, 8.0), c + Vec2::new(-6.0, 8.0)];
     p.add(egui::Shape::line(pts, s));
     p.line_segment([c + Vec2::new(0.0, 4.0), c + Vec2::new(5.0, -6.0)], s);
+}
+
+/// A gear: a ring with eight teeth.
+pub(crate) fn gear_glyph(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(2.0, col);
+    p.circle_stroke(c, 6.0, s);
+    p.circle_stroke(c, 2.2, Stroke::new(1.6, col));
+    for k in 0..8 {
+        let a = k as f32 / 8.0 * std::f32::consts::TAU;
+        let d = Vec2::new(a.cos(), a.sin());
+        p.line_segment([c + d * 6.5, c + d * 9.5], Stroke::new(2.6, col));
+    }
 }
 
 /// A down arrow (close Now Playing).

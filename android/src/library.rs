@@ -24,7 +24,7 @@ impl App {
             _ => 9,
         };
         let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
-        if let Some(i) = seg_tabs(ui, Rect::from_min_max(row.min, Pos2::new(row.max.x - 96.0, row.max.y)), &["My tracks", "Home", "Search"], cur, "music_seg") {
+        if let Some(i) = seg_tabs(ui, Rect::from_min_max(row.min, Pos2::new(row.max.x - 138.0, row.max.y)), &["My tracks", "Home", "Search"], cur, "music_seg") {
             self.list_open = None;
             self.lib_tab = [3, 5, 0][i];
             if i == 0 {
@@ -33,7 +33,7 @@ impl App {
         }
         // files on the phone and YouTube links, as two icons
         for (k, (tab, icon)) in [(1u8, 1usize), (2, 2)].iter().enumerate() {
-            let c = Pos2::new(row.max.x - 68.0 + k as f32 * 46.0, row.center().y);
+            let c = Pos2::new(row.max.x - 112.0 + k as f32 * 44.0, row.center().y);
             let r = Rect::from_center_size(c, Vec2::splat(40.0));
             let resp = ui.interact(r, ui.id().with(("src_icon", k)), Sense::click());
             let on = self.lib_tab == *tab;
@@ -47,6 +47,11 @@ impl App {
                     self.scan_files();
                 }
             }
+        }
+        let g = Pos2::new(row.max.x - 20.0, row.center().y);
+        gear_glyph(ui.painter(), g, pal().ink2);
+        if ui.interact(Rect::from_center_size(g, Vec2::splat(40.0)), ui.id().with("music_gear"), Sense::click()).clicked() {
+            self.settings_open = true;
         }
         ui.add_space(4.0);
         match self.lib_tab {

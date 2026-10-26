@@ -44,7 +44,8 @@ impl App {
         };
         self.waveform(ui, &t);
         ui.add_space(6.0);
-        if let Some(i) = tab_row(ui, &["LOOP & SPEED", "TRAINER", "PITCH & EAR", "BOOKMARKS"], self.mtab as usize) {
+        let (tr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+        if let Some(i) = seg_tabs(ui, tr, &["Loop", "Trainer", "Pitch", "Marks"], self.mtab as usize, "prac_tabs") {
             self.mtab = i as u8;
         }
         ui.add_space(4.0);
@@ -246,8 +247,7 @@ impl App {
         };
         // ---- 1 mark the bit
         ui.horizontal(|ui| {
-            step(ui, "1  MARK THE BIT");
-        });
+            });
         let w = ui.available_width();
         let mid_w = 70.0;
         let box_w = (w - mid_w - 16.0) / 2.0;
@@ -340,23 +340,30 @@ impl App {
         }
         ui.add_space(6.0);
         // ---- 2 slow it down
-        step(ui, "2  SLOW IT DOWN");
-        ui.horizontal_wrapped(|ui| {
-            for s in [50u32, 60, 75, 90, 100] {
-                if retro_btn(ui, &format!("{}%", s), self.speed == s).clicked() {
-                    self.speed = s;
-                    self.sync_player();
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            label(ui, "Speed", 56.0);
-            let d = stepper(ui, &format!("{}%", self.speed), 64.0);
-            if d != 0 {
-                self.speed = (self.speed as i32 + d).clamp(25, 250) as u32;
+        // the speed: one row of chips, and a step either way for the ones between
+        let (sr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 38.0), Sense::hover());
+        let names = ["-", "50%", "60%", "75%", "90%", "100%", "+"];
+        let cw = sr.width() / names.len() as f32;
+        for (k, n) in names.iter().enumerate() {
+            let c = Rect::from_min_size(Pos2::new(sr.min.x + k as f32 * cw, sr.min.y + 3.0), Vec2::new(cw - 4.0, 32.0));
+            let resp = ui.interact(c, ui.id().with(("spd", k)), Sense::click());
+            let val = [0u32, 50, 60, 75, 90, 100, 0][k];
+            let on = val == self.speed;
+            ui.painter().rect_filled(c, 16.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+            let lab = if k == 0 || k == 6 { n.to_string() } else { n.to_string() };
+            ptext_fit(ui.painter(), c.center(), Align::Center, &lab, 1.2, cw - 8.0, if on { pal().beige } else { pal().ink });
+            if resp.clicked() {
+                self.speed = match k {
+                    0 => self.speed.saturating_sub(5).max(25),
+                    6 => (self.speed + 5).min(250),
+                    _ => val,
+                };
                 self.sync_player();
             }
-        });
+        }
+        if ![50, 60, 75, 90, 100].contains(&self.speed) {
+            dim_line(ui, &format!("Speed {}%", self.speed), 1.0, pal().ink2);
+        }
         // play it: back 2 seconds, play / pause, back to the loop's start
         let (tr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 64.0), Sense::hover());
         let mid = tr.center();
@@ -376,7 +383,6 @@ impl App {
         }
         ui.add_space(6.0);
         // ---- 3 keep it
-        step(ui, "3  KEEP IT");
         ui.add_space(4.0);
         // saved loops of this song
         ui.horizontal(|ui| {

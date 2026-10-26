@@ -177,11 +177,11 @@ impl App {
         }
     }
 
-    /// The menu's first page. Returns true when it should close.
+    /// The menu's first page: a line icon and a word per row. Returns true when it should close.
     fn menu_main(&mut self, ui: &mut egui::Ui, t: &Track, qi: Option<usize>, tidal: bool, w: f32) -> bool {
         let mut close = false;
         let cur = self.cur;
-        if retro_btn_w(ui, "Play now", w, false).clicked() {
+        if mrow(ui, w, 0, "Play now") {
             match qi {
                 Some(i) => self.play(i),
                 None => {
@@ -192,7 +192,7 @@ impl App {
             }
             close = true;
         }
-        if retro_btn_w(ui, "Play next", w, false).clicked() {
+        if mrow(ui, w, 1, "Play next") {
             let at = cur.map_or(0, |c| c + 1).min(self.queue.len());
             if let Some(i) = qi {
                 let s = self.queue.remove(i);
@@ -205,26 +205,23 @@ impl App {
             self.set_note("Plays next");
             close = true;
         }
-        if qi.is_none() && retro_btn_w(ui, "Add to the queue", w, false).clicked() {
+        if qi.is_none() && mrow(ui, w, 2, "Add to the queue") {
             self.queue.push(t.clone());
             self.set_note("Added to the queue");
             close = true;
         }
         if let Some(i) = qi {
-            ui.horizontal(|ui| {
-                let hw = (w - 6.0) / 2.0;
-                if retro_btn_w(ui, "Move up", hw, false).clicked() && i > 0 {
-                    self.queue.swap(i, i - 1);
-                    self.fix_cur(i, i - 1);
-                    self.song_menu = Some((t.clone(), Some(i - 1)));
-                }
-                if retro_btn_w(ui, "Move down", hw, false).clicked() && i + 1 < self.queue.len() {
-                    self.queue.swap(i, i + 1);
-                    self.fix_cur(i, i + 1);
-                    self.song_menu = Some((t.clone(), Some(i + 1)));
-                }
-            });
-            if retro_btn_w(ui, "Take out of the queue", w, false).clicked() {
+            if mrow(ui, w, 11, "Move up") && i > 0 {
+                self.queue.swap(i, i - 1);
+                self.fix_cur(i, i - 1);
+                self.song_menu = Some((t.clone(), Some(i - 1)));
+            }
+            if mrow(ui, w, 12, "Move down") && i + 1 < self.queue.len() {
+                self.queue.swap(i, i + 1);
+                self.fix_cur(i, i + 1);
+                self.song_menu = Some((t.clone(), Some(i + 1)));
+            }
+            if mrow(ui, w, 13, "Take out of the queue") {
                 self.queue.remove(i);
                 match self.cur {
                     Some(c) if c == i => {
@@ -237,9 +234,8 @@ impl App {
                 close = true;
             }
         }
-        // out of one of your playlists
         if let Some((p, k)) = self.menu_pl {
-            if retro_btn_w(ui, "Take out of this playlist", w, false).clicked() {
+            if mrow(ui, w, 13, "Take out of this playlist") {
                 if let Some(pl) = self.playlists.get_mut(p) {
                     if k < pl.tracks.len() {
                         pl.tracks.remove(k);
@@ -251,67 +247,60 @@ impl App {
         }
         if tidal && self.logged_in {
             let liked = self.liked_ids.contains(&t.id);
-            if retro_btn_w(ui, if liked { "Unlike" } else { "Like" }, w, liked).clicked() {
+            if mrow(ui, w, 3, if liked { "Unlike" } else { "Like" }) {
                 self.set_like(t, !liked);
             }
         }
-        if retro_btn_w(ui, "Add to a playlist...", w, false).clicked() {
+        if mrow(ui, w, 4, "Add to a playlist") {
             self.menu_mode = 1;
             if tidal && self.logged_in && self.own_lists.is_empty() {
                 self.spawn(|api| Msg::OwnLists(api.own_playlists()));
             }
         }
         if tidal && self.logged_in {
-            ui.horizontal(|ui| {
-                let tw = (w - 12.0) / 3.0;
-                for (name, to) in [("Album", api::GoTo::Album), ("Artist", api::GoTo::Artist), ("Radio", api::GoTo::Radio)] {
-                    if retro_btn_w(ui, name, tw, false).clicked() {
-                        let id = t.id;
-                        self.spawn(move |api| Msg::Page(api.track_page(id, to)));
-                        self.lib_tab = 4;
-                        self.tab = Tab::Library;
-                        close = true;
-                    }
+            for (icon, name, to) in [(5u8, "Go to album", api::GoTo::Album), (6, "Go to artist", api::GoTo::Artist), (7, "Song radio", api::GoTo::Radio)] {
+                if mrow(ui, w, icon, name) {
+                    let id = t.id;
+                    self.page_busy = true;
+                    self.page_pending = None;
+                    self.spawn(move |api| Msg::Page(api.track_page(id, to)));
+                    self.lib_tab = 4;
+                    self.tab = Tab::Library;
+                    close = true;
                 }
-            });
-            if retro_btn_w(ui, "Credits", w, false).clicked() {
+            }
+            if mrow(ui, w, 8, "Credits") {
                 self.credits.clear();
                 self.menu_mode = 2;
                 let id = t.id;
                 self.spawn(move |api| Msg::Credits(api.credits(id)));
             }
         }
-        ui.horizontal(|ui| {
-            let hw = (w - 6.0) / 2.0;
-            if retro_btn_w(ui, "Copy name", hw, false).clicked() {
-                let ok = set_clipboard(&format!("{} - {}", t.artists_text(), t.title));
-                self.set_note(if ok { "Copied" } else { "Couldn't copy" });
+        if mrow(ui, w, 9, "Copy name") {
+            let ok = set_clipboard(&format!("{} - {}", t.artists_text(), t.title));
+            self.set_note(if ok { "Copied" } else { "Couldn't copy" });
+            close = true;
+        }
+        let link = if let Some(y) = self.yt.iter().find(|y| yt_id(&y.vid) == t.id) {
+            Some(format!("https://youtu.be/{}", y.vid))
+        } else if tidal {
+            Some(format!("https://tidal.com/track/{}", t.id))
+        } else {
+            None
+        };
+        if let Some(l) = link {
+            if mrow(ui, w, 10, "Copy link") {
+                let ok = set_clipboard(&l);
+                self.set_note(if ok { "Link copied" } else { "Couldn't copy" });
                 close = true;
             }
-            let link = if let Some(y) = self.yt.iter().find(|y| yt_id(&y.vid) == t.id) {
-                Some(format!("https://youtu.be/{}", y.vid))
-            } else if tidal {
-                Some(format!("https://tidal.com/track/{}", t.id))
-            } else {
-                None
-            };
-            if let Some(l) = link {
-                if retro_btn_w(ui, "Copy link", hw, false).clicked() {
-                    let ok = set_clipboard(&l);
-                    self.set_note(if ok { "Link copied" } else { "Couldn't copy" });
-                    close = true;
-                }
-            }
-        });
+        }
         if let Some(k) = self.yt.iter().position(|y| yt_id(&y.vid) == t.id) {
-            if retro_btn_w(ui, "Take off the YouTube list", w, false).clicked() {
+            if mrow(ui, w, 13, "Take off the YouTube list") {
                 self.yt.remove(k);
                 save_json("yt.json", &self.yt);
                 close = true;
             }
-        }
-        if retro_btn_w(ui, "Cancel", w, false).clicked() {
-            close = true;
         }
         close
     }
@@ -384,4 +373,63 @@ impl App {
             let _ = api.set_liked(id, like);
         });
     }
+}
+
+/// A row of the song menu: a line icon and a word, a hairline above. Returns true when tapped.
+fn mrow(ui: &mut egui::Ui, w: f32, icon: u8, text: &str) -> bool {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
+    let p = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        p.rect_filled(r, 6.0, pal().beige_lt);
+    }
+    p.line_segment([Pos2::new(r.min.x, r.min.y), Pos2::new(r.max.x, r.min.y)], Stroke::new(1.0, pal().beige_lt));
+    let c = Pos2::new(r.min.x + 16.0, r.center().y);
+    let col = pal().ink;
+    let s = Stroke::new(1.8, col);
+    let at = |x: f32, y: f32| c + Vec2::new(x, y);
+    match icon {
+        0 => play_glyph(p, c, false, col),
+        1 => skip_glyph(p, c, true, col),
+        2 | 4 => {
+            for y in [-6.0, 0.0, 6.0] {
+                p.line_segment([at(-9.0, y), at(4.0, y)], s);
+            }
+            if icon == 4 {
+                p.line_segment([at(9.0, 2.0), at(9.0, 10.0)], s);
+                p.line_segment([at(5.0, 6.0), at(13.0, 6.0)], s);
+            }
+        }
+        3 => src_icon(p, c, 4, col),
+        5 => {
+            p.circle_stroke(c, 9.0, s);
+            p.circle_filled(c, 2.5, col);
+        }
+        6 => {
+            p.circle_stroke(at(0.0, -4.0), 4.0, s);
+            p.add(egui::Shape::line(vec![at(-8.0, 9.0), at(-6.0, 3.0), at(6.0, 3.0), at(8.0, 9.0)], s));
+        }
+        7 => src_icon(p, c, 0, col),
+        8 => {
+            for (y, l) in [(-6.0, 12.0), (0.0, 8.0), (6.0, 12.0)] {
+                p.line_segment([at(-8.0, y), at(-8.0 + l, y)], s);
+            }
+        }
+        9 => {
+            p.rect_stroke(Rect::from_min_max(at(-8.0, -5.0), at(3.0, 9.0)), 2.0, s);
+            p.rect_stroke(Rect::from_min_max(at(-3.0, -10.0), at(8.0, 4.0)), 2.0, s);
+        }
+        10 => src_icon(p, c, 2, col),
+        11 | 12 => {
+            let d = if icon == 11 { -1.0 } else { 1.0 };
+            p.line_segment([at(0.0, -8.0 * d), at(0.0, 8.0 * d)], s);
+            p.line_segment([at(-5.0, 3.0 * d), at(0.0, 8.0 * d)], s);
+            p.line_segment([at(5.0, 3.0 * d), at(0.0, 8.0 * d)], s);
+        }
+        _ => {
+            p.line_segment([at(-6.0, -6.0), at(6.0, 6.0)], s);
+            p.line_segment([at(6.0, -6.0), at(-6.0, 6.0)], s);
+        }
+    }
+    ptext(p, Pos2::new(r.min.x + 42.0, r.center().y), Align::Min, text, 1.4, col);
+    resp.clicked()
 }

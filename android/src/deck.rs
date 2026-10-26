@@ -656,37 +656,40 @@ impl App {
 }
 
 
-/// A list row in Backline's way: number, title and artist in the pixel font, the length, and a three-dot button at
-/// the right for the song's menu; the alternate rows a shade apart, the one playing in the selection colour.
-/// Returns the row's response and whether the dots were tapped.
+/// A song row, dense: its number, the title and (dimmer) the artist on one line, the length, and three dots at the
+/// right for the song's menu; the one playing in the selection colour. Returns the row's response and whether the
+/// dots were tapped.
 pub(crate) fn song_row(ui: &mut egui::Ui, i: usize, t: &Track, now: bool) -> (egui::Response, bool) {
-    let (full, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 14.0), Sense::hover());
-    let dots_w = 34.0;
+    let (full, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 38.0), Sense::hover());
+    let dots_w = 36.0;
     let r = Rect::from_min_max(full.min, Pos2::new(full.max.x - dots_w, full.max.y));
     let dr = Rect::from_min_max(Pos2::new(r.max.x, full.min.y), full.max);
     let resp = ui.interact(r, ui.id().with(("row", i, t.id)), Sense::click());
     let dots = ui.interact(dr, ui.id().with(("dots", i, t.id)), Sense::click());
     let p = ui.painter();
     if now {
-        fill_rect(p, full, pal().row_sel);
-    } else if i % 2 == 1 {
-        fill_rect(p, full, pal().row_alt);
+        p.rect_filled(full.shrink2(Vec2::new(0.0, 1.0)), 6.0, pal().row_sel);
+    } else if resp.is_pointer_button_down_on() {
+        p.rect_filled(full.shrink2(Vec2::new(0.0, 1.0)), 6.0, pal().beige_lt);
     }
-    let (ink, ink2) = if now { (pal().bar_txt, pal().bar_txt) } else { (pal().ink, pal().ink2) };
-    let num = format!("{}", i + 1);
-    ptext(p, Pos2::new(r.min.x + 22.0, r.min.y + 11.0), Align::Max, &num, 1.0, ink2);
+    let (ink, dim) = if now { (pal().bar_txt, pal().bar_txt) } else { (pal().ink, pal().dim) };
+    let cy = full.center().y;
+    ptext(p, Pos2::new(r.min.x + 20.0, cy), Align::Max, &(i + 1).to_string(), 1.0, dim);
     let right = if t.duration > 0.0 { fmt_time(t.duration) } else { String::new() };
     let rw = text_w(&right, 1.0);
-    ptext(p, Pos2::new(r.max.x - 6.0, r.min.y + 11.0), Align::Max, &right, 1.0, ink2);
-    let w = r.width() - 40.0 - rw;
-    ptext_fit(p, Pos2::new(r.min.x + 30.0, r.min.y + 11.0), Align::Min, &fit(&t.title.to_uppercase(), 2.0, w), 2.0, w, ink);
-    let artist = t.artists_text().to_uppercase();
-    ptext_fit(p, Pos2::new(r.min.x + 30.0, r.min.y + 27.0), Align::Min, &fit(&artist, 1.0, w), 1.0, w, ink2);
-    // the menu's three dots, stacked
-    let c = dr.center();
-    let col = if dots.is_pointer_button_down_on() { pal().red } else { ink2 };
+    ptext(p, Pos2::new(r.max.x - 4.0, cy), Align::Max, &right, 1.0, dim);
+    let x0 = r.min.x + 28.0;
+    let w = r.max.x - 12.0 - rw - x0;
+    let tw = text_w(&t.title, 1.3).min(w * 0.7);
+    ptext_fit(p, Pos2::new(x0, cy), Align::Min, &t.title, 1.3, tw + 1.0, ink);
+    let artist = t.artists_text();
+    if !artist.is_empty() && w - tw > 30.0 {
+        ptext_fit(p, Pos2::new(x0 + tw + 6.0, cy), Align::Min, &format!("· {}", artist), 1.1, w - tw - 6.0, dim);
+    }
+    // the menu's three dots, side by side
+    let col = if dots.is_pointer_button_down_on() { pal().red } else { dim };
     for k in [-1.0f32, 0.0, 1.0] {
-        fill_rect(p, Rect::from_center_size(c + Vec2::new(0.0, k * 6.0), Vec2::splat(3.5)), col);
+        p.circle_filled(dr.center() + Vec2::new(k * 6.0, 0.0), 1.8, col);
     }
     let tapped = dots.clicked();
     (resp, tapped)
