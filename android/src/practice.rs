@@ -474,125 +474,91 @@ impl App {
         }
     }
 
-    /// TRAINER: the count-off before each pass, and the speed trainer (so many passes, then a little faster).
+    /// TRAINER, as settings rows (tap one to change it): the count-off before each pass and the song's tempo for it
+    /// (tap it in), then the speed trainer - on, every so many loops, by how much, then faster or up a 4th.
     fn trainer_tab(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Count-off", 90.0);
-            let txt = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
-            if retro_btn_w(ui, &txt, 90.0, self.count_in > 0).clicked() {
-                self.count_in = match self.count_in {
-                    0 => 2,
-                    2 => 4,
-                    _ => 0,
-                };
+        let co = if self.count_in == 0 { "Off".to_string() } else { format!("{} beats", self.count_in) };
+        if srow(ui, "Count-off", &co) {
+            self.count_in = match self.count_in {
+                0 => 2,
+                2 => 4,
+                _ => 0,
+            };
+            self.sync_player();
+        }
+        if srow(ui, "Song tempo (tap here to tap it in)", &format!("{:.0} bpm", self.song_bpm)) {
+            if let Some(b) = self.tap() {
+                self.song_bpm = b;
                 self.sync_player();
             }
-            lcd_box(ui, &format!("{:.0} BPM", self.song_bpm), 70.0, pal().ink);
-            if retro_btn_w(ui, "Tap", 44.0, false).clicked() {
-                if let Some(b) = self.tap() {
-                    self.song_bpm = b;
-                    self.sync_player();
-                }
-            }
-        });
-        dim_line(ui, "Clicks before every pass of the loop, at the song's tempo", 1.0, pal().dim);
-        ui.add_space(6.0);
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Train", 90.0);
-            if retro_btn_w(ui, if self.trainer { "ON" } else { "OFF" }, 56.0, self.trainer).clicked() {
-                self.trainer = !self.trainer;
-                self.passes = 0;
-            }
-            if self.trainer {
-                lcd_box(ui, &format!("PASS {}/{}", self.passes, self.trainer_n), 90.0, pal().ink);
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Every", 56.0);
-            let d = stepper(ui, &self.trainer_n.to_string(), 36.0);
-            self.trainer_n = (self.trainer_n as i32 + d).clamp(1, 20) as u32;
-            label(ui, "Loops", 50.0);
-            let d = stepper(ui, &format!("+{}%", self.trainer_step), 50.0);
-            self.trainer_step = (self.trainer_step as i32 + d).clamp(1, 20) as u32;
-        });
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Then", 56.0);
-            if retro_btn(ui, "Faster", !self.trainer_keys).clicked() {
-                self.trainer_keys = false;
-                self.passes = 0;
-            }
-            if retro_btn(ui, "Up a 4th, 12 keys", self.trainer_keys).clicked() {
-                self.trainer_keys = true;
-                self.keys_done = 0;
-                self.passes = 0;
-                if !self.trainer {
-                    self.trainer = true;
-                    self.practice = true;
-                }
-            }
-        });
+        }
+        ui.add_space(8.0);
+        let st = if self.trainer { format!("On  ·  pass {}/{}", self.passes, self.trainer_n) } else { "Off".to_string() };
+        if srow(ui, "Speed trainer", &st) {
+            self.trainer = !self.trainer;
+            self.passes = 0;
+        }
+        if srow(ui, "Every", &format!("{} loops", self.trainer_n)) {
+            const N: [u32; 6] = [1, 2, 3, 4, 6, 8];
+            self.trainer_n = N[(N.iter().position(|x| *x == self.trainer_n).unwrap_or(0) + 1) % N.len()];
+        }
+        if srow(ui, "By", &format!("+{}%", self.trainer_step)) {
+            const S: [u32; 4] = [2, 5, 10, 15];
+            self.trainer_step = S[(S.iter().position(|x| *x == self.trainer_step).unwrap_or(0) + 1) % S.len()];
+        }
+        if srow(ui, "Then", if self.trainer_keys { "Up a 4th, 12 keys" } else { "Faster" }) {
+            self.trainer_keys = !self.trainer_keys;
+            self.keys_done = 0;
+            self.passes = 0;
+        }
         dim_line(
             ui,
-            if self.trainer_keys { "Every few passes the loop goes up a 4th, through all 12 keys" } else { "Starts at the speed set on Loop & Speed and stops at 100%" },
+            if self.trainer_keys { "Every few passes the loop goes up a 4th, through all 12 keys" } else { "Starts at the speed set on Loop and stops at 100%" },
             1.0,
             pal().dim,
         );
     }
 
-    /// PITCH & EAR: the pitch (semitones and cents), the ear mode, and the equalizer.
+    /// PITCH, as settings rows: the pitch (a step either way, or a few cents), the ear mode, the recording's tuning,
+    /// saving it as a WAV, then the equalizer.
     fn ear_tab(&mut self, ui: &mut egui::Ui) {
+        let pv = format!("{:+.2} semitones", self.cents as f32 / 100.0);
+        srow(ui, "Pitch", &pv);
         ui.horizontal_wrapped(|ui| {
-            label(ui, "Pitch", 56.0);
-            for (s, d) in [("-", -100), ("-10C", -10)] {
-                if retro_btn_w(ui, s, if s.len() > 1 { 48.0 } else { 30.0 }, false).clicked() {
-                    self.cents = (self.cents + d).clamp(-1200, 1200);
-                    self.sync_player();
-                }
-            }
-            lcd_box(ui, &format!("{:+.2}", self.cents as f32 / 100.0), 60.0, pal().ink);
-            for (s, d) in [("+10C", 10), ("+", 100)] {
-                if retro_btn_w(ui, s, if s.len() > 1 { 48.0 } else { 30.0 }, false).clicked() {
-                    self.cents = (self.cents + d).clamp(-1200, 1200);
+            for (s, d) in [("-1", -100), ("-10c", -10), ("+10c", 10), ("+1", 100), ("Reset", 0)] {
+                if retro_btn(ui, s, false).clicked() {
+                    self.cents = if d == 0 { 0 } else { (self.cents + d).clamp(-1200, 1200) };
+                    self.practice = true;
                     self.sync_player();
                 }
             }
         });
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Ear", 56.0);
-            if retro_btn_w(ui, CHAN_NAMES[self.chan as usize % 6], 150.0, self.chan != 0).clicked() {
-                self.chan = (self.chan + 1) % 6;
-                self.sync_player();
-            }
-        });
-        dim_line(ui, "Left / right: One side in both ears. No center: Vocals out. Bass only: The low end.", 1.0, pal().dim);
-        // the recording's tuning: find it, then shift to A440
+        if srow(ui, "Ear", CHAN_NAMES[self.chan as usize % 6]) {
+            self.chan = (self.chan + 1) % 6;
+            self.sync_player();
+        }
         let id = self.cur_track().map(|t| t.id).unwrap_or(0);
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Tuning", 56.0);
-            match self.tuning.get(&id).copied() {
-                Some(c) if c.abs() >= 5 => {
-                    if retro_btn(ui, &format!("Tune to A440 ({:+}c)", -c), self.cents == -c).clicked() {
-                        self.cents = -c;
-                        self.practice = true;
-                        self.sync_player();
-                    }
-                }
-                Some(_) => dim_line(ui, "At A440", 1.0, pal().ink2),
-                None => {
-                    if retro_btn(ui, if self.tuning_busy { "Listening..." } else { "Find tuning" }, false).clicked() && !self.tuning_busy {
-                        self.find_tuning();
-                    }
+        match self.tuning.get(&id).copied() {
+            Some(c) if c.abs() >= 5 => {
+                if srow(ui, &format!("Tuning: {:+} cents from A440", c), if self.cents == -c { "Tuned" } else { "Tune to A440" }) {
+                    self.cents = -c;
+                    self.practice = true;
+                    self.sync_player();
                 }
             }
-        });
-        ui.horizontal_wrapped(|ui| {
-            label(ui, "Save", 56.0);
-            let what = if self.loop_a.zip(self.loop_b).is_some_and(|(a, b)| b > a) { "Save the loop as a WAV" } else { "Save the song as a WAV" };
-            if retro_btn(ui, if self.exporting { "Saving..." } else { what }, false).clicked() && !self.exporting {
-                self.export_wav();
+            Some(_) => {
+                srow(ui, "Tuning", "At A440");
             }
-        });
-        dim_line(ui, "As you hear it (speed, pitch, ear mode, equalizer), into the phone's Music folder", 1.0, pal().dim);
+            None => {
+                if srow(ui, "Tuning", if self.tuning_busy { "Listening..." } else { "Find it" }) && !self.tuning_busy {
+                    self.find_tuning();
+                }
+            }
+        }
+        let what = if self.loop_a.zip(self.loop_b).is_some_and(|(a, b)| b > a) { "the loop" } else { "the song" };
+        if srow(ui, &format!("Save {} as a WAV", what), if self.exporting { "Saving..." } else { "Save" }) && !self.exporting {
+            self.export_wav();
+        }
         ui.add_space(8.0);
         section_header(ui, "Equalizer");
         ui.horizontal_wrapped(|ui| {
@@ -784,4 +750,15 @@ impl App {
             (60.0 * (self.taps.len() - 1) as f32 / span).clamp(30.0, 300.0).round()
         })
     }
+}
+
+/// A settings row: what it is at the left, its value (and that it can be tapped) at the right. True when tapped.
+pub(crate) fn srow(ui: &mut egui::Ui, left: &str, right: &str) -> bool {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), Sense::click());
+    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+    let rw = text_w(right, 1.2) + 26.0;
+    ptext_fit(ui.painter(), Pos2::new(r.min.x + 12.0, r.center().y), Align::Min, left, 1.3, r.width() - rw - 16.0, pal().ink);
+    ptext(ui.painter(), Pos2::new(r.max.x - 22.0, r.center().y), Align::Max, right, 1.2, pal().ink2);
+    ptext(ui.painter(), Pos2::new(r.max.x - 10.0, r.center().y), Align::Max, ">", 1.2, pal().dim);
+    resp.clicked()
 }

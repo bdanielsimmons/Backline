@@ -466,7 +466,7 @@ impl App {
 }
 
 /// The long neck with named, coloured dots (frets 0 to 15 down the screen); a ringed dot is outlined only.
-fn dot_neck(p: &egui::Painter, r: Rect, dots: &[((usize, u8), String, Color32, bool)]) {
+pub(crate) fn dot_neck(p: &egui::Painter, r: Rect, dots: &[((usize, u8), String, Color32, bool)]) {
     let frets = 15;
     let x0 = r.min.x + 26.0;
     let sw = (r.width() - 40.0) / 5.0;

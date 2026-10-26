@@ -337,7 +337,7 @@ impl App {
     }
 
     fn chord_analyze(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Lay notes down on the neck: one per string, left of the nut is the open string, tap a note again to lift it. Each one sounds as you place it, and the chord is worked out as you go.", pal().ink2);
+        dim_line(ui, "Tap notes on the neck, one per string; tap again to lift one", 1.0, pal().ink2);
         let notes: Vec<i32> = self.an_frets.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
         let pcs: Vec<i32> = notes.iter().map(|m| m.rem_euclid(12)).collect();
         let bass = notes.first().map(|m| m.rem_euclid(12));
@@ -349,26 +349,81 @@ impl App {
         SEVENTH.with(|c| c.set(root.filter(|rt| pcs.iter().any(|p| matches!((p - rt).rem_euclid(12), 10 | 11)))));
         let ghost: Vec<i32> = shown.as_ref().map(|s| s.missing.clone()).unwrap_or_default();
         let w = ui.available_width();
-        let (nr, _) = ui.allocate_exact_size(Vec2::new(w, if self.an_big { 220.0 } else { 140.0 }), Sense::hover());
-        let neck_rect = Rect::from_min_max(nr.min, Pos2::new(nr.max.x, nr.max.y - 12.0));
-        let shape = self.an_frets;
-        if let Some((s, f)) = neck_alpha(ui, neck_rect, &shape, if self.an_big { 15 } else { 12 }, true, "an_neck", root, &ghost, false, 1.0) {
-            self.an_frets[s] = f;
+        // the long neck, as in Find: tap a note to lay it down (one per string), tap it again to lift it; the
+        // answer beside it
+        let h = if self.an_big { 520.0 } else { 420.0 };
+        let (row, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+        let side = 118.0;
+        let nr = Rect::from_min_max(row.min, Pos2::new(row.max.x - side - 8.0, row.max.y));
+        let mut dots: Vec<((usize, u8), String, Color32, bool)> = Vec::new();
+        for (s, f) in self.an_frets.iter().enumerate() {
             if let Some(f) = f {
+                let pc = (theory::STANDARD[s] + *f as i32).rem_euclid(12);
+                let (d, col) = match root {
+                    Some(rt) => degree_in(pc, rt, &pcs),
+                    None => ("", pal().ink),
+                };
+                dots.push(((s, *f), d.to_string(), col, false));
+            }
+        }
+        // the chord's missing notes, faint rings
+        for (s, open) in theory::STANDARD.iter().enumerate() {
+            for f in 0..=15u8 {
+                let pc = (open + f as i32).rem_euclid(12);
+                if ghost.iter().any(|g| g.rem_euclid(12) == pc) && self.an_frets[s] != Some(f) {
+                    dots.push(((s, f), String::new(), pal().dim, true));
+                }
+            }
+        }
+        crate::lines_ui::dot_neck(ui.painter(), nr, &dots);
+        let resp = ui.interact(nr, ui.id().with("an_long"), Sense::click());
+        if let Some(pp) = resp.interact_pointer_pos().filter(|_| resp.clicked()) {
+            let x0 = nr.min.x + 26.0;
+            let sw = (nr.width() - 40.0) / 5.0;
+            let y0 = nr.min.y + 18.0;
+            let fh = (nr.height() - 24.0) / 15.0;
+            let s = (((pp.x - x0) / sw).round() as i32).clamp(0, 5) as usize;
+            let f = if pp.y < y0 { 0u8 } else { (((pp.y - y0) / fh).floor() as i32 + 1).clamp(1, 15) as u8 };
+            if self.an_frets[s] == Some(f) {
+                self.an_frets[s] = None;
+            } else {
+                self.an_frets[s] = Some(f);
                 self.hear(&[theory::STANDARD[s] + f as i32]);
             }
+            self.an_pick = None;
+        }
+        // beside it: what it is, what else it could be, and the buttons
+        let sr = Rect::from_min_max(Pos2::new(nr.max.x + 8.0, row.min.y), row.max);
+        let mut col = ui.new_child(egui::UiBuilder::new().max_rect(sr).layout(egui::Layout::top_down(Align::Min)));
+        col.spacing_mut().item_spacing = Vec2::new(4.0, 6.0);
+        match shown.as_ref() {
+            Some(s) => {
+                let name = s.name(self.chord_sp);
+                for line in wrap(&name, 2.2, side - 4.0) {
+                    let (lr, _) = col.allocate_exact_size(Vec2::new(side, 26.0), Sense::hover());
+                    ptext(col.painter(), Pos2::new(lr.min.x, lr.center().y), Align::Min, &line, 2.2, pal().ink);
+                }
+                let others: Vec<String> = found.iter().filter(|o| o.key() != s.key()).take(3).map(|o| o.name(self.chord_sp)).collect();
+                if !others.is_empty() {
+                    for line in wrap(&format!("or {}", others.join(", ")), 1.0, side - 4.0) {
+                        dim_line(&mut col, &line, 1.0, pal().dim);
+                    }
+                }
+            }
+            None => dim_line(&mut col, if notes.is_empty() { "Tap notes on the neck" } else { "Add a note or two" }, 1.0, pal().dim),
+        }
+        col.add_space(6.0);
+        if retro_btn_w(&mut col, "Strum", side - 4.0, false).clicked() {
+            self.hear(&notes);
+        }
+        if retro_btn_w(&mut col, "Clear", side - 4.0, false).clicked() {
+            self.an_frets = [None; 6];
+            self.an_pick = None;
         }
         ui.add_space(8.0);
         let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 64.0), Sense::hover());
         piano_span(ui, pr, &notes, false, "an_piano", root, 36, 4);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "Strum", false).clicked() {
-                self.hear(&notes);
-            }
-            if retro_btn(ui, "Clear", false).clicked() {
-                self.an_frets = [None; 6];
-                self.an_pick = None;
-            }
             if retro_btn(ui, if self.an_big { "Smaller neck" } else { "Bigger neck" }, self.an_big).clicked() {
                 self.an_big = !self.an_big;
             }
