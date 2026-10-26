@@ -562,9 +562,9 @@ impl App {
             self.export_wav();
         }
         ui.add_space(8.0);
-        section_header(ui, "Equalizer");
+        dim(ui, "Equalizer", 1.0, pal().ink2);
         ui.horizontal_wrapped(|ui| {
-            if check_box(ui, "On", self.eq_on).clicked() {
+            if pill(ui, if self.eq_on { "On" } else { "Off" }, self.eq_on).clicked() {
                 self.eq_on = !self.eq_on;
                 self.player.eq.set(self.eq, 0.0, self.eq_on);
                 self.save_settings();

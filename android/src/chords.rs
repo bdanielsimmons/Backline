@@ -314,21 +314,21 @@ impl App {
         title_line(ui, self.chord_q.trim(), 4.0, pal().ink);
         let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} ({})", n, i)).collect();
         note_text(ui, &notes.join("   "), pal().ink2);
-        section_header(ui, "On the neck");
+        dim(ui, "On the neck", 1.2, pal().ink2);
         let w = ui.available_width();
         let (nr, _) = ui.allocate_exact_size(Vec2::new(w, 120.0), Sense::hover());
         neck(ui, Rect::from_min_max(nr.min, Pos2::new(nr.max.x, nr.max.y - 12.0)), &[None; 6], 12, false, "find_neck", Some(c.root), &c.pcs, true);
-        section_header(ui, "On the piano");
+        dim(ui, "On the piano", 1.2, pal().ink2);
         let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 80.0), Sense::hover());
         piano_span(ui, pr.shrink2(Vec2::new(2.0, 4.0)), &piano_voicing(&c), false, "find_piano", Some(c.root), 48, 2);
-        section_header(ui, "Guitar");
+        dim(ui, "Guitar", 1.2, pal().ink2);
         let q = self.chord_q.trim().to_string();
         let shapes = self.shapes_for(&q, &c);
         if shapes.is_empty() {
             note_text(ui, "No comfortable shape in reach for this one.", pal().ink2);
         }
         self.grip_cards(ui, &c, &shapes, false);
-        section_header(ui, "Scales that fit");
+        dim(ui, "Scales that fit", 1.2, pal().ink2);
         for (name, steps) in theory::scales_for(&c) {
             let names: Vec<&str> = steps.iter().map(|s| theory::note_name(c.root + s, false)).collect();
             dim(ui, &format!("{} {}", theory::note_name(c.root, false), name.to_uppercase()), 2.0, pal().ink);
@@ -464,7 +464,7 @@ impl App {
             })
             .collect();
         dim(ui, &format!("NOTES: {}", if names.is_empty() { "-".to_string() } else { names.join("  ") }), 1.0, pal().ink2);
-        section_header(ui, "Possible chords");
+        dim(ui, "Possible chords", 1.2, pal().ink2);
         // how the names are written, and the details
         ui.horizontal_wrapped(|ui| {
             let sp = &mut self.chord_sp;
@@ -515,7 +515,7 @@ impl App {
             }
             let c = theory::ChordNotes { root: s.root, bass, pcs, named: Vec::new() };
             let shapes = self.shapes_for(&s.key(), &c);
-            section_header(ui, &format!("GRIPS FOR {}", s.name(sp)));
+            dim(ui, &format!("Grips for {}", s.name(sp)), 1.2, pal().ink2);
             if shapes.is_empty() {
                 note_text(ui, "No comfortable grip in reach for this one.", pal().ink2);
             }
@@ -523,7 +523,7 @@ impl App {
         }
         // the details: each chord broken down, with its warnings
         if self.chord_details && !found.is_empty() {
-            section_header(ui, "Details");
+            dim(ui, "Details", 1.2, pal().ink2);
             for s in found.iter().take(12) {
                 let notes: Vec<String> = s
                     .pcs
@@ -724,7 +724,7 @@ impl App {
             .collect();
         dim(ui, &format!("Top notes: {}", tops.join(" ")), 1.0, pal().ink2);
         // each chord as a box, the notes that moved from the one before in the accent
-        let bw = ((ui.available_width() - 8.0) / 3.0).min(120.0);
+        let bw = (ui.available_width() - 16.0) / 3.0;
         let mut hear = None;
         ui.horizontal_wrapped(|ui| {
             for (k, (name, g)) in steps.iter().enumerate() {
@@ -803,7 +803,7 @@ impl App {
             note_text(ui, "No grip in one hand-span. Play the bass on its own, then the triad.", pal().ink2);
             return;
         }
-        let bw = ((ui.available_width() - 8.0) / 3.0).min(120.0);
+        let bw = (ui.available_width() - 16.0) / 3.0;
         let mut hear = None;
         ui.horizontal_wrapped(|ui| {
             for g in grips.iter().take(6) {
