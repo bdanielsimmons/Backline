@@ -380,6 +380,9 @@ pub(crate) struct App {
     /// asked once already: sign out of Tidal, clear the kept songs
     pub sure_out: bool,
     pub sure_clear: bool,
+    /// a pick list open from the bottom (which chip, its choices, the one chosen now), and a choice just made
+    pub picker: Option<(String, Vec<String>, usize)>,
+    pub picked: Option<(String, usize)>,
     /// the metronome's full settings showing (meter, accents, sound, gap, faster, volume)
     pub mt_more: bool,
     /// the beat found in a song (whose), the scale x2 and /2 put on it, a search under way, the songs with none,
@@ -592,6 +595,8 @@ impl App {
             settings_open: false,
             sure_out: false,
             sure_clear: false,
+            picker: None,
+            picked: None,
             mt_more: false,
             mt_beat: None,
             file_lists: Vec::new(),
@@ -1564,6 +1569,61 @@ impl App {
         });
     }
 
+    /// A small choice chip (its value and a little arrow); tapping it opens its choices as a list from the bottom.
+    /// Returns the choice made, the frame after it's made.
+    pub(crate) fn pick_chip(&mut self, ui: &mut egui::Ui, id: &str, items: &[&str], cur: usize) -> Option<usize> {
+        if let Some((pid, i)) = self.picked.take() {
+            if pid == id {
+                return Some(i);
+            }
+            self.picked = Some((pid, i));
+        }
+        let label = format!("{}  \u{25BE}", items.get(cur).copied().unwrap_or(""));
+        let w = text_w(&label, 1.2) + 22.0;
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click());
+        ui.painter().rect_filled(r, 16.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+        ptext(ui.painter(), r.center(), Align::Center, &label, 1.2, pal().ink);
+        if resp.clicked() {
+            self.picker = Some((id.to_string(), items.iter().map(|s| s.to_string()).collect(), cur));
+        }
+        None
+    }
+
+    /// The open pick list: the choices as rows sliding up from the bottom; tap one to choose it, outside to close.
+    fn picker_ui(&mut self, ctx: &egui::Context) {
+        let Some((id, items, cur)) = self.picker.clone() else { return };
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pick_dim"))).rect_filled(screen, 0.0, Color32::from_black_alpha(150));
+        let mut close = ctx.input(|i| i.pointer.any_click()) && !ctx.is_pointer_over_area();
+        let mut chose = None;
+        egui::Area::new(egui::Id::new("picker")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_BOTTOM, Vec2::ZERO).show(ctx, |ui| {
+            egui::Frame::none().fill(pal().beige).rounding(egui::Rounding { nw: 16.0, ne: 16.0, sw: 0.0, se: 0.0 }).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 14.0, bottom: 34.0 }).show(ui, |ui| {
+                ui.set_width(screen.width() - 28.0);
+                egui::ScrollArea::vertical().id_salt("pick_scroll").max_height(screen.height() * 0.6).show(ui, |ui| {
+                    for (k, it) in items.iter().enumerate() {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::click());
+                        if k == cur {
+                            ui.painter().rect_filled(r, 8.0, pal().row_sel);
+                        } else if resp.is_pointer_button_down_on() {
+                            ui.painter().rect_filled(r, 8.0, pal().beige_lt);
+                        }
+                        ptext(ui.painter(), Pos2::new(r.min.x + 12.0, r.center().y), Align::Min, it, 1.4, if k == cur { pal().bar_txt } else { pal().ink });
+                        if resp.clicked() {
+                            chose = Some(k);
+                        }
+                    }
+                });
+            });
+        });
+        if let Some(k) = chose {
+            self.picked = Some((id, k));
+            close = true;
+        }
+        if close {
+            self.picker = None;
+        }
+    }
+
     /// A screen in the flat look: the skin's panel colour, rounded, its body padded inside.
     fn flat(&mut self, ui: &mut egui::Ui, outer: Rect, body: impl FnOnce(&mut Self, &mut egui::Ui)) {
         let inner = outer.shrink2(Vec2::new(6.0, 2.0));
@@ -1662,6 +1722,7 @@ impl eframe::App for App {
                 }
             });
         self.song_menu_ui(ctx);
+        self.picker_ui(ctx);
         egui::CentralPanel::default().frame(fill).show(ctx, |ui| {
             let r = ui.max_rect();
             match self.tab {

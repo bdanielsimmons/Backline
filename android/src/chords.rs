@@ -574,11 +574,11 @@ impl App {
         }
         para(ui, "One triad, every inversion up the neck on the strings you pick. Root position, then the 3rd on the bottom, then the 5th, and round again an octave up. Tap a dot or a box to pick a shape.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
-            if let Some(k) = dropdown(ui, "tr_key", "KEY", &KEYS, self.tr_root as usize, 90.0) {
+            if let Some(k) = self.pick_chip(ui, "tr_key", &KEYS, self.tr_root as usize) {
                 self.tr_root = k as i32;
             }
             let sets: Vec<&str> = SETS.iter().map(|s| s.0).collect();
-            if let Some(i) = dropdown(ui, "tr_set", "", &sets, self.tr_set, 150.0) {
+            if let Some(i) = self.pick_chip(ui, "tr_set", &sets, self.tr_set) {
                 self.tr_set = i;
             }
         });
@@ -663,11 +663,11 @@ impl App {
     /// The key and the strings, shared by the triad pages.
     fn tr_key_set(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            if let Some(k) = dropdown(ui, "tr_key", "KEY", &KEYS, self.tr_root as usize, 90.0) {
+            if let Some(k) = self.pick_chip(ui, "tr_key", &KEYS, self.tr_root as usize) {
                 self.tr_root = k as i32;
             }
             let sets: Vec<&str> = SETS.iter().map(|s| s.0).collect();
-            if let Some(i) = dropdown(ui, "tr_set", "", &sets, self.tr_set, 150.0) {
+            if let Some(i) = self.pick_chip(ui, "tr_set", &sets, self.tr_set) {
                 self.tr_set = i;
             }
         });

@@ -90,13 +90,13 @@ impl App {
         let mut restart = false;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
-            if let Some(i) = dropdown(ui, "ln_kind", "", &KINDS, self.ln_kind as usize, 0.0) {
+            if let Some(i) = self.pick_chip(ui, "ln_kind", &KINDS, self.ln_kind as usize) {
                 self.ln_kind = i as u8;
                 self.ln_start = 0;
                 restart = true;
             }
             let roots: Vec<&str> = (0..12).map(|k| theory::note_name(k, false)).collect();
-            if let Some(i) = dropdown(ui, "ln_root", "", &roots, self.ln_root as usize, 0.0) {
+            if let Some(i) = self.pick_chip(ui, "ln_root", &roots, self.ln_root as usize) {
                 self.ln_root = i as i32;
                 self.ln_start = 0;
                 restart = true;
@@ -105,7 +105,7 @@ impl App {
                 0 => {
                     let names: Vec<String> = atonal_core::scale_list().iter().map(|s| nice(s.0)).collect();
                     let names: Vec<&str> = names.iter().map(String::as_str).collect();
-                    if let Some(i) = dropdown(ui, "ln_scale", "", &names, self.ln_scale.min(names.len() - 1), 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "ln_scale", &names, self.ln_scale.min(names.len() - 1)) {
                         self.ln_scale = i;
                         self.ln_start = 0;
                         restart = true;
@@ -114,12 +114,12 @@ impl App {
                 1 => {
                     let names: Vec<String> = music_data::TETRACHORDS.iter().map(|t| nice(t.0)).collect();
                     let names: Vec<&str> = names.iter().map(String::as_str).collect();
-                    if let Some(i) = dropdown(ui, "ln_lower", "", &names, self.ln_lower.min(names.len() - 1), 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "ln_lower", &names, self.ln_lower.min(names.len() - 1)) {
                         self.ln_lower = i;
                         self.ln_start = 0;
                         restart = true;
                     }
-                    if let Some(i) = dropdown(ui, "ln_upper", "+", &names, self.ln_upper.min(names.len() - 1), 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "ln_upper", &names, self.ln_upper.min(names.len() - 1)) {
                         self.ln_upper = i;
                         self.ln_start = 0;
                         restart = true;
@@ -127,7 +127,7 @@ impl App {
                 }
                 _ => {
                     let names: Vec<&str> = CYCLES.iter().map(|c| c.0).collect();
-                    if let Some(i) = dropdown(ui, "ln_cycle", "", &names, self.ln_cycle.min(names.len() - 1), 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "ln_cycle", &names, self.ln_cycle.min(names.len() - 1)) {
                         self.ln_cycle = i;
                         self.ln_start = 0;
                         restart = true;
@@ -139,11 +139,11 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
             let snames: Vec<String> = starts.iter().map(|(s, f)| format!("{} string, fret {}", ["Low E", "A", "D", "G", "B", "High E"][*s], f)).collect();
             let snames: Vec<&str> = snames.iter().map(String::as_str).collect();
-            if let Some(i) = dropdown(ui, "ln_start", "", &snames, self.ln_start % starts.len(), 0.0) {
+            if let Some(i) = self.pick_chip(ui, "ln_start", &snames, self.ln_start % starts.len()) {
                 self.ln_start = i;
             }
             let fingers = ["Finger 1", "Finger 2", "Finger 3", "Finger 4"];
-            if let Some(i) = dropdown(ui, "ln_finger", "", &fingers, (finger - 1) as usize, 0.0) {
+            if let Some(i) = self.pick_chip(ui, "ln_finger", &fingers, (finger - 1) as usize) {
                 self.ln_finger = i as u8 + 1;
             }
             if retro_btn_w(ui, "-", 30.0, false).clicked() {
@@ -155,7 +155,7 @@ impl App {
             }
             let feel_names: Vec<&str> = FEELS.iter().map(|f| f.0).collect();
             let cur = FEELS.iter().position(|f| f.1 == self.ln_sub).unwrap_or(1);
-            if let Some(i) = dropdown(ui, "ln_feel", "", &feel_names, cur, 0.0) {
+            if let Some(i) = self.pick_chip(ui, "ln_feel", &feel_names, cur) {
                 self.ln_sub = FEELS[i].1;
             }
             if retro_btn(ui, "Loop", self.ln_loop).clicked() {
@@ -357,13 +357,13 @@ impl App {
             let labels: Vec<String> = list.iter().map(|(l, _)| format!("{}{}", theory::note_name(root, false), l)).collect();
             let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
             ui.horizontal_wrapped(|ui| {
-                if let Some(i) = dropdown(ui, "si_fam", "", &fam_names, fam, 0.0) {
+                if let Some(i) = self.pick_chip(ui, "si_fam", &fam_names, fam) {
                     self.si_fam = i;
                     self.si_chord = 0;
                     self.si_scale = 0;
                     self.si_pick = 0;
                 }
-                if let Some(i) = dropdown(ui, "si_chord", "", &labels, ch, 0.0) {
+                if let Some(i) = self.pick_chip(ui, "si_chord", &labels, ch) {
                     self.si_chord = i;
                     self.si_scale = 0;
                     self.si_pick = 0;
@@ -374,7 +374,7 @@ impl App {
                 let names: Vec<&str> = names.iter().map(String::as_str).collect();
                 ui.horizontal(|ui| {
                     label(ui, "Scale", 56.0);
-                    if let Some(i) = dropdown(ui, "si_scale", "", &names, sc, 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "si_scale", &names, sc) {
                         self.si_scale = i;
                         self.si_pick = 0;
                     }
@@ -394,10 +394,10 @@ impl App {
                 let roots: Vec<String> = (0..12).map(|k| format!("{} ({})", theory::note_name(root + k, false), degree(root + k, root).0)).collect();
                 let roots: Vec<&str> = roots.iter().map(String::as_str).collect();
                 ui.horizontal_wrapped(|ui| {
-                    if let Some(i) = dropdown(ui, "si_kind", "", &sn, self.si_kind.min(SI_SHAPES.len() - 1), 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "si_kind", &sn, self.si_kind.min(SI_SHAPES.len() - 1)) {
                         self.si_kind = i;
                     }
-                    if let Some(i) = dropdown(ui, "si_kroot", "On", &roots, (self.si_kroot as usize).min(11), 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "si_kroot", &roots, (self.si_kroot as usize).min(11)) {
                         self.si_kroot = i as i32;
                     }
                 });
@@ -406,7 +406,7 @@ impl App {
                 let names: Vec<&str> = names.iter().map(String::as_str).collect();
                 ui.horizontal(|ui| {
                     label(ui, "Play", 56.0);
-                    if let Some(i) = dropdown(ui, "si_pick", "", &names, pick, 0.0) {
+                    if let Some(i) = self.pick_chip(ui, "si_pick", &names, pick) {
                         self.si_pick = i;
                     }
                 });
