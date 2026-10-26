@@ -342,6 +342,9 @@ pub(crate) struct App {
     pub cf_voice: usize,
     /// FIND A CHORD: the staff and piano shown over the neck
     pub cf_staff: bool,
+    /// your own grips, by chord (the desktop's SAVE GRIP), and the analyzer's neck size (0 normal, 1 big)
+    pub my_grips: HashMap<String, Vec<[Option<u8>; 6]>>,
+    pub an_big: bool,
     /// LINES: alternate triads (0) or an interval cycle (1), the root, the scale or cycle, the start (of the
     /// places the first note can go), the finger, and whether the pickers are pulled up
     pub ln_kind: u8,
@@ -556,6 +559,8 @@ impl App {
             cf_neck: false,
             cf_voice: 0,
             cf_staff: false,
+            my_grips: load_json("my_grips.json"),
+            an_big: false,
             ln_kind: 0,
             ln_root: 0,
             ln_scale: 0,

@@ -55,6 +55,11 @@ impl App {
         let mut heads: Vec<Option<String>> = Vec::new();
         let mut shapes: Vec<[Option<u8>; 6]> = Vec::new();
         let sec = theory::grip_sections(c, &theory::STANDARD);
+        let mine = self.my_grips.get(&grip_key(&q)).cloned().unwrap_or_default();
+        for (k, g) in mine.iter().enumerate() {
+            heads.push((k == 0).then(|| "Mine".to_string()));
+            shapes.push(*g);
+        }
         for (title, list) in [("Must know", &sec.must), ("Open position", &sec.open)] {
             for (k, g) in list.iter().enumerate() {
                 heads.push((k == 0).then(|| title.to_string()));
@@ -344,10 +349,10 @@ impl App {
         SEVENTH.with(|c| c.set(root.filter(|rt| pcs.iter().any(|p| matches!((p - rt).rem_euclid(12), 10 | 11)))));
         let ghost: Vec<i32> = shown.as_ref().map(|s| s.missing.clone()).unwrap_or_default();
         let w = ui.available_width();
-        let (nr, _) = ui.allocate_exact_size(Vec2::new(w, 140.0), Sense::hover());
+        let (nr, _) = ui.allocate_exact_size(Vec2::new(w, if self.an_big { 220.0 } else { 140.0 }), Sense::hover());
         let neck_rect = Rect::from_min_max(nr.min, Pos2::new(nr.max.x, nr.max.y - 12.0));
         let shape = self.an_frets;
-        if let Some((s, f)) = neck_alpha(ui, neck_rect, &shape, 12, true, "an_neck", root, &ghost, false, 1.0) {
+        if let Some((s, f)) = neck_alpha(ui, neck_rect, &shape, if self.an_big { 15 } else { 12 }, true, "an_neck", root, &ghost, false, 1.0) {
             self.an_frets[s] = f;
             if let Some(f) = f {
                 self.hear(&[theory::STANDARD[s] + f as i32]);
@@ -363,6 +368,22 @@ impl App {
             if retro_btn(ui, "Clear", false).clicked() {
                 self.an_frets = [None; 6];
                 self.an_pick = None;
+            }
+            if retro_btn(ui, if self.an_big { "Smaller neck" } else { "Bigger neck" }, self.an_big).clicked() {
+                self.an_big = !self.an_big;
+            }
+            // keep this grip as one of yours for the chord it makes (it shows first in Find)
+            if let Some(s) = shown.as_ref() {
+                let name = s.name(self.chord_sp);
+                if notes.len() >= 2 && retro_btn(ui, &format!("Save as my {}", name), false).clicked() {
+                    let key = grip_key(&name);
+                    let list = self.my_grips.entry(key).or_default();
+                    if !list.contains(&self.an_frets) {
+                        list.push(self.an_frets);
+                    }
+                    save_json("my_grips.json", &self.my_grips);
+                    self.set_note(&format!("Saved: it shows first under {} in Find", name));
+                }
             }
             // the whole shape a fret down or up the neck
             let frets: Vec<u8> = self.an_frets.iter().flatten().copied().collect();
@@ -748,4 +769,9 @@ impl App {
             self.hear(&n);
         }
     }
+}
+
+/// A chord's name as a key for your grips (spaces and case don't matter).
+fn grip_key(name: &str) -> String {
+    name.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase()
 }
