@@ -68,14 +68,22 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 `android/src/lib.rs` pulls these desktop files in with `#[path]`: `data/api.rs`, `audio/band.rs`, `data/chart.rs`,
 `audio/decode.rs`, `data/meta.rs`, `audio/player.rs`, `data/theory.rs`, `audio/tuning.rs`, `ui/font.rs`,
 `ui/fretboard.rs`, `ui/icons.rs`, `ui/skin.rs`, `ui/vicon.rs`, `ui/viz.rs`, `ui/widgets.rs`, `data/genskin.rs`,
-`data/winamp.rs`, `ui/winamp_draw.rs`, `ui/atonal_core.rs`. A change to one of these must still build for Android.
+`data/winamp.rs`, `ui/winamp_draw.rs`, `data/cache.rs`, `data/lines.rs`, and the pure parts split out of desktop screens:
+`ui/atonal_core.rs` (generated lines, fingering, line analysis), `ui/music_data.rs` (scales, intervals, cells, exotic
+scales, syllables), `ui/triad_core.rs` (voice leading, bass under a grip, grip names, numerals), `ui/si_core.rs`
+(Superimpose shapes, scales, suggestions), `ui/staff.rs` (clef, accidentals, chord staff). A change to one of these
+must still build for Android.
 
-The phone's screens (V1 redesign): a bottom bar Music / Play / Practice / Chords / Lines (`bottom_bar`, `tab_icon`), the plain
-now-playing bar (`now_bar`) and Now Playing (`now_screen`: cover, LCD with the scrolling name and spectrum, seek, transport) in
-`android/src/lib.rs`; Music's source tiles and recent list (`music_home`) in `library.rs`; Practice top to bottom (`loop_tab`) in
-`practice.rs`; the chord picker opening on Oolimo's long neck (`chord_neck_view`, `long_neck`) in `chords.rs`/`lib.rs`; Lines
-(generated lines on the long neck, every string and finger) in `lines.rs`. Plain text everywhere (`font::set_modern(true)`); the
-pixel font only on Now Playing's LCD.
+The phone's screens: a bottom bar Music / Play / Practice / Chords / Lines (`bottom_bar`, `tab_icon`), no top bar (each
+screen titled by `screen`, a gear opens `settings_ui`), the now-playing bar (`now_bar`) and Now Playing (`now_screen`:
+cover, LCD, seek, shuffle / repeat / like / speed / sleep / volume) in `android/src/lib.rs`. Music (`library.rs`): My
+tracks (liked, playlists on the phone and Tidal, albums, artists, kept), Home, Search, Tidal pages (`page_ui`), files
+(`walk`, tags, covers, playlist files) and YouTube. The song menu, playlists on the phone, the queue's place
+(`where.json`, not `session.json`, which is the Tidal sign-in) and edit info in `menu.rs`. Practice (`practice.rs`):
+the wave (zoom, drag a loop), loop / trainer (12 keys) / pitch (tuning, WAV) / marks. Chords (`chords.rs`): picker
+grid, Oolimo neck (`chord_neck_view`, grouped voicings, staff), analyzer (saved grips), triads (map, voice leading,
+over a bass). Metronome (`metro.rs`, with the track: follow, lock). Lines (`lines_ui.rs`): atonal lines and
+Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font only on Now Playing's LCD.
 
 ## Adding things
 

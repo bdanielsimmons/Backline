@@ -224,6 +224,15 @@ impl App {
                     }
                 }
             });
+            // the line on a staff, the note sounding lit
+            ui.add_space(8.0);
+            dim_line(ui, "On the staff", 1.0, pal().ink2);
+            let lit = self.ln_end.filter(|e| Instant::now() < *e).map(|e| {
+                let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
+                let left = (e - Instant::now()).as_secs_f32() - 0.4;
+                (written.len() as f32 - left / gap).floor().max(0.0) as usize
+            });
+            line_staff(ui, &written, lit);
             // what the line is made of
             ui.add_space(8.0);
             analysis(ui, &written);
@@ -596,5 +605,52 @@ fn line_neck(p: &egui::Painter, r: Rect, spots: &[(usize, u8)]) {
         let w = (text_w(&txt, 0.9) + 10.0).max(rad * 2.0);
         p.rect_filled(Rect::from_center_size(c, Vec2::new(w, rad * 2.0)), rad, if first { pal().red } else { pal().ink });
         ptext(p, c, Align::Center, &txt, 0.9, if first { pal().bar_txt } else { pal().beige_lt });
+    }
+}
+
+/// A line written on staves (as guitar music is, notes as written), eight notes to a staff, the clef at the start of
+/// each; an accidental on every note that has one. `lit`: the note sounding, in the accent.
+fn line_staff(ui: &mut egui::Ui, line: &[i32], lit: Option<usize>) {
+    let g = 6.0f32;
+    let per = 8usize;
+    let w = ui.available_width();
+    for (row, chunk) in line.chunks(per).enumerate() {
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, 13.0 * g), Sense::hover());
+        let p = ui.painter();
+        let top = r.min.y + 4.5 * g;
+        let bottom = top + 4.0 * g;
+        let stroke = Stroke::new(1.0, pal().ink2);
+        for k in 0..5 {
+            let y = top + k as f32 * g;
+            p.line_segment([Pos2::new(r.min.x + 4.0, y), Pos2::new(r.max.x - 4.0, y)], stroke);
+        }
+        pixmap(p, Pos2::new(r.min.x + 8.0, top - 1.7 * g), 7.4 * g / staff::CLEF.len() as f32, &staff::CLEF, pal().ink);
+        let x0 = r.min.x + 5.0 * g;
+        let step_w = (r.width() - 6.0 * g) / per as f32;
+        for (k, m) in chunk.iter().enumerate() {
+            let i = row * per + k;
+            let (letter, acc, oct) = lines::spell(*m, true);
+            let step = oct * 7 + letter;
+            let y = bottom - (step - 30) as f32 * g / 2.0;
+            let x = x0 + (k as f32 + 0.5) * step_w;
+            // ledger lines above and below the staff
+            let mut s = 28;
+            while s >= step {
+                let ly = bottom - (s - 30) as f32 * g / 2.0;
+                p.line_segment([Pos2::new(x - 7.0, ly), Pos2::new(x + 7.0, ly)], stroke);
+                s -= 2;
+            }
+            let mut s = 40;
+            while s <= step {
+                let ly = bottom - (s - 30) as f32 * g / 2.0;
+                p.line_segment([Pos2::new(x - 7.0, ly), Pos2::new(x + 7.0, ly)], stroke);
+                s += 2;
+            }
+            let col = if lit == Some(i) { pal().red } else { pal().ink };
+            p.circle_filled(Pos2::new(x, y), g * 0.6, col);
+            if acc != 0 {
+                staff::accidental(p, Pos2::new(x - g * 1.7, y), acc, g, col);
+            }
+        }
     }
 }
