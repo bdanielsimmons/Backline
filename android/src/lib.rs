@@ -1956,6 +1956,13 @@ pub(crate) fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
     p.rect_filled(Rect::from_center_size(c + Vec2::new(7.0 * d, 0.0), Vec2::new(2.5, 16.0)), 1.0, col);
 }
 
+/// A label in front of a control, in plain small type, `w` wide (in place of the desktop's label).
+pub(crate) fn lbl(ui: &mut egui::Ui, text: &str, w: f32) {
+    let w = w.max(text_w(text, 1.2) + 8.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
+    ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, text, 1.2, pal().ink2);
+}
+
 /// A short line in plain small type (in place of the desktop's dim_line, which draws larger on the phone).
 pub(crate) fn dim(ui: &mut egui::Ui, text: &str, px: f32, col: Color32) {
     let size = (px * 1.15).max(1.05);

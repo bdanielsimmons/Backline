@@ -223,6 +223,9 @@ impl App {
                 self.wv_zoom = 1.0;
                 self.wv_off = 0.0;
             }
+            if pill(ui, "Metronome", self.mt.on).clicked() {
+                self.tab = Tab::Metro;
+            }
             dim(ui, "Drag on the wave to make a loop", 1.0, pal().dim);
         });
     }

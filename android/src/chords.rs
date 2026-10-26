@@ -551,7 +551,7 @@ impl App {
             for (name, pc) in [("ROOT", 0), ("3RD", 4), ("5TH", 7), ("6TH / 7TH", 10), ("9 / 11", 2)] {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
                 ui.painter().circle_filled(r.center(), 6.0, degree(pc, 0).1);
-                label(ui, name, 70.0);
+                lbl(ui, name, 70.0);
             }
         });
         SEVENTH.with(|c| c.set(None));
