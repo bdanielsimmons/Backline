@@ -309,21 +309,99 @@ impl App {
             ui.ctx().request_repaint_after(Duration::from_millis(150));
         }
 
+        // the choices as rows of chips above the neck, as on Atonal lines
+        let fam_names: Vec<String> = fams.iter().map(|f| nice(f.0)).collect();
+        let fam_names: Vec<&str> = fam_names.iter().map(String::as_str).collect();
+        let labels: Vec<String> = list.iter().map(|(_, s)| format!("{}{}", theory::note_name(root, false), s)).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        let roots: Vec<&str> = (0..12).map(|k| theory::note_name(k, false)).collect();
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
+            if let Some(i) = self.pick_chip(ui, "si_root", &roots, root as usize) {
+                self.si_root = i as i32;
+            }
+            if let Some(i) = self.pick_chip(ui, "si_fam", &fam_names, fam) {
+                self.si_fam = i;
+                self.si_chord = 0;
+                self.si_scale = 0;
+                self.si_pick = 0;
+            }
+            if let Some(i) = self.pick_chip(ui, "si_chord", &labels, ch) {
+                self.si_chord = i;
+                self.si_scale = 0;
+                self.si_pick = 0;
+            }
+            if !fits.is_empty() {
+                let names: Vec<String> = fits.iter().map(|i| nice(SI_SCALES[*i].0)).collect();
+                let names: Vec<&str> = names.iter().map(String::as_str).collect();
+                if let Some(i) = self.pick_chip(ui, "si_scale", &names, sc) {
+                    self.si_scale = i;
+                    self.si_pick = 0;
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
+            if let Some(i) = self.pick_chip(ui, "si_any", &["The usual choices", "Any shape"], self.si_any as usize) {
+                self.si_any = i == 1;
+            }
+            if self.si_any {
+                let sn: Vec<String> = SI_SHAPES.iter().map(|s| nice(s.0)).collect();
+                let sn: Vec<&str> = sn.iter().map(String::as_str).collect();
+                let kroots: Vec<String> = (0..12).map(|k| format!("On {} ({})", theory::note_name(root + k, false), degree(root + k, root).0)).collect();
+                let kroots: Vec<&str> = kroots.iter().map(String::as_str).collect();
+                if let Some(i) = self.pick_chip(ui, "si_kind", &sn, self.si_kind.min(SI_SHAPES.len() - 1)) {
+                    self.si_kind = i;
+                }
+                if let Some(i) = self.pick_chip(ui, "si_kroot", &kroots, (self.si_kroot as usize).min(11)) {
+                    self.si_kroot = i as i32;
+                }
+            } else {
+                let names: Vec<String> = sug.iter().map(|(k, o, _)| format!("{} {}", theory::note_name(root + o, false), nice(SI_SHAPES[*k].0).to_lowercase())).collect();
+                let names: Vec<&str> = names.iter().map(String::as_str).collect();
+                if let Some(i) = self.pick_chip(ui, "si_pick", &names, pick) {
+                    self.si_pick = i;
+                }
+            }
+            if pill(ui, "The notes", self.ln_sheet).clicked() {
+                self.ln_sheet = !self.ln_sheet;
+            }
+        });
         let avail = ui.available_rect_before_wrap();
-        let sheet_h = if self.ln_sheet { (avail.height() * 0.66).max(320.0) } else { 64.0 };
-        let neck_r = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - sheet_h - 8.0));
-        dot_neck(ui.painter(), neck_r, &dots);
-        let sr = Rect::from_min_max(Pos2::new(avail.min.x - 4.0, avail.max.y - sheet_h), Pos2::new(avail.max.x + 4.0, avail.max.y + 6.0));
-        ui.painter().rect_filled(sr, egui::Rounding { nw: 16.0, ne: 16.0, sw: 0.0, se: 0.0 }, pal().beige_lt);
-        ui.painter().rect_filled(Rect::from_center_size(Pos2::new(sr.center().x, sr.min.y + 8.0), Vec2::new(40.0, 4.0)), 2.0, pal().beige_dk);
-        let head = Rect::from_min_size(sr.min + Vec2::new(12.0, 14.0), Vec2::new(sr.width() - 24.0, 44.0));
+        let foot = 64.0;
+        let body = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - foot));
+        if self.ln_sheet {
+            // the notes, each named over the chord, and what the colours mean
+            ui.painter().rect_filled(body, 10.0, pal().beige_lt);
+            let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(body.shrink(10.0)).layout(egui::Layout::top_down(Align::Min)));
+            let mut sorted = shape.clone();
+            sorted.sort_by_key(|p| (p - shape_root).rem_euclid(12));
+            let line: Vec<String> = sorted.iter().map(|pc| format!("{} = {}", theory::note_name(*pc, false), degree_in(*pc, root, &chord_abs).0)).collect();
+            note_text(&mut sub, &line.join("    "), pal().ink);
+            if !why.is_empty() {
+                note_text(&mut sub, &why, pal().ink2);
+            }
+            sub.horizontal_wrapped(|ui| {
+                for (name, col) in [("Chord tone", pal().ink), ("Tension", Color32::from_rgb(95, 168, 211)), ("Avoid", Color32::from_rgb(220, 70, 60))] {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
+                    ui.painter().circle_filled(r.center(), 6.0, col);
+                    let (lr, _) = ui.allocate_exact_size(Vec2::new(text_w(name, 1.1) + 12.0, 18.0), Sense::hover());
+                    ptext(ui.painter(), Pos2::new(lr.min.x, lr.center().y), Align::Min, name, 1.1, pal().ink2);
+                }
+            });
+            dim(&mut sub, "Rings: the chord's own notes not in the shape", 1.0, pal().dim);
+        } else {
+            dot_neck(ui.painter(), body, &dots);
+        }
+        // the foot: what it is, why, and Play
+        let fr = Rect::from_min_max(Pos2::new(avail.min.x, avail.max.y - foot + 6.0), avail.max);
         let p = ui.painter().clone();
-        ptext_fit(&p, Pos2::new(head.min.x, head.min.y + 12.0), Align::Min, &title, 1.3, head.width() - 60.0, pal().ink);
-        ptext_fit(&p, Pos2::new(head.min.x, head.min.y + 30.0), Align::Min, &why, 1.0, head.width() - 60.0, pal().dim);
-        let pc = Pos2::new(head.max.x - 22.0, head.center().y);
-        p.circle_filled(pc, 22.0, pal().red);
+        ptext_fit(&p, Pos2::new(fr.min.x + 4.0, fr.min.y + 16.0), Align::Min, &title, 1.3, fr.width() - 70.0, pal().ink);
+        ptext_fit(&p, Pos2::new(fr.min.x + 4.0, fr.min.y + 36.0), Align::Min, &why, 1.0, fr.width() - 70.0, pal().dim);
+        let pc = Pos2::new(fr.max.x - 26.0, fr.center().y);
+        p.circle_filled(pc, 24.0, pal().red);
         play_glyph(&p, pc, playing, pal().bar_txt);
-        if ui.interact(Rect::from_center_size(pc, Vec2::splat(44.0)), ui.id().with("si_play"), Sense::click()).clicked() {
+        if ui.interact(Rect::from_center_size(pc, Vec2::splat(48.0)), ui.id().with("si_play"), Sense::click()).clicked() {
             self.player.send(Cmd::StopOnce);
             if playing {
                 self.ln_end = None;
@@ -335,101 +413,6 @@ impl App {
                 self.ln_end = Some(Instant::now() + Duration::from_secs_f32(line.len() as f32 * gap + 0.4));
             }
         }
-        let toggle = Rect::from_min_max(sr.min, Pos2::new(head.max.x - 48.0, head.max.y));
-        if ui.interact(toggle, ui.id().with("si_sheet"), Sense::click()).clicked() {
-            self.ln_sheet = !self.ln_sheet;
-        }
-        if !self.ln_sheet {
-            return;
-        }
-        let body = Rect::from_min_max(Pos2::new(sr.min.x + 12.0, head.max.y + 6.0), sr.max - Vec2::new(12.0, 10.0));
-        let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(Align::Min)));
-        egui::ScrollArea::vertical().id_salt("si_pick").auto_shrink([false, false]).show(&mut ui, |ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
-            dim(ui, "Chord", 1.0, pal().ink2);
-            ui.horizontal_wrapped(|ui| {
-                for k in 0..12 {
-                    if pill_w(ui, theory::note_name(k, false), 40.0, root == k).clicked() {
-                        self.si_root = k;
-                    }
-                }
-            });
-            let fam_names: Vec<String> = fams.iter().map(|f| nice(f.0)).collect();
-            let fam_names: Vec<&str> = fam_names.iter().map(String::as_str).collect();
-            let labels: Vec<String> = list.iter().map(|(l, _)| format!("{}{}", theory::note_name(root, false), l)).collect();
-            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-            ui.horizontal_wrapped(|ui| {
-                if let Some(i) = self.pick_chip(ui, "si_fam", &fam_names, fam) {
-                    self.si_fam = i;
-                    self.si_chord = 0;
-                    self.si_scale = 0;
-                    self.si_pick = 0;
-                }
-                if let Some(i) = self.pick_chip(ui, "si_chord", &labels, ch) {
-                    self.si_chord = i;
-                    self.si_scale = 0;
-                    self.si_pick = 0;
-                }
-            });
-            if !fits.is_empty() {
-                let names: Vec<String> = fits.iter().map(|i| nice(SI_SCALES[*i].0)).collect();
-                let names: Vec<&str> = names.iter().map(String::as_str).collect();
-                ui.horizontal(|ui| {
-                    label(ui, "Scale", 56.0);
-                    if let Some(i) = self.pick_chip(ui, "si_scale", &names, sc) {
-                        self.si_scale = i;
-                        self.si_pick = 0;
-                    }
-                });
-            }
-            ui.horizontal_wrapped(|ui| {
-                if pill(ui, "The usual choices", !self.si_any).clicked() {
-                    self.si_any = false;
-                }
-                if pill(ui, "Any shape, anywhere", self.si_any).clicked() {
-                    self.si_any = true;
-                }
-            });
-            if self.si_any {
-                let sn: Vec<String> = SI_SHAPES.iter().map(|s| nice(s.0)).collect();
-                let sn: Vec<&str> = sn.iter().map(String::as_str).collect();
-                let roots: Vec<String> = (0..12).map(|k| format!("{} ({})", theory::note_name(root + k, false), degree(root + k, root).0)).collect();
-                let roots: Vec<&str> = roots.iter().map(String::as_str).collect();
-                ui.horizontal_wrapped(|ui| {
-                    if let Some(i) = self.pick_chip(ui, "si_kind", &sn, self.si_kind.min(SI_SHAPES.len() - 1)) {
-                        self.si_kind = i;
-                    }
-                    if let Some(i) = self.pick_chip(ui, "si_kroot", &roots, (self.si_kroot as usize).min(11)) {
-                        self.si_kroot = i as i32;
-                    }
-                });
-            } else {
-                let names: Vec<String> = sug.iter().map(|(k, o, _)| format!("{} {}", theory::note_name(root + o, false), nice(SI_SHAPES[*k].0).to_lowercase())).collect();
-                let names: Vec<&str> = names.iter().map(String::as_str).collect();
-                ui.horizontal(|ui| {
-                    label(ui, "Play", 56.0);
-                    if let Some(i) = self.pick_chip(ui, "si_pick", &names, pick) {
-                        self.si_pick = i;
-                    }
-                });
-            }
-            // the notes, each named over the chord
-            let mut sorted = shape.clone();
-            sorted.sort_by_key(|p| (p - shape_root).rem_euclid(12));
-            let line: Vec<String> = sorted.iter().map(|pc| format!("{} = {}", theory::note_name(*pc, false), degree_in(*pc, root, &chord_abs).0)).collect();
-            for l in wrap(&line.join("    "), 1.2, ui.available_width() - 8.0) {
-                dim(ui, &l, 1.2, pal().ink);
-            }
-            ui.horizontal_wrapped(|ui| {
-                for (name, col) in [("Chord tone", pal().ink), ("Tension", Color32::from_rgb(95, 168, 211)), ("Avoid", Color32::from_rgb(220, 70, 60))] {
-                    let (r, _) = ui.allocate_exact_size(Vec2::new(12.0, 12.0), Sense::hover());
-                    ui.painter().circle_filled(r.center(), 6.0, col);
-                    label(ui, name, 0.0);
-                    ui.add_space(8.0);
-                }
-            });
-            dim(ui, "Rings: the chord's own notes not in the shape", 1.0, pal().dim);
-        });
     }
 }
 
