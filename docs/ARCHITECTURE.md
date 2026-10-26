@@ -43,7 +43,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | CHORDS tab SCALE HARMONY: the chords of a parent scale (major, melodic/harmonic minor, harmonic major) as cards, what to solo with over each (`si_auto` shapes, triad pairs), a vamp sent to the band via `prac_chart` | `ui/harmony.rs` |
 | LINES: Slonimsky, scales, the line player (`line_player`: one row - play, loop, tempo, feel, OVER from the shared `ln_over`, favorite; `line_score`) | `ui/lines.rs` (UI), `data/lines.rs` (patterns) |
 | LINES improvising tab PENTATONICS & MORE: pentatonic / hexatonic (triad pairs) / diminished / chromatic options families, `family_scales()`, exercises; PENTATONICS (boxes, `positions()` for any scale / notes per string, `neck_view`) | `ui/improv.rs` |
-| LINES tab ATONAL (after Sandole): YOUR LINES from the private `atonal_lines.json` in Backline's folder (never in the repo; format documented on `AtFile`; notes as written, `unsure` marked in `ear::acc_col`, fixed by clicking a note: -/+ or the neck, delete, add; saved at once), GENERATED LINES (`alternate_triads`, `joined_scale`/`tetrachord_line`, `interval_cycle`), ANALYSIS (`interval_name`, `trichords`, `tetrachords`, `scales_holding` over `scale_list`, `syllables`); state in `App.at` (`AtState`); the score with marked notes and a click-to-select is `line_score_marked` in `ui/lines.rs` | `ui/atonal.rs` |
+| LINES tab ATONAL (after Sandole): YOUR LINES from the private `atonal_lines.json` in Backline's folder (never in the repo; format documented on `AtFile`; notes as written, `unsure` marked in `ear::acc_col`, fixed by clicking a note: -/+ or the neck, delete, add; saved at once), GENERATED LINES (`alternate_triads`, `joined_scale`/`tetrachord_line`, `interval_cycle`), ANALYSIS (`interval_name`, `trichords`, `tetrachords`, `scales_holding` over `scale_list`, `syllables`); state in `App.at` (`AtState`); the score with marked notes and a click-to-select is `line_score_marked` in `ui/lines.rs` | `ui/atonal.rs` (the generators and fingering in `ui/atonal_core.rs`, shared with the phone) |
 | LINES tab ARPEGGIOS: a chord's notes inside its scale's positions (the chords of a scale, or any chord), exercises, through a tune (guide tones, arpeggios, 3-5-7-9) | `ui/arpeggios.rs` |
 | READING (sight reading) | `ui/reading.rs` |
 | EAR (PRACTICE): ear-training drills from one menu (chord qualities, intervals, progressions, scale degrees, guide tones, scales & modes, bass note, play it back on a clickable neck); question builders `build`/`ask` (tested per drill), sounds mixed from `band::sequence_sound`/`line_sound`; per-drill record `store.ear` (`EarStats`: answers in play, misses, mix-ups, sessions, `best` run); chord qualities: `CHORDS` table in five `LEVELS`, look-alike sets `ALIKES`, your own set `store.ear_chords`, pool from `chord_pool`, voicings from `build_chord` (required notes, range rules, drop/rootless), wrong-answer hints `chord_hint`/`wrong_hint`, optional chime; finished sessions add "Ear training" time to the diary. The menu (`dropdown_grouped`) heads them TONAL and ATONAL (from `ATONAL` = 8): FREE INTERVALS (`FREE`, SING FIRST, a soft `wash_sound` between questions), CELLS (`TETRACHORDS`, `TRICHORDS` as drill `TRICHORD`, `prime_form`), SCALE IN INTERVALS (`EXOTICS`, `build_run`, syllables `degree_syllable`/`fixed_syllable`, your place in `store.ear_atonal`), VERTICALS (`stack`, `stack_symbol`), SIGHT-SING & NEXT NOTE (`atonal_line`, `build_sight`, the day's line); sung ones are self-marked (`ear_self`) | `ui/ear.rs` |
@@ -68,7 +68,14 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 `android/src/lib.rs` pulls these desktop files in with `#[path]`: `data/api.rs`, `audio/band.rs`, `data/chart.rs`,
 `audio/decode.rs`, `data/meta.rs`, `audio/player.rs`, `data/theory.rs`, `audio/tuning.rs`, `ui/font.rs`,
 `ui/fretboard.rs`, `ui/icons.rs`, `ui/skin.rs`, `ui/vicon.rs`, `ui/viz.rs`, `ui/widgets.rs`, `data/genskin.rs`,
-`data/winamp.rs`, `ui/winamp_draw.rs`. A change to one of these must still build for Android.
+`data/winamp.rs`, `ui/winamp_draw.rs`, `ui/atonal_core.rs`. A change to one of these must still build for Android.
+
+The phone's screens (V1 redesign): a bottom bar Music / Play / Practice / Chords / Lines (`bottom_bar`, `tab_icon`), the plain
+now-playing bar (`now_bar`) and Now Playing (`now_screen`: cover, LCD with the scrolling name and spectrum, seek, transport) in
+`android/src/lib.rs`; Music's source tiles and recent list (`music_home`) in `library.rs`; Practice top to bottom (`loop_tab`) in
+`practice.rs`; the chord picker opening on Oolimo's long neck (`chord_neck_view`, `long_neck`) in `chords.rs`/`lib.rs`; Lines
+(generated lines on the long neck, every string and finger) in `lines.rs`. Plain text everywhere (`font::set_modern(true)`); the
+pixel font only on Now Playing's LCD.
 
 ## Adding things
 
