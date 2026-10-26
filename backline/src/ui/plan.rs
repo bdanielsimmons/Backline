@@ -793,13 +793,13 @@ impl App {
         crate::views::dim_line(ui, "CLICK A DAY FOR ITS NOTES", 1.0, pal().dim);
     }
 
-    /// A box to write a new keeper in, and ADD (Enter works too).
-    fn keeper_add(&mut self, ui: &mut egui::Ui) {
+    /// A box to write a new keeper in, and ADD (Enter works too). `id`: its own per place, as two show on one page.
+    fn keeper_add(&mut self, ui: &mut egui::Ui, id: u32) {
         let mut add = false;
         ui.horizontal(|ui| {
             let w = (ui.available_width() - text_w("ADD", 2.0) - 40.0).max(120.0);
             let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-            let out = crate::views::field(ui, &mut self.ed, crate::tools::F_PLAN_KEEPER, &mut self.plan.keeper_new, r, "a keeper: the lick, phrase or solo bit, and where it's from", false);
+            let out = crate::views::field(ui, &mut self.ed, id, &mut self.plan.keeper_new, r, "a keeper: the lick, phrase or solo bit, and where it's from", false);
             add = out.enter;
             if retro_btn(ui, "ADD", false).tip("Keep it: Review brings it back until you can play it cold.").clicked() {
                 add = true;
@@ -1112,7 +1112,7 @@ impl App {
         ui.add_space(6.0);
         section_header(ui, "KEEPERS");
         text_block(ui, "What's worth keeping from the fun slot. Review brings back two a day. A keeper is solid once you've played it cold on 3 days, a week apart; then it comes back every two weeks.", 2.0, pal().ink2, 6.0);
-        self.keeper_add(ui);
+        self.keeper_add(ui, crate::tools::F_PLAN_KEEPER);
         let ks = self.plan.keepers().clone();
         let mut gone: Option<usize> = None;
         for (i, k) in ks.iter().enumerate().rev() {
@@ -1321,7 +1321,7 @@ impl App {
         let lname = b.name.to_lowercase();
         if lname.contains("fun") {
             title_line(ui, "A KEEPER?", 2.0, pal().ink);
-            self.keeper_add(ui);
+            self.keeper_add(ui, crate::tools::F_PLAN_KEEPER_FUN);
         } else if lname.contains("review") {
             self.keepers_review(ui);
         }
