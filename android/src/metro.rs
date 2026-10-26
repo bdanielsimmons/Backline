@@ -26,24 +26,70 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 8.0);
             let mut changed = false;
             let on = self.mt.on;
-            ui.horizontal_wrapped(|ui| {
-                if retro_btn_w(ui, if on { "STOP" } else { "START" }, 66.0, on).clicked() {
-                    self.mt.on = !self.mt.on;
-                    changed = true;
+            // the beats as dots (the one sounding lit), the tempo big, steps round START, then chips
+            let beats = self.mt.beats.clamp(1, 16) as usize;
+            let beat_now = match (on, self.mt_vis) {
+                (true, Some((t0, spb, _))) => {
+                    ui.ctx().request_repaint_after(Duration::from_millis(30));
+                    Some(((Instant::now() - t0).as_secs_f32() / spb.max(0.05)).floor() as usize % beats)
                 }
-                label(ui, "BPM", 30.0);
-                let d = stepper(ui, &self.mt_bpm.to_string(), 42.0);
-                if d != 0 {
+                _ => None,
+            };
+            let w = ui.available_width();
+            let (dr, _) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::hover());
+            let gap = 26.0f32.min((w - 20.0) / beats as f32);
+            for k in 0..beats {
+                let c = Pos2::new(dr.center().x + (k as f32 - (beats - 1) as f32 / 2.0) * gap, dr.center().y);
+                let lit = beat_now == Some(k);
+                ui.painter().circle_filled(c, if k == 0 { 9.0 } else { 7.5 }, if lit { pal().red } else { pal().beige_lt });
+            }
+            let (br, _) = ui.allocate_exact_size(Vec2::new(w, 120.0), Sense::hover());
+            ptext(ui.painter(), Pos2::new(br.center().x, br.center().y - 10.0), Align::Center, &self.mt_bpm.to_string(), 6.0, pal().ink);
+            ptext(ui.painter(), Pos2::new(br.center().x, br.max.y - 12.0), Align::Center, "bpm", 1.2, pal().dim);
+            let (sr, _) = ui.allocate_exact_size(Vec2::new(w, 72.0), Sense::hover());
+            let mid = sr.center();
+            ui.painter().circle_filled(mid, 32.0, pal().red);
+            play_glyph(ui.painter(), mid, on, pal().bar_txt);
+            if ui.interact(Rect::from_center_size(mid, Vec2::splat(64.0)), ui.id().with("mt_go"), Sense::click()).clicked() {
+                self.mt.on = !self.mt.on;
+                changed = true;
+            }
+            for (dx, d) in [(-122.0, -5i32), (-66.0, -1), (66.0, 1), (122.0, 5)] {
+                let c = mid + Vec2::new(dx, 0.0);
+                let r = Rect::from_center_size(c, Vec2::splat(46.0));
+                let resp = ui.interact(r, ui.id().with(("mt_step", d)), Sense::click());
+                ui.painter().circle_filled(c, 22.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+                ptext(ui.painter(), c, Align::Center, &format!("{:+}", d), 1.3, pal().ink);
+                if resp.clicked() {
                     self.mt_bpm = (self.mt_bpm as i32 + d).clamp(20, 400) as u32;
                     changed = true;
                 }
-                if retro_btn_w(ui, "TAP", 42.0, false).clicked() {
+            }
+            ui.horizontal_wrapped(|ui| {
+                if retro_btn(ui, "Tap", false).clicked() {
                     if let Some(b) = self.tap() {
                         self.mt_bpm = b as u32;
                         changed = true;
                     }
                 }
+                if retro_btn(ui, &format!("{}/{}", self.mt.beats, self.mt.unit), self.mt_more).clicked() {
+                    self.mt_more = !self.mt_more;
+                }
+                if retro_btn(ui, "Accents", self.mt_more).clicked() {
+                    self.mt_more = !self.mt_more;
+                }
+                if retro_btn(ui, "More", self.mt_more).clicked() {
+                    self.mt_more = !self.mt_more;
+                }
             });
+            if !self.mt_more {
+                if changed {
+                    self.metro_apply();
+                    self.save_settings();
+                }
+                return;
+            }
+            ui.add_space(6.0);
             ui.horizontal(|ui| {
                 // its own volume: louder or softer against the song
                 label(ui, "VOL", 36.0);

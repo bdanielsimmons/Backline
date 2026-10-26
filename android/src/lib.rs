@@ -341,6 +341,8 @@ pub(crate) struct App {
     pub ln_loop: bool,
     /// the gear's page is open
     pub settings_open: bool,
+    /// the metronome's full settings showing (meter, accents, sound, gap, faster, volume)
+    pub mt_more: bool,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -521,6 +523,7 @@ impl App {
             ln_sub: 2,
             ln_loop: false,
             settings_open: false,
+            mt_more: false,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],

@@ -21,7 +21,8 @@ const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", 
 
 impl App {
     pub(crate) fn chords_ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(t) = tab_row(ui, &["Find", "Analyzer", "Triads"], self.ch_tab as usize) {
+        let (tr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+        if let Some(t) = seg_tabs(ui, tr, &["Find", "Analyzer", "Triads"], self.ch_tab as usize, "ch_tabs") {
             self.ch_tab = t as u8;
         }
         ui.add_space(4.0);
@@ -167,57 +168,83 @@ impl App {
                 self.cf_fam = Some(f);
             }
         }
-        let rule = |ui: &mut egui::Ui| {
-            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 9.0), Sense::hover());
-            ui.painter().line_segment([Pos2::new(r.min.x + 4.0, r.center().y), Pos2::new(r.max.x - 4.0, r.center().y)], Stroke::new(1.0, pal().edge));
-        };
-        dim_line(ui, "1  ROOT", 1.0, pal().ink2);
-        ui.horizontal_wrapped(|ui| {
-            for pc in 0..12 {
-                let name = theory::note_name(pc, false);
-                if retro_btn_w(ui, name, 40.0, self.cf_root == Some(pc)).clicked() {
-                    self.cf_root = Some(pc);
-                    if cur.is_some() && self.cf_fam.is_some() {
-                        self.chord_q = format!("{}{}", name, suffix_now);
-                    }
-                }
+        // the picker you sent: the twelve roots on top, a row to narrow the kind, then every chord of that root in a
+        // grid; tap one and its neck opens
+        let root = self.cf_root.unwrap_or(0);
+        let w = ui.available_width();
+        let cell = (w - 5.0 * 4.0) / 6.0;
+        let (rr, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * 40.0 + 4.0), Sense::hover());
+        for pc in 0..12 {
+            let r = Rect::from_min_size(rr.min + Vec2::new((pc % 6) as f32 * (cell + 4.0), (pc / 6) as f32 * 44.0), Vec2::new(cell, 40.0));
+            let resp = ui.interact(r, ui.id().with(("cf_root", pc)), Sense::click());
+            let on = self.cf_root == Some(pc);
+            ui.painter().rect_filled(r, 8.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+            ptext(ui.painter(), r.center(), Align::Center, theory::note_name(pc, false), 1.5, if on { pal().beige } else { pal().ink });
+            if resp.clicked() {
+                self.cf_root = Some(pc);
             }
-        });
-        if let Some(root) = self.cf_root {
-            rule(ui);
-            dim_line(ui, "2  KIND", 1.0, pal().ink2);
-            ui.horizontal_wrapped(|ui| {
-                for (i, (name, _)) in theory::FINDER_FAMILIES.iter().enumerate() {
-                    if retro_btn(ui, name, self.cf_fam == Some(i)).clicked() && self.cf_fam != Some(i) {
-                        self.cf_fam = Some(i);
-                        self.chord_q.clear();
-                    }
-                }
-            });
-            if let Some(f) = self.cf_fam {
-                rule(ui);
-                dim_line(ui, "3  CHORD", 1.0, pal().ink2);
-                ui.horizontal_wrapped(|ui| {
-                    let rn = theory::note_name(root, false);
-                    for (_, suffix) in theory::FINDER_FAMILIES[f.min(theory::FINDER_FAMILIES.len() - 1)].1 {
-                        let name = format!("{}{}", rn, suffix);
-                        if retro_btn(ui, &name, cur.is_some() && suffix_now == *suffix).clicked() {
-                            self.chord_q = name.clone();
-                            if let Some(c) = theory::chord_notes(&name) {
-                                self.hear(&piano_voicing(&c));
-                                // straight on to the neck
-                                self.cf_neck = true;
-                                self.cf_voice = 0;
-                            }
-                        }
-                    }
-                });
-            }
-            rule(ui);
         }
+        ui.add_space(6.0);
+        let fams: Vec<&str> = std::iter::once("All").chain(theory::FINDER_FAMILIES.iter().map(|(n, _)| *n)).collect();
+        let cur_f = self.cf_fam.map_or(0, |f| f + 1);
+        // the kinds as small chips, wrapped
+        {
+            let mut x = 0.0f32;
+            let mut y = 0.0f32;
+            let start = ui.cursor().min;
+            let mut chips = Vec::new();
+            for n in fams.iter() {
+                let label = crate::lines::nice(n);
+                let cw = text_w(&label, 1.2) + 22.0;
+                if x + cw > w {
+                    x = 0.0;
+                    y += 36.0;
+                }
+                chips.push((Rect::from_min_size(start + Vec2::new(x, y), Vec2::new(cw, 32.0)), label));
+                x += cw + 6.0;
+            }
+            ui.allocate_exact_size(Vec2::new(w, y + 34.0), Sense::hover());
+            for (k, (r, label)) in chips.into_iter().enumerate() {
+                let resp = ui.interact(r, ui.id().with(("cf_fam", k)), Sense::click());
+                let on = k == cur_f;
+                ui.painter().rect_filled(r, 16.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+                ptext(ui.painter(), r.center(), Align::Center, &label, 1.2, if on { pal().beige } else { pal().ink });
+                if resp.clicked() {
+                    self.cf_fam = if k == 0 { None } else { Some(k - 1) };
+                }
+            }
+        }
+        ui.add_space(4.0);
+        let rn = theory::note_name(root, false);
+        let names: Vec<String> = theory::FINDER_FAMILIES
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| self.cf_fam.is_none_or(|f| f == *i))
+            .flat_map(|(_, (_, l))| l.iter().map(|(_, s)| format!("{}{}", rn, s)))
+            .collect();
+        let cols = 3;
+        let gw = (w - (cols - 1) as f32 * 4.0) / cols as f32;
+        let rows = names.len().div_ceil(cols);
+        let (gr, _) = ui.allocate_exact_size(Vec2::new(w, rows as f32 * 44.0), Sense::hover());
+        for (k, name) in names.iter().enumerate() {
+            let r = Rect::from_min_size(gr.min + Vec2::new((k % cols) as f32 * (gw + 4.0), (k / cols) as f32 * 44.0), Vec2::new(gw, 40.0));
+            let resp = ui.interact(r, ui.id().with(("cf_chord", k)), Sense::click());
+            let on = self.chord_q.trim() == name;
+            ui.painter().rect_filled(r, 8.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+            ptext_fit(ui.painter(), r.center(), Align::Center, name, 1.4, gw - 8.0, if on { pal().beige } else { pal().ink });
+            if resp.clicked() {
+                self.chord_q = name.clone();
+                if let Some(c) = theory::chord_notes(name) {
+                    self.hear(&piano_voicing(&c));
+                    self.cf_neck = true;
+                    self.cf_voice = 0;
+                }
+            }
+        }
+        ui.add_space(8.0);
         ui.horizontal(|ui| {
             let w = ui.available_width() - 82.0;
-            text_box(ui, &mut self.chord_q, w, "or type any chord: Dm7, G7#9, Fmaj7/A...");
+            text_box(ui, &mut self.chord_q, w, "Or type one: Dm7, G7#9, Fmaj7/A...");
             if retro_btn_w(ui, "Show", 74.0, false).clicked() && theory::chord_notes(&self.chord_q).is_some() {
                 self.cf_neck = true;
                 self.cf_voice = 0;
