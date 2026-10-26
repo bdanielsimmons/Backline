@@ -37,7 +37,7 @@ impl App {
     /// Backline's own deck: the LCD time, the spectrum, the title and what is next, tempo and key, the cover, like,
     /// volume, speed, the sleep timer, the seek bar (with the loop on it in practice), the transport, shuffle and
     /// repeat - the desktop's, piece for piece.
-    fn deck(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn deck(&mut self, ui: &mut egui::Ui) {
         // a worn skin draws the whole deck from its own pictures, as on the desktop
         if self.wa_art.is_some() {
             self.winamp_deck(ui);
@@ -544,11 +544,11 @@ impl App {
     }
 
     /// Fetch the song's cover once (Tidal's album art, or the clip's thumbnail).
-    fn want_cover(&mut self, t: &Track) {
+    pub(crate) fn want_cover(&mut self, t: &Track) {
         let url = if let Some(y) = self.yt.iter().find(|y| yt_id(&y.vid) == t.id) {
             Some(format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", y.vid))
         } else {
-            (!t.cover.is_empty()).then(|| api::cover_url(&t.cover, 160))
+            (!t.cover.is_empty()).then(|| api::cover_url(&t.cover, 640))
         };
         if self.cover.as_ref().map(|c| Some(&c.0)) == Some(url.as_ref()) {
             return;
@@ -566,7 +566,7 @@ impl App {
     }
 
     /// The QUEUE window: the songs in line, numbered, the one playing marked (tap one to play it).
-    fn queue_ui(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn queue_ui(&mut self, ui: &mut egui::Ui) {
         if self.queue.is_empty() {
             para(ui, "Nothing in line yet. Pick songs in MUSIC: the list you play from becomes the queue. Tap a song's three dots for PLAY NEXT and ADD TO QUEUE.", pal().ink2);
             return;

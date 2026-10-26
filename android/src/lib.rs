@@ -7,6 +7,10 @@
 // ---- the desktop engine
 #[path = "../../backline/src/data/api.rs"]
 mod api;
+/// The desktop's song cache (it remembers songs for offline play); the phone keeps none
+mod cache {
+    pub fn know(_tracks: &[crate::api::Track]) {}
+}
 #[path = "../../backline/src/audio/band.rs"]
 mod band;
 #[path = "../../backline/src/data/chart.rs"]
@@ -112,10 +116,17 @@ pub(crate) enum Msg {
 /// The phone's screens, along the bottom.
 #[derive(PartialEq, Clone, Copy)]
 pub(crate) enum Tab {
+    /// PLAY: the queue
     Player,
+    /// MUSIC: Tidal, files, YouTube
     Library,
+    Practice,
     Chords,
+    Lines,
+    /// opened from the Practice and Now Playing screens
     Metro,
+    /// NOW PLAYING: the Winamp deck, full screen, no tabs (opened from the now-playing bar)
+    Now,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -271,13 +282,15 @@ impl App {
         SKIN.store(st.skin % PALS.len(), Ordering::Relaxed);
         font::set_ppp(ctx.pixels_per_point());
         let font_tex = font::init(&ctx);
-        // smooth text (the sleek skins, tooltips, typing) in Chakra Petch, as on the desktop
+        // reading text in Inter, a face made for screens (Chakra Petch behind it); the pixel font is the deck's alone
         let mut fonts = egui::FontDefinitions::default();
         fonts
             .font_data
             .insert("chakra".to_string(), egui::FontData::from_static(include_bytes!("../../backline/assets/ChakraPetch-Regular.ttf")));
+        fonts.font_data.insert("inter".to_string(), egui::FontData::from_static(include_bytes!("../../backline/assets/Inter-Regular.ttf")));
         if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             f.insert(0, "chakra".to_string());
+            f.insert(0, "inter".to_string());
         }
         ctx.set_fonts(fonts);
         ctx.style_mut(|s| {
@@ -785,10 +798,10 @@ impl App {
             let (r, _) = ui.allocate_exact_size(Vec2::new(150.0, 30.0), Sense::hover());
             logo_mark(ui.painter(), Pos2::new(r.min.x + 2.0, r.min.y + 3.0), 2.7);
             // (on the app background, in the window titles' colour)
-            ptext(ui.painter(), Pos2::new(r.min.x + 34.0, r.center().y), Align::Min, "BACKLINE", 3.0, pal().trim);
+            ptext(ui.painter(), Pos2::new(r.min.x + 34.0, r.center().y), Align::Min, "Backline", 2.0, pal().trim);
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 let k = SKIN.load(Ordering::Relaxed);
-                if retro_btn(ui, &format!("SKIN: {}", SKIN_NAMES[k]), false).clicked() {
+                if retro_btn(ui, "Skin", false).on_hover_text(SKIN_NAMES[k]).clicked() {
                     SKIN.store((k + 1) % PALS.len(), Ordering::Relaxed);
                     self.wear();
                     self.save_settings();
@@ -797,41 +810,168 @@ impl App {
         });
     }
 
-    /// The screens along the bottom, as the desktop's big tabs.
+    /// The screens along the bottom: a line icon and a word for each, the current one lit.
     fn bottom_bar(&mut self, ui: &mut egui::Ui) {
-        let items = ["PLAYER", "MUSIC", "CHORDS", "METRO"];
-        let tabs = [Tab::Player, Tab::Library, Tab::Chords, Tab::Metro];
-        let cur = tabs.iter().position(|t| *t == self.tab).unwrap_or(0);
-        let w = (ui.available_width() - 4.0 * 3.0) / 4.0 - 0.5;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            for (k, name) in items.iter().enumerate() {
-                if retro_btn_w(ui, name, w, k == cur).clicked() {
-                    self.tab = tabs[k];
+        let items = ["Music", "Play", "Practice", "Chords", "Lines"];
+        let tabs = [Tab::Library, Tab::Player, Tab::Practice, Tab::Chords, Tab::Lines];
+        let cur = tabs.iter().position(|t| *t == self.tab || (*t == Tab::Practice && self.tab == Tab::Metro));
+        let w = ui.available_width() / 5.0;
+        let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::hover());
+        for (k, name) in items.iter().enumerate() {
+            let r = Rect::from_min_size(Pos2::new(bar.min.x + k as f32 * w, bar.min.y), Vec2::new(w, 44.0));
+            let resp = ui.interact(r, ui.id().with(("tabbar", k)), Sense::click());
+            let on = cur == Some(k);
+            let col = if on { pal().ink } else { pal().dim };
+            tab_icon(ui.painter(), Pos2::new(r.center().x, r.min.y + 14.0), k, if on { pal().red } else { col });
+            ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 35.0), Align::Center, name, 1.2, col);
+            if resp.clicked() {
+                if tabs[k] == Tab::Practice && !self.practice {
+                    self.practice = true;
+                    self.sync_player();
+                    self.save_settings();
                 }
+                self.tab = tabs[k];
+            }
+        }
+    }
+
+    /// While browsing: the song playing, in a plain bar above the tabs (tap it for Now Playing).
+    fn now_bar(&mut self, ui: &mut egui::Ui) {
+        let Some(t) = self.cur_track().cloned() else { return };
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
+        let p = ui.painter();
+        p.rect_filled(r, 8.0, pal().beige_lt);
+        let art = Rect::from_min_size(r.min + Vec2::new(6.0, 6.0), Vec2::splat(34.0));
+        p.rect_filled(art, 6.0, pal().row_sel);
+        tab_icon(p, art.center(), 0, pal().bar_txt);
+        let tx = art.max.x + 8.0;
+        let tw = r.max.x - 44.0 - tx;
+        ptext_fit(p, Pos2::new(tx, r.min.y + 16.0), Align::Min, &t.title, 1.4, tw, pal().ink);
+        ptext_fit(p, Pos2::new(tx, r.min.y + 31.0), Align::Min, &t.artists_text(), 1.2, tw, pal().dim);
+        // how far in, as a thin line along the foot
+        let len = self.cur_track().map_or(0.0, |t| t.duration as f32);
+        if len > 0.0 {
+            let k = (self.pos() / len).clamp(0.0, 1.0);
+            p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.max.y - 2.0), Pos2::new(r.min.x + 4.0 + (r.width() - 8.0) * k, r.max.y)), 1.0, pal().red);
+        }
+        let pr = Rect::from_center_size(Pos2::new(r.max.x - 22.0, r.center().y), Vec2::splat(36.0));
+        let pause = !(self.paused || self.stopped);
+        play_glyph(p, pr.center(), pause, pal().ink);
+        let pp = ui.interact(pr, ui.id().with("np_play"), Sense::click());
+        if pp.clicked() {
+            self.play_pause();
+        } else if resp.clicked() {
+            self.tab = Tab::Now;
+        }
+    }
+
+    /// NOW PLAYING: the cover big, the title, a slim LCD strip (time and spectrum, the one place for the pixel
+    /// font), the seek bar, the transport, and the way to practice or the metronome.
+    fn now_screen(&mut self, ui: &mut egui::Ui, r: Rect) {
+        let r = r.shrink2(Vec2::new(16.0, 0.0));
+        let back = Rect::from_min_size(r.min + Vec2::new(-6.0, 2.0), Vec2::splat(36.0));
+        chevron(ui.painter(), back.center(), pal().trim);
+        ptext(ui.painter(), Pos2::new(r.center().x, back.center().y), Align::Center, "Now playing", 1.3, pal().trim);
+        if ui.interact(back, ui.id().with("now_back"), Sense::click()).clicked() {
+            self.tab = Tab::Player;
+        }
+        let Some(t) = self.cur_track().cloned() else {
+            ptext(ui.painter(), r.center(), Align::Center, "Nothing playing. Pick a song in Music.", 1.4, pal().trim);
+            return;
+        };
+        // the cover
+        let side = r.width().min(r.height() - 330.0).max(120.0);
+        let cv = Rect::from_min_size(Pos2::new(r.center().x - side / 2.0, back.max.y + 10.0), Vec2::splat(side));
+        self.want_cover(&t);
+        let p = ui.painter().clone();
+        match self.cover.as_ref().and_then(|c| c.1.as_ref()) {
+            Some(tex) => {
+                let mut img = egui::epaint::RectShape::filled(cv, 10.0, Color32::WHITE);
+                img.fill_texture_id = tex.id();
+                img.uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                p.add(img);
+            }
+            None => {
+                p.rect_filled(cv, 10.0, pal().row_sel);
+                tab_icon(&p, cv.center(), 0, pal().bar_txt);
+            }
+        }
+        let mut y = cv.max.y + 22.0;
+        ptext_fit(&p, Pos2::new(r.min.x, y), Align::Min, &t.title, 2.0, r.width(), pal().bar_txt);
+        y += 22.0;
+        ptext_fit(&p, Pos2::new(r.min.x, y), Align::Min, &t.artists_text(), 1.4, r.width(), pal().trim);
+        y += 18.0;
+        // the LCD strip: time and spectrum in the skin's LCD colours
+        let lcd = Rect::from_min_size(Pos2::new(r.min.x, y), Vec2::new(r.width(), 40.0));
+        p.rect_filled(lcd, 8.0, pal().lcd);
+        let pos = self.pos();
+        font::set_modern(false);
+        ptext(&p, Pos2::new(lcd.min.x + 12.0, lcd.center().y), Align::Min, &format!("{}:{:02}", pos as u32 / 60, pos as u32 % 60), 2.6, pal().ink);
+        font::set_modern(true);
+        let sp = Rect::from_min_max(Pos2::new(lcd.max.x - 130.0, lcd.min.y + 6.0), lcd.max - Vec2::new(10.0, 6.0));
+        viz::viz_draw(&p, sp, &self.bands, &self.peaks, &self.viz_wave, 0, 1.0, false, 1.0, None);
+        y = lcd.max.y + 16.0;
+        // the seek bar: drag or tap to move
+        let len = t.duration.max(1.0);
+        let sk = Rect::from_min_size(Pos2::new(r.min.x, y), Vec2::new(r.width(), 18.0));
+        let sr = ui.interact(sk, ui.id().with("now_seek"), Sense::click_and_drag());
+        if let Some(at) = sr.interact_pointer_pos() {
+            if sr.clicked() || sr.drag_stopped() {
+                let k = ((at.x - sk.min.x) / sk.width()).clamp(0.0, 1.0);
+                self.player.send(Cmd::Seek(k * len));
+            }
+        }
+        let k = (pos / len).clamp(0.0, 1.0);
+        let line = Rect::from_center_size(sk.center(), Vec2::new(sk.width(), 4.0));
+        p.rect_filled(line, 2.0, pal().beige_dk);
+        p.rect_filled(Rect::from_min_max(line.min, Pos2::new(line.min.x + line.width() * k, line.max.y)), 2.0, pal().red);
+        p.circle_filled(Pos2::new(line.min.x + line.width() * k, line.center().y), 6.0, pal().bar_txt);
+        let left = len - pos;
+        ptext(&p, Pos2::new(r.min.x, sk.max.y + 8.0), Align::Min, &format!("{}:{:02}", pos as u32 / 60, pos as u32 % 60), 1.1, pal().trim);
+        ptext(&p, Pos2::new(r.max.x, sk.max.y + 8.0), Align::Max, &format!("-{}:{:02}", left as u32 / 60, left as u32 % 60), 1.1, pal().trim);
+        y = sk.max.y + 26.0;
+        // the transport
+        let mid = Pos2::new(r.center().x, y + 32.0);
+        let play = Rect::from_center_size(mid, Vec2::splat(64.0));
+        p.circle_filled(mid, 32.0, pal().red);
+        play_glyph(&p, mid, !(self.paused || self.stopped), pal().bar_txt);
+        if ui.interact(play, ui.id().with("now_play"), Sense::click()).clicked() {
+            self.play_pause();
+        }
+        for (dx, fwd) in [(-80.0, false), (80.0, true)] {
+            let c = mid + Vec2::new(dx, 0.0);
+            skip_glyph(&p, c, fwd, pal().bar_txt);
+            if ui.interact(Rect::from_center_size(c, Vec2::splat(44.0)), ui.id().with(("now_skip", fwd)), Sense::click()).clicked() {
+                if fwd {
+                    self.next();
+                } else {
+                    self.prev();
+                }
+            }
+        }
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(Pos2::new(r.min.x, play.max.y + 14.0), r.max)));
+        child.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "Practice", false).clicked() {
+                if !self.practice {
+                    self.practice = true;
+                    self.sync_player();
+                    self.save_settings();
+                }
+                self.tab = Tab::Practice;
+            }
+            if retro_btn(ui, "Metronome", false).clicked() {
+                self.tab = Tab::Metro;
             }
         });
     }
 
-    /// While browsing: the song playing along the bottom, in an LCD (tap it for the player).
-    fn now_bar(&mut self, ui: &mut egui::Ui) {
-        let Some(t) = self.cur_track().cloned() else { return };
-        ui.horizontal(|ui| {
-            let w = ui.available_width() - 2.0 * (bh() + 6.0);
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
-            inset(ui.painter(), r, pal().lcd);
-            marquee(ui, r.shrink2(Vec2::new(4.0, 0.0)), &format!("{} - {}", t.artists_text(), t.title), 1.0, pal().ink);
-            if resp.clicked() {
-                self.tab = Tab::Player;
-            }
-            let icon: &[&str] = if self.paused || self.stopped { &IC_PLAY } else { &IC_PAUSE };
-            if icon_btn_w(ui, icon, false, pal().ink, bh()).clicked() {
-                self.play_pause();
-            }
-            if icon_btn_w(ui, &IC_NEXT, false, pal().ink, bh()).clicked() {
-                self.next();
-            }
-        });
+    /// A screen in the flat look: the skin's panel colour, rounded, its body padded inside.
+    fn flat(&mut self, ui: &mut egui::Ui, outer: Rect, body: impl FnOnce(&mut Self, &mut egui::Ui)) {
+        let inner = outer.shrink2(Vec2::new(6.0, 2.0));
+        ui.painter().rect_filled(inner, 10.0, pal().beige);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner.shrink(10.0)).layout(egui::Layout::top_down(Align::Min)));
+        child.set_clip_rect(inner);
+        body(self, &mut child);
     }
 
     /// The menu of a song held down (the desktop's right-click): play it next, add it to the queue, and in the
@@ -958,7 +1098,7 @@ impl eframe::App for App {
             }
         }
         font::set_ppp(ctx.pixels_per_point());
-        font::set_modern(style() != 0);
+        font::set_modern(true);
         self.drain();
         self.update_bands();
         // the phone's keyboard comes up while a text box is being typed in
@@ -983,6 +1123,7 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("top")
             .frame(fill.inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 30.0, bottom: 4.0 }))
             .show(ctx, |ui| self.top_bar(ui));
+        let now = self.tab == Tab::Now;
         egui::TopBottomPanel::bottom("bottom")
             .frame(fill.inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 6.0, bottom: 26.0 }))
             .show(ctx, |ui| {
@@ -997,23 +1138,90 @@ impl eframe::App for App {
                     }
                     ui.add_space(4.0);
                 }
-                if self.tab != Tab::Player {
+                if !now {
                     self.now_bar(ui);
                     ui.add_space(4.0);
+                    self.bottom_bar(ui);
                 }
-                self.bottom_bar(ui);
             });
         self.song_menu_ui(ctx);
         egui::CentralPanel::default().frame(fill).show(ctx, |ui| {
             let r = ui.max_rect();
             match self.tab {
-                Tab::Player => self.player_screen(ui, r),
-                Tab::Library => self.window(ui, r, "LIBRARY", |me, ui| me.library_ui(ui)),
-                Tab::Chords => self.window(ui, r, "CHORDS", |me, ui| me.chords_ui(ui)),
-                Tab::Metro => self.window(ui, r, "METRONOME", |me, ui| me.metro_ui(ui)),
+                Tab::Player => self.flat(ui, r, |me, ui| me.queue_ui(ui)),
+                Tab::Library => self.flat(ui, r, |me, ui| me.library_ui(ui)),
+                Tab::Practice => self.flat(ui, r, |me, ui| me.practice_ui(ui)),
+                Tab::Chords => self.flat(ui, r, |me, ui| me.chords_ui(ui)),
+                Tab::Lines => self.flat(ui, r, |_, ui| para(ui, "Lines is coming in the next step: the long neck, with the line's notes numbered in the order you play them.", pal().ink2)),
+                Tab::Metro => self.flat(ui, r, |me, ui| me.metro_ui(ui)),
+                Tab::Now => self.now_screen(ui, r),
             }
         });
     }
+}
+
+/// The bottom bar's line icons: Music (a note), Play (a list), Practice (a wave), Chords (a chord box), Lines
+/// (strings with dots).
+fn tab_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
+    let s = Stroke::new(1.6, col);
+    let at = |x: f32, y: f32| c + Vec2::new(x, y);
+    match k {
+        0 => {
+            p.circle_stroke(at(-4.0, 5.0), 3.0, s);
+            p.line_segment([at(-1.0, 5.0), at(-1.0, -8.0)], s);
+            p.line_segment([at(-1.0, -8.0), at(6.0, -6.0)], s);
+        }
+        1 => {
+            for y in [-6.0, 0.0, 6.0] {
+                p.line_segment([at(-2.0, y), at(9.0, y)], s);
+            }
+            p.add(egui::Shape::convex_polygon(vec![at(-9.0, -7.0), at(-4.0, -4.0), at(-9.0, -1.0)], col, Stroke::NONE));
+        }
+        2 => {
+            let pts = [(-10.0, 0.0), (-6.0, 0.0), (-4.0, -7.0), (-1.0, 7.0), (2.0, -4.0), (4.0, 2.0), (6.0, 0.0), (10.0, 0.0)];
+            p.add(egui::Shape::line(pts.iter().map(|(x, y)| at(*x, *y)).collect(), s));
+        }
+        3 => {
+            p.rect_stroke(Rect::from_center_size(c, Vec2::new(14.0, 17.0)), 1.0, s);
+            for y in [-3.0, 2.5] {
+                p.line_segment([at(-7.0, y), at(7.0, y)], s);
+            }
+            for x in [-2.3, 2.3] {
+                p.line_segment([at(x, -8.5), at(x, 8.5)], s);
+            }
+        }
+        _ => {
+            for (i, y) in [-6.0, 0.0, 6.0].iter().enumerate() {
+                p.line_segment([at(-10.0, *y), at(10.0, *y)], s);
+                p.circle_filled(at([-5.0, 1.0, 5.0][i], *y), 2.4, col);
+            }
+        }
+    }
+}
+
+/// A smooth play triangle, or pause bars.
+fn play_glyph(p: &egui::Painter, c: Pos2, pause: bool, col: Color32) {
+    if pause {
+        for x in [-4.0, 4.0] {
+            p.rect_filled(Rect::from_center_size(c + Vec2::new(x, 0.0), Vec2::new(4.0, 14.0)), 1.0, col);
+        }
+    } else {
+        p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-5.0, -8.0), c + Vec2::new(8.0, 0.0), c + Vec2::new(-5.0, 8.0)], col, Stroke::NONE));
+    }
+}
+
+/// Skip back or on: a triangle and a bar.
+fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
+    let d = if fwd { 1.0 } else { -1.0 };
+    p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0 * d, -8.0), c + Vec2::new(5.0 * d, 0.0), c + Vec2::new(-6.0 * d, 8.0)], col, Stroke::NONE));
+    p.rect_filled(Rect::from_center_size(c + Vec2::new(7.0 * d, 0.0), Vec2::new(2.5, 16.0)), 1.0, col);
+}
+
+/// A down arrow (close Now Playing).
+fn chevron(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(2.2, col);
+    p.line_segment([c + Vec2::new(-7.0, -3.0), c + Vec2::new(0.0, 4.0)], s);
+    p.line_segment([c + Vec2::new(0.0, 4.0), c + Vec2::new(7.0, -3.0)], s);
 }
 
 fn rand() -> u64 {
