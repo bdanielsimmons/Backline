@@ -152,6 +152,7 @@ impl App {
                 egui::ScrollArea::vertical().id_salt("menu_scroll").max_height(screen.height() * 0.65).show(ui, |ui| {
                     match self.menu_mode {
                         1 => close |= self.menu_playlists(ui, &t, tidal, w),
+                        3 => close |= self.menu_edit(ui, &t, w),
                         2 => {
                             if self.credits.is_empty() {
                                 dim_line(ui, "Loading the credits...", 1.0, pal().ink2);
@@ -276,6 +277,16 @@ impl App {
                 self.spawn(move |api| Msg::Credits(api.credits(id)));
             }
         }
+        if mrow(ui, w, 8, "Edit info") {
+            let m = meta::get(t.id).unwrap_or_default();
+            self.edit = (
+                t.title.clone(),
+                t.artists_text(),
+                m.key.map_or(String::new(), |k| meta::key_short(k).to_string()),
+                m.bpm.map_or(String::new(), |b| b.to_string()),
+            );
+            self.menu_mode = 3;
+        }
         if mrow(ui, w, 9, "Copy name") {
             let ok = set_clipboard(&format!("{} - {}", t.artists_text(), t.title));
             self.set_note(if ok { "Copied" } else { "Couldn't copy" });
@@ -303,6 +314,61 @@ impl App {
             }
         }
         close
+    }
+
+    /// The menu's EDIT INFO page: the song's title and artist as you want them shown, its key and tempo.
+    fn menu_edit(&mut self, ui: &mut egui::Ui, t: &Track, w: f32) -> bool {
+        dim_line(ui, "Title", 1.0, pal().ink2);
+        crate::practice::text_box(ui, &mut self.edit.0, w, "Title");
+        dim_line(ui, "Artist", 1.0, pal().ink2);
+        crate::practice::text_box(ui, &mut self.edit.1, w, "Artist");
+        dim_line(ui, "Key and tempo", 1.0, pal().ink2);
+        ui.horizontal(|ui| {
+            let hw = (w - 6.0) / 2.0;
+            crate::practice::text_box(ui, &mut self.edit.2, hw, "Key: Bb, F#m");
+            crate::practice::text_box(ui, &mut self.edit.3, hw, "BPM");
+        });
+        let mut close = false;
+        ui.horizontal(|ui| {
+            if retro_btn(ui, "Save", false).clicked() {
+                let (title, artist) = (self.edit.0.trim().to_string(), self.edit.1.trim().to_string());
+                if !title.is_empty() {
+                    self.names.insert(t.id, (title.clone(), artist.clone()));
+                    save_json("names.json", &self.names);
+                    let id = t.id;
+                    for list in [&mut self.queue, &mut self.recent, &mut self.liked, &mut self.results] {
+                        for x in list.iter_mut().filter(|x| x.id == id) {
+                            x.title = title.clone();
+                            x.artist = artist.clone();
+                            x.artists.clear();
+                        }
+                    }
+                    for f in self.files.iter_mut().filter(|f| f.0.id == id) {
+                        f.0.title = title.clone();
+                        f.0.artist = artist.clone();
+                    }
+                }
+                let key = meta::parse_typed_key(&self.edit.2);
+                let bpm = self.edit.3.trim().parse::<u16>().ok().filter(|b| (20..=400).contains(b));
+                meta::set_mine(t.id, bpm, key);
+                save_json("meta.json", &meta::saved());
+                self.set_note("Saved");
+                close = true;
+            }
+            if retro_btn(ui, "Back", false).clicked() {
+                self.menu_mode = 0;
+            }
+        });
+        close
+    }
+
+    /// A song shown with the name you gave it, if you did.
+    pub(crate) fn renamed(&self, t: &mut Track) {
+        if let Some((title, artist)) = self.names.get(&t.id) {
+            t.title = title.clone();
+            t.artist = artist.clone();
+            t.artists.clear();
+        }
     }
 
     /// The menu's playlist page: your playlists on the phone (and a new one), then your Tidal playlists.

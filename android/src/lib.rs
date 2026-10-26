@@ -269,6 +269,9 @@ pub(crate) struct App {
     /// the playlist files found (name, songs), and a look under way
     pub file_lists: Vec<(String, Vec<std::path::PathBuf>)>,
     pub files_busy: bool,
+    /// names you gave songs (id -> title, artist), and the edit open in the song menu (title, artist, key, bpm)
+    pub names: HashMap<i64, (String, String)>,
+    pub edit: (String, String, String, String),
     pub yt: Vec<YtItem>,
     pub yt_link: String,
     pub yt_ask: Option<(String, String, u64)>,
@@ -413,6 +416,8 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> App {
         let ctx = cc.egui_ctx.clone();
         let st: Settings = load_json("settings.json");
+        // the songs' keys and tempos found before (or set by hand)
+        meta::load(&load_json("meta.json"));
         // the songs kept on this phone, and their details for the Downloaded list
         cache::scan();
         cache::start_tagging(|_| None);
@@ -573,6 +578,8 @@ impl App {
             mt_beat: None,
             file_lists: Vec::new(),
             files_busy: false,
+            names: load_json("names.json"),
+            edit: Default::default(),
             mt_scale: 1.0,
             mt_beat_busy: false,
             mt_beat_failed: Vec::new(),
@@ -701,7 +708,16 @@ impl App {
         let yt = self.yt.iter().find(|y| yt_id(&y.vid) == t.id).map(|y| y.vid.clone());
         self.spawn(move |api| {
             let bytes = if let Some(vid) = yt {
-                yt_audio(&vid)
+                match cache::get(t.id) {
+                    Some(b) => Ok(b),
+                    None => {
+                        let got = yt_audio(&vid);
+                        if let Ok(b) = &got {
+                            let _ = cache::put(t.id, b);
+                        }
+                        got
+                    }
+                }
             } else if let Some(p) = file {
                 std::fs::read(&p).map_err(|e| e.to_string())
             } else if let Some(b) = cache::get(t.id) {
@@ -858,8 +874,11 @@ impl App {
                         }
                     }
                 }
-                Msg::Files(songs, lists) => {
+                Msg::Files(mut songs, lists) => {
                     self.files_busy = false;
+                    for s in songs.iter_mut() {
+                        self.renamed(&mut s.0);
+                    }
                     self.files = songs;
                     self.file_lists = lists;
                 }
@@ -945,6 +964,7 @@ impl App {
                 }
                 Msg::Meta(id, info) => {
                     meta::set_detected(id, info);
+                    save_json("meta.json", &meta::saved());
                     if self.cur_track().map(|t| t.id) == Some(id) {
                         if let Some(b) = meta::get(id).and_then(|i| i.bpm) {
                             self.song_bpm = b as f32;
