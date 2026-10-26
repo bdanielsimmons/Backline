@@ -185,7 +185,26 @@ impl App {
     /// MY TRACKS: your liked songs and playlists on Tidal, and the songs kept on this phone (they play without a
     /// connection).
     fn my_tracks_ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(i) = tab_row(ui, &["Liked", "Playlists", "Albums", "Artists", "Kept"], self.my_page as usize) {
+        // four tiles, Spotify's library: Liked, Playlists, Albums (and artists), Kept (and the phone's files)
+        let liked_n = if self.liked.is_empty() { String::new() } else { format!(" {}", self.liked.len()) };
+        let tiles = [(format!("Liked{}", liked_n), 4usize, 0u8), ("Playlists".to_string(), 2, 1), ("Albums".to_string(), 0, 2), ("Kept".to_string(), 1, 4)];
+        let w = ui.available_width();
+        let tw = (w - 8.0) / 2.0;
+        let (area, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * 48.0 + 8.0), Sense::hover());
+        let mut hit = None;
+        for (n, (name, icon, page)) in tiles.iter().enumerate() {
+            let r = Rect::from_min_size(area.min + Vec2::new((n % 2) as f32 * (tw + 8.0), (n / 2) as f32 * 56.0), Vec2::new(tw, 48.0));
+            let resp = ui.interact(r, ui.id().with(("mt_tile", n)), Sense::click());
+            let on = self.my_page == *page || (*page == 2 && self.my_page == 3);
+            ui.painter().rect_filled(r, 10.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+            let col = if on { pal().beige } else { pal().ink };
+            src_icon(ui.painter(), Pos2::new(r.min.x + 22.0, r.center().y), *icon, if on { col } else { pal().red });
+            ptext_fit(ui.painter(), Pos2::new(r.min.x + 42.0, r.center().y), Align::Min, name, 1.3, tw - 50.0, col);
+            if resp.clicked() {
+                hit = Some(*page as usize);
+            }
+        }
+        if let Some(i) = hit {
             self.my_page = i as u8;
             self.list_open = None;
             self.pl_open = None;
@@ -208,7 +227,7 @@ impl App {
                 dim_line(ui, "Loading...", 1.0, pal().ink2);
             }
             let rows = self.lib_page.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
-            let want: &[&str] = if self.my_page == 2 { &["Albums", api::NEW_FROM_FOLLOWED] } else { &["Artists"] };
+            let want: &[&str] = &["Albums", "Artists", api::NEW_FROM_FOLLOWED];
             let rows: Vec<(String, Vec<api::Card>)> = rows.into_iter().filter(|r| want.contains(&r.0.as_str())).collect();
             self.card_rows(ui, &rows, "lib_rows");
             return;
@@ -250,6 +269,11 @@ impl App {
             }
         }
         if self.my_page == 4 {
+            if retro_btn(ui, "Files on this phone", false).clicked() {
+                self.lib_tab = 1;
+                self.scan_files();
+                return;
+            }
             let mut kept = cache::tagged();
             kept.sort_by(|a, b| a.artist.cmp(&b.artist).then(a.title.cmp(&b.title)));
             if kept.is_empty() {
@@ -482,7 +506,38 @@ impl App {
             self.lib_tab = 3;
             return;
         };
-        if !page.subtitle.is_empty() {
+        // the header: the cover big, the title and what it is
+        if !page.image.is_empty() {
+            let url = api::cover_url(&page.image, 320);
+            if self.page_cover.as_ref().map(|c| &c.0) != Some(&url) {
+                self.page_cover = Some((url.clone(), None));
+                self.spawn(move |api| {
+                    let img = api.fetch(&url).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| {
+                        let i = i.to_rgba8();
+                        egui::ColorImage::from_rgba_unmultiplied([i.width() as usize, i.height() as usize], i.as_raw())
+                    });
+                    Msg::Cover(url, img)
+                });
+            }
+            let (hr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 108.0), Sense::hover());
+            let cv = Rect::from_min_size(hr.min, Vec2::splat(104.0));
+            match self.page_cover.as_ref().and_then(|c| c.1.as_ref()) {
+                Some(tex) => {
+                    let mut img = egui::epaint::RectShape::filled(cv, 8.0, Color32::WHITE);
+                    img.fill_texture_id = tex.id();
+                    img.uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    ui.painter().add(img);
+                }
+                None => {
+                    ui.painter().rect_filled(cv, 8.0, pal().row_sel);
+                }
+            }
+            let tx = cv.max.x + 12.0;
+            let tw = hr.max.x - tx;
+            ptext_fit(ui.painter(), Pos2::new(tx, hr.min.y + 60.0), Align::Min, &page.title, 1.8, tw, pal().ink);
+            ptext_fit(ui.painter(), Pos2::new(tx, hr.min.y + 84.0), Align::Min, &page.subtitle, 1.1, tw, pal().dim);
+            ui.add_space(6.0);
+        } else if !page.subtitle.is_empty() {
             dim_line(ui, &page.subtitle, 1.0, pal().dim);
         }
         let card = self.page_cards.last().cloned().flatten();

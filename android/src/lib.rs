@@ -235,6 +235,8 @@ pub(crate) struct App {
     /// the card each open page came from (to save an album or follow an artist), and the one on its way
     pub page_cards: Vec<Option<api::Card>>,
     pub page_pending: Option<api::Card>,
+    /// the open page's cover (its address, the picture once it's here)
+    pub page_cover: Option<(String, Option<egui::TextureHandle>)>,
     pub search_q: String,
     /// MY TRACKS: 0 liked, 1 playlists, 2 downloaded (the songs kept on this phone)
     pub my_page: u8,
@@ -375,6 +377,9 @@ pub(crate) struct App {
     pub si_pick: usize,
     /// the gear's page is open
     pub settings_open: bool,
+    /// asked once already: sign out of Tidal, clear the kept songs
+    pub sure_out: bool,
+    pub sure_clear: bool,
     /// the metronome's full settings showing (meter, accents, sound, gap, faster, volume)
     pub mt_more: bool,
     /// the beat found in a song (whose), the scale x2 and /2 put on it, a search under way, the songs with none,
@@ -475,6 +480,7 @@ impl App {
             list_filter: String::new(),
             page_cards: Vec::new(),
             page_pending: None,
+            page_cover: None,
             search_q: String::new(),
             my_page: 0,
             menu_mode: 0,
@@ -584,6 +590,8 @@ impl App {
             si_kroot: 0,
             si_pick: 0,
             settings_open: false,
+            sure_out: false,
+            sure_clear: false,
             mt_more: false,
             mt_beat: None,
             file_lists: Vec::new(),
@@ -967,6 +975,10 @@ impl App {
                     self.yt_ask = Some((link, name, n));
                 }
                 Msg::Cover(url, img) => {
+                    if self.page_cover.as_ref().is_some_and(|c| c.0 == url) {
+                        let tex = img.clone().map(|i| self.ctx.load_texture(&url, i, egui::TextureOptions::LINEAR));
+                        self.page_cover = Some((url.clone(), tex));
+                    }
                     if self.cover.as_ref().is_some_and(|c| c.0 == url) {
                         let tex = img.map(|i| self.ctx.load_texture(&url, i, egui::TextureOptions::LINEAR));
                         self.cover = Some((url, tex));
@@ -1477,25 +1489,77 @@ impl App {
         }
     }
 
-    /// SETTINGS (the gear): the skin.
+    /// SETTINGS (the gear): the skin as colour swatches; Tidal (signed in, sign out) and the songs kept on the phone
+    /// (how much room they take, clear them).
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
-        ptext(ui.painter(), ui.cursor().min + Vec2::new(2.0, 10.0), Align::Min, "Skin", 1.6, pal().ink);
-        ui.add_space(24.0);
         let cur = SKIN.load(Ordering::Relaxed);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                // just a few on the phone: Olive, Aqua, Dark and Sleek Dark
-                for (k, name) in SKIN_NAMES.iter().enumerate().filter(|(k, _)| [0usize, 1, 2, 9].contains(k)) {
-                    if retro_btn(ui, &crate::lines_ui::nice(name), k == cur).clicked() {
-                        SKIN.store(k, Ordering::Relaxed);
-                        self.wear();
-                        self.save_settings();
+            dim_line(ui, "Skin", 1.0, pal().ink2);
+            let w = ui.available_width();
+            let tw = (w - 8.0) / 2.0;
+            let (area, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * 64.0 + 8.0), Sense::hover());
+            for (n, k) in [0usize, 1, 2, 9].iter().enumerate() {
+                let r = Rect::from_min_size(area.min + Vec2::new((n % 2) as f32 * (tw + 8.0), (n / 2) as f32 * 72.0), Vec2::new(tw, 64.0));
+                let resp = ui.interact(r, ui.id().with(("swatch", k)), Sense::click());
+                let sk = &PALS[*k];
+                ui.painter().rect_filled(r, 10.0, sk.beige);
+                ui.painter().rect_filled(Rect::from_min_size(r.min + Vec2::new(10.0, 10.0), Vec2::new(26.0, 16.0)), 4.0, sk.lcd);
+                ui.painter().circle_filled(r.min + Vec2::new(50.0, 18.0), 7.0, sk.red);
+                ptext(ui.painter(), Pos2::new(r.min.x + 12.0, r.max.y - 16.0), Align::Min, &crate::lines_ui::nice(SKIN_NAMES[*k]), 1.3, sk.ink);
+                if *k == cur {
+                    ui.painter().rect_stroke(r.expand(2.0), 12.0, Stroke::new(2.5, pal().red));
+                }
+                if resp.clicked() {
+                    SKIN.store(*k, Ordering::Relaxed);
+                    self.wear();
+                    self.save_settings();
+                }
+            }
+            ui.add_space(12.0);
+            dim_line(ui, "Tidal", 1.0, pal().ink2);
+            let row = |ui: &mut egui::Ui, left: &str, right: &str| -> bool {
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::click());
+                ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+                ptext(ui.painter(), Pos2::new(r.min.x + 12.0, r.center().y), Align::Min, left, 1.3, pal().ink);
+                ptext(ui.painter(), Pos2::new(r.max.x - 12.0, r.center().y), Align::Max, right, 1.2, pal().ink2);
+                resp.clicked()
+            };
+            if self.logged_in {
+                if row(ui, "Signed in", if self.sure_out { "Sure? Tap again" } else { "Sign out" }) {
+                    if self.sure_out {
+                        self.api.logout();
+                        self.logged_in = false;
+                        self.liked.clear();
+                        self.liked_ids.clear();
+                        self.lists.clear();
+                        self.home = None;
+                        self.lib_page = None;
+                        self.sure_out = false;
+                        self.set_note("Signed out of Tidal");
+                    } else {
+                        self.sure_out = true;
                     }
                 }
-            });
-            ui.add_space(10.0);
+            } else if row(ui, "Not signed in", "Sign in in Music") {
+                self.settings_open = false;
+                self.tab = Tab::Library;
+                self.lib_tab = 3;
+            }
+            let (n, bytes) = cache::stats();
+            if row(ui, &format!("Kept songs: {}", n), &if self.sure_clear { "Sure? Tap again".to_string() } else { format!("{}  ·  Clear", cache::fmt_size(bytes)) }) && n > 0 {
+                if self.sure_clear {
+                    cache::clear();
+                    self.sure_clear = false;
+                    self.set_note("Kept songs cleared");
+                } else {
+                    self.sure_clear = true;
+                }
+            }
+            ui.add_space(12.0);
             if retro_btn(ui, "Done", false).clicked() {
                 self.settings_open = false;
+                self.sure_out = false;
+                self.sure_clear = false;
             }
         });
     }
