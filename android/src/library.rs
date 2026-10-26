@@ -549,33 +549,50 @@ impl App {
 
     /// The songs on the phone: Backline's own Music folder (no permission needed), and the phone's Music and
     /// Download folders where Android lets us read them.
+    /// Look for songs on the phone (the app's Music folder, Music and Download, and the folders in them), with the
+    /// names in their tags, and the playlist files (.m3u, .m3u8, .pls) there - in the background.
     pub(crate) fn scan_files(&mut self) {
-        let mut dirs = vec![music_dir()];
-        dirs.extend(["/sdcard/Music", "/sdcard/Download"].iter().map(std::path::PathBuf::from));
-        self.files.clear();
-        for d in dirs {
-            let Ok(rd) = std::fs::read_dir(&d) else { continue };
-            for e in rd.flatten() {
-                let p = e.path();
-                let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
-                if !["mp3", "m4a", "flac", "wav", "ogg", "aac"].contains(&ext.as_str()) {
-                    continue;
-                }
-                let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
-                let id = -(1 + (hash(&p.to_string_lossy()) & 0x7fff_ffff_ffff) as i64);
-                let (artist, title) = match name.split_once(" - ") {
-                    Some((a, b)) => (a.to_string(), b.to_string()),
-                    None => (String::new(), name.clone()),
-                };
-                self.files.push((Track { id, title, artist, ..Default::default() }, p));
-            }
+        if self.files_busy {
+            return;
         }
-        self.files.sort_by(|a, b| a.0.title.to_lowercase().cmp(&b.0.title.to_lowercase()));
+        self.files_busy = true;
+        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let mut dirs = vec![music_dir()];
+            dirs.extend(["/sdcard/Music", "/sdcard/Download"].iter().map(std::path::PathBuf::from));
+            let mut songs = Vec::new();
+            let mut lists = Vec::new();
+            for d in dirs {
+                walk(&d, 0, &mut songs, &mut lists);
+            }
+            songs.sort_by(|a: &(Track, std::path::PathBuf), b| a.0.title.to_lowercase().cmp(&b.0.title.to_lowercase()));
+            let lists: Vec<(String, Vec<std::path::PathBuf>)> = lists.iter().filter_map(|p| read_playlist_file(p)).filter(|l| !l.1.is_empty()).collect();
+            let _ = tx.send(Msg::Files(songs, lists));
+            ctx.request_repaint();
+        });
     }
 
     fn files_ui(&mut self, ui: &mut egui::Ui) {
-        if retro_btn(ui, "LOOK AGAIN", false).clicked() {
-            self.scan_files();
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, if self.files_busy { "Looking..." } else { "Look again" }, false).clicked() {
+                self.scan_files();
+            }
+        });
+        // playlist files found, each a button that plays it
+        let lists = self.file_lists.clone();
+        if !lists.is_empty() {
+            dim_line(ui, "Playlist files", 1.0, pal().ink2);
+            ui.horizontal_wrapped(|ui| {
+                for (name, paths) in &lists {
+                    if retro_btn(ui, &format!("{} ({})", name, paths.len()), false).clicked() {
+                        let q: Vec<Track> = paths.iter().filter_map(|p| self.files.iter().find(|f| &f.1 == p).map(|f| f.0.clone())).collect();
+                        if !q.is_empty() {
+                            self.queue = q;
+                            self.play(0);
+                        }
+                    }
+                }
+            });
         }
         if self.files.is_empty() {
             para(ui, &format!("No songs found. Put audio files in your Music or Download folder, or in {}", music_dir().display()), pal().ink2);
@@ -702,4 +719,113 @@ impl App {
             })
         });
     }
+}
+
+const AUDIO: [&str; 7] = ["mp3", "m4a", "flac", "wav", "ogg", "aac", "opus"];
+
+/// Songs and playlist files in a folder and the folders in it (four deep).
+fn walk(d: &std::path::Path, depth: u8, songs: &mut Vec<(Track, std::path::PathBuf)>, lists: &mut Vec<std::path::PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(d) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if depth < 4 && !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')) {
+                walk(&p, depth + 1, songs, lists);
+            }
+            continue;
+        }
+        let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
+        if ["m3u", "m3u8", "pls"].contains(&ext.as_str()) {
+            lists.push(p);
+            continue;
+        }
+        if !AUDIO.contains(&ext.as_str()) {
+            continue;
+        }
+        let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let id = -(1 + (hash(&p.to_string_lossy()) & 0x7fff_ffff_ffff) as i64);
+        let (mut artist, mut title) = match name.split_once(" - ") {
+            Some((a, b)) => (a.to_string(), b.to_string()),
+            None => (String::new(), name.clone()),
+        };
+        let mut album = String::new();
+        if let Some((ta, tt, tal)) = tag_names(&p) {
+            if !tt.is_empty() {
+                title = tt;
+            }
+            if !ta.is_empty() {
+                artist = ta;
+            }
+            album = tal;
+        }
+        if songs.iter().any(|s| s.1 == p) {
+            continue;
+        }
+        songs.push((Track { id, title, artist, album, ..Default::default() }, p));
+    }
+}
+
+/// The artist, title and album in a file's tags (the desktop's).
+fn tag_names(path: &std::path::Path) -> Option<(String, String, String)> {
+    use lofty::prelude::*;
+    let tagged = lofty::read_from_path(path).ok()?;
+    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+    Some((
+        tag.artist().map(|s| s.to_string()).unwrap_or_default(),
+        tag.title().map(|s| s.to_string()).unwrap_or_default(),
+        tag.album().map(|s| s.to_string()).unwrap_or_default(),
+    ))
+}
+
+/// A file's cover picture: the one in its tags, else a cover image in its folder (the desktop's).
+pub(crate) fn file_art(path: &std::path::Path) -> Option<Vec<u8>> {
+    use lofty::prelude::*;
+    if let Ok(tagged) = lofty::read_from_path(path) {
+        for tag in tagged.tags() {
+            if let Some(p) = tag.pictures().first() {
+                return Some(p.data().to_vec());
+            }
+        }
+    }
+    let dir = path.parent()?;
+    for name in ["cover", "folder", "front", "album", "Cover", "Folder", "Front", "AlbumArt"] {
+        for ext in ["jpg", "jpeg", "png"] {
+            if let Ok(b) = std::fs::read(dir.join(format!("{}.{}", name, ext))) {
+                return Some(b);
+            }
+        }
+    }
+    None
+}
+
+/// The songs a playlist file lists, in order (paths beside it work as well as full ones), and its name (the
+/// desktop's).
+fn read_playlist_file(p: &std::path::Path) -> Option<(String, Vec<std::path::PathBuf>)> {
+    let bytes = std::fs::read(p).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let dir = p.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+    let pls = p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pls"));
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim().trim_start_matches('\u{feff}');
+        let entry = if pls {
+            match line.split_once('=') {
+                Some((k, v)) if k.to_ascii_lowercase().starts_with("file") => v.trim(),
+                _ => continue,
+            }
+        } else if line.is_empty() || line.starts_with('#') {
+            continue;
+        } else {
+            line
+        };
+        let entry = entry.strip_prefix("file:///").or_else(|| entry.strip_prefix("file://")).unwrap_or(entry);
+        let entry = entry.replace("%20", " ");
+        let path = std::path::PathBuf::from(&entry);
+        let path = if path.is_absolute() { path } else { dir.join(path) };
+        if path.exists() {
+            out.push(path);
+        }
+    }
+    let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("Playlist").to_string();
+    Some((name, out))
 }

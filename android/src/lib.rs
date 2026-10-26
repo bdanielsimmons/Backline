@@ -115,6 +115,8 @@ pub(crate) enum Msg {
     Done(Result<String, String>),
     /// how far the song is from A440 (cents, confidence)
     Tuning(i64, Option<(i32, f32)>),
+    /// the songs found on the phone, and its playlist files
+    Files(Vec<(Track, std::path::PathBuf)>, Vec<(String, Vec<std::path::PathBuf>)>),
     /// a song's beat (its usual length, the first one, every beat), for locking the metronome to it
     Beats(i64, Option<band::BeatInfo>),
     /// a WAV saved (where) or not
@@ -264,6 +266,9 @@ pub(crate) struct App {
     pub list_open: Option<(String, Vec<Track>)>,
     pub busy: bool,
     pub files: Vec<(Track, std::path::PathBuf)>,
+    /// the playlist files found (name, songs), and a look under way
+    pub file_lists: Vec<(String, Vec<std::path::PathBuf>)>,
+    pub files_busy: bool,
     pub yt: Vec<YtItem>,
     pub yt_link: String,
     pub yt_ask: Option<(String, String, u64)>,
@@ -566,6 +571,8 @@ impl App {
             settings_open: false,
             mt_more: false,
             mt_beat: None,
+            file_lists: Vec::new(),
+            files_busy: false,
             mt_scale: 1.0,
             mt_beat_busy: false,
             mt_beat_failed: Vec::new(),
@@ -850,6 +857,11 @@ impl App {
                             self.note = "Couldn't find a steady beat in this one".to_string();
                         }
                     }
+                }
+                Msg::Files(songs, lists) => {
+                    self.files_busy = false;
+                    self.files = songs;
+                    self.file_lists = lists;
                 }
                 Msg::Tuning(id, r) => {
                     self.tuning_busy = false;

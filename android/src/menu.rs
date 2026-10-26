@@ -108,12 +108,12 @@ impl App {
             pos: self.pos(),
             recent: self.recent.iter().map(QTrack::of).collect(),
         };
-        save_json("session.json", &s);
+        save_json("where.json", &s);
     }
 
     /// Back to where you were at the last run: the queue and the song in it, paused where you left it.
     pub(crate) fn load_session(&mut self) {
-        let s: Session = load_json("session.json");
+        let s: Session = load_json("where.json");
         self.recent = s.recent.iter().map(QTrack::track).collect();
         if s.queue.is_empty() {
             return;

@@ -545,6 +545,24 @@ impl App {
 
     /// Fetch the song's cover once (Tidal's album art, or the clip's thumbnail).
     pub(crate) fn want_cover(&mut self, t: &Track) {
+        // a file on the phone: the picture in its tags, or a cover in its folder
+        if let Some(p) = self.files.iter().find(|f| f.0.id == t.id).map(|f| f.1.clone()) {
+            let key = format!("file:{}", p.display());
+            if self.cover.as_ref().map(|c| &c.0) == Some(&key) {
+                return;
+            }
+            self.cover = Some((key.clone(), None));
+            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+            std::thread::spawn(move || {
+                let img = crate::library::file_art(&p).and_then(|b| image::load_from_memory(&b).ok()).map(|i| {
+                    let i = i.to_rgba8();
+                    egui::ColorImage::from_rgba_unmultiplied([i.width() as usize, i.height() as usize], i.as_raw())
+                });
+                let _ = tx.send(Msg::Cover(key, img));
+                ctx.request_repaint();
+            });
+            return;
+        }
         let url = if let Some(y) = self.yt.iter().find(|y| yt_id(&y.vid) == t.id) {
             Some(format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", y.vid))
         } else {
