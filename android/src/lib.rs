@@ -52,6 +52,8 @@ mod lines;
 mod triad_core;
 #[path = "../../backline/src/ui/si_core.rs"]
 mod si_core;
+#[path = "../../backline/src/ui/staff.rs"]
+mod staff;
 mod menu;
 use menu::{Playlist, QTrack};
 mod library;
@@ -338,6 +340,8 @@ pub(crate) struct App {
     /// FIND A CHORD: the chord picked, shown on the long neck (false: the picker), and which voicing is lit
     pub cf_neck: bool,
     pub cf_voice: usize,
+    /// FIND A CHORD: the staff and piano shown over the neck
+    pub cf_staff: bool,
     /// LINES: alternate triads (0) or an interval cycle (1), the root, the scale or cycle, the start (of the
     /// places the first note can go), the finger, and whether the pickers are pulled up
     pub ln_kind: u8,
@@ -551,6 +555,7 @@ impl App {
             cf_fam: None,
             cf_neck: false,
             cf_voice: 0,
+            cf_staff: false,
             ln_kind: 0,
             ln_root: 0,
             ln_scale: 0,

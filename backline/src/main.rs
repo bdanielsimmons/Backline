@@ -72,6 +72,8 @@ mod music_data;
 mod triad_core;
 #[path = "ui/si_core.rs"]
 mod si_core;
+#[path = "ui/staff.rs"]
+mod staff;
 #[path = "ui/plan.rs"]
 mod plan;
 #[path = "ui/chords.rs"]

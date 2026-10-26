@@ -81,15 +81,34 @@ impl App {
         }
         let (head, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
         ptext(ui.painter(), Pos2::new(head.min.x + 2.0, head.center().y), Align::Min, &q, 3.2, pal().ink);
-        let cr = Rect::from_min_size(Pos2::new(head.max.x - 84.0, head.min.y + 4.0), Vec2::new(84.0, 32.0));
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr));
-        if retro_btn_w(&mut child, "Change", 80.0, false).clicked() {
+        let cr = Rect::from_min_size(Pos2::new(head.max.x - 164.0, head.min.y + 4.0), Vec2::new(164.0, 32.0));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr).layout(egui::Layout::left_to_right(Align::Center)));
+        if retro_btn_w(&mut child, "Staff", 72.0, self.cf_staff).clicked() {
+            self.cf_staff = !self.cf_staff;
+        }
+        if retro_btn_w(&mut child, "Change", 84.0, false).clicked() {
             self.cf_neck = false;
         }
         let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} {}", n, i)).collect();
         let (nl, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
         ptext_fit(ui.painter(), Pos2::new(nl.min.x + 2.0, nl.center().y), Align::Min, &notes.join("   "), 1.1, nl.width(), pal().dim);
         ui.add_space(4.0);
+        // the chord on a staff (as guitar music writes it) and a piano, when asked for
+        if self.cf_staff {
+            let voiced = piano_voicing(c);
+            let w = ui.available_width();
+            let (sr, _) = ui.allocate_exact_size(Vec2::new(w, 104.0), Sense::hover());
+            let notes: Vec<(i32, Option<(usize, u8)>)> = voiced.iter().map(|m| (*m, None)).collect();
+            let pcs = c.pcs.clone();
+            let root = c.root;
+            staff::chord_staff(ui, sr, &notes, lines::key_sharps(c.root), &|m| {
+                let (d, col) = degree_in(m.rem_euclid(12), root, &pcs);
+                (d.to_string(), col)
+            });
+            let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 64.0), Sense::hover());
+            piano_span(ui, pr.shrink2(Vec2::new(2.0, 4.0)), &voiced, false, "cv_piano", Some(c.root), 48, 2);
+            ui.add_space(4.0);
+        }
         let avail = ui.available_rect_before_wrap();
         let body = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - 64.0));
         let col_w = (body.width() * 0.36).min(130.0);
