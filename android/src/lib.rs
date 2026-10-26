@@ -1312,7 +1312,8 @@ impl App {
         font::set_modern(false);
         let name = Rect::from_min_size(lcd.min + Vec2::new(10.0, 6.0), Vec2::new(lcd.width() - 20.0, 18.0));
         // (always moving, Winamp's way, even when the name would fit)
-        let txt = format!("{} - {}  ***  ", t.artists_text(), t.title);
+        let who = t.artists_text();
+        let txt = if who.is_empty() { format!("{}  ***  ", t.title) } else { format!("{} - {}  ***  ", who, t.title) };
         let clip = p.with_clip_rect(name);
         let period = text_w(&txt, 1.2).max(name.width());
         let off = (ui.input(|i| i.time) as f32 * 24.0) % period;
