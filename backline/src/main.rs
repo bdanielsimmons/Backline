@@ -64,6 +64,8 @@ mod album_view;
 mod arpeggios;
 #[path = "ui/atonal.rs"]
 mod atonal;
+#[path = "ui/atonal_core.rs"]
+mod atonal_core;
 #[path = "ui/plan.rs"]
 mod plan;
 #[path = "ui/chords.rs"]

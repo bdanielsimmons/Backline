@@ -41,8 +41,11 @@ mod viz;
 #[path = "../../backline/src/ui/widgets.rs"]
 mod widgets;
 // ---- the phone's screens
+#[path = "../../backline/src/ui/atonal_core.rs"]
+mod atonal_core;
 mod chords;
 mod deck;
+mod lines;
 mod library;
 mod metro;
 mod practice;
@@ -252,6 +255,15 @@ pub(crate) struct App {
     /// FIND A CHORD: the chord picked, shown on the long neck (false: the picker), and which voicing is lit
     pub cf_neck: bool,
     pub cf_voice: usize,
+    /// LINES: alternate triads (0) or an interval cycle (1), the root, the scale or cycle, the start (of the
+    /// places the first note can go), the finger, and whether the pickers are pulled up
+    pub ln_kind: u8,
+    pub ln_root: i32,
+    pub ln_scale: usize,
+    pub ln_cycle: usize,
+    pub ln_start: usize,
+    pub ln_finger: u8,
+    pub ln_sheet: bool,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -381,6 +393,13 @@ impl App {
             cf_fam: None,
             cf_neck: false,
             cf_voice: 0,
+            ln_kind: 0,
+            ln_root: 0,
+            ln_scale: 0,
+            ln_cycle: 0,
+            ln_start: 4,
+            ln_finger: 2,
+            ln_sheet: false,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],
@@ -1186,7 +1205,7 @@ impl eframe::App for App {
                 Tab::Library => self.flat(ui, r, |me, ui| me.library_ui(ui)),
                 Tab::Practice => self.flat(ui, r, |me, ui| me.practice_ui(ui)),
                 Tab::Chords => self.flat(ui, r, |me, ui| me.chords_ui(ui)),
-                Tab::Lines => self.flat(ui, r, |_, ui| para(ui, "Lines is coming in the next step: the long neck, with the line's notes numbered in the order you play them.", pal().ink2)),
+                Tab::Lines => self.flat(ui, r, |me, ui| me.lines_ui(ui)),
                 Tab::Metro => self.flat(ui, r, |me, ui| me.metro_ui(ui)),
                 Tab::Now => self.now_screen(ui, r),
             }
