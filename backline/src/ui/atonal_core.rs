@@ -172,3 +172,133 @@ pub(crate) fn finger_for(fret: u8, pos: u8) -> u8 {
         (fret as i32 - pos as i32 + 1).clamp(1, 4) as u8
     }
 }
+
+/// Every scale the app knows for these lines: the scales and modes, then the synthetic and exotic ones (each set of
+/// notes once), as (name, semitones over the root).
+pub(crate) fn scale_list() -> Vec<(&'static str, Vec<i32>)> {
+    let mut out: Vec<(&'static str, Vec<i32>)> = crate::music_data::SCALES.iter().map(|(n, s)| (*n, s.to_vec())).collect();
+    for e in crate::music_data::EXOTICS.iter() {
+        let mut st = crate::music_data::exotic_steps(e);
+        st.sort();
+        st.dedup();
+        if !out.iter().any(|o| o.1 == st) {
+            out.push((e.name, st));
+        }
+    }
+    out
+}
+
+/// TETRACHORDS JOINED: the synthetic scale of one tetrachord on the root and another on the 5th (indexes of
+/// crate::music_data::TETRACHORDS), as semitones over the root, low to high.
+pub(crate) fn joined_scale(lower: usize, upper: usize) -> Vec<i32> {
+    let lo = crate::music_data::TETRACHORDS[lower % crate::music_data::TETRACHORDS.len()].1;
+    let up = crate::music_data::TETRACHORDS[upper % crate::music_data::TETRACHORDS.len()].1;
+    let mut st: Vec<i32> = lo.iter().copied().chain(up.iter().map(|x| (x + 7) % 12)).collect();
+    st.sort();
+    st.dedup();
+    st
+}
+
+/// The joined scale played up in four-note groups from each of its notes in turn, an octave of them.
+pub(crate) fn tetrachord_line(root: i32, lower: usize, upper: usize) -> Vec<i32> {
+    let st = joined_scale(lower, upper);
+    let n = st.len();
+    let base = base_of(root);
+    let deg = |i: usize| base + st[i % n] + 12 * (i / n) as i32;
+    (0..n).flat_map(|k| (k..k + 4).map(deg).collect::<Vec<_>>()).collect()
+}
+
+/// An interval in semitones as a short name, signed by direction: "+m3", "-P4", "+M9", "-P5+8" (a 5th and an
+/// octave); "0" for a repeat.
+pub(crate) fn interval_name(semis: i32) -> String {
+    const NAMES: [&str; 12] = ["P8", "m2", "M2", "m3", "M3", "P4", "TT", "P5", "m6", "M6", "m7", "M7"];
+    let a = semis.abs();
+    if a == 0 {
+        return "0".to_string();
+    }
+    let name = match crate::music_data::FREE.iter().find(|f| f.2 == a) {
+        Some(f) if a != 6 => f.0.to_string(),
+        _ if a < 12 => NAMES[a as usize].to_string(),
+        // past a 10th: the simple interval and how many octaves over it
+        _ => format!("{}+8", NAMES[(a % 12) as usize]),
+    };
+    format!("{}{}", if semis > 0 { "+" } else { "-" }, name)
+}
+
+/// The three-note cells a line is made of: the prime form of every three notes running (with three different pitch
+/// classes), each once with how often it comes, the most often first.
+pub(crate) fn trichords(line: &[i32]) -> Vec<(Vec<i32>, usize)> {
+    let mut out: Vec<(Vec<i32>, usize)> = Vec::new();
+    for w in line.windows(3) {
+        let mut pcs: Vec<i32> = w.iter().map(|m| m.rem_euclid(12)).collect();
+        pcs.sort();
+        pcs.dedup();
+        if pcs.len() < 3 {
+            continue;
+        }
+        let p = crate::music_data::prime_form(&pcs);
+        match out.iter_mut().find(|o| o.0 == p) {
+            Some(o) => o.1 += 1,
+            None => out.push((p, 1)),
+        }
+    }
+    out.sort_by(|a, b| b.1.cmp(&a.1));
+    out
+}
+
+/// The tetrachord (an index of crate::music_data::TETRACHORDS) four pitch classes make, read up from any of them.
+pub(crate) fn tetrachord_of(pcs: &[i32]) -> Option<usize> {
+    let mut v: Vec<i32> = pcs.iter().map(|m| m.rem_euclid(12)).collect();
+    v.sort();
+    v.dedup();
+    if v.len() != 4 {
+        return None;
+    }
+    (0..4).find_map(|k| {
+        let mut rel: Vec<i32> = v.iter().map(|x| (x - v[k]).rem_euclid(12)).collect();
+        rel.sort();
+        crate::music_data::TETRACHORDS.iter().position(|t| t.1.as_slice() == rel.as_slice())
+    })
+}
+
+/// The named tetrachords among every four notes running, each once with how often, the most often first.
+pub(crate) fn tetrachords(line: &[i32]) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for w in line.windows(4) {
+        if let Some(t) = tetrachord_of(w) {
+            match out.iter_mut().find(|o| o.0 == t) {
+                Some(o) => o.1 += 1,
+                None => out.push((t, 1)),
+            }
+        }
+    }
+    out.sort_by(|a, b| b.1.cmp(&a.1));
+    out
+}
+
+/// The app's scales (scale_list) that hold every note of the line, in every key: (key, scale's index), the
+/// synthetic and exotic ones first.
+pub(crate) fn scales_holding(line: &[i32]) -> Vec<(i32, usize)> {
+    let mut pcs: Vec<i32> = line.iter().map(|m| m.rem_euclid(12)).collect();
+    pcs.sort();
+    pcs.dedup();
+    let list = scale_list();
+    let exotic_from = crate::music_data::SCALES.len();
+    let mut out: Vec<(i32, usize)> = Vec::new();
+    for (i, (_, st)) in list.iter().enumerate() {
+        for key in 0..12 {
+            if pcs.iter().all(|p| st.contains(&(p - key).rem_euclid(12))) {
+                out.push((key, i));
+            }
+        }
+    }
+    out.sort_by_key(|(k, i)| (*i < exotic_from, *i, *k));
+    out
+}
+
+/// The line's syllables: moveable Do (its first note is Do) and fixed Do (C is Do), each note spelt the way it moves.
+pub(crate) fn syllables(line: &[i32]) -> (Vec<&'static str>, Vec<&'static str>) {
+    let moveable = crate::music_data::line_words(line, 0).into_iter().map(|w| w.1).collect();
+    let fixed = crate::music_data::line_words(line, 1).into_iter().map(|w| w.1).collect();
+    (moveable, fixed)
+}

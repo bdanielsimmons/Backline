@@ -43,6 +43,8 @@ mod widgets;
 // ---- the phone's screens
 #[path = "../../backline/src/ui/atonal_core.rs"]
 mod atonal_core;
+#[path = "../../backline/src/ui/music_data.rs"]
+mod music_data;
 mod chords;
 mod deck;
 mod lines;
@@ -266,6 +268,12 @@ pub(crate) struct App {
     pub ln_sheet: bool,
     /// when the line being heard ends (its Play button reads Stop till then)
     pub ln_end: Option<Instant>,
+    /// LINES: the two tetrachords joined, the tempo, notes to a beat, and round and round
+    pub ln_lower: usize,
+    pub ln_upper: usize,
+    pub ln_bpm: u32,
+    pub ln_sub: u32,
+    pub ln_loop: bool,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -403,6 +411,11 @@ impl App {
             ln_finger: 2,
             ln_sheet: false,
             ln_end: None,
+            ln_lower: 0,
+            ln_upper: 0,
+            ln_bpm: 100,
+            ln_sub: 2,
+            ln_loop: false,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],
