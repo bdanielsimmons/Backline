@@ -793,7 +793,8 @@ impl App {
         crate::views::dim_line(ui, "CLICK A DAY FOR ITS NOTES", 1.0, pal().dim);
     }
 
-    /// A box to write a new keeper in, and ADD (Enter works too). `id`: its own per place, as two show on one page.
+    /// A box to write a new keeper in, and ADD (Enter works too). `id`: its own per place (the fun block's and the KEEPERS list's show on one page, and one id between them
+    /// made each click away from one box drop the other's typing).
     fn keeper_add(&mut self, ui: &mut egui::Ui, id: u32) {
         let mut add = false;
         ui.horizontal(|ui| {
