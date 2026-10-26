@@ -6,70 +6,99 @@ use crate::practice::text_box;
 use crate::*;
 
 impl App {
+    /// MUSIC, the Tidal app's way: MY TRACKS first (your liked songs up front), HOME (new releases, albums, mixes)
+    /// and SEARCH, with the phone's files and YouTube links as two icons at the right. A page opened from any of
+    /// them (an album, an artist...) shows over it, with a way back.
     pub(crate) fn library_ui(&mut self, ui: &mut egui::Ui) {
-        if self.lib_tab == 9 {
-            self.music_home(ui);
-            return;
-        }
-        // inside a source: a way back to the tiles, and its name
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
         if self.lib_tab == 4 {
             self.page_ui(ui);
             return;
         }
-        let name = ["Tidal", "Files", "YouTube", "My tracks"][(self.lib_tab as usize).min(3)];
-        ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &format!("<  {}", name), 1.8, pal().ink);
-        if resp.clicked() {
-            self.lib_tab = 9;
-            return;
+        if self.lib_tab > 5 {
+            self.lib_tab = 3;
+        }
+        let cur = match self.lib_tab {
+            3 => 0,
+            5 => 1,
+            0 => 2,
+            _ => 9,
+        };
+        let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+        if let Some(i) = seg_tabs(ui, Rect::from_min_max(row.min, Pos2::new(row.max.x - 96.0, row.max.y)), &["My tracks", "Home", "Search"], cur, "music_seg") {
+            self.list_open = None;
+            self.lib_tab = [3, 5, 0][i];
+            if i == 0 {
+                self.tidal_load(self.my_page.min(1) + 1);
+            }
+        }
+        // files on the phone and YouTube links, as two icons
+        for (k, (tab, icon)) in [(1u8, 1usize), (2, 2)].iter().enumerate() {
+            let c = Pos2::new(row.max.x - 68.0 + k as f32 * 46.0, row.center().y);
+            let r = Rect::from_center_size(c, Vec2::splat(40.0));
+            let resp = ui.interact(r, ui.id().with(("src_icon", k)), Sense::click());
+            let on = self.lib_tab == *tab;
+            if on || resp.is_pointer_button_down_on() {
+                ui.painter().rect_filled(r, 20.0, pal().beige_lt);
+            }
+            src_icon(ui.painter(), c, *icon, if on { pal().red } else { pal().ink2 });
+            if resp.clicked() {
+                self.lib_tab = *tab;
+                if *tab == 1 {
+                    self.scan_files();
+                }
+            }
         }
         ui.add_space(4.0);
         match self.lib_tab {
             1 => self.files_ui(ui),
             2 => self.yt_ui(ui),
             3 => self.my_tracks_ui(ui),
+            5 => self.home_ui(ui),
             _ => self.tidal_ui(ui),
         }
     }
 
-    /// MUSIC's home: four big tiles (Tidal, Files, YouTube, Liked), then what was played lately.
-    fn music_home(&mut self, ui: &mut egui::Ui) {
-        let tiles = [("Tidal", "Search"), ("Files", "On this phone"), ("YouTube", "Paste a link"), ("My tracks", "Liked, playlists, downloaded")];
-        let w = (ui.available_width() - 10.0) / 2.0;
-        let h = 92.0;
-        let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 2.0 * h + 10.0), Sense::hover());
-        for (k, (name, sub)) in tiles.iter().enumerate() {
-            let r = Rect::from_min_size(area.min + Vec2::new((k % 2) as f32 * (w + 10.0), (k / 2) as f32 * (h + 10.0)), Vec2::new(w, h));
-            let resp = ui.interact(r, ui.id().with(("src", k)), Sense::click());
-            let p = ui.painter();
-            p.rect_filled(r, 10.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
-            src_icon(p, Pos2::new(r.center().x, r.min.y + 26.0), k, pal().red);
-            ptext(p, Pos2::new(r.center().x, r.min.y + 56.0), Align::Center, name, 1.7, pal().ink);
-            ptext_fit(p, Pos2::new(r.center().x, r.min.y + 76.0), Align::Center, sub, 1.1, w - 12.0, pal().dim);
-            if resp.clicked() {
-                match k {
-                    3 => {
-                        self.lib_tab = 3;
-                        self.tidal_load(self.my_page + 1);
-                    }
-                    _ => {
-                        self.lib_tab = k as u8;
-                        if k == 1 {
-                            self.scan_files();
-                        }
+    /// HOME: what you played lately, then Tidal's home page (new releases, albums, mixes, playlists).
+    fn home_ui(&mut self, ui: &mut egui::Ui) {
+        if !self.logged_in {
+            self.login_ui(ui);
+            return;
+        }
+        if self.home.is_none() && !self.busy {
+            self.busy = true;
+            self.spawn(|api| {
+                Msg::Library(api.home().map(|mut p| {
+                    p.title = "home".to_string();
+                    p
+                }))
+            });
+        }
+        if self.busy && self.home.is_none() {
+            dim_line(ui, "Loading...", 1.0, pal().ink2);
+        }
+        let rows = self.home.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
+        let recent = self.recent.clone();
+        egui::ScrollArea::vertical().id_salt("home_all").auto_shrink([false, false]).show(ui, |ui| {
+            if !recent.is_empty() {
+                dim_line(ui, "Played lately", 1.0, pal().ink2);
+                let playing = self.cur_track().map(|t| t.id);
+                let mut play = None;
+                for (i, t) in recent.iter().take(6).enumerate() {
+                    let (r, dots) = song_row(ui, i, t, playing == Some(t.id));
+                    if dots {
+                        self.song_menu = Some((t.clone(), None));
+                        self.menu_pl = None;
+                    } else if r.clicked() {
+                        play = Some(i);
                     }
                 }
+                if let Some(i) = play {
+                    self.queue = recent.clone();
+                    self.play(i);
+                }
             }
-        }
-        ui.add_space(14.0);
-        ptext(ui.painter(), ui.cursor().min + Vec2::new(2.0, 6.0), Align::Min, "RECENT", 1.1, pal().ink2);
-        ui.add_space(18.0);
-        if self.recent.is_empty() {
-            para(ui, "What you play shows up here.", pal().dim);
-        } else {
-            let recent = self.recent.clone();
-            self.song_list(ui, &recent, "recent");
-        }
+            self.card_rows_inline(ui, &rows);
+        });
     }
 
     /// A list of songs; tap one to play the list from it. Over a list of a few: PLAY, SHUFFLE, PLAY NEXT and ADD TO
@@ -164,6 +193,10 @@ impl App {
             }
         }
         ui.add_space(4.0);
+        // liked songs and playlists load the first time they show
+        if self.my_page < 2 && !self.busy && ((self.my_page == 0 && self.liked.is_empty()) || (self.my_page == 1 && self.lists.is_empty())) {
+            self.tidal_load(self.my_page + 1);
+        }
         // albums and artists you saved, and new from the artists you follow
         if self.my_page == 2 || self.my_page == 3 {
             if self.busy {
@@ -329,16 +362,23 @@ impl App {
                 }
                 let r = self.results.clone();
                 if r.is_empty() && self.result_rows.is_empty() {
-                    // nothing searched yet: Tidal's home page
-                    if self.home.is_none() && !self.busy {
-                        self.busy = true;
-                        self.spawn(|api| Msg::Library(api.home().map(|mut p| {
-                            p.title = "home".to_string();
-                            p
-                        })));
+                    // nothing searched yet: the searches made before, to tap again
+                    let mut past: Vec<String> = self.search_cache.keys().cloned().collect();
+                    past.sort();
+                    if !past.is_empty() {
+                        dim_line(ui, "Searched before", 1.0, pal().ink2);
+                        ui.horizontal_wrapped(|ui| {
+                            for q in past {
+                                if retro_btn(ui, &q, false).clicked() {
+                                    if let Some(p) = self.search_cache.get(&q) {
+                                        self.results = p.tracks.clone();
+                                        self.result_rows = p.rows.clone();
+                                    }
+                                    self.query = q.clone();
+                                }
+                            }
+                        });
                     }
-                    let rows = self.home.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
-                    self.card_rows(ui, &rows, "home_rows");
                     return;
                 }
                 let rows = self.result_rows.clone();
@@ -425,7 +465,7 @@ impl App {
                 self.page_cards.pop();
             }
             if self.pages.is_empty() {
-                self.lib_tab = 9;
+                self.lib_tab = 3;
             }
             return;
         }
@@ -434,7 +474,7 @@ impl App {
             return;
         }
         let Some(page) = self.pages.last().cloned() else {
-            self.lib_tab = 9;
+            self.lib_tab = 3;
             return;
         };
         if !page.subtitle.is_empty() {

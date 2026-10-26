@@ -413,7 +413,7 @@ impl App {
             keyboard: false,
             zoom_set: false,
             code: None,
-            lib_tab: 9,
+            lib_tab: 3,
             recent: Vec::new(),
             search_cache: HashMap::new(),
             result_rows: Vec::new(),
@@ -1608,6 +1608,26 @@ pub(crate) fn long_neck(p: &egui::Painter, r: Rect, c: &theory::ChordNotes, lit:
             }
         }
     }
+}
+
+/// A pill switch of a few choices filling `r`, the current one filled; returns the one tapped.
+pub(crate) fn seg_tabs(ui: &mut egui::Ui, r: Rect, items: &[&str], cur: usize, id: &str) -> Option<usize> {
+    let p = ui.painter();
+    p.rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), r.height() / 2.0, pal().beige_lt);
+    let w = (r.width() - 6.0) / items.len() as f32;
+    let mut hit = None;
+    for (k, name) in items.iter().enumerate() {
+        let c = Rect::from_min_size(Pos2::new(r.min.x + 3.0 + k as f32 * w, r.min.y + 5.0), Vec2::new(w, r.height() - 10.0));
+        let resp = ui.interact(c, ui.id().with((id, k)), Sense::click());
+        if k == cur {
+            ui.painter().rect_filled(c, c.height() / 2.0, pal().ink);
+        }
+        ptext_fit(ui.painter(), c.center(), Align::Center, name, 1.3, w - 8.0, if k == cur { pal().beige } else { pal().ink2 });
+        if resp.clicked() {
+            hit = Some(k);
+        }
+    }
+    hit
 }
 
 /// The shuffle sign: two crossing paths with arrowheads.
