@@ -46,6 +46,8 @@ mod music_data;
 mod chords;
 mod deck;
 mod lines;
+mod menu;
+use menu::{Playlist, QTrack};
 mod library;
 mod metro;
 mod practice;
@@ -99,13 +101,21 @@ pub(crate) const EQ_PRESETS: [(&str, [f32; 10]); 4] = [
 pub(crate) const SPEEDS: [u32; 7] = [50, 75, 100, 125, 150, 200, 250];
 
 pub(crate) enum Msg {
+    /// your own Tidal playlists (uuid, name), a Tidal page (album, artist, radio, home, a card opened), a song's
+    /// credits, and a job done (what to say)
+    OwnLists(Result<Vec<(String, String)>, String>),
+    Page(Result<api::Page, String>),
+    Credits(Result<Vec<(String, String)>, String>),
+    Done(Result<String, String>),
     /// how far the song is from A440 (cents, confidence)
     Tuning(i64, Option<(i32, f32)>),
     /// a WAV saved (where) or not
     Exported(Result<String, String>),
     Code(Result<DeviceCode, String>),
     LoggedIn(Result<(), String>),
-    Found(Result<Vec<Track>, String>),
+    Found(Result<api::Page, String>),
+    /// your Tidal library (albums, artists, new from artists you follow)
+    Library(Result<api::Page, String>),
     Liked(Result<Vec<Track>, String>),
     Lists(Result<Vec<Card>, String>),
     ListTracks(String, Result<Vec<Track>, String>),
@@ -204,10 +214,38 @@ pub(crate) struct App {
     /// what was played lately, newest first (this session)
     pub recent: Vec<Track>,
     /// Tidal searches already made (query -> songs), and the one on its way
-    pub search_cache: HashMap<String, Vec<Track>>,
+    pub search_cache: HashMap<String, api::Page>,
+    /// the search's albums, artists and playlists; Tidal's home page; your library page; a long list's filter
+    pub result_rows: Vec<(String, Vec<api::Card>)>,
+    pub home: Option<api::Page>,
+    pub lib_page: Option<api::Page>,
+    pub list_filter: String,
+    /// the card each open page came from (to save an album or follow an artist), and the one on its way
+    pub page_cards: Vec<Option<api::Card>>,
+    pub page_pending: Option<api::Card>,
     pub search_q: String,
     /// MY TRACKS: 0 liked, 1 playlists, 2 downloaded (the songs kept on this phone)
     pub my_page: u8,
+    /// the song menu's page (0 the menu, 1 playlists, 2 credits), the playlist song it was opened on, a new
+    /// playlist's name, the credits, and your own Tidal playlists
+    pub menu_mode: u8,
+    pub menu_pl: Option<(usize, usize)>,
+    pub menu_new: String,
+    pub credits: Vec<(String, String)>,
+    pub own_lists: Vec<(String, String)>,
+    /// your playlists on the phone, and the one open
+    pub playlists: Vec<Playlist>,
+    pub pl_open: Option<usize>,
+    /// where the restored song was (it starts from there), the last run's place loaded, the last save of it
+    pub resume_at: Option<f32>,
+    pub session_loaded: bool,
+    pub session_t: Option<Instant>,
+    /// Tidal pages opened (albums, artists, playlists, radios), the newest on top, and one on its way
+    pub pages: Vec<api::Page>,
+    pub page_busy: bool,
+    /// the queue in reorder mode, and the song being dragged (its place, where the finger is)
+    pub q_reorder: bool,
+    pub q_drag: Option<(usize, f32)>,
     pub tidal_page: u8,
     pub query: String,
     pub searching: bool,
@@ -378,8 +416,28 @@ impl App {
             lib_tab: 9,
             recent: Vec::new(),
             search_cache: HashMap::new(),
+            result_rows: Vec::new(),
+            home: None,
+            lib_page: None,
+            list_filter: String::new(),
+            page_cards: Vec::new(),
+            page_pending: None,
             search_q: String::new(),
             my_page: 0,
+            menu_mode: 0,
+            menu_pl: None,
+            menu_new: String::new(),
+            credits: Vec::new(),
+            own_lists: Vec::new(),
+            playlists: load_json("playlists.json"),
+            pl_open: None,
+            resume_at: None,
+            session_loaded: false,
+            session_t: None,
+            pages: Vec::new(),
+            page_busy: false,
+            q_reorder: false,
+            q_drag: None,
             tidal_page: 0,
             query: String::new(),
             searching: false,
@@ -554,6 +612,9 @@ impl App {
 
     /// Play the queue's song `i`: its audio (Tidal, a file, a YouTube clip), the loop set back.
     pub(crate) fn play(&mut self, i: usize) {
+        if self.cur != Some(i) {
+            self.resume_at = None;
+        }
         let Some(t) = self.queue.get(i).cloned() else { return };
         self.recent.retain(|r| r.id != t.id || r.title != t.title);
         self.recent.insert(0, t.clone());
@@ -685,6 +746,40 @@ impl App {
                     self.logged_in = true;
                     self.note.clear();
                 }
+                Msg::OwnLists(r) => match r {
+                    Ok(l) => self.own_lists = l,
+                    Err(e) => self.note = format!("Couldn't get your playlists: {}", e),
+                },
+                Msg::Page(r) => {
+                    self.page_busy = false;
+                    match r {
+                        Ok(p) => {
+                            cache::know(&p.tracks);
+                            self.pages.push(p);
+                            self.page_cards.push(self.page_pending.take());
+                        }
+                        Err(e) => self.note = format!("Couldn't open it: {}", e),
+                    }
+                }
+                Msg::Library(r) => {
+                    self.busy = false;
+                    match r {
+                        Ok(p) if p.title == "home" => self.home = Some(p),
+                        Ok(p) => self.lib_page = Some(p),
+                        Err(e) => self.note = format!("Couldn't load it: {}", e),
+                    }
+                }
+                Msg::Credits(r) => match r {
+                    Ok(c) if !c.is_empty() => self.credits = c,
+                    Ok(_) => self.credits = vec![("Credits".to_string(), "None listed".to_string())],
+                    Err(e) => self.credits = vec![("Couldn't get them".to_string(), e)],
+                },
+                Msg::Done(r) => {
+                    self.note = match r {
+                        Ok(s) => s,
+                        Err(e) => format!("That didn't work: {}", e),
+                    }
+                }
                 Msg::Tuning(id, r) => {
                     self.tuning_busy = false;
                     match r {
@@ -705,9 +800,11 @@ impl App {
                 Msg::Found(r) => {
                     self.searching = false;
                     match r {
-                        Ok(t) => {
-                            self.search_cache.insert(self.search_q.clone(), t.clone());
-                            self.results = t;
+                        Ok(p) => {
+                            cache::know(&p.tracks);
+                            self.results = p.tracks.clone();
+                            self.result_rows = p.rows.clone();
+                            self.search_cache.insert(self.search_q.clone(), p);
                         }
                         Err(e) => self.note = format!("SEARCH FAILED: {}", e),
                     }
@@ -799,6 +896,10 @@ impl App {
                             self.wraps = self.player.ctl.wraps();
                             self.sync_player();
                             self.player.send(Cmd::Play(b));
+                            if let Some(p) = self.resume_at.take() {
+                                self.player.send(Cmd::Seek(p));
+                            }
+                            self.save_session();
                             // the next Tidal song in line is fetched ahead and kept, so it starts at once
                             let next = self.cur.and_then(|i| self.queue.get(i + 1)).cloned();
                             if let Some(n) = next.filter(|n| n.id > 0 && !cache::has(n.id) && !self.files.iter().any(|f| f.0.id == n.id)) {
@@ -845,11 +946,25 @@ impl App {
                 }
             }
         }
-        // the sleep timer: pause when it runs out
-        if self.sleep_at.is_some_and(|t| Instant::now() >= t) {
-            self.sleep_at = None;
-            if !self.paused {
-                self.play_pause();
+        // the sleep timer: fade out over the last 20 seconds, then pause (the volume comes back for next time)
+        if let Some(at) = self.sleep_at {
+            let left = at.saturating_duration_since(Instant::now()).as_secs_f32();
+            if left <= 0.0 {
+                self.sleep_at = None;
+                if !self.paused {
+                    self.play_pause();
+                }
+                self.player.send(Cmd::Volume(self.volume * self.volume));
+                self.set_note("Sleep timer done");
+            } else if left < 20.0 {
+                let k = left / 20.0;
+                self.player.send(Cmd::Volume(self.volume * self.volume * k));
+            }
+        }
+        if !self.paused && !self.stopped && self.session_t.is_none_or(|t| t.elapsed().as_secs() >= 15) {
+            self.session_t = Some(Instant::now());
+            if self.cur.is_some() {
+                self.save_session();
             }
         }
         // the trainer: every N times round the loop, a little faster (up to 100%)
@@ -985,12 +1100,23 @@ impl App {
     /// While browsing: the song playing, in a plain bar above the tabs (tap it for Now Playing).
     fn now_bar(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.cur_track().cloned() else { return };
+        self.want_cover(&t);
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
         let p = ui.painter();
         p.rect_filled(r, 8.0, pal().beige_lt);
         let art = Rect::from_min_size(r.min + Vec2::new(6.0, 6.0), Vec2::splat(34.0));
-        p.rect_filled(art, 6.0, pal().row_sel);
-        tab_icon(p, art.center(), 0, pal().bar_txt);
+        match self.cover.as_ref().and_then(|c| c.1.as_ref()) {
+            Some(tex) => {
+                let mut img = egui::epaint::RectShape::filled(art, 6.0, Color32::WHITE);
+                img.fill_texture_id = tex.id();
+                img.uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                p.add(img);
+            }
+            None => {
+                p.rect_filled(art, 6.0, pal().row_sel);
+                tab_icon(p, art.center(), 0, pal().bar_txt);
+            }
+        }
         let tx = art.max.x + 8.0;
         let tw = r.max.x - 44.0 - tx;
         ptext_fit(p, Pos2::new(tx, r.min.y + 16.0), Align::Min, &t.title, 1.4, tw, pal().ink);
@@ -1027,7 +1153,7 @@ impl App {
             return;
         };
         // the cover
-        let side = r.width().min(r.height() - 370.0).max(120.0);
+        let side = r.width().min(r.height() - 430.0).max(110.0);
         let cv = Rect::from_min_size(Pos2::new(r.center().x - side / 2.0, back.max.y + 10.0), Vec2::splat(side));
         self.want_cover(&t);
         let p = ui.painter().clone();
@@ -1085,7 +1211,7 @@ impl App {
         ptext(&p, Pos2::new(r.min.x, sk.max.y + 8.0), Align::Min, &format!("{}:{:02}", pos as u32 / 60, pos as u32 % 60), 1.1, pal().trim);
         ptext(&p, Pos2::new(r.max.x, sk.max.y + 8.0), Align::Max, &format!("-{}:{:02}", left as u32 / 60, left as u32 % 60), 1.1, pal().trim);
         y = sk.max.y + 26.0;
-        // the transport
+        // the transport: shuffle, back, play, on, repeat
         let mid = Pos2::new(r.center().x, y + 32.0);
         let play = Rect::from_center_size(mid, Vec2::splat(64.0));
         p.circle_filled(mid, 32.0, pal().red);
@@ -1093,7 +1219,7 @@ impl App {
         if ui.interact(play, ui.id().with("now_play"), Sense::click()).clicked() {
             self.play_pause();
         }
-        for (dx, fwd) in [(-80.0, false), (80.0, true)] {
+        for (dx, fwd) in [(-72.0, false), (72.0, true)] {
             let c = mid + Vec2::new(dx, 0.0);
             skip_glyph(&p, c, fwd, pal().bar_txt);
             if ui.interact(Rect::from_center_size(c, Vec2::splat(44.0)), ui.id().with(("now_skip", fwd)), Sense::click()).clicked() {
@@ -1104,10 +1230,95 @@ impl App {
                 }
             }
         }
+        let sh = mid + Vec2::new(-136.0, 0.0);
+        shuffle_glyph(&p, sh, if self.shuffle { pal().red } else { pal().trim });
+        if ui.interact(Rect::from_center_size(sh, Vec2::splat(44.0)), ui.id().with("now_shuf"), Sense::click()).clicked() {
+            self.shuffle = !self.shuffle;
+            self.set_note(if self.shuffle { "Shuffle on" } else { "Shuffle off" });
+        }
+        let rp = mid + Vec2::new(136.0, 0.0);
+        loop_glyph(&p, rp, if self.repeat != Repeat::Off { pal().red } else { pal().trim });
+        if self.repeat == Repeat::One {
+            ptext(&p, rp + Vec2::new(0.0, 1.0), Align::Center, "1", 0.8, pal().red);
+        }
+        if ui.interact(Rect::from_center_size(rp, Vec2::splat(44.0)), ui.id().with("now_rep"), Sense::click()).clicked() {
+            self.repeat = match self.repeat {
+                Repeat::Off => Repeat::All,
+                Repeat::All => Repeat::One,
+                Repeat::One => Repeat::Off,
+            };
+            self.set_note(match self.repeat {
+                Repeat::Off => "Repeat off",
+                Repeat::All => "Repeat the queue",
+                Repeat::One => "Repeat this song",
+            });
+        }
+        // like, speed, sleep, and the volume
+        let row = play.max.y + 14.0;
+        let chip = |ui: &mut egui::Ui, x: f32, w: f32, id: &str, on: bool| -> (Rect, bool) {
+            let cr = Rect::from_min_size(Pos2::new(x, row), Vec2::new(w, 34.0));
+            let resp = ui.interact(cr, ui.id().with(id), Sense::click());
+            ui.painter().rect_filled(cr, 17.0, if on || resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
+            (cr, resp.clicked())
+        };
+        let mut x = r.min.x;
+        let tidal = t.id > 0 && !self.files.iter().any(|f| f.0.id == t.id) && !self.yt.iter().any(|y| yt_id(&y.vid) == t.id);
+        if tidal && self.logged_in {
+            let liked = self.liked_ids.contains(&t.id);
+            let (cr, hit) = chip(ui, x, 44.0, "now_like", false);
+            src_icon(&p, cr.center(), 4, if liked { pal().red } else { pal().ink });
+            if hit {
+                self.set_like(&t, !liked);
+            }
+            x += 52.0;
+        }
+        let s_txt = {
+            let v = format!("{:.2}", self.speed as f32 / 100.0);
+            format!("{}x", v.trim_end_matches('0').trim_end_matches('.'))
+        };
+        let (cr, hit) = chip(ui, x, 58.0, "now_speed", self.speed != 100);
+        ptext(&p, cr.center(), Align::Center, &s_txt, 1.3, pal().ink);
+        if hit {
+            self.speed = SPEEDS.iter().copied().find(|&s| s > self.speed).unwrap_or(SPEEDS[0]);
+            self.sync_player();
+        }
+        x += 66.0;
+        let sleeping = self.sleep_at.map(|s| s.saturating_duration_since(Instant::now()).as_secs().div_ceil(60));
+        let (cr, hit) = chip(ui, x, 76.0, "now_sleep", sleeping.is_some());
+        ptext(&p, cr.center(), Align::Center, &sleeping.map_or("Sleep".to_string(), |m| format!("{} min", m)), 1.3, pal().ink);
+        if hit {
+            // 15 / 30 / 45 / 60 / 90 minutes, then off
+            let next = match sleeping {
+                None => Some(15),
+                Some(m) if m <= 15 => Some(30),
+                Some(m) if m <= 30 => Some(45),
+                Some(m) if m <= 45 => Some(60),
+                Some(m) if m <= 60 => Some(90),
+                _ => None,
+            };
+            self.sleep_at = next.map(|m| Instant::now() + Duration::from_secs(m * 60));
+            self.player.send(Cmd::Volume(self.volume * self.volume));
+            self.set_note(&match next {
+                Some(m) => format!("Sleep in {} min", m),
+                None => "Sleep timer off".to_string(),
+            });
+        }
+        x += 84.0;
+        // the volume: drag along it
+        let vr = Rect::from_min_max(Pos2::new(x + 4.0, row), Pos2::new(r.max.x, row + 34.0));
+        let vresp = ui.interact(vr, ui.id().with("now_vol"), Sense::click_and_drag());
+        if let Some(pp) = vresp.interact_pointer_pos().filter(|_| vresp.dragged() || vresp.clicked()) {
+            self.set_volume((pp.x - vr.min.x) / vr.width());
+        }
+        let vl = Rect::from_center_size(vr.center(), Vec2::new(vr.width(), 4.0));
+        p.rect_filled(vl, 2.0, pal().beige_dk);
+        p.rect_filled(Rect::from_min_max(vl.min, Pos2::new(vl.min.x + vl.width() * self.volume, vl.max.y)), 2.0, pal().trim);
+        p.circle_filled(Pos2::new(vl.min.x + vl.width() * self.volume, vl.center().y), 7.0, pal().bar_txt);
         // Practice and Metronome: two even buttons, an icon and a word each
+        let play = Rect::from_min_max(play.min, Pos2::new(play.max.x, row + 34.0));
         let bw = (r.width() - 10.0) / 2.0;
         for (k, (name, icon)) in [("Practice", 2), ("Metronome", 9)].iter().enumerate() {
-            let br = Rect::from_min_size(Pos2::new(r.min.x + k as f32 * (bw + 10.0), play.max.y + 16.0), Vec2::new(bw, 40.0));
+            let br = Rect::from_min_size(Pos2::new(r.min.x + k as f32 * (bw + 10.0), play.max.y + 14.0), Vec2::new(bw, 40.0));
             let resp = ui.interact(br, ui.id().with(("now_btn", k)), Sense::click());
             p.rect_filled(br, 20.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
             let c = Pos2::new(br.center().x - text_w(name, 1.4) / 2.0 - 4.0, br.center().y);
@@ -1139,94 +1350,6 @@ impl App {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner.shrink(10.0)).layout(egui::Layout::top_down(Align::Min)));
         child.set_clip_rect(inner);
         body(self, &mut child);
-    }
-
-    /// The menu of a song held down (the desktop's right-click): play it next, add it to the queue, and in the
-    /// queue move it or take it out.
-    fn song_menu_ui(&mut self, ctx: &egui::Context) {
-        let Some((t, qi)) = self.song_menu.clone() else { return };
-        let screen = ctx.screen_rect();
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("menu_dim")))
-            .rect_filled(screen, 0.0, Color32::from_black_alpha(150));
-        let mut close = false;
-        // it slides up from the bottom
-        let k = ctx.animate_bool_with_time(egui::Id::new("song_menu_in"), true, 0.18);
-        let drop_px = (1.0 - k) * 320.0;
-        // a tap on the dimmed screen closes it
-        if ctx.input(|i| i.pointer.any_click()) && !ctx.is_pointer_over_area() {
-            close = true;
-        }
-        egui::Area::new(egui::Id::new("song_menu")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_BOTTOM, Vec2::new(0.0, drop_px)).show(ctx, |ui| {
-            egui::Frame::none().fill(pal().beige).stroke(Stroke::new(2.0, pal().edge)).inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 34.0 }).show(ui, |ui| {
-                ui.set_width(screen.width() - 24.0);
-                ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
-                title_line(ui, &fit(&t.title.to_uppercase(), 2.0, screen.width() - 80.0), 2.0, pal().ink);
-                dim_line(ui, &t.artists_text().to_uppercase(), 1.0, pal().ink2);
-                let w = ui.available_width();
-                let cur = self.cur;
-                if retro_btn_w(ui, "PLAY NEXT", w, false).clicked() {
-                    let at = cur.map_or(0, |c| c + 1).min(self.queue.len());
-                    if let Some(i) = qi {
-                        // a queue song moved to just after the one playing
-                        let s = self.queue.remove(i);
-                        let at = if i < at { at - 1 } else { at };
-                        self.queue.insert(at, s);
-                        self.fix_cur(i, at);
-                    } else {
-                        self.queue.insert(at, t.clone());
-                    }
-                    self.set_note("PLAYS NEXT");
-                    close = true;
-                }
-                if qi.is_none() && retro_btn_w(ui, "ADD TO QUEUE", w, false).clicked() {
-                    self.queue.push(t.clone());
-                    self.set_note("ADDED TO THE QUEUE");
-                    close = true;
-                }
-                if let Some(i) = qi {
-                    ui.horizontal(|ui| {
-                        let hw = (w - 6.0) / 2.0;
-                        if retro_btn_w(ui, "MOVE UP", hw, false).clicked() && i > 0 {
-                            self.queue.swap(i, i - 1);
-                            self.fix_cur(i, i - 1);
-                            self.song_menu = Some((t.clone(), Some(i - 1)));
-                        }
-                        if retro_btn_w(ui, "MOVE DOWN", hw, false).clicked() && i + 1 < self.queue.len() {
-                            self.queue.swap(i, i + 1);
-                            self.fix_cur(i, i + 1);
-                            self.song_menu = Some((t.clone(), Some(i + 1)));
-                        }
-                    });
-                    if retro_btn_w(ui, "TAKE OUT OF THE QUEUE", w, false).clicked() {
-                        self.queue.remove(i);
-                        match self.cur {
-                            Some(c) if c == i => {
-                                self.stop();
-                                self.cur = None;
-                            }
-                            Some(c) if c > i => self.cur = Some(c - 1),
-                            _ => {}
-                        }
-                        close = true;
-                    }
-                }
-                // a YouTube clip: off the YT list too
-                if let Some(k) = self.yt.iter().position(|y| yt_id(&y.vid) == t.id) {
-                    if retro_btn_w(ui, "TAKE OFF THE YT LIST", w, false).clicked() {
-                        self.yt.remove(k);
-                        save_json("yt.json", &self.yt);
-                        close = true;
-                    }
-                }
-                if retro_btn_w(ui, "CANCEL", w, false).clicked() {
-                    close = true;
-                }
-            });
-        });
-        if close {
-            self.song_menu = None;
-            ctx.animate_bool_with_time(egui::Id::new("song_menu_in"), false, 0.0);
-        }
     }
 
     /// The song playing keeps its place when the queue moves under it (a song moved from `from` to `to`).
@@ -1266,6 +1389,10 @@ impl eframe::App for App {
         }
         font::set_ppp(ctx.pixels_per_point());
         font::set_modern(true);
+        if !self.session_loaded {
+            self.session_loaded = true;
+            self.load_session();
+        }
         self.drain();
         self.update_bands();
         // the phone's keyboard comes up while a text box is being typed in
@@ -1336,9 +1463,17 @@ fn tab_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
     let at = |x: f32, y: f32| c + Vec2::new(x, y);
     match k {
         0 => {
-            p.circle_stroke(at(-4.0, 5.0), 3.0, s);
-            p.line_segment([at(-1.0, 5.0), at(-1.0, -8.0)], s);
-            p.line_segment([at(-1.0, -8.0), at(6.0, -6.0)], s);
+            let head: Vec<Pos2> = (0..16)
+                .map(|i| {
+                    let a = i as f32 / 16.0 * std::f32::consts::TAU;
+                    let (x, y) = (4.6 * a.cos(), 3.3 * a.sin());
+                    let r = -0.45f32;
+                    at(-3.0 + x * r.cos() - y * r.sin(), 6.0 + x * r.sin() + y * r.cos())
+                })
+                .collect();
+            p.add(egui::Shape::convex_polygon(head, col, Stroke::NONE));
+            p.line_segment([at(1.2, 4.8), at(1.2, -9.0)], s);
+            p.add(egui::Shape::line(vec![at(1.2, -9.0), at(5.5, -5.5), at(7.0, -1.0), at(5.0, 2.5)], s));
         }
         1 => {
             for y in [-6.0, 0.0, 6.0] {
@@ -1472,6 +1607,17 @@ pub(crate) fn long_neck(p: &egui::Painter, r: Rect, c: &theory::ChordNotes, lit:
                 }
             }
         }
+    }
+}
+
+/// The shuffle sign: two crossing paths with arrowheads.
+pub(crate) fn shuffle_glyph(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(2.0, col);
+    let at = |x: f32, y: f32| c + Vec2::new(x, y);
+    p.add(egui::Shape::line(vec![at(-11.0, -6.0), at(-4.0, -6.0), at(4.0, 6.0), at(9.0, 6.0)], s));
+    p.add(egui::Shape::line(vec![at(-11.0, 6.0), at(-4.0, 6.0), at(4.0, -6.0), at(9.0, -6.0)], s));
+    for y in [-6.0, 6.0] {
+        p.add(egui::Shape::convex_polygon(vec![at(8.0, y - 4.0), at(13.0, y), at(8.0, y + 4.0)], col, Stroke::NONE));
     }
 }
 

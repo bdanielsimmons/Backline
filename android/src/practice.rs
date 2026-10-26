@@ -82,18 +82,26 @@ impl App {
         let time_at = |px: f32| (off + (px - inn.min.x) / inn.width() * vlen).clamp(0.0, dur);
         let clip = p.with_clip_rect(inn);
         if !self.wave.is_empty() {
-            let cols = (inn.width() / 2.0).max(1.0) as usize;
+            let cols = (inn.width() / 1.5).max(1.0) as usize;
+            let cw = inn.width() / cols as f32;
             let mid = inn.center().y;
             let n = self.wave.len();
-            for c in 0..cols {
+            let peak = |c: usize| -> f32 {
                 let t0 = off + vlen * c as f32 / cols as f32;
                 let t1 = off + vlen * (c + 1) as f32 / cols as f32;
-                let a = ((t0 / dur) * n as f32) as usize;
+                let a = (((t0 / dur) * n as f32) as usize).min(n - 1);
                 let b = (((t1 / dur) * n as f32) as usize).max(a + 1).min(n);
-                let m = self.wave[a.min(n - 1)..b].iter().copied().max().unwrap_or(0);
-                let h = (m as f32 / 255.0) * (inn.height() * 0.5);
-                let x = inn.min.x + c as f32 * 2.0;
-                fill_rect(&clip, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), pal().ink2.gamma_multiply(0.55));
+                self.wave[a..b].iter().copied().max().unwrap_or(0) as f32
+            };
+            let hs: Vec<f32> = (0..cols).map(peak).collect();
+            let col = pal().ink2.gamma_multiply(0.6);
+            for c in 0..cols {
+                let l = hs[c.saturating_sub(1)];
+                let r = hs[(c + 1).min(cols - 1)];
+                let v = hs[c] * 0.6 + (l + r) * 0.2;
+                let h = (v / 255.0) * (inn.height() * 0.5);
+                let x = inn.min.x + c as f32 * cw;
+                fill_rect(&clip, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + cw + 0.3, mid + h + 0.5)), col);
             }
         } else {
             ptext(&p, inn.center(), Align::Center, if self.loading { "Loading..." } else { "" }, 1.0, pal().dim);

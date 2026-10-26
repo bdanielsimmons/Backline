@@ -568,16 +568,82 @@ impl App {
     /// The QUEUE window: the songs in line, numbered, the one playing marked (tap one to play it).
     pub(crate) fn queue_ui(&mut self, ui: &mut egui::Ui) {
         if self.queue.is_empty() {
-            para(ui, "Nothing in line yet. Pick songs in MUSIC: the list you play from becomes the queue. Tap a song's three dots for PLAY NEXT and ADD TO QUEUE.", pal().ink2);
+            para(ui, "Nothing in line yet. Pick songs in Music: the list you play from becomes the queue. Tap a song's three dots for Play next and Add to the queue.", pal().ink2);
             return;
         }
+        // CLEAR, SAVE AS A PLAYLIST, and REORDER (drag the songs into place)
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "Reorder", self.q_reorder).clicked() {
+                self.q_reorder = !self.q_reorder;
+                self.q_drag = None;
+            }
+            if retro_btn(ui, "Save as a playlist", false).clicked() {
+                let name = format!("Queue {}", self.playlists.len() + 1);
+                self.playlists.push(Playlist { name: name.clone(), tracks: self.queue.iter().map(QTrack::of).collect() });
+                self.save_playlists();
+                self.set_note(&format!("Saved as {} (My tracks, Playlists)", name));
+            }
+            if retro_btn(ui, "Clear", false).clicked() {
+                // the song playing stays
+                match self.cur.and_then(|c| self.queue.get(c).cloned()) {
+                    Some(t) => {
+                        self.queue = vec![t];
+                        self.cur = Some(0);
+                    }
+                    None => self.queue.clear(),
+                }
+                self.save_session();
+            }
+        });
         let mut play = None;
         let queue = self.queue.clone();
+        if self.q_reorder {
+            dim_line(ui, "Drag a song up or down", 1.0, pal().dim);
+            let mut rows: Vec<Rect> = Vec::new();
+            let mut drop_to = None;
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                for (i, t) in queue.iter().enumerate() {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::drag());
+                    rows.push(r);
+                    let p = ui.painter();
+                    let held = self.q_drag.is_some_and(|d| d.0 == i);
+                    p.rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), 8.0, if held { pal().beige_dk } else { pal().beige_lt });
+                    for y in [-5.0, 0.0, 5.0] {
+                        p.line_segment([Pos2::new(r.max.x - 30.0, r.center().y + y), Pos2::new(r.max.x - 12.0, r.center().y + y)], Stroke::new(1.6, pal().dim));
+                    }
+                    ptext_fit(p, Pos2::new(r.min.x + 10.0, r.min.y + 16.0), Align::Min, &t.title, 1.4, r.width() - 50.0, if Some(i) == self.cur { pal().red } else { pal().ink });
+                    ptext_fit(p, Pos2::new(r.min.x + 10.0, r.min.y + 33.0), Align::Min, &t.artists_text(), 1.1, r.width() - 50.0, pal().dim);
+                    if resp.drag_started() {
+                        self.q_drag = Some((i, r.center().y));
+                    }
+                    if resp.dragged() {
+                        if let Some(pp) = resp.interact_pointer_pos() {
+                            self.q_drag = Some((i, pp.y));
+                        }
+                    }
+                    if resp.drag_stopped() {
+                        drop_to = self.q_drag.take();
+                    }
+                }
+            });
+            if let Some((from, y)) = drop_to {
+                let to = rows.iter().position(|r| y < r.center().y).unwrap_or(rows.len()).min(self.queue.len());
+                let to = if to > from { to - 1 } else { to };
+                if to != from && from < self.queue.len() {
+                    let s = self.queue.remove(from);
+                    self.queue.insert(to, s);
+                    self.fix_cur(from, to);
+                    self.save_session();
+                }
+            }
+            return;
+        }
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             for (i, t) in queue.iter().enumerate() {
                 let (r, dots) = song_row(ui, i, t, Some(i) == self.cur);
                 if dots {
                     self.song_menu = Some((t.clone(), Some(i)));
+                    self.menu_pl = None;
                 } else if r.clicked() {
                     play = Some(i);
                 }
@@ -588,6 +654,7 @@ impl App {
         }
     }
 }
+
 
 /// A list row in Backline's way: number, title and artist in the pixel font, the length, and a three-dot button at
 /// the right for the song's menu; the alternate rows a shade apart, the one playing in the selection colour.

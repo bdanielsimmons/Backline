@@ -13,6 +13,10 @@ impl App {
         }
         // inside a source: a way back to the tiles, and its name
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+        if self.lib_tab == 4 {
+            self.page_ui(ui);
+            return;
+        }
         let name = ["Tidal", "Files", "YouTube", "My tracks"][(self.lib_tab as usize).min(3)];
         ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &format!("<  {}", name), 1.8, pal().ink);
         if resp.clicked() {
@@ -68,15 +72,62 @@ impl App {
         }
     }
 
-    /// A list of songs; tap one to play the list from it.
+    /// A list of songs; tap one to play the list from it. Over a list of a few: PLAY, SHUFFLE, PLAY NEXT and ADD TO
+    /// QUEUE for all of it, and a box to filter a long one.
     fn song_list(&mut self, ui: &mut egui::Ui, tracks: &[Track], id: &str) {
+        self.song_list_in(ui, tracks, id, None);
+    }
+
+    pub(crate) fn song_list_in(&mut self, ui: &mut egui::Ui, tracks: &[Track], id: &str, playlist: Option<usize>) {
         let playing = self.cur_track().map(|t| t.id);
         let mut play = None;
+        if tracks.len() > 1 {
+            ui.horizontal_wrapped(|ui| {
+                if retro_btn(ui, "Play", false).clicked() {
+                    self.queue = tracks.to_vec();
+                    self.shuffle = false;
+                    play = Some(usize::MAX);
+                }
+                if retro_btn(ui, "Shuffle", false).clicked() {
+                    let mut q = tracks.to_vec();
+                    for i in (1..q.len()).rev() {
+                        q.swap(i, (rand() % (i as u64 + 1)) as usize);
+                    }
+                    self.queue = q;
+                    play = Some(usize::MAX);
+                }
+                if retro_btn(ui, "Play next", false).clicked() {
+                    let at = self.cur.map_or(0, |c| c + 1).min(self.queue.len());
+                    for (k, t) in tracks.iter().enumerate() {
+                        self.queue.insert(at + k, t.clone());
+                    }
+                    self.set_note(&format!("{} songs play next", tracks.len()));
+                }
+                if retro_btn(ui, "Add to queue", false).clicked() {
+                    self.queue.extend(tracks.iter().cloned());
+                    self.set_note(&format!("{} songs added", tracks.len()));
+                }
+            });
+        }
+        if let Some(usize::MAX) = play {
+            self.play(0);
+            return;
+        }
+        let long = tracks.len() > 30;
+        if long {
+            let w = ui.available_width();
+            text_box(ui, &mut self.list_filter, w, "Filter this list");
+        }
+        let f = self.list_filter.trim().to_lowercase();
         egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, |ui| {
             for (i, t) in tracks.iter().enumerate() {
+                if long && !f.is_empty() && !format!("{} {} {}", t.title, t.artists_text(), t.album).to_lowercase().contains(&f) {
+                    continue;
+                }
                 let (r, dots) = song_row(ui, i, t, playing == Some(t.id));
                 if dots {
                     self.song_menu = Some((t.clone(), None));
+                    self.menu_pl = playlist.map(|p| (p, i));
                 } else if r.clicked() {
                     play = Some(i);
                 }
@@ -100,13 +151,67 @@ impl App {
     /// MY TRACKS: your liked songs and playlists on Tidal, and the songs kept on this phone (they play without a
     /// connection).
     fn my_tracks_ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(i) = tab_row(ui, &["Liked", "Playlists", "Downloaded"], self.my_page as usize) {
+        if let Some(i) = tab_row(ui, &["Liked", "Playlists", "Albums", "Artists", "Kept"], self.my_page as usize) {
             self.my_page = i as u8;
             self.list_open = None;
-            self.tidal_load(i as u8 + 1);
+            self.pl_open = None;
+            self.list_filter.clear();
+            if i < 2 {
+                self.tidal_load(i as u8 + 1);
+            } else if i < 4 && self.lib_page.is_none() && self.logged_in && !self.busy {
+                self.busy = true;
+                self.spawn(|api| Msg::Library(api.library()));
+            }
         }
         ui.add_space(4.0);
-        if self.my_page == 2 {
+        // albums and artists you saved, and new from the artists you follow
+        if self.my_page == 2 || self.my_page == 3 {
+            if self.busy {
+                dim_line(ui, "Loading...", 1.0, pal().ink2);
+            }
+            let rows = self.lib_page.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
+            let want: &[&str] = if self.my_page == 2 { &["Albums", api::NEW_FROM_FOLLOWED] } else { &["Artists"] };
+            let rows: Vec<(String, Vec<api::Card>)> = rows.into_iter().filter(|r| want.contains(&r.0.as_str())).collect();
+            self.card_rows(ui, &rows, "lib_rows");
+            return;
+        }
+        // your playlists on the phone, above the Tidal ones
+        if self.my_page == 1 {
+            if let Some(p) = self.pl_open {
+                let Some(pl) = self.playlists.get(p).cloned() else {
+                    self.pl_open = None;
+                    return;
+                };
+                ui.horizontal(|ui| {
+                    if retro_btn_w(ui, "<", 40.0, false).clicked() {
+                        self.pl_open = None;
+                    }
+                    title_line(ui, &pl.name, 2.0, pal().ink);
+                    if retro_btn(ui, "Delete playlist", false).clicked() {
+                        self.playlists.remove(p);
+                        self.save_playlists();
+                        self.pl_open = None;
+                    }
+                });
+                if self.pl_open.is_some() {
+                    let tracks: Vec<Track> = pl.tracks.iter().map(QTrack::track).collect();
+                    self.song_list_in(ui, &tracks, "my_pl", Some(p));
+                }
+                return;
+            }
+            if self.list_open.is_none() && !self.playlists.is_empty() {
+                dim_line(ui, "On this phone", 1.0, pal().ink2);
+                for k in 0..self.playlists.len() {
+                    let label = format!("{}   ({})", self.playlists[k].name, self.playlists[k].tracks.len());
+                    if retro_btn_w(ui, &label, ui.available_width(), false).clicked() {
+                        self.pl_open = Some(k);
+                    }
+                }
+                ui.add_space(6.0);
+                dim_line(ui, "On Tidal", 1.0, pal().ink2);
+            }
+        }
+        if self.my_page == 4 {
             let mut kept = cache::tagged();
             kept.sort_by(|a, b| a.artist.cmp(&b.artist).then(a.title.cmp(&b.title)));
             if kept.is_empty() {
@@ -119,7 +224,7 @@ impl App {
             self.login_ui(ui);
             return;
         }
-        self.tidal_page = self.my_page + 1;
+        self.tidal_page = self.my_page.min(1) + 1;
         self.tidal_body(ui);
     }
 
@@ -209,12 +314,13 @@ impl App {
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if (retro_btn_w(ui, "Go", 48.0, false).clicked() || enter) && !self.query.trim().is_empty() {
                         let q = self.query.trim().to_string();
-                        if let Some(r) = self.search_cache.get(&q.to_lowercase()) {
-                            self.results = r.clone();
+                        if let Some(p) = self.search_cache.get(&q.to_lowercase()) {
+                            self.results = p.tracks.clone();
+                            self.result_rows = p.rows.clone();
                         } else {
                             self.searching = true;
                             self.search_q = q.to_lowercase();
-                            self.spawn(move |api| Msg::Found(api.search(&q).map(|p| p.tracks)));
+                            self.spawn(move |api| Msg::Found(api.search(&q)));
                         }
                     }
                 });
@@ -222,7 +328,155 @@ impl App {
                     dim_line(ui, "SEARCHING...", 1.0, pal().ink2);
                 }
                 let r = self.results.clone();
-                self.song_list(ui, &r, "search");
+                if r.is_empty() && self.result_rows.is_empty() {
+                    // nothing searched yet: Tidal's home page
+                    if self.home.is_none() && !self.busy {
+                        self.busy = true;
+                        self.spawn(|api| Msg::Library(api.home().map(|mut p| {
+                            p.title = "home".to_string();
+                            p
+                        })));
+                    }
+                    let rows = self.home.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
+                    self.card_rows(ui, &rows, "home_rows");
+                    return;
+                }
+                let rows = self.result_rows.clone();
+                let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(ui.available_rect_before_wrap()).layout(egui::Layout::top_down(Align::Min)));
+                egui::ScrollArea::vertical().id_salt("search_all").auto_shrink([false, false]).show(&mut sub, |ui| {
+                    let playing = self.cur_track().map(|t| t.id);
+                    let mut play = None;
+                    for (i, t) in r.iter().enumerate() {
+                        let (resp, dots) = song_row(ui, i, t, playing == Some(t.id));
+                        if dots {
+                            self.song_menu = Some((t.clone(), None));
+                            self.menu_pl = None;
+                        } else if resp.clicked() {
+                            play = Some(i);
+                        }
+                    }
+                    if let Some(i) = play {
+                        self.queue = r.clone();
+                        self.play(i);
+                    }
+                    self.card_rows_inline(ui, &rows);
+                });
+            }
+        }
+    }
+
+    /// Rows of cards (albums, artists, playlists, mixes) in their own scroll; tap one to open it.
+    fn card_rows(&mut self, ui: &mut egui::Ui, rows: &[(String, Vec<api::Card>)], id: &str) {
+        egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, |ui| {
+            self.card_rows_inline(ui, rows);
+        });
+    }
+
+    fn card_rows_inline(&mut self, ui: &mut egui::Ui, rows: &[(String, Vec<api::Card>)]) {
+        let mut open = None;
+        for (title, cards) in rows {
+            ui.add_space(6.0);
+            dim_line(ui, title, 1.0, pal().ink2);
+            for c in cards {
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
+                let p = ui.painter();
+                if resp.is_pointer_button_down_on() {
+                    p.rect_filled(r, 6.0, pal().beige_lt);
+                }
+                let kind = match c.kind {
+                    api::Kind::Album => "Album",
+                    api::Kind::Artist => "Artist",
+                    api::Kind::Playlist => "Playlist",
+                    api::Kind::Mix => "Mix",
+                };
+                ptext_fit(p, Pos2::new(r.min.x + 8.0, r.min.y + 15.0), Align::Min, &c.title, 1.5, r.width() - 16.0, pal().ink);
+                let sub = if c.subtitle.is_empty() { kind.to_string() } else { format!("{}  ·  {}", kind, c.subtitle) };
+                ptext_fit(p, Pos2::new(r.min.x + 8.0, r.min.y + 33.0), Align::Min, &sub, 1.1, r.width() - 16.0, pal().dim);
+                if resp.clicked() {
+                    open = Some(c.clone());
+                }
+            }
+        }
+        if let Some(c) = open {
+            self.open_card(c);
+        }
+    }
+
+    /// Open a card's page (an album, an artist, a playlist, a mix).
+    pub(crate) fn open_card(&mut self, c: api::Card) {
+        self.page_busy = true;
+        self.page_pending = Some(c.clone());
+        self.lib_tab = 4;
+        self.spawn(move |api| Msg::Page(api.open(&c)));
+    }
+
+    /// A Tidal page (an album, artist, playlist, mix, or a song's album / artist / radio): its songs and its rows,
+    /// SAVE for an album or playlist, FOLLOW and RADIO for an artist; back goes to the page before.
+    fn page_ui(&mut self, ui: &mut egui::Ui) {
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+        let title = self.pages.last().map(|p| p.title.clone()).unwrap_or_else(|| "Loading...".to_string());
+        ptext_fit(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &format!("<  {}", title), 1.8, r.width() - 4.0, pal().ink);
+        if resp.clicked() {
+            if self.page_busy {
+                self.page_busy = false;
+                self.page_pending = None;
+            } else {
+                self.pages.pop();
+                self.page_cards.pop();
+            }
+            if self.pages.is_empty() {
+                self.lib_tab = 9;
+            }
+            return;
+        }
+        if self.page_busy {
+            dim_line(ui, "Loading...", 1.0, pal().ink2);
+            return;
+        }
+        let Some(page) = self.pages.last().cloned() else {
+            self.lib_tab = 9;
+            return;
+        };
+        if !page.subtitle.is_empty() {
+            dim_line(ui, &page.subtitle, 1.0, pal().dim);
+        }
+        let card = self.page_cards.last().cloned().flatten();
+        if let Some(c) = card {
+            ui.horizontal_wrapped(|ui| match c.kind {
+                api::Kind::Artist => {
+                    if retro_btn(ui, "Follow", false).clicked() {
+                        let id = c.id.clone();
+                        self.spawn(move |api| Msg::Done(api.follow_artist(&id, true).map(|_| "Following".to_string())));
+                    }
+                    if retro_btn(ui, "Unfollow", false).clicked() {
+                        let id = c.id.clone();
+                        self.spawn(move |api| Msg::Done(api.follow_artist(&id, false).map(|_| "Not following".to_string())));
+                    }
+                }
+                api::Kind::Album | api::Kind::Playlist => {
+                    if retro_btn(ui, "Save to my library", false).clicked() {
+                        let c2 = c.clone();
+                        self.spawn(move |api| Msg::Done(api.save_card(&c2, true).map(|_| "Saved".to_string())));
+                    }
+                    if retro_btn(ui, "Remove from my library", false).clicked() {
+                        let c2 = c.clone();
+                        self.spawn(move |api| Msg::Done(api.save_card(&c2, false).map(|_| "Removed".to_string())));
+                    }
+                }
+                _ => {}
+            });
+        }
+        if page.tracks.is_empty() {
+            self.card_rows(ui, &page.rows, "page_rows");
+        } else {
+            let tracks = page.tracks.clone();
+            let rows = page.rows.clone();
+            let h = if rows.is_empty() { ui.available_height() } else { ui.available_height() * 0.6 };
+            let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), h))).layout(egui::Layout::top_down(Align::Min)));
+            self.song_list(&mut top, &tracks, "page_tracks");
+            if !rows.is_empty() {
+                ui.add_space(h);
+                self.card_rows(ui, &rows, "page_rows");
             }
         }
     }
