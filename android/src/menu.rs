@@ -161,7 +161,7 @@ impl App {
                                 dim_line(ui, &role, 1.0, pal().ink2);
                                 dim_line(ui, &name, 1.4, pal().ink);
                             }
-                            if retro_btn_w(ui, "Back", w, false).clicked() {
+                            if pill_w(ui, "Back", w, false).clicked() {
                                 self.menu_mode = 0;
                             }
                         }
@@ -330,7 +330,7 @@ impl App {
         });
         let mut close = false;
         ui.horizontal(|ui| {
-            if retro_btn(ui, "Save", false).clicked() {
+            if pill(ui, "Save", false).clicked() {
                 let (title, artist) = (self.edit.0.trim().to_string(), self.edit.1.trim().to_string());
                 if !title.is_empty() {
                     self.names.insert(t.id, (title.clone(), artist.clone()));
@@ -355,7 +355,7 @@ impl App {
                 self.set_note("Saved");
                 close = true;
             }
-            if retro_btn(ui, "Back", false).clicked() {
+            if pill(ui, "Back", false).clicked() {
                 self.menu_mode = 0;
             }
         });
@@ -377,7 +377,7 @@ impl App {
         dim_line(ui, "On this phone", 1.0, pal().ink2);
         for k in 0..self.playlists.len() {
             let name = self.playlists[k].name.clone();
-            if retro_btn_w(ui, &name, w, false).clicked() {
+            if pill_w(ui, &name, w, false).clicked() {
                 self.playlists[k].tracks.push(QTrack::of(t));
                 self.save_playlists();
                 self.set_note(&format!("Added to {}", name));
@@ -387,7 +387,7 @@ impl App {
         ui.horizontal(|ui| {
             let bw = 70.0;
             crate::practice::text_box(ui, &mut self.menu_new, w - bw - 6.0, "New playlist name");
-            if retro_btn_w(ui, "Make", bw, false).clicked() && !self.menu_new.trim().is_empty() {
+            if pill_w(ui, "Make", bw, false).clicked() && !self.menu_new.trim().is_empty() {
                 let name = self.menu_new.trim().to_string();
                 self.playlists.push(Playlist { name: name.clone(), tracks: vec![QTrack::of(t)] });
                 self.save_playlists();
@@ -403,13 +403,13 @@ impl App {
                 dim_line(ui, "Loading...", 1.0, pal().dim);
             }
             for (uuid, name) in self.own_lists.clone() {
-                if retro_btn_w(ui, &name, w, false).clicked() {
+                if pill_w(ui, &name, w, false).clicked() {
                     let id = t.id;
                     self.spawn(move |api| Msg::Done(api.playlist_add(&uuid, id).map(|_| format!("Added to {}", name))));
                     close = true;
                 }
             }
-            if retro_btn_w(ui, "New Tidal playlist (named from the box above)", w, false).clicked() && !self.menu_new.trim().is_empty() {
+            if pill_w(ui, "New Tidal playlist (named from the box above)", w, false).clicked() && !self.menu_new.trim().is_empty() {
                 let (name, id) = (self.menu_new.trim().to_string(), t.id);
                 self.menu_new.clear();
                 self.own_lists.clear();
@@ -417,7 +417,7 @@ impl App {
                 close = true;
             }
         }
-        if retro_btn_w(ui, "Back", w, false).clicked() {
+        if pill_w(ui, "Back", w, false).clicked() {
             self.menu_mode = 0;
         }
         close

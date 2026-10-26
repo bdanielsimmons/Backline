@@ -1194,7 +1194,7 @@ impl App {
             ptext(ui.painter(), Pos2::new(r.min.x + 34.0, r.center().y), Align::Min, "Backline", 2.0, pal().trim);
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 let k = SKIN.load(Ordering::Relaxed);
-                if retro_btn(ui, "Skin", false).on_hover_text(SKIN_NAMES[k]).clicked() {
+                if pill(ui, "Skin", false).on_hover_text(SKIN_NAMES[k]).clicked() {
                     SKIN.store((k + 1) % PALS.len(), Ordering::Relaxed);
                     self.wear();
                     self.save_settings();
@@ -1561,7 +1561,7 @@ impl App {
                 }
             }
             ui.add_space(12.0);
-            if retro_btn(ui, "Done", false).clicked() {
+            if pill(ui, "Done", false).clicked() {
                 self.settings_open = false;
                 self.sure_out = false;
                 self.sure_clear = false;
@@ -1949,6 +1949,30 @@ pub(crate) fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
     let d = if fwd { 1.0 } else { -1.0 };
     p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0 * d, -8.0), c + Vec2::new(5.0 * d, 0.0), c + Vec2::new(-6.0 * d, 8.0)], col, Stroke::NONE));
     p.rect_filled(Rect::from_center_size(c + Vec2::new(7.0 * d, 0.0), Vec2::new(2.5, 16.0)), 1.0, col);
+}
+
+/// A note in plain, small type, wrapped to the width (in place of the desktop's boxed para).
+pub(crate) fn note_text(ui: &mut egui::Ui, text: &str, col: Color32) {
+    for line in wrap(text, 1.2, ui.available_width() - 8.0) {
+        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 19.0), Sense::hover());
+        ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &line, 1.2, col);
+    }
+    ui.add_space(4.0);
+}
+
+/// The phone's button: a small pill, its word in plain type, filled when on (in place of the desktop's retro_btn).
+pub(crate) fn pill(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Response {
+    let w = text_w(text, 1.2) + 26.0;
+    pill_w(ui, text, w, on)
+}
+
+/// A pill of a given width.
+pub(crate) fn pill_w(ui: &mut egui::Ui, text: &str, w: f32, on: bool) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w.max(32.0), 34.0), Sense::click());
+    let fill = if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt };
+    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 16.0, fill);
+    ptext_fit(ui.painter(), r.center(), Align::Center, text, 1.2, r.width() - 10.0, if on { pal().beige } else { pal().ink });
+    resp
 }
 
 /// A metronome: the case and its arm.

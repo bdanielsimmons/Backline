@@ -88,10 +88,10 @@ impl App {
         ptext(ui.painter(), Pos2::new(head.min.x + 2.0, head.center().y), Align::Min, &q, 3.2, pal().ink);
         let cr = Rect::from_min_size(Pos2::new(head.max.x - 164.0, head.min.y + 4.0), Vec2::new(164.0, 32.0));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr).layout(egui::Layout::left_to_right(Align::Center)));
-        if retro_btn_w(&mut child, "Staff", 72.0, self.cf_staff).clicked() {
+        if pill_w(&mut child, "Staff", 72.0, self.cf_staff).clicked() {
             self.cf_staff = !self.cf_staff;
         }
-        if retro_btn_w(&mut child, "Change", 84.0, false).clicked() {
+        if pill_w(&mut child, "Change", 84.0, false).clicked() {
             self.cf_neck = false;
         }
         let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} {}", n, i)).collect();
@@ -145,7 +145,7 @@ impl App {
                 ui.add_space(4.0);
             }
             if shapes.is_empty() {
-                para(ui, "No comfortable shape in reach.", pal().dim);
+                note_text(ui, "No comfortable shape in reach.", pal().dim);
             }
         });
         if let Some(k) = pick {
@@ -300,20 +300,20 @@ impl App {
         ui.horizontal(|ui| {
             let w = ui.available_width() - 82.0;
             text_box(ui, &mut self.chord_q, w, "Or type one: Dm7, G7#9, Fmaj7/A...");
-            if retro_btn_w(ui, "Show", 74.0, false).clicked() && theory::chord_notes(&self.chord_q).is_some() {
+            if pill_w(ui, "Show", 74.0, false).clicked() && theory::chord_notes(&self.chord_q).is_some() {
                 self.cf_neck = true;
                 self.cf_voice = 0;
             }
         });
         let Some(c) = theory::chord_notes(self.chord_q.trim()) else {
             ui.add_space(6.0);
-            para(ui, "Pick a root, then a kind of chord, then a chord (or type one) to see it on the neck and the piano, its shapes and the scales that fit it.", pal().ink2);
+            note_text(ui, "Pick a root, then a kind of chord, then a chord (or type one) to see it on the neck and the piano, its shapes and the scales that fit it.", pal().ink2);
             return;
         };
         ui.add_space(6.0);
         title_line(ui, self.chord_q.trim(), 4.0, pal().ink);
         let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} ({})", n, i)).collect();
-        para(ui, &notes.join("   "), pal().ink2);
+        note_text(ui, &notes.join("   "), pal().ink2);
         section_header(ui, "On the neck");
         let w = ui.available_width();
         let (nr, _) = ui.allocate_exact_size(Vec2::new(w, 120.0), Sense::hover());
@@ -325,7 +325,7 @@ impl App {
         let q = self.chord_q.trim().to_string();
         let shapes = self.shapes_for(&q, &c);
         if shapes.is_empty() {
-            para(ui, "No comfortable shape in reach for this one.", pal().ink2);
+            note_text(ui, "No comfortable shape in reach for this one.", pal().ink2);
         }
         self.grip_cards(ui, &c, &shapes, false);
         section_header(ui, "Scales that fit");
@@ -413,10 +413,10 @@ impl App {
             None => dim_line(&mut col, if notes.is_empty() { "Tap notes on the neck" } else { "Add a note or two" }, 1.0, pal().dim),
         }
         col.add_space(6.0);
-        if retro_btn_w(&mut col, "Strum", side - 4.0, false).clicked() {
+        if pill_w(&mut col, "Strum", side - 4.0, false).clicked() {
             self.hear(&notes);
         }
-        if retro_btn_w(&mut col, "Clear", side - 4.0, false).clicked() {
+        if pill_w(&mut col, "Clear", side - 4.0, false).clicked() {
             self.an_frets = [None; 6];
             self.an_pick = None;
         }
@@ -424,13 +424,13 @@ impl App {
         let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 64.0), Sense::hover());
         piano_span(ui, pr, &notes, false, "an_piano", root, 36, 4);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, if self.an_big { "Smaller neck" } else { "Bigger neck" }, self.an_big).clicked() {
+            if pill(ui, if self.an_big { "Smaller neck" } else { "Bigger neck" }, self.an_big).clicked() {
                 self.an_big = !self.an_big;
             }
             // keep this grip as one of yours for the chord it makes (it shows first in Find)
             if let Some(s) = shown.as_ref() {
                 let name = s.name(self.chord_sp);
-                if notes.len() >= 2 && retro_btn(ui, &format!("Save as my {}", name), false).clicked() {
+                if notes.len() >= 2 && pill(ui, &format!("Save as my {}", name), false).clicked() {
                     let key = grip_key(&name);
                     let list = self.my_grips.entry(key).or_default();
                     if !list.contains(&self.an_frets) {
@@ -445,7 +445,7 @@ impl App {
             let (lo, hi) = (frets.iter().min().copied(), frets.iter().max().copied());
             for (label, d) in [("< MOVE", -1i32), ("MOVE >", 1)] {
                 let can = matches!((lo, hi), (Some(l), Some(h)) if (d < 0 && l > 0) || (d > 0 && h < 15));
-                if retro_btn(ui, label, false).clicked() && can {
+                if pill(ui, label, false).clicked() && can {
                     for f in self.an_frets.iter_mut().flatten() {
                         *f = (*f as i32 + d) as u8;
                     }
@@ -468,19 +468,19 @@ impl App {
         // how the names are written, and the details
         ui.horizontal_wrapped(|ui| {
             let sp = &mut self.chord_sp;
-            if retro_btn(ui, "- \u{0394} \u{00b0} +", sp.symbols).clicked() {
+            if pill(ui, "- \u{0394} \u{00b0} +", sp.symbols).clicked() {
                 sp.symbols = !sp.symbols;
             }
-            if retro_btn(ui, "#", sp.sharps).clicked() {
+            if pill(ui, "#", sp.sharps).clicked() {
                 sp.sharps = !sp.sharps;
             }
-            if retro_btn(ui, "Slash", sp.slash).clicked() {
+            if pill(ui, "Slash", sp.slash).clicked() {
                 sp.slash = !sp.slash;
             }
-            if retro_btn(ui, "Detailed", sp.detailed).clicked() {
+            if pill(ui, "Detailed", sp.detailed).clicked() {
                 sp.detailed = !sp.detailed;
             }
-            if retro_btn(ui, "Details", self.chord_details).clicked() {
+            if pill(ui, "Details", self.chord_details).clicked() {
                 self.chord_details = !self.chord_details;
                 self.save_settings();
             }
@@ -490,7 +490,7 @@ impl App {
             dim_line(ui, &format!("SHOWING {}  -  TAP ONE TO KEEP IT", s.name(sp)), 1.0, pal().dim);
         }
         if found.is_empty() {
-            para(ui, if pcs.len() < 2 { "Lay down two or more notes." } else { "No chord has all of these notes." }, pal().ink2);
+            note_text(ui, if pcs.len() < 2 { "Lay down two or more notes." } else { "No chord has all of these notes." }, pal().ink2);
         }
         ui.horizontal_wrapped(|ui| {
             for s in &found {
@@ -501,7 +501,7 @@ impl App {
                     warn_triangle(ui.painter(), r);
                 }
                 let picked = self.an_pick.as_deref() == Some(key.as_str());
-                if retro_btn(ui, &s.name(sp), s.exact || picked).clicked() {
+                if pill(ui, &s.name(sp), s.exact || picked).clicked() {
                     self.an_pick = if picked { None } else { Some(key) };
                 }
             }
@@ -517,7 +517,7 @@ impl App {
             let shapes = self.shapes_for(&s.key(), &c);
             section_header(ui, &format!("GRIPS FOR {}", s.name(sp)));
             if shapes.is_empty() {
-                para(ui, "No comfortable grip in reach for this one.", pal().ink2);
+                note_text(ui, "No comfortable grip in reach for this one.", pal().ink2);
             }
             self.grip_cards(ui, &c, &shapes, true);
         }
@@ -534,12 +534,12 @@ impl App {
                     })
                     .collect();
                 dim_line(ui, &format!("{}{}", s.name(sp), if s.exact { "   EXACT" } else { "" }), 2.0, pal().ink);
-                para(ui, &notes.join("  "), pal().ink2);
+                note_text(ui, &notes.join("  "), pal().ink2);
                 for w in &s.warnings {
                     ui.horizontal(|ui| {
                         let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
                         warn_triangle(ui.painter(), r);
-                        ui.vertical(|ui| para(ui, w, pal().ink2));
+                        ui.vertical(|ui| note_text(ui, w, pal().ink2));
                     });
                 }
             }
@@ -562,7 +562,7 @@ impl App {
         // the desktop's three: the map up the neck, voice leading through changes, a triad over each bass note
         ui.horizontal_wrapped(|ui| {
             for (k, n) in ["Map", "Voice leading", "Over a bass"].iter().enumerate() {
-                if retro_btn(ui, n, self.tr_page as usize == k).clicked() {
+                if pill(ui, n, self.tr_page as usize == k).clicked() {
                     self.tr_page = k as u8;
                 }
             }
@@ -572,7 +572,7 @@ impl App {
             2 => return self.tr_bass(ui),
             _ => {}
         }
-        para(ui, "One triad, every inversion up the neck on the strings you pick. Root position, then the 3rd on the bottom, then the 5th, and round again an octave up. Tap a dot or a box to pick a shape.", pal().ink2);
+        note_text(ui, "One triad, every inversion up the neck on the strings you pick. Root position, then the 3rd on the bottom, then the 5th, and round again an octave up. Tap a dot or a box to pick a shape.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
             if let Some(k) = self.pick_chip(ui, "tr_key", &KEYS, self.tr_root as usize) {
                 self.tr_root = k as i32;
@@ -584,7 +584,7 @@ impl App {
         });
         ui.horizontal_wrapped(|ui| {
             for (i, (name, _)) in QUALITIES.iter().enumerate() {
-                if retro_btn(ui, name, self.tr_q == i).clicked() {
+                if pill(ui, name, self.tr_q == i).clicked() {
                     self.tr_q = i;
                 }
             }
@@ -594,7 +594,7 @@ impl App {
         let pcs: Vec<i32> = q.iter().map(|x| (root + x).rem_euclid(12)).collect();
         let grips = theory::grips_on(&pcs, SETS[self.tr_set.min(SETS.len() - 1)].1, false, 4);
         if grips.is_empty() {
-            para(ui, "No shape for this on these strings in one hand-span.", pal().ink2);
+            note_text(ui, "No shape for this on these strings in one hand-span.", pal().ink2);
             return;
         }
         self.tr_sel = self.tr_sel.min(grips.len() - 1);
@@ -611,11 +611,11 @@ impl App {
             let playing = self.seq_end.is_some_and(|e| Instant::now() < e);
             if playing {
                 ui.ctx().request_repaint_after(Duration::from_millis(200));
-                if retro_btn(ui, "Stop", true).clicked() {
+                if pill(ui, "Stop", true).clicked() {
                     self.player.send(Cmd::StopOnce);
                     self.seq_end = None;
                 }
-            } else if retro_btn(ui, "Hear them up the neck", false).clicked() {
+            } else if pill(ui, "Hear them up the neck", false).clicked() {
                 let seq: Vec<Vec<i32>> = grips.iter().map(grip_notes).collect();
                 self.player.send(Cmd::StopOnce);
                 self.player.send(Cmd::Once(band::sequence_sound(&seq, 0.9), 0.9));
@@ -676,11 +676,11 @@ impl App {
     /// VOICE LEADING: type the changes; each becomes the triad on the same strings nearest the last, so the hand
     /// barely moves. The top notes make a melody of their own.
     fn tr_lead(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Type the changes and each chord becomes the triad nearest the last, all on the same strings. Chord names, numerals (I IV V, ii) or 1-7 for the key's own triads.", pal().ink2);
+        note_text(ui, "Type the changes and each chord becomes the triad nearest the last, all on the same strings. Chord names, numerals (I IV V, ii) or 1-7 for the key's own triads.", pal().ink2);
         self.tr_key_set(ui);
         ui.horizontal_wrapped(|ui| {
             for (k, n) in ["Low on the neck", "Middle", "High"].iter().enumerate() {
-                if retro_btn(ui, n, self.tr_pos as usize == k).clicked() {
+                if pill(ui, n, self.tr_pos as usize == k).clicked() {
                     self.tr_pos = k as u8;
                 }
             }
@@ -710,7 +710,7 @@ impl App {
             return;
         }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "Play it", false).clicked() {
+            if pill(ui, "Play it", false).clicked() {
                 let seq: Vec<Vec<i32>> = steps.iter().map(|s| grip_notes(&s.1)).collect();
                 self.player.send(Cmd::StopOnce);
                 self.player.send(Cmd::Once(band::sequence_sound(&seq, 1.0), 0.9));
@@ -751,11 +751,11 @@ impl App {
 
     /// OVER A BASS: a triad over each of the twelve bass notes and the chord it makes; pick one to see the grips.
     fn tr_bass(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Over a new bass note, a triad becomes a bigger chord: D over C is a C Lydian sound, Bb over C a C9sus, F over G the gospel IV over V.", pal().ink2);
+        note_text(ui, "Over a new bass note, a triad becomes a bigger chord: D over C is a C Lydian sound, Bb over C a C9sus, F over G the gospel IV over V.", pal().ink2);
         self.tr_key_set(ui);
         ui.horizontal_wrapped(|ui| {
             for (i, (name, _)) in QUALITIES.iter().enumerate() {
-                if retro_btn(ui, &crate::lines_ui::nice(name), self.tr_q == i).clicked() {
+                if pill(ui, &crate::lines_ui::nice(name), self.tr_q == i).clicked() {
                     self.tr_q = i;
                 }
             }
@@ -798,7 +798,7 @@ impl App {
         grips.sort_by(|a, b| theory::centre(a).partial_cmp(&theory::centre(b)).unwrap_or(std::cmp::Ordering::Equal));
         ui.add_space(6.0);
         if grips.is_empty() {
-            para(ui, "No grip in one hand-span. Play the bass on its own, then the triad.", pal().ink2);
+            note_text(ui, "No grip in one hand-span. Play the bass on its own, then the triad.", pal().ink2);
             return;
         }
         let bw = ((ui.available_width() - 8.0) / 3.0).min(120.0);

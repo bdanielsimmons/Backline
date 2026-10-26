@@ -137,19 +137,19 @@ impl App {
                 }
             }
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "Tap", false).clicked() {
+                if pill(ui, "Tap", false).clicked() {
                     if let Some(b) = self.tap() {
                         self.mt_bpm = b as u32;
                         changed = true;
                     }
                 }
-                if retro_btn(ui, &format!("{}/{}", self.mt.beats, self.mt.unit), self.mt_more).clicked() {
+                if pill(ui, &format!("{}/{}", self.mt.beats, self.mt.unit), self.mt_more).clicked() {
                     self.mt_more = !self.mt_more;
                 }
-                if retro_btn(ui, "Accents", self.mt_more).clicked() {
+                if pill(ui, "Accents", self.mt_more).clicked() {
                     self.mt_more = !self.mt_more;
                 }
-                if retro_btn(ui, "More", self.mt_more).clicked() {
+                if pill(ui, "More", self.mt_more).clicked() {
                     self.mt_more = !self.mt_more;
                 }
             });
@@ -164,11 +164,11 @@ impl App {
             // ---- with the track: follow its speed, lock to its beat
             dim_line(ui, "With the track", 1.0, pal().ink2);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "Follow speed", self.mt.follow).clicked() {
+                if pill(ui, "Follow speed", self.mt.follow).clicked() {
                     self.mt.follow = !self.mt.follow;
                     changed = true;
                 }
-                if retro_btn(ui, "Lock to the track", self.mt.sync).clicked() {
+                if pill(ui, "Lock to the track", self.mt.sync).clicked() {
                     self.mt.sync = !self.mt.sync;
                     self.mt_laid = u64::MAX;
                     changed = true;
@@ -187,10 +187,10 @@ impl App {
                         dim_line(ui, "Play the song once (so it's kept) and the beat is found", 1.0, pal().dim);
                     }
                     if found {
-                        if retro_btn_w(ui, "x2", 44.0, self.mt_scale < 1.0).clicked() {
+                        if pill_w(ui, "x2", 44.0, self.mt_scale < 1.0).clicked() {
                             self.mt_scale = if self.mt_scale < 1.0 { 1.0 } else { 0.5 };
                         }
-                        if retro_btn_w(ui, "/2", 44.0, self.mt_scale > 1.0).clicked() {
+                        if pill_w(ui, "/2", 44.0, self.mt_scale > 1.0).clicked() {
                             self.mt_scale = if self.mt_scale > 1.0 { 1.0 } else { 2.0 };
                         }
                     }
@@ -234,7 +234,7 @@ impl App {
                 }
                 label(ui, "/", 8.0);
                 for n in [4u8, 8, 16] {
-                    if retro_btn_w(ui, &n.to_string(), 28.0, self.mt.unit == n).clicked() {
+                    if pill_w(ui, &n.to_string(), 28.0, self.mt.unit == n).clicked() {
                         self.mt.unit = n;
                         changed = true;
                     }
@@ -248,7 +248,7 @@ impl App {
                         0 => "GROUPS".to_string(),
                         k => gs[k - 1].iter().map(|n| n.to_string()).collect::<Vec<_>>().join("+"),
                     };
-                    if retro_btn_w(ui, &txt, 160.0, self.mt_group > 0).clicked() {
+                    if pill_w(ui, &txt, 160.0, self.mt_group > 0).clicked() {
                         self.mt_group = (self.mt_group + 1) % (gs.len() + 1);
                         match self.mt_group {
                             0 => self.mt.preset(0),
@@ -261,7 +261,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 label(ui, "Sound", 56.0);
                 let sub = ["NO SUBDIV", "EIGHTHS", "TRIPLETS", "SIXTEENTHS"][(self.mt.sub as usize).min(3)];
-                if retro_btn_w(ui, sub, 120.0, self.mt.sub > 0).clicked() {
+                if pill_w(ui, sub, 120.0, self.mt.sub > 0).clicked() {
                     self.mt.sub = (self.mt.sub + 1) % 4;
                     changed = true;
                 }
@@ -269,7 +269,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 label(ui, "", 56.0);
                 for (i, name) in ["ALL", "2 & 4", "1 ONLY"].iter().enumerate() {
-                    if retro_btn_w(ui, name, 66.0, false).clicked() {
+                    if pill_w(ui, name, 66.0, false).clicked() {
                         self.mt_group = 0;
                         self.mt.preset(i as u8);
                         changed = true;

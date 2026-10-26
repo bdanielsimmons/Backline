@@ -5,28 +5,30 @@ use crate::*;
 
 /// A text box drawn as Backline's LCD (the phone's keyboard comes up while it is being typed in).
 pub(crate) fn text_box(ui: &mut egui::Ui, text: &mut String, w: f32, hint: &str) -> egui::Response {
-    let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-    inset(ui.painter(), r, pal().lcd);
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(Vec2::new(5.0, 3.0))));
+    // a rounded, flat field in the panel's lighter shade
+    let (r, _) = ui.allocate_exact_size(Vec2::new(w, 38.0), Sense::hover());
+    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 10.0, pal().beige_lt);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(Vec2::new(12.0, 8.0))));
     child.visuals_mut().override_text_color = Some(pal().ink);
-    child.visuals_mut().extreme_bg_color = pal().lcd;
+    child.visuals_mut().extreme_bg_color = pal().beige_lt;
     child.add(
         egui::TextEdit::singleline(text)
             .frame(false)
             .hint_text(egui::RichText::new(hint).color(pal().dim))
-            .desired_width(r.width() - 10.0)
-            .font(egui::FontId::proportional(13.0)),
+            .desired_width(r.width() - 24.0)
+            .font(egui::FontId::proportional(14.0)),
     )
 }
 
 /// A number with - and + either side, in an LCD (the desktop's stepper).
 pub(crate) fn stepper(ui: &mut egui::Ui, text: &str, w: f32) -> i32 {
     let mut d = 0;
-    if retro_btn_w(ui, "-", 30.0, false).clicked() {
+    if pill_w(ui, "-", 30.0, false).clicked() {
         d = -1;
     }
-    lcd_box(ui, text, w, pal().ink);
-    if retro_btn_w(ui, "+", 30.0, false).clicked() {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(w, 34.0), Sense::hover());
+    ptext_fit(ui.painter(), r.center(), Align::Center, text, 1.3, w - 4.0, pal().ink);
+    if pill_w(ui, "+", 30.0, false).clicked() {
         d = 1;
     }
     d
@@ -39,7 +41,7 @@ pub(crate) const MARK_COLS: [[u8; 3]; 8] =
 impl App {
     pub(crate) fn practice_ui(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.cur_track().cloned() else {
-            para(ui, "Play a song, then loop it, slow it down, change its pitch, train it up to tempo and bookmark it here.", pal().ink2);
+            note_text(ui, "Play a song, then loop it, slow it down, change its pitch, train it up to tempo and bookmark it here.", pal().ink2);
             return;
         };
         self.waveform(ui, &t);
@@ -210,14 +212,14 @@ impl App {
         }
         // zoom
         ui.horizontal(|ui| {
-            if retro_btn_w(ui, "-", 36.0, false).clicked() {
+            if pill_w(ui, "-", 36.0, false).clicked() {
                 self.wv_zoom = (self.wv_zoom / 2.0).max(1.0);
             }
-            if retro_btn_w(ui, "+", 36.0, false).clicked() {
+            if pill_w(ui, "+", 36.0, false).clicked() {
                 self.wv_zoom = (self.wv_zoom * 2.0).min(64.0);
                 self.wv_off = pos - dur / self.wv_zoom * 0.3;
             }
-            if retro_btn(ui, "Fit", self.wv_zoom <= 1.0).clicked() {
+            if pill(ui, "Fit", self.wv_zoom <= 1.0).clicked() {
                 self.wv_zoom = 1.0;
                 self.wv_off = 0.0;
             }
@@ -317,7 +319,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 // the next (or last) stretch of the same length: bar 5-8 after bar 1-4
                 for (name, d) in [("< Shift back", -1.0f32), ("Shift on >", 1.0)] {
-                    if retro_btn(ui, name, false).clicked() {
+                    if pill(ui, name, false).clicked() {
                         if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
                             let len = b - a;
                             let na = (a + d * len).clamp(0.0, (dur - len).max(0.0));
@@ -329,7 +331,7 @@ impl App {
                         }
                     }
                 }
-                if retro_btn(ui, "Clear", false).clicked() {
+                if pill(ui, "Clear", false).clicked() {
                     self.loop_a = None;
                     self.loop_b = None;
                     self.loop_on = false;
@@ -387,11 +389,11 @@ impl App {
         // saved loops of this song
         ui.horizontal(|ui| {
             // the save button's own width (its icon and text), the name box the rest
-            let bw = 10.0 + 18.0 + 8.0 + text_w("SAVE LOOP", 2.0) + 10.0 + 8.0;
+            let bw = text_w("Save loop", 1.2) + 26.0 + 8.0;
             let w = ui.available_width() - bw;
             let r = text_box(ui, &mut self.sec_name, w.max(80.0), "Name this loop (bridge, head, lick...)");
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ibtn(ui, &IC_BOOK, "Save loop", false).clicked() || enter {
+            if pill(ui, "Save loop", false).clicked() || enter {
                 match (self.loop_a, self.loop_b) {
                     (Some(a), Some(b)) if b > a => {
                         let list = self.sections.entry(t.id).or_default();
@@ -426,7 +428,7 @@ impl App {
                 ui.horizontal(|ui| {
                     let on = self.loop_on && self.loop_a == Some(s.a) && self.loop_b == Some(s.b);
                     let w = ui.available_width() - 100.0;
-                    if retro_btn_w(ui, &format!("{}   {} - {}", s.name, fmt_t(s.a), fmt_t(s.b)), w, on).clicked() {
+                    if pill_w(ui, &format!("{}   {} - {}", s.name, fmt_t(s.a), fmt_t(s.b)), w, on).clicked() {
                         self.loop_a = Some(s.a);
                         self.loop_b = Some(s.b);
                         self.loop_on = true;
@@ -435,11 +437,11 @@ impl App {
                         self.sync_player();
                         self.player.send(Cmd::Seek(s.a));
                     }
-                    if retro_btn_w(ui, "Edit", 50.0, self.sec_edit == Some(k)).clicked() {
+                    if pill_w(ui, "Edit", 50.0, self.sec_edit == Some(k)).clicked() {
                         self.sec_edit = if self.sec_edit == Some(k) { None } else { Some(k) };
                     }
                     let asked = self.sec_del == Some(k);
-                    if retro_btn_w(ui, if asked { "Sure?" } else { "X" }, 42.0, asked).clicked() {
+                    if pill_w(ui, if asked { "Sure?" } else { "X" }, 42.0, asked).clicked() {
                         if asked {
                             drop = Some(k);
                             self.sec_del = None;
@@ -526,7 +528,7 @@ impl App {
         srow(ui, "Pitch", &pv);
         ui.horizontal_wrapped(|ui| {
             for (s, d) in [("-1", -100), ("-10c", -10), ("+10c", 10), ("+1", 100), ("Reset", 0)] {
-                if retro_btn(ui, s, false).clicked() {
+                if pill(ui, s, false).clicked() {
                     self.cents = if d == 0 { 0 } else { (self.cents + d).clamp(-1200, 1200) };
                     self.practice = true;
                     self.sync_player();
@@ -568,7 +570,7 @@ impl App {
                 self.save_settings();
             }
             for (name, g) in EQ_PRESETS {
-                if retro_btn(ui, name, self.eq == g).clicked() {
+                if pill(ui, name, self.eq == g).clicked() {
                     self.eq = g;
                     self.eq_on = true;
                     self.player.eq.set(self.eq, 0.0, self.eq_on);
@@ -690,20 +692,20 @@ impl App {
     fn marks_tab(&mut self, ui: &mut egui::Ui, t: &Track) {
         let now = self.pos();
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, &format!("+ BOOKMARK AT {}", fmt_t(now)), false).clicked() {
+            if pill(ui, &format!("+ BOOKMARK AT {}", fmt_t(now)), false).clicked() {
                 let l = self.marks.entry(t.id).or_default();
                 l.push((now, String::new()));
                 l.sort_by(|a, b| a.0.total_cmp(&b.0));
                 save_json("bookmarks.json", &self.marks);
             }
-            if self.marks.get(&t.id).is_some_and(|l| !l.is_empty()) && retro_btn(ui, "Remove all", false).clicked() {
+            if self.marks.get(&t.id).is_some_and(|l| !l.is_empty()) && pill(ui, "Remove all", false).clicked() {
                 self.marks.remove(&t.id);
                 save_json("bookmarks.json", &self.marks);
             }
         });
         let n = self.marks.get(&t.id).map_or(0, |l| l.len());
         if n == 0 {
-            para(ui, "No bookmarks on this song yet. They are fixed points to find your way: the solo, the key change, the bar you keep missing.", pal().ink2);
+            note_text(ui, "No bookmarks on this song yet. They are fixed points to find your way: the solo, the key change, the bar you keep missing.", pal().ink2);
             return;
         }
         let mut drop = None;
@@ -715,7 +717,7 @@ impl App {
                 let (sw, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
                 ui.painter().rect_filled(sw.shrink2(Vec2::new(2.0, 4.0)), 2.0, Color32::from_rgb(c[0], c[1], c[2]));
                 ptext(ui.painter(), sw.center(), Align::Center, &(k + 1).to_string(), 1.0, Color32::from_gray(12));
-                if retro_btn_w(ui, &fmt_t(at), 70.0, false).clicked() {
+                if pill_w(ui, &fmt_t(at), 70.0, false).clicked() {
                     self.player.send(Cmd::Seek(at));
                 }
                 let w = ui.available_width() - 48.0;
@@ -724,7 +726,7 @@ impl App {
                         changed = true;
                     }
                 }
-                if icon_btn_w(ui, &IC_X, false, pal().ink, 40.0).clicked() {
+                if pill_w(ui, "X", 40.0, false).clicked() {
                     drop = Some(k);
                 }
             });

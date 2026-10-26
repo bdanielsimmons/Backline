@@ -117,12 +117,12 @@ impl App {
         let mut play = None;
         if tracks.len() > 1 {
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "Play", false).clicked() {
+                if pill(ui, "Play", false).clicked() {
                     self.queue = tracks.to_vec();
                     self.shuffle = false;
                     play = Some(usize::MAX);
                 }
-                if retro_btn(ui, "Shuffle", false).clicked() {
+                if pill(ui, "Shuffle", false).clicked() {
                     let mut q = tracks.to_vec();
                     for i in (1..q.len()).rev() {
                         q.swap(i, (rand() % (i as u64 + 1)) as usize);
@@ -130,14 +130,14 @@ impl App {
                     self.queue = q;
                     play = Some(usize::MAX);
                 }
-                if retro_btn(ui, "Play next", false).clicked() {
+                if pill(ui, "Play next", false).clicked() {
                     let at = self.cur.map_or(0, |c| c + 1).min(self.queue.len());
                     for (k, t) in tracks.iter().enumerate() {
                         self.queue.insert(at + k, t.clone());
                     }
                     self.set_note(&format!("{} songs play next", tracks.len()));
                 }
-                if retro_btn(ui, "Add to queue", false).clicked() {
+                if pill(ui, "Add to queue", false).clicked() {
                     self.queue.extend(tracks.iter().cloned());
                     self.set_note(&format!("{} songs added", tracks.len()));
                 }
@@ -240,11 +240,11 @@ impl App {
                     return;
                 };
                 ui.horizontal(|ui| {
-                    if retro_btn_w(ui, "<", 40.0, false).clicked() {
+                    if pill_w(ui, "<", 40.0, false).clicked() {
                         self.pl_open = None;
                     }
                     title_line(ui, &pl.name, 2.0, pal().ink);
-                    if retro_btn(ui, "Delete playlist", false).clicked() {
+                    if pill(ui, "Delete playlist", false).clicked() {
                         self.playlists.remove(p);
                         self.save_playlists();
                         self.pl_open = None;
@@ -260,7 +260,7 @@ impl App {
                 dim_line(ui, "On this phone", 1.0, pal().ink2);
                 for k in 0..self.playlists.len() {
                     let label = format!("{}   ({})", self.playlists[k].name, self.playlists[k].tracks.len());
-                    if retro_btn_w(ui, &label, ui.available_width(), false).clicked() {
+                    if pill_w(ui, &label, ui.available_width(), false).clicked() {
                         self.pl_open = Some(k);
                     }
                 }
@@ -269,7 +269,7 @@ impl App {
             }
         }
         if self.my_page == 4 {
-            if retro_btn(ui, "Files on this phone", false).clicked() {
+            if pill(ui, "Files on this phone", false).clicked() {
                 self.lib_tab = 1;
                 self.scan_files();
                 return;
@@ -277,7 +277,7 @@ impl App {
             let mut kept = cache::tagged();
             kept.sort_by(|a, b| a.artist.cmp(&b.artist).then(a.title.cmp(&b.title)));
             if kept.is_empty() {
-                para(ui, "Songs you play are kept here, so they play again without a connection.", pal().dim);
+                note_text(ui, "Songs you play are kept here, so they play again without a connection.", pal().dim);
             }
             self.song_list(ui, &kept, "kept");
             return;
@@ -340,7 +340,7 @@ impl App {
             2 => {
                 if let Some((name, tracks)) = self.list_open.clone() {
                     ui.horizontal(|ui| {
-                        if icon_btn_w(ui, &IC_BACK, false, pal().ink, 40.0).clicked() {
+                        if pill_w(ui, "<", 40.0, false).clicked() {
                             self.list_open = None;
                         }
                         title_line(ui, &name.to_uppercase(), 2.0, pal().ink);
@@ -374,7 +374,7 @@ impl App {
                     let w = ui.available_width() - 56.0;
                     let r = text_box(ui, &mut self.query, w, "Search Tidal");
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if (retro_btn_w(ui, "Go", 48.0, false).clicked() || enter) && !self.query.trim().is_empty() {
+                    if (pill_w(ui, "Go", 48.0, false).clicked() || enter) && !self.query.trim().is_empty() {
                         let q = self.query.trim().to_string();
                         if let Some(p) = self.search_cache.get(&q.to_lowercase()) {
                             self.results = p.tracks.clone();
@@ -398,7 +398,7 @@ impl App {
                         dim_line(ui, "Searched before", 1.0, pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for q in past {
-                                if retro_btn(ui, &q, false).clicked() {
+                                if pill(ui, &q, false).clicked() {
                                     if let Some(p) = self.search_cache.get(&q) {
                                         self.results = p.tracks.clone();
                                         self.result_rows = p.rows.clone();
@@ -544,21 +544,21 @@ impl App {
         if let Some(c) = card {
             ui.horizontal_wrapped(|ui| match c.kind {
                 api::Kind::Artist => {
-                    if retro_btn(ui, "Follow", false).clicked() {
+                    if pill(ui, "Follow", false).clicked() {
                         let id = c.id.clone();
                         self.spawn(move |api| Msg::Done(api.follow_artist(&id, true).map(|_| "Following".to_string())));
                     }
-                    if retro_btn(ui, "Unfollow", false).clicked() {
+                    if pill(ui, "Unfollow", false).clicked() {
                         let id = c.id.clone();
                         self.spawn(move |api| Msg::Done(api.follow_artist(&id, false).map(|_| "Not following".to_string())));
                     }
                 }
                 api::Kind::Album | api::Kind::Playlist => {
-                    if retro_btn(ui, "Save to my library", false).clicked() {
+                    if pill(ui, "Save to my library", false).clicked() {
                         let c2 = c.clone();
                         self.spawn(move |api| Msg::Done(api.save_card(&c2, true).map(|_| "Saved".to_string())));
                     }
-                    if retro_btn(ui, "Remove from my library", false).clicked() {
+                    if pill(ui, "Remove from my library", false).clicked() {
                         let c2 = c.clone();
                         self.spawn(move |api| Msg::Done(api.save_card(&c2, false).map(|_| "Removed".to_string())));
                     }
@@ -583,19 +583,19 @@ impl App {
 
     fn login_ui(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
-        para(ui, "Sign in with your own Tidal subscription. Files on this phone and YouTube work without it.", pal().ink2);
+        note_text(ui, "Sign in with your own Tidal subscription. Files on this phone and YouTube work without it.", pal().ink2);
         ui.add_space(6.0);
         match self.code.clone() {
             None => {
-                if retro_btn(ui, "Sign in to Tidal", false).clicked() {
+                if pill(ui, "Sign in to Tidal", false).clicked() {
                     self.code = Some((String::new(), String::new()));
                     self.spawn(|api| Msg::Code(api.start_login()));
                 }
             }
             Some((code, url)) if !code.is_empty() => {
-                para(ui, "Approve Backline in the page that opened, or go to", pal().ink2);
+                note_text(ui, "Approve Backline in the page that opened, or go to", pal().ink2);
                 lcd_box(ui, &url, ui.available_width(), pal().ink);
-                para(ui, "and enter the code", pal().ink2);
+                note_text(ui, "and enter the code", pal().ink2);
                 title_line(ui, &code, 4.0, pal().ink);
             }
             Some(_) => dim_line(ui, "Asking Tidal...", 1.0, pal().ink2),
@@ -629,7 +629,7 @@ impl App {
 
     fn files_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, if self.files_busy { "Looking..." } else { "Look again" }, false).clicked() {
+            if pill(ui, if self.files_busy { "Looking..." } else { "Look again" }, false).clicked() {
                 self.scan_files();
             }
         });
@@ -639,7 +639,7 @@ impl App {
             dim_line(ui, "Playlist files", 1.0, pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 for (name, paths) in &lists {
-                    if retro_btn(ui, &format!("{} ({})", name, paths.len()), false).clicked() {
+                    if pill(ui, &format!("{} ({})", name, paths.len()), false).clicked() {
                         let q: Vec<Track> = paths.iter().filter_map(|p| self.files.iter().find(|f| &f.1 == p).map(|f| f.0.clone())).collect();
                         if !q.is_empty() {
                             self.queue = q;
@@ -650,7 +650,7 @@ impl App {
             });
         }
         if self.files.is_empty() {
-            para(ui, &format!("No songs found. Put audio files in your Music or Download folder, or in {}", music_dir().display()), pal().ink2);
+            note_text(ui, &format!("No songs found. Put audio files in your Music or Download folder, or in {}", music_dir().display()), pal().ink2);
             return;
         }
         let tracks: Vec<Track> = self.files.iter().map(|f| f.0.clone()).collect();
@@ -662,12 +662,12 @@ impl App {
         ui.horizontal(|ui| {
             let w = ui.available_width() - 132.0;
             text_box(ui, &mut self.yt_link, w.max(80.0), "A YouTube link");
-            if retro_btn_w(ui, "Paste", 62.0, false).clicked() {
+            if pill_w(ui, "Paste", 62.0, false).clicked() {
                 if let Some(s) = clipboard() {
                     self.yt_link = s.trim().to_string();
                 }
             }
-            if retro_btn_w(ui, "Add", 50.0, false).clicked() && !self.busy {
+            if pill_w(ui, "Add", 50.0, false).clicked() && !self.busy {
                 self.yt_add(self.yt_link.trim().to_string(), None);
             }
         });
@@ -676,23 +676,23 @@ impl App {
         }
         // a big playlist: only with a yes
         if let Some((link, name, n)) = self.yt_ask.clone() {
-            para(ui, &format!("\"{}\" has {} videos.", name, n), pal().ink);
+            note_text(ui, &format!("\"{}\" has {} videos.", name, n), pal().ink);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, &format!("ADD ALL {}", n), false).clicked() {
+                if pill(ui, &format!("ADD ALL {}", n), false).clicked() {
                     self.yt_ask = None;
                     self.yt_add(link.clone(), Some(n as usize));
                 }
-                if retro_btn(ui, "First 25", false).clicked() {
+                if pill(ui, "First 25", false).clicked() {
                     self.yt_ask = None;
                     self.yt_add(link.clone(), Some(25));
                 }
-                if retro_btn(ui, "Cancel", false).clicked() {
+                if pill(ui, "Cancel", false).clicked() {
                     self.yt_ask = None;
                 }
             });
         }
         if self.yt.is_empty() {
-            para(ui, "Copy a link in the YouTube app (Share > Copy link), then PASTE and ADD.", pal().ink2);
+            note_text(ui, "Copy a link in the YouTube app (Share > Copy link), then PASTE and ADD.", pal().ink2);
             return;
         }
         let playing = self.cur_track().map(|t| t.id);

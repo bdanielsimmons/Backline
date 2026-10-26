@@ -586,22 +586,22 @@ impl App {
     /// The QUEUE window: the songs in line, numbered, the one playing marked (tap one to play it).
     pub(crate) fn queue_ui(&mut self, ui: &mut egui::Ui) {
         if self.queue.is_empty() {
-            para(ui, "Nothing in line yet. Pick songs in Music: the list you play from becomes the queue. Tap a song's three dots for Play next and Add to the queue.", pal().ink2);
+            note_text(ui, "Nothing in line yet. Pick songs in Music: the list you play from becomes the queue. Tap a song's three dots for Play next and Add to the queue.", pal().ink2);
             return;
         }
         // CLEAR, SAVE AS A PLAYLIST, and REORDER (drag the songs into place)
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "Reorder", self.q_reorder).clicked() {
+            if pill(ui, "Reorder", self.q_reorder).clicked() {
                 self.q_reorder = !self.q_reorder;
                 self.q_drag = None;
             }
-            if retro_btn(ui, "Save as a playlist", false).clicked() {
+            if pill(ui, "Save as a playlist", false).clicked() {
                 let name = format!("Queue {}", self.playlists.len() + 1);
                 self.playlists.push(Playlist { name: name.clone(), tracks: self.queue.iter().map(QTrack::of).collect() });
                 self.save_playlists();
                 self.set_note(&format!("Saved as {} (My tracks, Playlists)", name));
             }
-            if retro_btn(ui, "Clear", false).clicked() {
+            if pill(ui, "Clear", false).clicked() {
                 // the song playing stays
                 match self.cur.and_then(|c| self.queue.get(c).cloned()) {
                     Some(t) => {

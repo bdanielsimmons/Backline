@@ -146,11 +146,11 @@ impl App {
             if let Some(i) = self.pick_chip(ui, "ln_finger", &fingers, (finger - 1) as usize) {
                 self.ln_finger = i as u8 + 1;
             }
-            if retro_btn_w(ui, "-", 30.0, false).clicked() {
+            if pill_w(ui, "-", 30.0, false).clicked() {
                 self.ln_bpm = self.ln_bpm.saturating_sub(5).max(20);
             }
             label(ui, &format!("{} bpm", self.ln_bpm), 62.0);
-            if retro_btn_w(ui, "+", 30.0, false).clicked() {
+            if pill_w(ui, "+", 30.0, false).clicked() {
                 self.ln_bpm = (self.ln_bpm + 5).min(400);
             }
             let feel_names: Vec<&str> = FEELS.iter().map(|f| f.0).collect();
@@ -158,10 +158,10 @@ impl App {
             if let Some(i) = self.pick_chip(ui, "ln_feel", &feel_names, cur) {
                 self.ln_sub = FEELS[i].1;
             }
-            if retro_btn(ui, "Loop", self.ln_loop).clicked() {
+            if pill(ui, "Loop", self.ln_loop).clicked() {
                 self.ln_loop = !self.ln_loop;
             }
-            if retro_btn(ui, "What it's made of", self.ln_sheet).clicked() {
+            if pill(ui, "What it's made of", self.ln_sheet).clicked() {
                 self.ln_sheet = !self.ln_sheet;
             }
         });
@@ -347,7 +347,7 @@ impl App {
             dim_line(ui, "Chord", 1.0, pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 for k in 0..12 {
-                    if retro_btn_w(ui, theory::note_name(k, false), 40.0, root == k).clicked() {
+                    if pill_w(ui, theory::note_name(k, false), 40.0, root == k).clicked() {
                         self.si_root = k;
                     }
                 }
@@ -381,10 +381,10 @@ impl App {
                 });
             }
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "The usual choices", !self.si_any).clicked() {
+                if pill(ui, "The usual choices", !self.si_any).clicked() {
                     self.si_any = false;
                 }
-                if retro_btn(ui, "Any shape, anywhere", self.si_any).clicked() {
+                if pill(ui, "Any shape, anywhere", self.si_any).clicked() {
                     self.si_any = true;
                 }
             });
