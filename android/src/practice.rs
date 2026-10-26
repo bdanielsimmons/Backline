@@ -61,42 +61,55 @@ impl App {
     }
 
     /// The desktop's waveform: the song's shape, the loop, A and B, the saved loops along the bottom, the bookmarks,
-    /// where the song is and the time marks. Tap to jump.
+    /// where the song is and the time marks. Tap to jump; drag to make a loop, drag A or B to move it, drag inside
+    /// the loop to slide it. Zoom in with + and back with FIT; zoomed, it follows the song.
     fn waveform(&mut self, ui: &mut egui::Ui, t: &Track) {
-        let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 74.0), Sense::click_and_drag());
+        let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 84.0), Sense::click_and_drag());
         let p = ui.painter().clone();
         inset(&p, bar, pal().lcd);
         let inn = bar.shrink2(Vec2::new(5.0, 5.0));
         let dur = t.duration.max(0.001);
-        let at = |x: f32| inn.min.x + inn.width() * (x / dur).clamp(0.0, 1.0);
-        let shown = self.seek_drag.unwrap_or_else(|| self.pos());
+        let pos = self.pos();
+        // the part of the song in view
+        self.wv_zoom = self.wv_zoom.clamp(1.0, 64.0);
+        let vlen = dur / self.wv_zoom;
+        if self.wv_zoom > 1.0 && self.wv_drag.is_none() && !self.paused && (pos < self.wv_off || pos > self.wv_off + vlen) {
+            self.wv_off = pos - vlen * 0.1;
+        }
+        self.wv_off = self.wv_off.clamp(0.0, (dur - vlen).max(0.0));
+        let off = self.wv_off;
+        let at = |x: f32| inn.min.x + inn.width() * ((x - off) / vlen);
+        let time_at = |px: f32| (off + (px - inn.min.x) / inn.width() * vlen).clamp(0.0, dur);
+        let clip = p.with_clip_rect(inn);
         if !self.wave.is_empty() {
             let cols = (inn.width() / 2.0).max(1.0) as usize;
             let mid = inn.center().y;
             let n = self.wave.len();
             for c in 0..cols {
-                let a = c * n / cols;
-                let b = ((c + 1) * n / cols).max(a + 1).min(n);
+                let t0 = off + vlen * c as f32 / cols as f32;
+                let t1 = off + vlen * (c + 1) as f32 / cols as f32;
+                let a = ((t0 / dur) * n as f32) as usize;
+                let b = (((t1 / dur) * n as f32) as usize).max(a + 1).min(n);
                 let m = self.wave[a.min(n - 1)..b].iter().copied().max().unwrap_or(0);
                 let h = (m as f32 / 255.0) * (inn.height() * 0.5);
                 let x = inn.min.x + c as f32 * 2.0;
-                fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), pal().ink2.gamma_multiply(0.55));
+                fill_rect(&clip, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), pal().ink2.gamma_multiply(0.55));
             }
         } else {
-            ptext(&p, inn.center(), Align::Center, if self.loading { "LOADING..." } else { "" }, 1.0, pal().dim);
+            ptext(&p, inn.center(), Align::Center, if self.loading { "Loading..." } else { "" }, 1.0, pal().dim);
         }
         // saved loops as faint bands along the bottom
         for s in self.sections.get(&t.id).into_iter().flatten() {
-            fill_rect(&p, Rect::from_min_max(Pos2::new(at(s.a), inn.max.y - 3.0), Pos2::new(at(s.b).max(at(s.a) + 1.0), inn.max.y)), pal().ink.gamma_multiply(0.6));
+            fill_rect(&clip, Rect::from_min_max(Pos2::new(at(s.a), inn.max.y - 3.0), Pos2::new(at(s.b).max(at(s.a) + 1.0), inn.max.y)), pal().ink.gamma_multiply(0.6));
         }
         if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
             let col = if self.loop_on { loop_col().gamma_multiply(0.35) } else { pal().ink.gamma_multiply(0.2) };
-            fill_rect(&p, Rect::from_min_max(Pos2::new(at(a), inn.min.y), Pos2::new(at(b), inn.max.y)), col);
+            fill_rect(&clip, Rect::from_min_max(Pos2::new(at(a), inn.min.y), Pos2::new(at(b), inn.max.y)), col);
         }
         for (v, lab) in [(self.loop_a, "A"), (self.loop_b, "B")] {
             if let Some(x) = v {
-                fill_rect(&p, Rect::from_min_max(Pos2::new(at(x) - 1.0, bar.min.y + 2.0), Pos2::new(at(x) + 1.0, bar.max.y - 2.0)), loop_col());
-                ptext(&p, Pos2::new(at(x) + 4.0, inn.min.y + 5.0), Align::Min, lab, 1.0, loop_col());
+                fill_rect(&clip, Rect::from_min_max(Pos2::new(at(x) - 1.5, bar.min.y + 2.0), Pos2::new(at(x) + 1.5, bar.max.y - 2.0)), loop_col());
+                ptext(&clip, Pos2::new(at(x) + 4.0, inn.min.y + 5.0), Align::Min, lab, 1.0, loop_col());
             }
         }
         // bookmarks: a line in their colour and a numbered flag
@@ -104,21 +117,21 @@ impl App {
             let c = MARK_COLS[k % MARK_COLS.len()];
             let col = Color32::from_rgb(c[0], c[1], c[2]);
             let x = at(*bt);
-            fill_rect(&p, Rect::from_min_max(Pos2::new(x - 1.0, bar.min.y + 12.0), Pos2::new(x + 1.0, bar.max.y - 2.0)), col);
+            fill_rect(&clip, Rect::from_min_max(Pos2::new(x - 1.0, bar.min.y + 12.0), Pos2::new(x + 1.0, bar.max.y - 2.0)), col);
             let lab = if name.is_empty() { (k + 1).to_string() } else { fit(name, 1.0, 50.0) };
             let fw = text_w(&lab, 1.0) + 8.0;
             let flag = Rect::from_min_size(Pos2::new(x, bar.max.y - 22.0), Vec2::new(fw, 13.0));
-            p.rect_filled(flag, 1.0, col);
-            ptext(&p, flag.center(), Align::Center, &lab, 1.0, Color32::from_gray(12));
+            clip.rect_filled(flag, 1.0, col);
+            ptext(&clip, flag.center(), Align::Center, &lab, 1.0, Color32::from_gray(12));
         }
-        fill_rect(&p, Rect::from_min_max(Pos2::new(at(shown) - 1.0, bar.min.y + 2.0), Pos2::new(at(shown) + 1.0, bar.max.y - 2.0)), pal().ink);
-        let readout = format!("{} / {}", fmt_t(shown), fmt_t(t.duration));
+        fill_rect(&clip, Rect::from_min_max(Pos2::new(at(pos) - 1.0, bar.min.y + 2.0), Pos2::new(at(pos) + 1.0, bar.max.y - 2.0)), pal().ink);
+        let readout = format!("{} / {}", fmt_t(pos), fmt_t(t.duration));
         ptext(&p, Pos2::new(bar.max.x - 8.0, bar.min.y + 8.0), Align::Max, &readout, 1.0, pal().ink);
         // time marks along the top
-        let step = [5.0f32, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0].into_iter().find(|s| dur / s <= 6.0).unwrap_or(600.0);
+        let step = [1.0f32, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0].into_iter().find(|s| vlen / s <= 6.0).unwrap_or(600.0);
         let limit = bar.max.x - 16.0 - text_w(&readout, 1.0);
-        let mut x0 = step;
-        while x0 < dur {
+        let mut x0 = (off / step).ceil() * step;
+        while x0 < off + vlen {
             let x = at(x0);
             fill_rect(&p, Rect::from_min_max(Pos2::new(x, bar.min.y + 2.0), Pos2::new(x + 1.0, bar.min.y + 7.0)), pal().ink);
             if x + 30.0 < limit {
@@ -127,21 +140,93 @@ impl App {
             }
             x0 += step;
         }
-        // tap or drag: jump there
-        if let Some(pp) = resp.interact_pointer_pos() {
-            if resp.dragged() || resp.clicked() {
-                self.seek_drag = Some(((pp.x - inn.min.x) / inn.width()).clamp(0.0, 1.0) * dur);
+        // tap: jump there. Drag: by A or B moves it, inside the loop slides it, anywhere else makes a new loop
+        if resp.drag_started() {
+            if let Some(pp) = resp.interact_pointer_pos() {
+                let t0 = time_at(pp.x);
+                let (a, b) = (self.loop_a.unwrap_or(-1.0), self.loop_b.unwrap_or(-1.0));
+                let kind = if self.loop_a.is_some() && (pp.x - at(a)).abs() < 18.0 {
+                    1
+                } else if self.loop_b.is_some() && (pp.x - at(b)).abs() < 18.0 {
+                    2
+                } else if a >= 0.0 && b > a && t0 > a && t0 < b {
+                    3
+                } else {
+                    0
+                };
+                self.wv_drag = Some((kind, t0, a, b));
             }
         }
-        if resp.drag_stopped() || resp.clicked() {
-            if let Some(s) = self.seek_drag.take() {
-                self.player.send(Cmd::Seek(s));
+        if let (Some((kind, t0, a0, b0)), Some(pp)) = (self.wv_drag, resp.interact_pointer_pos()) {
+            if resp.dragged() {
+                let tn = time_at(pp.x);
+                match kind {
+                    0 => {
+                        self.loop_a = Some(t0.min(tn));
+                        self.loop_b = Some(t0.max(tn));
+                    }
+                    1 => self.loop_a = Some(tn),
+                    2 => self.loop_b = Some(tn),
+                    _ => {
+                        let d = (tn - t0).clamp(-a0, dur - b0);
+                        self.loop_a = Some(a0 + d);
+                        self.loop_b = Some(b0 + d);
+                    }
+                }
+            }
+        }
+        if resp.drag_stopped() {
+            if let Some((kind, ..)) = self.wv_drag.take() {
+                if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
+                    if b < a {
+                        (self.loop_a, self.loop_b) = (Some(b), Some(a));
+                    }
+                    if kind == 0 {
+                        self.sec_cur = None;
+                    }
+                    self.loop_on = (b - a).abs() > 0.2;
+                    self.practice = true;
+                    self.sync_saved(t.id);
+                    self.sync_player();
+                    if kind == 0 && self.loop_on {
+                        self.player.send(Cmd::Seek(self.loop_a.unwrap_or(0.0)));
+                    }
+                }
+            }
+        }
+        if resp.clicked() {
+            if let Some(pp) = resp.interact_pointer_pos() {
+                self.player.send(Cmd::Seek(time_at(pp.x)));
+            }
+        }
+        // zoom
+        ui.horizontal(|ui| {
+            if retro_btn_w(ui, "-", 36.0, false).clicked() {
+                self.wv_zoom = (self.wv_zoom / 2.0).max(1.0);
+            }
+            if retro_btn_w(ui, "+", 36.0, false).clicked() {
+                self.wv_zoom = (self.wv_zoom * 2.0).min(64.0);
+                self.wv_off = pos - dur / self.wv_zoom * 0.3;
+            }
+            if retro_btn(ui, "Fit", self.wv_zoom <= 1.0).clicked() {
+                self.wv_zoom = 1.0;
+                self.wv_off = 0.0;
+            }
+            dim_line(ui, "Drag on the wave to make a loop", 1.0, pal().dim);
+        });
+    }
+
+    /// The saved loop playing follows changes to A and B (nudged, dragged, shifted).
+    fn sync_saved(&mut self, id: i64) {
+        if let (Some(k), Some(a), Some(b)) = (self.sec_cur, self.loop_a, self.loop_b) {
+            if let Some(s) = self.sections.get_mut(&id).and_then(|l| l.get_mut(k)) {
+                s.a = a;
+                s.b = b;
+                save_json("loops.json", &self.sections);
             }
         }
     }
 
-    /// LOOP & SPEED: A and B (nudge them), the loop on / off, back 2 seconds, back to the start, the speed, and the
-    /// song's saved loops.
     /// LOOP & SPEED, top to bottom in the order you use it: 1 mark the bit (start, loop, end), 2 slow it down,
     /// then play it, 3 keep it (the saved loops).
     fn loop_tab(&mut self, ui: &mut egui::Ui, t: &Track) {
@@ -181,6 +266,7 @@ impl App {
                 }
                 self.loop_on = self.loop_a.zip(self.loop_b).is_some_and(|(a, b)| b > a);
                 self.practice = true;
+                self.sec_cur = None;
                 self.sync_player();
             }
             for (k, d) in [(-1i32, "-"), (1, "+")] {
@@ -196,6 +282,7 @@ impl App {
                     } else {
                         self.loop_b = Some(nv);
                     }
+                    self.sync_saved(t.id);
                     self.sync_player();
                 }
             }
@@ -215,11 +302,26 @@ impl App {
             self.sync_player();
         }
         if both {
-            ui.horizontal(|ui| {
-                if retro_btn(ui, "Clear the loop", false).clicked() {
+            ui.horizontal_wrapped(|ui| {
+                // the next (or last) stretch of the same length: bar 5-8 after bar 1-4
+                for (name, d) in [("< Shift back", -1.0f32), ("Shift on >", 1.0)] {
+                    if retro_btn(ui, name, false).clicked() {
+                        if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
+                            let len = b - a;
+                            let na = (a + d * len).clamp(0.0, (dur - len).max(0.0));
+                            self.loop_a = Some(na);
+                            self.loop_b = Some(na + len);
+                            self.sec_cur = None;
+                            self.sync_player();
+                            self.player.send(Cmd::Seek(na));
+                        }
+                    }
+                }
+                if retro_btn(ui, "Clear", false).clicked() {
                     self.loop_a = None;
                     self.loop_b = None;
                     self.loop_on = false;
+                    self.sec_cur = None;
                     self.sync_player();
                 }
             });
@@ -276,7 +378,7 @@ impl App {
                     (Some(a), Some(b)) if b > a => {
                         let list = self.sections.entry(t.id).or_default();
                         let name = if self.sec_name.trim().is_empty() { format!("LOOP {}", list.len() + 1) } else { self.sec_name.trim().to_string() };
-                        list.push(Section { name, a, b });
+                        list.push(Section { name, a, b, ..Default::default() });
                         save_json("loops.json", &self.sections);
                         self.sec_name.clear();
                         self.set_note("LOOP SAVED");
@@ -287,29 +389,69 @@ impl App {
         });
         let secs = self.sections.get(&t.id).cloned().unwrap_or_default();
         if secs.is_empty() {
-            dim_line(ui, "SAVED LOOPS OF THIS SONG SHOW UP HERE", 1.0, pal().dim);
+            dim_line(ui, "Saved loops of this song show up here", 1.0, pal().dim);
         }
+        let mut groups: Vec<String> = Vec::new();
+        for s in &secs {
+            if !groups.contains(&s.group) {
+                groups.push(s.group.clone());
+            }
+        }
+        groups.sort_by_key(|g| (!g.is_empty(), g.to_lowercase()));
         let mut drop = None;
-        for (k, s) in secs.iter().enumerate() {
-            ui.horizontal(|ui| {
-                let on = self.loop_on && self.loop_a == Some(s.a) && self.loop_b == Some(s.b);
-                let w = ui.available_width() - 48.0;
-                if retro_btn_w(ui, &format!("{}   {} - {}", s.name.to_uppercase(), fmt_t(s.a), fmt_t(s.b)), w, on).clicked() {
-                    self.loop_a = Some(s.a);
-                    self.loop_b = Some(s.b);
-                    self.loop_on = true;
-                    self.sync_player();
-                    self.player.send(Cmd::Seek(s.a));
+        let mut changed = false;
+        for g in &groups {
+            if !g.is_empty() {
+                dim_line(ui, g, 1.0, pal().ink2);
+            }
+            for (k, s) in secs.iter().enumerate().filter(|(_, s)| &s.group == g) {
+                ui.horizontal(|ui| {
+                    let on = self.loop_on && self.loop_a == Some(s.a) && self.loop_b == Some(s.b);
+                    let w = ui.available_width() - 100.0;
+                    if retro_btn_w(ui, &format!("{}   {} - {}", s.name, fmt_t(s.a), fmt_t(s.b)), w, on).clicked() {
+                        self.loop_a = Some(s.a);
+                        self.loop_b = Some(s.b);
+                        self.loop_on = true;
+                        self.sec_cur = Some(k);
+                        self.practice = true;
+                        self.sync_player();
+                        self.player.send(Cmd::Seek(s.a));
+                    }
+                    if retro_btn_w(ui, "Edit", 50.0, self.sec_edit == Some(k)).clicked() {
+                        self.sec_edit = if self.sec_edit == Some(k) { None } else { Some(k) };
+                    }
+                    let asked = self.sec_del == Some(k);
+                    if retro_btn_w(ui, if asked { "Sure?" } else { "X" }, 42.0, asked).clicked() {
+                        if asked {
+                            drop = Some(k);
+                            self.sec_del = None;
+                        } else {
+                            self.sec_del = Some(k);
+                        }
+                    }
+                });
+                if !s.note.is_empty() && self.sec_edit != Some(k) {
+                    dim_line(ui, &s.note, 1.0, pal().dim);
                 }
-                if icon_btn_w(ui, &IC_X, false, pal().ink, 40.0).clicked() {
-                    drop = Some(k);
+                if self.sec_edit == Some(k) {
+                    let w = ui.available_width();
+                    if let Some(e) = self.sections.get_mut(&t.id).and_then(|l| l.get_mut(k)) {
+                        changed |= text_box(ui, &mut e.name, w, "Name").changed();
+                        changed |= text_box(ui, &mut e.note, w, "A note: what it is, what to work on").changed();
+                        changed |= text_box(ui, &mut e.group, w, "Group (solo licks, head...)").changed();
+                    }
                 }
-            });
+            }
+        }
+        if changed {
+            save_json("loops.json", &self.sections);
         }
         if let Some(k) = drop {
             if let Some(l) = self.sections.get_mut(&t.id) {
                 l.remove(k);
             }
+            self.sec_cur = None;
+            self.sec_edit = None;
             save_json("loops.json", &self.sections);
         }
     }
@@ -355,7 +497,28 @@ impl App {
             let d = stepper(ui, &format!("+{}%", self.trainer_step), 50.0);
             self.trainer_step = (self.trainer_step as i32 + d).clamp(1, 20) as u32;
         });
-        dim_line(ui, "STARTS AT THE SPEED SET ON LOOP & SPEED AND STOPS AT 100%", 1.0, pal().dim);
+        ui.horizontal_wrapped(|ui| {
+            label(ui, "THEN", 56.0);
+            if retro_btn(ui, "Faster", !self.trainer_keys).clicked() {
+                self.trainer_keys = false;
+                self.passes = 0;
+            }
+            if retro_btn(ui, "Up a 4th, 12 keys", self.trainer_keys).clicked() {
+                self.trainer_keys = true;
+                self.keys_done = 0;
+                self.passes = 0;
+                if !self.trainer {
+                    self.trainer = true;
+                    self.practice = true;
+                }
+            }
+        });
+        dim_line(
+            ui,
+            if self.trainer_keys { "Every few passes the loop goes up a 4th, through all 12 keys" } else { "Starts at the speed set on Loop & Speed and stops at 100%" },
+            1.0,
+            pal().dim,
+        );
     }
 
     /// PITCH & EAR: the pitch (semitones and cents), the ear mode, and the equalizer.
@@ -384,6 +547,34 @@ impl App {
             }
         });
         dim_line(ui, "LEFT / RIGHT: ONE SIDE IN BOTH EARS. NO CENTER: VOCALS OUT. BASS ONLY: THE LOW END.", 1.0, pal().dim);
+        // the recording's tuning: find it, then shift to A440
+        let id = self.cur_track().map(|t| t.id).unwrap_or(0);
+        ui.horizontal_wrapped(|ui| {
+            label(ui, "TUNING", 56.0);
+            match self.tuning.get(&id).copied() {
+                Some(c) if c.abs() >= 5 => {
+                    if retro_btn(ui, &format!("Tune to A440 ({:+}c)", -c), self.cents == -c).clicked() {
+                        self.cents = -c;
+                        self.practice = true;
+                        self.sync_player();
+                    }
+                }
+                Some(_) => dim_line(ui, "At A440", 1.0, pal().ink2),
+                None => {
+                    if retro_btn(ui, if self.tuning_busy { "Listening..." } else { "Find tuning" }, false).clicked() && !self.tuning_busy {
+                        self.find_tuning();
+                    }
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            label(ui, "SAVE", 56.0);
+            let what = if self.loop_a.zip(self.loop_b).is_some_and(|(a, b)| b > a) { "Save the loop as a WAV" } else { "Save the song as a WAV" };
+            if retro_btn(ui, if self.exporting { "Saving..." } else { what }, false).clicked() && !self.exporting {
+                self.export_wav();
+            }
+        });
+        dim_line(ui, "As you hear it (speed, pitch, ear mode, equalizer), into the phone's Music folder", 1.0, pal().dim);
         ui.add_space(8.0);
         section_header(ui, "EQUALIZER");
         ui.horizontal_wrapped(|ui| {
@@ -426,6 +617,89 @@ impl App {
             raised(p, Rect::from_center_size(Pos2::new(cx, y), Vec2::new((col_w - 8.0).clamp(14.0, 24.0), 11.0)), false);
             ptext(p, Pos2::new(cx, r.max.y - 8.0), Align::Center, b, 1.0, pal().ink2);
         }
+    }
+
+    /// The song's bytes, from the phone (a file, or the copy kept when it played).
+    fn song_bytes(&self, id: i64) -> Option<Vec<u8>> {
+        match self.files.iter().find(|f| f.0.id == id) {
+            Some(f) => std::fs::read(&f.1).ok(),
+            None => cache::get(id),
+        }
+    }
+
+    /// Listen for how far the recording is from A440 (in the background).
+    fn find_tuning(&mut self) {
+        let Some(id) = self.cur_track().map(|t| t.id) else { return };
+        let Some(bytes) = self.song_bytes(id) else {
+            self.set_note("Play it once first so it's kept, then check the tuning");
+            return;
+        };
+        self.tuning_busy = true;
+        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::Tuning(id, tuning::detect(bytes)));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Save the loop (or the whole song) as a WAV the way it sounds now, into the phone's Music folder.
+    fn export_wav(&mut self) {
+        let Some(t) = self.cur_track().cloned() else { return };
+        let Some(bytes) = self.song_bytes(t.id) else {
+            self.set_note("Play it once first so it's kept, then save it");
+            return;
+        };
+        let (a, b) = match (self.loop_a, self.loop_b) {
+            (Some(a), Some(b)) if b > a => (a, b),
+            _ => (0.0, 0.0),
+        };
+        let fx = player::Fx {
+            speed: self.speed,
+            cents: if self.practice { self.cents } else { 0 },
+            chan: if self.practice { self.chan } else { 0 },
+            balance: self.balance,
+            eq: (self.eq, 0.0, self.eq_on),
+        };
+        let clean = |s: &str| s.chars().filter(|c| c.is_alphanumeric() || " -_".contains(*c)).collect::<String>();
+        let name = format!("{} - {}{}.wav", clean(&t.artists_text()), clean(&t.title), if b > a { format!(" {}-{}", a as u32, b as u32) } else { String::new() });
+        let path = music_dir().join("Saved loops").join(name);
+        self.exporting = true;
+        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let r = (|| -> Result<String, String> {
+                let mut src = decode::SymSource::new(bytes)?;
+                let (ch, rate) = (rodio::Source::channels(&src), rodio::Source::sample_rate(&src));
+                if a > 0.0 {
+                    rodio::Source::try_seek(&mut src, Duration::from_secs_f32(a)).map_err(|_| "can't seek in this file".to_string())?;
+                }
+                let data: Vec<i16> = if b > a { src.take(((b - a) * rate as f32) as usize * ch as usize).collect() } else { src.collect() };
+                let (out, ch, rate) = player::render(rodio::buffer::SamplesBuffer::new(ch, rate, data), &fx);
+                if let Some(d) = path.parent() {
+                    std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+                }
+                let len = (out.len() * 2) as u32;
+                let mut w: Vec<u8> = Vec::with_capacity(44 + len as usize);
+                w.extend_from_slice(b"RIFF");
+                w.extend_from_slice(&(36 + len).to_le_bytes());
+                w.extend_from_slice(b"WAVEfmt ");
+                w.extend_from_slice(&16u32.to_le_bytes());
+                w.extend_from_slice(&1u16.to_le_bytes());
+                w.extend_from_slice(&ch.to_le_bytes());
+                w.extend_from_slice(&rate.to_le_bytes());
+                w.extend_from_slice(&(rate * ch as u32 * 2).to_le_bytes());
+                w.extend_from_slice(&(ch * 2).to_le_bytes());
+                w.extend_from_slice(&16u16.to_le_bytes());
+                w.extend_from_slice(b"data");
+                w.extend_from_slice(&len.to_le_bytes());
+                for s in out {
+                    w.extend_from_slice(&s.to_le_bytes());
+                }
+                std::fs::write(&path, w).map_err(|e| e.to_string())?;
+                Ok(path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+            })();
+            let _ = tx.send(Msg::Exported(r));
+            ctx.request_repaint();
+        });
     }
 
     /// BOOKMARKS: this song's fixed points - add one where the song is, jump to one, name it, take it away.

@@ -99,6 +99,10 @@ pub(crate) const EQ_PRESETS: [(&str, [f32; 10]); 4] = [
 pub(crate) const SPEEDS: [u32; 7] = [50, 75, 100, 125, 150, 200, 250];
 
 pub(crate) enum Msg {
+    /// how far the song is from A440 (cents, confidence)
+    Tuning(i64, Option<(i32, f32)>),
+    /// a WAV saved (where) or not
+    Exported(Result<String, String>),
     Code(Result<DeviceCode, String>),
     LoggedIn(Result<(), String>),
     Found(Result<Vec<Track>, String>),
@@ -141,10 +145,14 @@ pub(crate) enum Repeat {
 
 /// A saved loop of a song.
 #[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
 pub(crate) struct Section {
     pub name: String,
     pub a: f32,
     pub b: f32,
+    /// your note on it, and the group it's kept in within the song (as on the desktop)
+    pub note: String,
+    pub group: String,
 }
 
 /// What is kept between runs.
@@ -249,6 +257,22 @@ pub(crate) struct App {
     pub trainer_n: u32,
     pub trainer_step: u32,
     pub passes: u32,
+    /// the trainer goes up a 4th each time (through all 12 keys) instead of faster
+    pub trainer_keys: bool,
+    pub keys_done: u32,
+    /// the waveform's zoom (1 the whole song) and the time at its left edge; a drag on it: what it moves (0 a new
+    /// loop, 1 A, 2 B, 3 the whole loop), where it started, and A and B then
+    pub wv_zoom: f32,
+    pub wv_off: f32,
+    pub wv_drag: Option<(u8, f32, f32, f32)>,
+    /// the saved loop playing (its place in the song's list), the one being edited, the one asked to delete
+    pub sec_cur: Option<usize>,
+    pub sec_edit: Option<usize>,
+    pub sec_del: Option<usize>,
+    /// how far each song is from A440 (cents), and a check or an export under way
+    pub tuning: HashMap<i64, i32>,
+    pub tuning_busy: bool,
+    pub exporting: bool,
     pub wraps: u32,
     pub marks: HashMap<i64, Vec<(f32, String)>>,
     pub eq: [f32; 10],
@@ -403,6 +427,17 @@ impl App {
             trainer_n: 4,
             trainer_step: 5,
             passes: 0,
+            trainer_keys: false,
+            keys_done: 0,
+            wv_zoom: 1.0,
+            wv_off: 0.0,
+            wv_drag: None,
+            sec_cur: None,
+            sec_edit: None,
+            sec_del: None,
+            tuning: HashMap::new(),
+            tuning_busy: false,
+            exporting: false,
             wraps: 0,
             marks: load_json("bookmarks.json"),
             eq: st.eq,
@@ -650,6 +685,23 @@ impl App {
                     self.logged_in = true;
                     self.note.clear();
                 }
+                Msg::Tuning(id, r) => {
+                    self.tuning_busy = false;
+                    match r {
+                        Some((c, _)) => {
+                            self.tuning.insert(id, c);
+                            self.note = if c.abs() < 5 { "It's at A440".to_string() } else { format!("{:+} cents from A440", c) };
+                        }
+                        None => self.note = "Couldn't hear the tuning in this one".to_string(),
+                    }
+                }
+                Msg::Exported(r) => {
+                    self.exporting = false;
+                    self.note = match r {
+                        Ok(p) => format!("Saved {}", p),
+                        Err(e) => format!("Couldn't save it: {}", e),
+                    };
+                }
                 Msg::Found(r) => {
                     self.searching = false;
                     match r {
@@ -809,7 +861,24 @@ impl App {
                     self.passes += 1;
                     if self.passes >= self.trainer_n.max(1) {
                         self.passes = 0;
-                        if self.speed < 100 {
+                        if self.trainer_keys {
+                            // up a 4th each time, kept within half an octave either way; home after 12
+                            self.keys_done += 1;
+                            if self.keys_done >= 12 {
+                                self.keys_done = 0;
+                                self.trainer = false;
+                                self.cents = 0;
+                                self.set_note("All 12 keys done. Nice work");
+                            } else {
+                                let mut s = self.cents + 500;
+                                if s > 600 {
+                                    s -= 1200;
+                                }
+                                self.cents = s;
+                                self.set_note(&format!("Up a 4th: key {} of 12", self.keys_done + 1));
+                            }
+                            self.sync_player();
+                        } else if self.speed < 100 {
                             self.speed = (self.speed + self.trainer_step).min(100);
                             self.sync_player();
                         }
