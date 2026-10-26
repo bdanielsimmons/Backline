@@ -70,6 +70,8 @@ mod atonal_core;
 mod music_data;
 #[path = "ui/triad_core.rs"]
 mod triad_core;
+#[path = "ui/si_core.rs"]
+mod si_core;
 #[path = "ui/plan.rs"]
 mod plan;
 #[path = "ui/chords.rs"]

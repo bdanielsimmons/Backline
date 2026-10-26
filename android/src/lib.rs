@@ -50,6 +50,8 @@ mod lines_ui;
 mod lines;
 #[path = "../../backline/src/ui/triad_core.rs"]
 mod triad_core;
+#[path = "../../backline/src/ui/si_core.rs"]
+mod si_core;
 mod menu;
 use menu::{Playlist, QTrack};
 mod library;
@@ -345,6 +347,17 @@ pub(crate) struct App {
     pub ln_bpm: u32,
     pub ln_sub: u32,
     pub ln_loop: bool,
+    /// LINES' page (0 atonal lines, 1 superimpose); SUPERIMPOSE: the chord (root, kind, which), its scale, the
+    /// usual choices or any shape, the shape and its root when any, the usual choice picked
+    pub ln_page: u8,
+    pub si_root: i32,
+    pub si_fam: usize,
+    pub si_chord: usize,
+    pub si_scale: usize,
+    pub si_any: bool,
+    pub si_kind: usize,
+    pub si_kroot: i32,
+    pub si_pick: usize,
     /// the gear's page is open
     pub settings_open: bool,
     /// the metronome's full settings showing (meter, accents, sound, gap, faster, volume)
@@ -541,6 +554,15 @@ impl App {
             ln_bpm: 100,
             ln_sub: 2,
             ln_loop: false,
+            ln_page: 0,
+            si_root: 0,
+            si_fam: 0,
+            si_chord: 4,
+            si_scale: 0,
+            si_any: false,
+            si_kind: 0,
+            si_kroot: 0,
+            si_pick: 0,
             settings_open: false,
             mt_more: false,
             mt_beat: None,
