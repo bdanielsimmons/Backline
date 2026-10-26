@@ -306,7 +306,7 @@ impl App {
     /// The Tidal list showing: search (0), liked (1) or playlists (2).
     fn tidal_body(&mut self, ui: &mut egui::Ui) {
         if self.busy {
-            dim_line(ui, "LOADING...", 1.0, pal().ink2);
+            dim_line(ui, "Loading...", 1.0, pal().ink2);
         }
         match self.tidal_page {
             1 => {
@@ -363,7 +363,7 @@ impl App {
                     }
                 });
                 if self.searching {
-                    dim_line(ui, "SEARCHING...", 1.0, pal().ink2);
+                    dim_line(ui, "Searching...", 1.0, pal().ink2);
                 }
                 let r = self.results.clone();
                 if r.is_empty() && self.result_rows.is_empty() {
@@ -532,7 +532,7 @@ impl App {
         ui.add_space(6.0);
         match self.code.clone() {
             None => {
-                if retro_btn(ui, "SIGN IN TO TIDAL", false).clicked() {
+                if retro_btn(ui, "Sign in to Tidal", false).clicked() {
                     self.code = Some((String::new(), String::new()));
                     self.spawn(|api| Msg::Code(api.start_login()));
                 }
@@ -543,7 +543,7 @@ impl App {
                 para(ui, "and enter the code", pal().ink2);
                 title_line(ui, &code, 4.0, pal().ink);
             }
-            Some(_) => dim_line(ui, "ASKING TIDAL...", 1.0, pal().ink2),
+            Some(_) => dim_line(ui, "Asking Tidal...", 1.0, pal().ink2),
         }
     }
 
@@ -607,17 +607,17 @@ impl App {
         ui.horizontal(|ui| {
             let w = ui.available_width() - 132.0;
             text_box(ui, &mut self.yt_link, w.max(80.0), "A YouTube link");
-            if retro_btn_w(ui, "PASTE", 62.0, false).clicked() {
+            if retro_btn_w(ui, "Paste", 62.0, false).clicked() {
                 if let Some(s) = clipboard() {
                     self.yt_link = s.trim().to_string();
                 }
             }
-            if retro_btn_w(ui, "ADD", 50.0, false).clicked() && !self.busy {
+            if retro_btn_w(ui, "Add", 50.0, false).clicked() && !self.busy {
                 self.yt_add(self.yt_link.trim().to_string(), None);
             }
         });
         if self.busy {
-            dim_line(ui, "READING THE LINK...", 1.0, pal().ink2);
+            dim_line(ui, "Reading the link...", 1.0, pal().ink2);
         }
         // a big playlist: only with a yes
         if let Some((link, name, n)) = self.yt_ask.clone() {
@@ -627,11 +627,11 @@ impl App {
                     self.yt_ask = None;
                     self.yt_add(link.clone(), Some(n as usize));
                 }
-                if retro_btn(ui, "FIRST 25", false).clicked() {
+                if retro_btn(ui, "First 25", false).clicked() {
                     self.yt_ask = None;
                     self.yt_add(link.clone(), Some(25));
                 }
-                if retro_btn(ui, "CANCEL", false).clicked() {
+                if retro_btn(ui, "Cancel", false).clicked() {
                     self.yt_ask = None;
                 }
             });

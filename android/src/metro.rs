@@ -209,7 +209,7 @@ impl App {
             }
             ui.horizontal(|ui| {
                 // its own volume: louder or softer against the song
-                label(ui, "VOL", 36.0);
+                label(ui, "Vol", 36.0);
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(220.0), bh()), Sense::click_and_drag());
                 inset(ui.painter(), r, pal().lcd);
                 let inner = r.shrink(4.0);
@@ -225,7 +225,7 @@ impl App {
             // the pendulum and the beats
             self.metro_vis(ui, &mut changed);
             ui.horizontal_wrapped(|ui| {
-                label(ui, "METER", 44.0);
+                label(ui, "Meter", 44.0);
                 let d = stepper(ui, &self.mt.beats.to_string(), 26.0);
                 if d != 0 {
                     self.mt.beats = (self.mt.beats as i32 + d).clamp(1, 32) as u32;
@@ -243,7 +243,7 @@ impl App {
             let gs = band::groupings(self.mt.beats);
             if gs.len() > 1 {
                 ui.horizontal_wrapped(|ui| {
-                    label(ui, "ACCENT", 56.0);
+                    label(ui, "Accent", 56.0);
                     let txt = match self.mt_group {
                         0 => "GROUPS".to_string(),
                         k => gs[k - 1].iter().map(|n| n.to_string()).collect::<Vec<_>>().join("+"),
@@ -259,7 +259,7 @@ impl App {
                 });
             }
             ui.horizontal_wrapped(|ui| {
-                label(ui, "SOUND", 56.0);
+                label(ui, "Sound", 56.0);
                 let sub = ["NO SUBDIV", "EIGHTHS", "TRIPLETS", "SIXTEENTHS"][(self.mt.sub as usize).min(3)];
                 if retro_btn_w(ui, sub, 120.0, self.mt.sub > 0).clicked() {
                     self.mt.sub = (self.mt.sub + 1) % 4;
@@ -277,7 +277,7 @@ impl App {
                 }
             });
             ui.horizontal_wrapped(|ui| {
-                label(ui, "GAP", 56.0);
+                label(ui, "Gap", 56.0);
                 let p = if self.mt.gap_play == 0 { "OFF".to_string() } else { self.mt.gap_play.to_string() };
                 let d = stepper(ui, &p, 40.0);
                 if d != 0 {
@@ -286,16 +286,16 @@ impl App {
                 }
             });
             ui.horizontal_wrapped(|ui| {
-                label(ui, "THEN MUTE", 90.0);
+                label(ui, "Then mute", 90.0);
                 let d = stepper(ui, &self.mt.gap_mute.to_string(), 30.0);
                 if d != 0 {
                     self.mt.gap_mute = (self.mt.gap_mute as i32 + d).clamp(1, 16) as u32;
                     changed = true;
                 }
             });
-            dim_line(ui, "BARS OF CLICK, THEN BARS OF SILENCE - KEEP TIME ON YOUR OWN", 1.0, pal().dim);
+            dim_line(ui, "Bars of click, then bars of silence - keep time on your own", 1.0, pal().dim);
             ui.horizontal_wrapped(|ui| {
-                label(ui, "FASTER", 56.0);
+                label(ui, "Faster", 56.0);
                 let r = if self.mt.ramp_bars == 0 { "OFF".to_string() } else { self.mt.ramp_bars.to_string() };
                 let d = stepper(ui, &r, 40.0);
                 if d != 0 {
@@ -304,14 +304,14 @@ impl App {
                 }
             });
             ui.horizontal_wrapped(|ui| {
-                label(ui, "BY BPM", 90.0);
+                label(ui, "By BPM", 90.0);
                 let d = stepper(ui, &format!("+{}", self.mt.ramp_bpm), 36.0);
                 if d != 0 {
                     self.mt.ramp_bpm = (self.mt.ramp_bpm as i32 + d).clamp(1, 20) as u32;
                     changed = true;
                 }
             });
-            dim_line(ui, "EVERY SO MANY BARS THE TEMPO GOES UP", 1.0, pal().dim);
+            dim_line(ui, "Every so many bars the tempo goes up", 1.0, pal().dim);
             if changed {
                 self.metro_apply();
                 self.save_settings();
@@ -394,7 +394,7 @@ impl App {
                 }
             });
         }
-        dim_line(ui, "TAP A BEAT FOR ITS VOLUME: 3 LOUD ... 0 SILENT", 1.0, pal().dim);
+        dim_line(ui, "Tap A beat for its volume: 3 Loud ... 0 silent", 1.0, pal().dim);
     }
 
     /// One beat: its number and its volume pips (true when tapped).

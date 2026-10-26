@@ -391,7 +391,7 @@ impl App {
             let w = ui.available_width() - bw;
             let r = text_box(ui, &mut self.sec_name, w.max(80.0), "Name this loop (bridge, head, lick...)");
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ibtn(ui, &IC_BOOK, "SAVE LOOP", false).clicked() || enter {
+            if ibtn(ui, &IC_BOOK, "Save loop", false).clicked() || enter {
                 match (self.loop_a, self.loop_b) {
                     (Some(a), Some(b)) if b > a => {
                         let list = self.sections.entry(t.id).or_default();
@@ -399,9 +399,9 @@ impl App {
                         list.push(Section { name, a, b, ..Default::default() });
                         save_json("loops.json", &self.sections);
                         self.sec_name.clear();
-                        self.set_note("LOOP SAVED");
+                        self.set_note("Loop saved");
                     }
-                    _ => self.set_note("SET LOOP A AND B FIRST"),
+                    _ => self.set_note("Set loop A and B first"),
                 }
             }
         });
@@ -477,7 +477,7 @@ impl App {
     /// TRAINER: the count-off before each pass, and the speed trainer (so many passes, then a little faster).
     fn trainer_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            label(ui, "COUNT-OFF", 90.0);
+            label(ui, "Count-off", 90.0);
             let txt = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
             if retro_btn_w(ui, &txt, 90.0, self.count_in > 0).clicked() {
                 self.count_in = match self.count_in {
@@ -488,17 +488,17 @@ impl App {
                 self.sync_player();
             }
             lcd_box(ui, &format!("{:.0} BPM", self.song_bpm), 70.0, pal().ink);
-            if retro_btn_w(ui, "TAP", 44.0, false).clicked() {
+            if retro_btn_w(ui, "Tap", 44.0, false).clicked() {
                 if let Some(b) = self.tap() {
                     self.song_bpm = b;
                     self.sync_player();
                 }
             }
         });
-        dim_line(ui, "CLICKS BEFORE EVERY PASS OF THE LOOP, AT THE SONG'S TEMPO", 1.0, pal().dim);
+        dim_line(ui, "Clicks before every pass of the loop, at the song's tempo", 1.0, pal().dim);
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            label(ui, "TRAIN", 90.0);
+            label(ui, "Train", 90.0);
             if retro_btn_w(ui, if self.trainer { "ON" } else { "OFF" }, 56.0, self.trainer).clicked() {
                 self.trainer = !self.trainer;
                 self.passes = 0;
@@ -508,15 +508,15 @@ impl App {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            label(ui, "EVERY", 56.0);
+            label(ui, "Every", 56.0);
             let d = stepper(ui, &self.trainer_n.to_string(), 36.0);
             self.trainer_n = (self.trainer_n as i32 + d).clamp(1, 20) as u32;
-            label(ui, "LOOPS", 50.0);
+            label(ui, "Loops", 50.0);
             let d = stepper(ui, &format!("+{}%", self.trainer_step), 50.0);
             self.trainer_step = (self.trainer_step as i32 + d).clamp(1, 20) as u32;
         });
         ui.horizontal_wrapped(|ui| {
-            label(ui, "THEN", 56.0);
+            label(ui, "Then", 56.0);
             if retro_btn(ui, "Faster", !self.trainer_keys).clicked() {
                 self.trainer_keys = false;
                 self.passes = 0;
@@ -542,7 +542,7 @@ impl App {
     /// PITCH & EAR: the pitch (semitones and cents), the ear mode, and the equalizer.
     fn ear_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            label(ui, "PITCH", 56.0);
+            label(ui, "Pitch", 56.0);
             for (s, d) in [("-", -100), ("-10C", -10)] {
                 if retro_btn_w(ui, s, if s.len() > 1 { 48.0 } else { 30.0 }, false).clicked() {
                     self.cents = (self.cents + d).clamp(-1200, 1200);
@@ -558,17 +558,17 @@ impl App {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            label(ui, "EAR", 56.0);
+            label(ui, "Ear", 56.0);
             if retro_btn_w(ui, CHAN_NAMES[self.chan as usize % 6], 150.0, self.chan != 0).clicked() {
                 self.chan = (self.chan + 1) % 6;
                 self.sync_player();
             }
         });
-        dim_line(ui, "LEFT / RIGHT: ONE SIDE IN BOTH EARS. NO CENTER: VOCALS OUT. BASS ONLY: THE LOW END.", 1.0, pal().dim);
+        dim_line(ui, "Left / right: One side in both ears. No center: Vocals out. Bass only: The low end.", 1.0, pal().dim);
         // the recording's tuning: find it, then shift to A440
         let id = self.cur_track().map(|t| t.id).unwrap_or(0);
         ui.horizontal_wrapped(|ui| {
-            label(ui, "TUNING", 56.0);
+            label(ui, "Tuning", 56.0);
             match self.tuning.get(&id).copied() {
                 Some(c) if c.abs() >= 5 => {
                     if retro_btn(ui, &format!("Tune to A440 ({:+}c)", -c), self.cents == -c).clicked() {
@@ -586,7 +586,7 @@ impl App {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            label(ui, "SAVE", 56.0);
+            label(ui, "Save", 56.0);
             let what = if self.loop_a.zip(self.loop_b).is_some_and(|(a, b)| b > a) { "Save the loop as a WAV" } else { "Save the song as a WAV" };
             if retro_btn(ui, if self.exporting { "Saving..." } else { what }, false).clicked() && !self.exporting {
                 self.export_wav();
@@ -594,9 +594,9 @@ impl App {
         });
         dim_line(ui, "As you hear it (speed, pitch, ear mode, equalizer), into the phone's Music folder", 1.0, pal().dim);
         ui.add_space(8.0);
-        section_header(ui, "EQUALIZER");
+        section_header(ui, "Equalizer");
         ui.horizontal_wrapped(|ui| {
-            if check_box(ui, "ON", self.eq_on).clicked() {
+            if check_box(ui, "On", self.eq_on).clicked() {
                 self.eq_on = !self.eq_on;
                 self.player.eq.set(self.eq, 0.0, self.eq_on);
                 self.save_settings();
@@ -730,7 +730,7 @@ impl App {
                 l.sort_by(|a, b| a.0.total_cmp(&b.0));
                 save_json("bookmarks.json", &self.marks);
             }
-            if self.marks.get(&t.id).is_some_and(|l| !l.is_empty()) && retro_btn(ui, "REMOVE ALL", false).clicked() {
+            if self.marks.get(&t.id).is_some_and(|l| !l.is_empty()) && retro_btn(ui, "Remove all", false).clicked() {
                 self.marks.remove(&t.id);
                 save_json("bookmarks.json", &self.marks);
             }

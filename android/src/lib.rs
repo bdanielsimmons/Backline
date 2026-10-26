@@ -1572,7 +1572,8 @@ impl eframe::App for App {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::click());
                     inset(ui.painter(), r, pal().lcd);
                     let n = self.note.clone();
-                    let bad = n.contains("FAILED") || n.contains("CAN'T") || n.contains("COULDN'T") || n.starts_with("YOUTUBE:");
+                    let up = n.to_uppercase();
+                    let bad = up.contains("FAILED") || up.contains("CAN'T") || up.contains("COULDN'T") || up.contains("DIDN'T WORK") || up.starts_with("YOUTUBE:");
                     marquee(ui, r.shrink2(Vec2::new(4.0, 0.0)), &n, 1.0, if bad { pal().red } else { pal().ink });
                     if resp.clicked() {
                         self.note.clear();

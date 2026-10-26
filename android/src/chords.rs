@@ -290,21 +290,21 @@ impl App {
         title_line(ui, self.chord_q.trim(), 4.0, pal().ink);
         let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} ({})", n, i)).collect();
         para(ui, &notes.join("   "), pal().ink2);
-        section_header(ui, "ON THE NECK");
+        section_header(ui, "On the neck");
         let w = ui.available_width();
         let (nr, _) = ui.allocate_exact_size(Vec2::new(w, 120.0), Sense::hover());
         neck(ui, Rect::from_min_max(nr.min, Pos2::new(nr.max.x, nr.max.y - 12.0)), &[None; 6], 12, false, "find_neck", Some(c.root), &c.pcs, true);
-        section_header(ui, "ON THE PIANO");
+        section_header(ui, "On the piano");
         let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 80.0), Sense::hover());
         piano_span(ui, pr.shrink2(Vec2::new(2.0, 4.0)), &piano_voicing(&c), false, "find_piano", Some(c.root), 48, 2);
-        section_header(ui, "GUITAR");
+        section_header(ui, "Guitar");
         let q = self.chord_q.trim().to_string();
         let shapes = self.shapes_for(&q, &c);
         if shapes.is_empty() {
             para(ui, "No comfortable shape in reach for this one.", pal().ink2);
         }
         self.grip_cards(ui, &c, &shapes, false);
-        section_header(ui, "SCALES THAT FIT");
+        section_header(ui, "Scales that fit");
         for (name, steps) in theory::scales_for(&c) {
             let names: Vec<&str> = steps.iter().map(|s| theory::note_name(c.root + s, false)).collect();
             dim_line(ui, &format!("{} {}", theory::note_name(c.root, false), name.to_uppercase()), 2.0, pal().ink);
@@ -338,10 +338,10 @@ impl App {
         let (pr, _) = ui.allocate_exact_size(Vec2::new(w, 64.0), Sense::hover());
         piano_span(ui, pr, &notes, false, "an_piano", root, 36, 4);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "STRUM", false).clicked() {
+            if retro_btn(ui, "Strum", false).clicked() {
                 self.hear(&notes);
             }
-            if retro_btn(ui, "CLEAR", false).clicked() {
+            if retro_btn(ui, "Clear", false).clicked() {
                 self.an_frets = [None; 6];
                 self.an_pick = None;
             }
@@ -369,7 +369,7 @@ impl App {
             })
             .collect();
         dim_line(ui, &format!("NOTES: {}", if names.is_empty() { "-".to_string() } else { names.join("  ") }), 1.0, pal().ink2);
-        section_header(ui, "POSSIBLE CHORDS");
+        section_header(ui, "Possible chords");
         // how the names are written, and the details
         ui.horizontal_wrapped(|ui| {
             let sp = &mut self.chord_sp;
@@ -379,13 +379,13 @@ impl App {
             if retro_btn(ui, "#", sp.sharps).clicked() {
                 sp.sharps = !sp.sharps;
             }
-            if retro_btn(ui, "SLASH", sp.slash).clicked() {
+            if retro_btn(ui, "Slash", sp.slash).clicked() {
                 sp.slash = !sp.slash;
             }
-            if retro_btn(ui, "DETAILED", sp.detailed).clicked() {
+            if retro_btn(ui, "Detailed", sp.detailed).clicked() {
                 sp.detailed = !sp.detailed;
             }
-            if retro_btn(ui, "DETAILS", self.chord_details).clicked() {
+            if retro_btn(ui, "Details", self.chord_details).clicked() {
                 self.chord_details = !self.chord_details;
                 self.save_settings();
             }
@@ -428,7 +428,7 @@ impl App {
         }
         // the details: each chord broken down, with its warnings
         if self.chord_details && !found.is_empty() {
-            section_header(ui, "DETAILS");
+            section_header(ui, "Details");
             for s in found.iter().take(12) {
                 let notes: Vec<String> = s
                     .pcs
@@ -448,7 +448,7 @@ impl App {
                     });
                 }
             }
-            dim_line(ui, "+ YOU PLAY IT   - IT IS NOT PLAYED", 1.0, pal().dim);
+            dim_line(ui, "+ You play it   - it is not played", 1.0, pal().dim);
         }
         // the colour key
         ui.add_space(4.0);
@@ -516,17 +516,17 @@ impl App {
             let playing = self.seq_end.is_some_and(|e| Instant::now() < e);
             if playing {
                 ui.ctx().request_repaint_after(Duration::from_millis(200));
-                if retro_btn(ui, "STOP", true).clicked() {
+                if retro_btn(ui, "Stop", true).clicked() {
                     self.player.send(Cmd::StopOnce);
                     self.seq_end = None;
                 }
-            } else if retro_btn(ui, "HEAR THEM UP THE NECK", false).clicked() {
+            } else if retro_btn(ui, "Hear them up the neck", false).clicked() {
                 let seq: Vec<Vec<i32>> = grips.iter().map(grip_notes).collect();
                 self.player.send(Cmd::StopOnce);
                 self.player.send(Cmd::Once(band::sequence_sound(&seq, 0.9), 0.9));
                 self.seq_end = Some(Instant::now() + Duration::from_secs_f32(seq.len() as f32 * 0.9 + 1.5));
             }
-            label(ui, "R ROOT   3 THIRD   5 FIFTH", 200.0);
+            label(ui, "R root   3 third   5 fifth", 200.0);
         });
         // the shapes as boxes, two to a row
         let w = ((ui.available_width() - 10.0) / 2.0).min(150.0);
