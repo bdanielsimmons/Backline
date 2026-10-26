@@ -13,7 +13,7 @@ impl App {
         }
         // inside a source: a way back to the tiles, and its name
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
-        let name = ["Tidal", "Files", "YouTube"][(self.lib_tab as usize).min(2)];
+        let name = ["Tidal", "Files", "YouTube", "My tracks"][(self.lib_tab as usize).min(3)];
         ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &format!("<  {}", name), 1.8, pal().ink);
         if resp.clicked() {
             self.lib_tab = 9;
@@ -23,13 +23,14 @@ impl App {
         match self.lib_tab {
             1 => self.files_ui(ui),
             2 => self.yt_ui(ui),
+            3 => self.my_tracks_ui(ui),
             _ => self.tidal_ui(ui),
         }
     }
 
     /// MUSIC's home: four big tiles (Tidal, Files, YouTube, Liked), then what was played lately.
     fn music_home(&mut self, ui: &mut egui::Ui) {
-        let tiles = [("Tidal", "Search, liked, playlists"), ("Files", "On this phone"), ("YouTube", "Paste a link"), ("Liked", "Your hearts")];
+        let tiles = [("Tidal", "Search"), ("Files", "On this phone"), ("YouTube", "Paste a link"), ("My tracks", "Liked, playlists, downloaded")];
         let w = (ui.available_width() - 10.0) / 2.0;
         let h = 92.0;
         let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 2.0 * h + 10.0), Sense::hover());
@@ -44,8 +45,8 @@ impl App {
             if resp.clicked() {
                 match k {
                     3 => {
-                        self.lib_tab = 0;
-                        self.tidal_page = 1;
+                        self.lib_tab = 3;
+                        self.tidal_load(self.my_page + 1);
                     }
                     _ => {
                         self.lib_tab = k as u8;
@@ -92,9 +93,42 @@ impl App {
             self.login_ui(ui);
             return;
         }
-        if let Some(i) = tab_row(ui, &["SEARCH", "LIKED", "PLAYLISTS"], self.tidal_page as usize) {
-            self.tidal_page = i as u8;
+        self.tidal_page = 0;
+        self.tidal_body(ui);
+    }
+
+    /// MY TRACKS: your liked songs and playlists on Tidal, and the songs kept on this phone (they play without a
+    /// connection).
+    fn my_tracks_ui(&mut self, ui: &mut egui::Ui) {
+        if let Some(i) = tab_row(ui, &["Liked", "Playlists", "Downloaded"], self.my_page as usize) {
+            self.my_page = i as u8;
             self.list_open = None;
+            self.tidal_load(i as u8 + 1);
+        }
+        ui.add_space(4.0);
+        if self.my_page == 2 {
+            let mut kept = cache::tagged();
+            kept.sort_by(|a, b| a.artist.cmp(&b.artist).then(a.title.cmp(&b.title)));
+            if kept.is_empty() {
+                para(ui, "Songs you play are kept here, so they play again without a connection.", pal().dim);
+            }
+            self.song_list(ui, &kept, "kept");
+            return;
+        }
+        if !self.logged_in {
+            self.login_ui(ui);
+            return;
+        }
+        self.tidal_page = self.my_page + 1;
+        self.tidal_body(ui);
+    }
+
+    /// Fetch your liked songs (1) or playlists (2) the first time they're wanted.
+    fn tidal_load(&mut self, i: u8) {
+        if !self.logged_in {
+            return;
+        }
+        {
             if i == 1 && self.liked.is_empty() && !self.busy {
                 self.busy = true;
                 self.spawn(|api| {
@@ -124,7 +158,10 @@ impl App {
                 self.spawn(|api| Msg::Lists(api.my_playlists()));
             }
         }
-        ui.add_space(4.0);
+    }
+
+    /// The Tidal list showing: search (0), liked (1) or playlists (2).
+    fn tidal_body(&mut self, ui: &mut egui::Ui) {
         if self.busy {
             dim_line(ui, "LOADING...", 1.0, pal().ink2);
         }
@@ -170,10 +207,15 @@ impl App {
                     let w = ui.available_width() - 56.0;
                     let r = text_box(ui, &mut self.query, w, "Search Tidal");
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if (retro_btn_w(ui, "GO", 48.0, false).clicked() || enter) && !self.query.trim().is_empty() {
+                    if (retro_btn_w(ui, "Go", 48.0, false).clicked() || enter) && !self.query.trim().is_empty() {
                         let q = self.query.trim().to_string();
-                        self.searching = true;
-                        self.spawn(move |api| Msg::Found(api.search(&q).map(|p| p.tracks)));
+                        if let Some(r) = self.search_cache.get(&q.to_lowercase()) {
+                            self.results = r.clone();
+                        } else {
+                            self.searching = true;
+                            self.search_q = q.to_lowercase();
+                            self.spawn(move |api| Msg::Found(api.search(&q).map(|p| p.tracks)));
+                        }
                     }
                 });
                 if self.searching {

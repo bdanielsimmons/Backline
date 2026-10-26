@@ -7,10 +7,8 @@
 // ---- the desktop engine
 #[path = "../../backline/src/data/api.rs"]
 mod api;
-/// The desktop's song cache (it remembers songs for offline play); the phone keeps none
-mod cache {
-    pub fn know(_tracks: &[crate::api::Track]) {}
-}
+#[path = "../../backline/src/data/cache.rs"]
+mod cache;
 #[path = "../../backline/src/audio/band.rs"]
 mod band;
 #[path = "../../backline/src/data/chart.rs"]
@@ -197,6 +195,11 @@ pub(crate) struct App {
     pub lib_tab: u8,
     /// what was played lately, newest first (this session)
     pub recent: Vec<Track>,
+    /// Tidal searches already made (query -> songs), and the one on its way
+    pub search_cache: HashMap<String, Vec<Track>>,
+    pub search_q: String,
+    /// MY TRACKS: 0 liked, 1 playlists, 2 downloaded (the songs kept on this phone)
+    pub my_page: u8,
     pub tidal_page: u8,
     pub query: String,
     pub searching: bool,
@@ -307,6 +310,9 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> App {
         let ctx = cc.egui_ctx.clone();
         let st: Settings = load_json("settings.json");
+        // the songs kept on this phone, and their details for the Downloaded list
+        cache::scan();
+        cache::start_tagging(|_| None);
         SKIN.store(st.skin % PALS.len(), Ordering::Relaxed);
         font::set_ppp(ctx.pixels_per_point());
         let font_tex = font::init(&ctx);
@@ -347,6 +353,9 @@ impl App {
             code: None,
             lib_tab: 9,
             recent: Vec::new(),
+            search_cache: HashMap::new(),
+            search_q: String::new(),
+            my_page: 0,
             tidal_page: 0,
             query: String::new(),
             searching: false,
@@ -535,8 +544,15 @@ impl App {
                 yt_audio(&vid)
             } else if let Some(p) = file {
                 std::fs::read(&p).map_err(|e| e.to_string())
+            } else if let Some(b) = cache::get(t.id) {
+                Ok(b)
             } else {
-                api.stream_url(t.id, false).and_then(|u| api.fetch(&u))
+                let got = api.stream_url(t.id, false).and_then(|u| api.fetch(&u));
+                if let Ok(b) = &got {
+                    cache::know(std::slice::from_ref(&t));
+                    let _ = cache::put(t.id, b);
+                }
+                got
             };
             Msg::Audio(
                 g,
@@ -637,7 +653,10 @@ impl App {
                 Msg::Found(r) => {
                     self.searching = false;
                     match r {
-                        Ok(t) => self.results = t,
+                        Ok(t) => {
+                            self.search_cache.insert(self.search_q.clone(), t.clone());
+                            self.results = t;
+                        }
                         Err(e) => self.note = format!("SEARCH FAILED: {}", e),
                     }
                 }
@@ -728,6 +747,17 @@ impl App {
                             self.wraps = self.player.ctl.wraps();
                             self.sync_player();
                             self.player.send(Cmd::Play(b));
+                            // the next Tidal song in line is fetched ahead and kept, so it starts at once
+                            let next = self.cur.and_then(|i| self.queue.get(i + 1)).cloned();
+                            if let Some(n) = next.filter(|n| n.id > 0 && !cache::has(n.id) && !self.files.iter().any(|f| f.0.id == n.id)) {
+                                self.spawn(move |api| {
+                                    if let Ok(b) = api.stream_url(n.id, false).and_then(|u| api.fetch(&u)) {
+                                        cache::know(std::slice::from_ref(&n));
+                                        let _ = cache::put(n.id, &b);
+                                    }
+                                    Msg::Audio(u64::MAX, Err(String::new()))
+                                });
+                            }
                         }
                         Err(e) => {
                             self.stopped = true;
@@ -1269,7 +1299,8 @@ fn tab_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
     }
 }
 
-/// The Music page's source icons: Tidal (a sound wave), files (a folder), YouTube (a video), liked (a heart).
+/// The Music page's source icons: Tidal (a sound wave), files (a folder), YouTube (a video), my tracks (a
+/// bookshelf), a heart.
 pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
     let s = Stroke::new(2.0, col);
     let at = |x: f32, y: f32| c + Vec2::new(x, y);
@@ -1287,6 +1318,13 @@ pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
             // a video: a rounded screen with a play triangle in it
             p.rect_stroke(Rect::from_center_size(c, Vec2::new(26.0, 18.0)), 5.0, s);
             p.add(egui::Shape::convex_polygon(vec![at(-3.5, -5.0), at(5.5, 0.0), at(-3.5, 5.0)], col, Stroke::NONE));
+        }
+        3 => {
+            // a bookshelf: three books standing and one leaning, on a shelf
+            p.line_segment([at(-12.0, 9.0), at(12.0, 9.0)], s);
+            p.rect_stroke(Rect::from_min_max(at(-10.0, -8.0), at(-5.0, 8.0)), 1.0, s);
+            p.rect_stroke(Rect::from_min_max(at(-4.0, -5.0), at(1.0, 8.0)), 1.0, s);
+            p.add(egui::Shape::line(vec![at(3.0, 8.0), at(7.0, -7.0), at(11.0, -6.0), at(7.0, 8.0)], s));
         }
         _ => {
             let mut pts = Vec::new();

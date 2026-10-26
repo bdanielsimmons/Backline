@@ -15,6 +15,8 @@ rodio = { version = "0.19", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# the song cache's tags (the desktop's data/cache.rs)
+lofty = "0.22"
 base64 = "0.22"
 dirs = "5"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "isomp4", "flac", "mp3", "alac", "pcm", "wav", "ogg", "vorbis"] }
