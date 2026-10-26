@@ -264,6 +264,8 @@ pub(crate) struct App {
     pub ln_start: usize,
     pub ln_finger: u8,
     pub ln_sheet: bool,
+    /// when the line being heard ends (its Play button reads Stop till then)
+    pub ln_end: Option<Instant>,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -400,6 +402,7 @@ impl App {
             ln_start: 4,
             ln_finger: 2,
             ln_sheet: false,
+            ln_end: None,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],
@@ -596,6 +599,7 @@ impl App {
     /// These notes heard (a soft strum).
     pub(crate) fn hear(&self, notes: &[i32]) {
         if !notes.is_empty() {
+            self.player.send(Cmd::StopOnce);
             self.player.send(Cmd::Once(band::chord_sound(notes), 0.9));
         }
     }

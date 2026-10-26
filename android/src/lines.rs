@@ -55,11 +55,22 @@ impl App {
         let str_name = ["low E", "A", "D", "G", "B", "high E"][start.0];
         ptext_fit(&p, Pos2::new(head.min.x, head.min.y + 30.0), Align::Min, &format!("{} string, fret {}, finger {}", str_name, start.1, finger), 1.1, head.width() - 60.0, pal().dim);
         let pc = Pos2::new(head.max.x - 22.0, head.center().y);
+        // Play, or Stop while the line is sounding
+        let playing = self.ln_end.is_some_and(|e| Instant::now() < e);
+        if playing {
+            ui.ctx().request_repaint_after(Duration::from_millis(200));
+        }
         p.circle_filled(pc, 22.0, pal().red);
-        play_glyph(&p, pc, false, pal().bar_txt);
+        play_glyph(&p, pc, playing, pal().bar_txt);
         if ui.interact(Rect::from_center_size(pc, Vec2::splat(44.0)), ui.id().with("ln_play"), Sense::click()).clicked() {
-            let notes: Vec<Vec<i32>> = played.iter().map(|m| vec![*m]).collect();
-            self.player.send(Cmd::Once(band::line_sound(&notes, 0.28), 0.9));
+            self.player.send(Cmd::StopOnce);
+            if playing {
+                self.ln_end = None;
+            } else {
+                let notes: Vec<Vec<i32>> = played.iter().map(|m| vec![*m]).collect();
+                self.player.send(Cmd::Once(band::line_sound(&notes, 0.28), 0.9));
+                self.ln_end = Some(Instant::now() + Duration::from_secs_f32(notes.len() as f32 * 0.28 + 1.0));
+            }
         }
         let toggle = Rect::from_min_max(sr.min, Pos2::new(head.max.x - 48.0, head.max.y));
         if ui.interact(toggle, ui.id().with("ln_sheet"), Sense::click()).clicked() {
