@@ -616,7 +616,7 @@ impl App {
         let mut play = None;
         let queue = self.queue.clone();
         if self.q_reorder {
-            dim_line(ui, "Drag a song up or down", 1.0, pal().dim);
+            dim(ui, "Drag a song up or down", 1.0, pal().dim);
             let mut rows: Vec<Rect> = Vec::new();
             let mut drop_to = None;
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {

@@ -79,13 +79,13 @@ impl App {
             });
         }
         if self.busy && self.home.is_none() {
-            dim_line(ui, "Loading...", 1.0, pal().ink2);
+            dim(ui, "Loading...", 1.0, pal().ink2);
         }
         let rows = self.home.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
         let recent = self.recent.clone();
         egui::ScrollArea::vertical().id_salt("home_all").auto_shrink([false, false]).show(ui, |ui| {
             if !recent.is_empty() {
-                dim_line(ui, "Played lately", 1.0, pal().ink2);
+                dim(ui, "Played lately", 1.0, pal().ink2);
                 let playing = self.cur_track().map(|t| t.id);
                 let mut play = None;
                 for (i, t) in recent.iter().take(6).enumerate() {
@@ -224,7 +224,7 @@ impl App {
         // albums and artists you saved, and new from the artists you follow
         if self.my_page == 2 || self.my_page == 3 {
             if self.busy {
-                dim_line(ui, "Loading...", 1.0, pal().ink2);
+                dim(ui, "Loading...", 1.0, pal().ink2);
             }
             let rows = self.lib_page.as_ref().map(|p| p.rows.clone()).unwrap_or_default();
             let want: &[&str] = &["Albums", "Artists", api::NEW_FROM_FOLLOWED];
@@ -257,7 +257,7 @@ impl App {
                 return;
             }
             if self.list_open.is_none() && !self.playlists.is_empty() {
-                dim_line(ui, "On this phone", 1.0, pal().ink2);
+                dim(ui, "On this phone", 1.0, pal().ink2);
                 for k in 0..self.playlists.len() {
                     let label = format!("{}   ({})", self.playlists[k].name, self.playlists[k].tracks.len());
                     if pill_w(ui, &label, ui.available_width(), false).clicked() {
@@ -265,7 +265,7 @@ impl App {
                     }
                 }
                 ui.add_space(6.0);
-                dim_line(ui, "On Tidal", 1.0, pal().ink2);
+                dim(ui, "On Tidal", 1.0, pal().ink2);
             }
         }
         if self.my_page == 4 {
@@ -330,7 +330,7 @@ impl App {
     /// The Tidal list showing: search (0), liked (1) or playlists (2).
     fn tidal_body(&mut self, ui: &mut egui::Ui) {
         if self.busy {
-            dim_line(ui, "Loading...", 1.0, pal().ink2);
+            dim(ui, "Loading...", 1.0, pal().ink2);
         }
         match self.tidal_page {
             1 => {
@@ -387,7 +387,7 @@ impl App {
                     }
                 });
                 if self.searching {
-                    dim_line(ui, "Searching...", 1.0, pal().ink2);
+                    dim(ui, "Searching...", 1.0, pal().ink2);
                 }
                 let r = self.results.clone();
                 if r.is_empty() && self.result_rows.is_empty() {
@@ -395,7 +395,7 @@ impl App {
                     let mut past: Vec<String> = self.search_cache.keys().cloned().collect();
                     past.sort();
                     if !past.is_empty() {
-                        dim_line(ui, "Searched before", 1.0, pal().ink2);
+                        dim(ui, "Searched before", 1.0, pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for q in past {
                                 if pill(ui, &q, false).clicked() {
@@ -445,7 +445,7 @@ impl App {
         let mut open = None;
         for (title, cards) in rows {
             ui.add_space(6.0);
-            dim_line(ui, title, 1.0, pal().ink2);
+            dim(ui, title, 1.0, pal().ink2);
             for c in cards {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
                 let p = ui.painter();
@@ -499,7 +499,7 @@ impl App {
             return;
         }
         if self.page_busy {
-            dim_line(ui, "Loading...", 1.0, pal().ink2);
+            dim(ui, "Loading...", 1.0, pal().ink2);
             return;
         }
         let Some(page) = self.pages.last().cloned() else {
@@ -538,7 +538,7 @@ impl App {
             ptext_fit(ui.painter(), Pos2::new(tx, hr.min.y + 84.0), Align::Min, &page.subtitle, 1.1, tw, pal().dim);
             ui.add_space(6.0);
         } else if !page.subtitle.is_empty() {
-            dim_line(ui, &page.subtitle, 1.0, pal().dim);
+            dim(ui, &page.subtitle, 1.0, pal().dim);
         }
         let card = self.page_cards.last().cloned().flatten();
         if let Some(c) = card {
@@ -598,7 +598,7 @@ impl App {
                 note_text(ui, "and enter the code", pal().ink2);
                 title_line(ui, &code, 4.0, pal().ink);
             }
-            Some(_) => dim_line(ui, "Asking Tidal...", 1.0, pal().ink2),
+            Some(_) => dim(ui, "Asking Tidal...", 1.0, pal().ink2),
         }
     }
 
@@ -636,7 +636,7 @@ impl App {
         // playlist files found, each a button that plays it
         let lists = self.file_lists.clone();
         if !lists.is_empty() {
-            dim_line(ui, "Playlist files", 1.0, pal().ink2);
+            dim(ui, "Playlist files", 1.0, pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 for (name, paths) in &lists {
                     if pill(ui, &format!("{} ({})", name, paths.len()), false).clicked() {
@@ -672,7 +672,7 @@ impl App {
             }
         });
         if self.busy {
-            dim_line(ui, "Reading the link...", 1.0, pal().ink2);
+            dim(ui, "Reading the link...", 1.0, pal().ink2);
         }
         // a big playlist: only with a yes
         if let Some((link, name, n)) = self.yt_ask.clone() {

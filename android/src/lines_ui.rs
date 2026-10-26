@@ -346,7 +346,7 @@ impl App {
         let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(Align::Min)));
         egui::ScrollArea::vertical().id_salt("si_pick").auto_shrink([false, false]).show(&mut ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
-            dim_line(ui, "Chord", 1.0, pal().ink2);
+            dim(ui, "Chord", 1.0, pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 for k in 0..12 {
                     if pill_w(ui, theory::note_name(k, false), 40.0, root == k).clicked() {
@@ -418,7 +418,7 @@ impl App {
             sorted.sort_by_key(|p| (p - shape_root).rem_euclid(12));
             let line: Vec<String> = sorted.iter().map(|pc| format!("{} = {}", theory::note_name(*pc, false), degree_in(*pc, root, &chord_abs).0)).collect();
             for l in wrap(&line.join("    "), 1.2, ui.available_width() - 8.0) {
-                dim_line(ui, &l, 1.2, pal().ink);
+                dim(ui, &l, 1.2, pal().ink);
             }
             ui.horizontal_wrapped(|ui| {
                 for (name, col) in [("Chord tone", pal().ink), ("Tension", Color32::from_rgb(95, 168, 211)), ("Avoid", Color32::from_rgb(220, 70, 60))] {
@@ -428,7 +428,7 @@ impl App {
                     ui.add_space(8.0);
                 }
             });
-            dim_line(ui, "Rings: the chord's own notes not in the shape", 1.0, pal().dim);
+            dim(ui, "Rings: the chord's own notes not in the shape", 1.0, pal().dim);
         });
     }
 }
@@ -473,7 +473,7 @@ pub(crate) fn dot_neck(p: &egui::Painter, r: Rect, dots: &[((usize, u8), String,
 fn analysis(ui: &mut egui::Ui, line: &[i32]) {
     // a heading, then the text wrapped small under it
     let fact = |ui: &mut egui::Ui, name: &str, text: &str| {
-        dim_line(ui, name, 1.0, pal().ink2);
+        dim(ui, name, 1.0, pal().ink2);
         for line in wrap(text, 1.2, ui.available_width() - 8.0) {
             let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
             ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &line, 1.2, pal().ink);

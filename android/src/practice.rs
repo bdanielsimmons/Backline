@@ -223,7 +223,7 @@ impl App {
                 self.wv_zoom = 1.0;
                 self.wv_off = 0.0;
             }
-            dim_line(ui, "Drag on the wave to make a loop", 1.0, pal().dim);
+            dim(ui, "Drag on the wave to make a loop", 1.0, pal().dim);
         });
     }
 
@@ -364,7 +364,7 @@ impl App {
             }
         }
         if ![50, 60, 75, 90, 100].contains(&self.speed) {
-            dim_line(ui, &format!("Speed {}%", self.speed), 1.0, pal().ink2);
+            dim(ui, &format!("Speed {}%", self.speed), 1.0, pal().ink2);
         }
         // play it: back 2 seconds, play / pause, back to the loop's start
         let (tr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 64.0), Sense::hover());
@@ -409,7 +409,7 @@ impl App {
         });
         let secs = self.sections.get(&t.id).cloned().unwrap_or_default();
         if secs.is_empty() {
-            dim_line(ui, "Saved loops of this song show up here", 1.0, pal().dim);
+            dim(ui, "Saved loops of this song show up here", 1.0, pal().dim);
         }
         let mut groups: Vec<String> = Vec::new();
         for s in &secs {
@@ -422,7 +422,7 @@ impl App {
         let mut changed = false;
         for g in &groups {
             if !g.is_empty() {
-                dim_line(ui, g, 1.0, pal().ink2);
+                dim(ui, g, 1.0, pal().ink2);
             }
             for (k, s) in secs.iter().enumerate().filter(|(_, s)| &s.group == g) {
                 ui.horizontal(|ui| {
@@ -451,7 +451,7 @@ impl App {
                     }
                 });
                 if !s.note.is_empty() && self.sec_edit != Some(k) {
-                    dim_line(ui, &s.note, 1.0, pal().dim);
+                    dim(ui, &s.note, 1.0, pal().dim);
                 }
                 if self.sec_edit == Some(k) {
                     let w = ui.available_width();
@@ -513,7 +513,7 @@ impl App {
             self.keys_done = 0;
             self.passes = 0;
         }
-        dim_line(
+        dim(
             ui,
             if self.trainer_keys { "Every few passes the loop goes up a 4th, through all 12 keys" } else { "Starts at the speed set on Loop and stops at 100%" },
             1.0,

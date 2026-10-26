@@ -1499,7 +1499,7 @@ impl App {
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
         let cur = SKIN.load(Ordering::Relaxed);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            dim_line(ui, "Skin", 1.0, pal().ink2);
+            dim(ui, "Skin", 1.0, pal().ink2);
             let w = ui.available_width();
             let tw = (w - 8.0) / 2.0;
             let (area, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * 64.0 + 8.0), Sense::hover());
@@ -1521,7 +1521,7 @@ impl App {
                 }
             }
             ui.add_space(12.0);
-            dim_line(ui, "Tidal", 1.0, pal().ink2);
+            dim(ui, "Tidal", 1.0, pal().ink2);
             let row = |ui: &mut egui::Ui, left: &str, right: &str| -> bool {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::click());
                 ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
@@ -1954,6 +1954,13 @@ pub(crate) fn skip_glyph(p: &egui::Painter, c: Pos2, fwd: bool, col: Color32) {
     let d = if fwd { 1.0 } else { -1.0 };
     p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0 * d, -8.0), c + Vec2::new(5.0 * d, 0.0), c + Vec2::new(-6.0 * d, 8.0)], col, Stroke::NONE));
     p.rect_filled(Rect::from_center_size(c + Vec2::new(7.0 * d, 0.0), Vec2::new(2.5, 16.0)), 1.0, col);
+}
+
+/// A short line in plain small type (in place of the desktop's dim_line, which draws larger on the phone).
+pub(crate) fn dim(ui: &mut egui::Ui, text: &str, px: f32, col: Color32) {
+    let size = (px * 1.15).max(1.05);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 9.0 + size * 9.0), Sense::hover());
+    ptext_fit(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, text, size, r.width() - 4.0, col);
 }
 
 /// A note in plain, small type, wrapped to the width (in place of the desktop's boxed para).

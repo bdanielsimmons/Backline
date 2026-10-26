@@ -147,7 +147,7 @@ impl App {
                 ui.set_max_height(screen.height() * 0.8);
                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
                 title_line(ui, &fit(&t.title, 2.0, screen.width() - 80.0), 2.0, pal().ink);
-                dim_line(ui, &t.artists_text(), 1.0, pal().ink2);
+                dim(ui, &t.artists_text(), 1.0, pal().ink2);
                 let w = ui.available_width();
                 egui::ScrollArea::vertical().id_salt("menu_scroll").max_height(screen.height() * 0.65).show(ui, |ui| {
                     match self.menu_mode {
@@ -155,11 +155,11 @@ impl App {
                         3 => close |= self.menu_edit(ui, &t, w),
                         2 => {
                             if self.credits.is_empty() {
-                                dim_line(ui, "Loading the credits...", 1.0, pal().ink2);
+                                dim(ui, "Loading the credits...", 1.0, pal().ink2);
                             }
                             for (role, name) in self.credits.clone() {
-                                dim_line(ui, &role, 1.0, pal().ink2);
-                                dim_line(ui, &name, 1.4, pal().ink);
+                                dim(ui, &role, 1.0, pal().ink2);
+                                dim(ui, &name, 1.4, pal().ink);
                             }
                             if pill_w(ui, "Back", w, false).clicked() {
                                 self.menu_mode = 0;
@@ -318,11 +318,11 @@ impl App {
 
     /// The menu's EDIT INFO page: the song's title and artist as you want them shown, its key and tempo.
     fn menu_edit(&mut self, ui: &mut egui::Ui, t: &Track, w: f32) -> bool {
-        dim_line(ui, "Title", 1.0, pal().ink2);
+        dim(ui, "Title", 1.0, pal().ink2);
         crate::practice::text_box(ui, &mut self.edit.0, w, "Title");
-        dim_line(ui, "Artist", 1.0, pal().ink2);
+        dim(ui, "Artist", 1.0, pal().ink2);
         crate::practice::text_box(ui, &mut self.edit.1, w, "Artist");
-        dim_line(ui, "Key and tempo", 1.0, pal().ink2);
+        dim(ui, "Key and tempo", 1.0, pal().ink2);
         ui.horizontal(|ui| {
             let hw = (w - 6.0) / 2.0;
             crate::practice::text_box(ui, &mut self.edit.2, hw, "Key: Bb, F#m");
@@ -374,7 +374,7 @@ impl App {
     /// The menu's playlist page: your playlists on the phone (and a new one), then your Tidal playlists.
     fn menu_playlists(&mut self, ui: &mut egui::Ui, t: &Track, tidal: bool, w: f32) -> bool {
         let mut close = false;
-        dim_line(ui, "On this phone", 1.0, pal().ink2);
+        dim(ui, "On this phone", 1.0, pal().ink2);
         for k in 0..self.playlists.len() {
             let name = self.playlists[k].name.clone();
             if pill_w(ui, &name, w, false).clicked() {
@@ -398,9 +398,9 @@ impl App {
         });
         if tidal && self.logged_in {
             ui.add_space(6.0);
-            dim_line(ui, "On Tidal", 1.0, pal().ink2);
+            dim(ui, "On Tidal", 1.0, pal().ink2);
             if self.own_lists.is_empty() {
-                dim_line(ui, "Loading...", 1.0, pal().dim);
+                dim(ui, "Loading...", 1.0, pal().dim);
             }
             for (uuid, name) in self.own_lists.clone() {
                 if pill_w(ui, &name, w, false).clicked() {

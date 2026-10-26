@@ -192,7 +192,7 @@ impl App {
     /// the analyzer's neck too).
     fn grip_cards(&mut self, ui: &mut egui::Ui, c: &theory::ChordNotes, shapes: &[[Option<u8>; 6]], to_neck: bool) {
         let (root, pcs) = (c.root, c.pcs.clone());
-        let w = ((ui.available_width() - 10.0) / 2.0).min(150.0);
+        let w = ((ui.available_width() - 10.0) / 2.0).min(220.0);
         let mut hear = None;
         for row in shapes.chunks(2) {
             ui.horizontal(|ui| {
@@ -331,13 +331,13 @@ impl App {
         section_header(ui, "Scales that fit");
         for (name, steps) in theory::scales_for(&c) {
             let names: Vec<&str> = steps.iter().map(|s| theory::note_name(c.root + s, false)).collect();
-            dim_line(ui, &format!("{} {}", theory::note_name(c.root, false), name.to_uppercase()), 2.0, pal().ink);
-            dim_line(ui, &names.join(" "), 1.0, pal().ink2);
+            dim(ui, &format!("{} {}", theory::note_name(c.root, false), name.to_uppercase()), 2.0, pal().ink);
+            dim(ui, &names.join(" "), 1.0, pal().ink2);
         }
     }
 
     fn chord_analyze(&mut self, ui: &mut egui::Ui) {
-        dim_line(ui, "Tap notes on the neck, one per string; tap again to lift one", 1.0, pal().ink2);
+        dim(ui, "Tap notes on the neck, one per string; tap again to lift one", 1.0, pal().ink2);
         let notes: Vec<i32> = self.an_frets.iter().enumerate().filter_map(|(i, f)| f.map(|f| theory::STANDARD[i] + f as i32)).collect();
         let pcs: Vec<i32> = notes.iter().map(|m| m.rem_euclid(12)).collect();
         let bass = notes.first().map(|m| m.rem_euclid(12));
@@ -406,11 +406,11 @@ impl App {
                 let others: Vec<String> = found.iter().filter(|o| o.key() != s.key()).take(3).map(|o| o.name(self.chord_sp)).collect();
                 if !others.is_empty() {
                     for line in wrap(&format!("or {}", others.join(", ")), 1.0, side - 4.0) {
-                        dim_line(&mut col, &line, 1.0, pal().dim);
+                        dim(&mut col, &line, 1.0, pal().dim);
                     }
                 }
             }
-            None => dim_line(&mut col, if notes.is_empty() { "Tap notes on the neck" } else { "Add a note or two" }, 1.0, pal().dim),
+            None => dim(&mut col, if notes.is_empty() { "Tap notes on the neck" } else { "Add a note or two" }, 1.0, pal().dim),
         }
         col.add_space(6.0);
         if pill_w(&mut col, "Strum", side - 4.0, false).clicked() {
@@ -463,7 +463,7 @@ impl App {
                 None => theory::note_name(*p, self.chord_sp.sharps).to_string(),
             })
             .collect();
-        dim_line(ui, &format!("NOTES: {}", if names.is_empty() { "-".to_string() } else { names.join("  ") }), 1.0, pal().ink2);
+        dim(ui, &format!("NOTES: {}", if names.is_empty() { "-".to_string() } else { names.join("  ") }), 1.0, pal().ink2);
         section_header(ui, "Possible chords");
         // how the names are written, and the details
         ui.horizontal_wrapped(|ui| {
@@ -487,7 +487,7 @@ impl App {
         });
         let sp = self.chord_sp;
         if let Some(s) = &shown {
-            dim_line(ui, &format!("SHOWING {}  -  TAP ONE TO KEEP IT", s.name(sp)), 1.0, pal().dim);
+            dim(ui, &format!("SHOWING {}  -  TAP ONE TO KEEP IT", s.name(sp)), 1.0, pal().dim);
         }
         if found.is_empty() {
             note_text(ui, if pcs.len() < 2 { "Lay down two or more notes." } else { "No chord has all of these notes." }, pal().ink2);
@@ -533,7 +533,7 @@ impl App {
                         format!("{}{} ({})", mark, theory::note_name(*p, sp.sharps), degree(*p, s.root).0)
                     })
                     .collect();
-                dim_line(ui, &format!("{}{}", s.name(sp), if s.exact { "   EXACT" } else { "" }), 2.0, pal().ink);
+                dim(ui, &format!("{}{}", s.name(sp), if s.exact { "   EXACT" } else { "" }), 2.0, pal().ink);
                 note_text(ui, &notes.join("  "), pal().ink2);
                 for w in &s.warnings {
                     ui.horizontal(|ui| {
@@ -543,7 +543,7 @@ impl App {
                     });
                 }
             }
-            dim_line(ui, "+ You play it   - it is not played", 1.0, pal().dim);
+            dim(ui, "+ You play it   - it is not played", 1.0, pal().dim);
         }
         // the colour key
         ui.add_space(4.0);
@@ -621,10 +621,10 @@ impl App {
                 self.player.send(Cmd::Once(band::sequence_sound(&seq, 0.9), 0.9));
                 self.seq_end = Some(Instant::now() + Duration::from_secs_f32(seq.len() as f32 * 0.9 + 1.5));
             }
-            label(ui, "R root   3 third   5 fifth", 200.0);
+            dim(ui, "R root   3 third   5 fifth", 1.0, pal().ink2);
         });
         // the shapes as boxes, two to a row
-        let w = ((ui.available_width() - 10.0) / 2.0).min(150.0);
+        let w = ((ui.available_width() - 10.0) / 2.0).min(220.0);
         let mut pick = None;
         for (row, chunk) in grips.chunks(2).enumerate() {
             ui.horizontal(|ui| {
@@ -632,18 +632,20 @@ impl App {
                     let i = row * 2 + k;
                     let bass = grip_notes(g).iter().min().map(|m| (m - root).rem_euclid(12)).unwrap_or(0);
                     let inv = if bass == 0 {
-                        "ROOT POSITION"
+                        "Root position"
                     } else if bass == q[1] {
-                        "3RD ON THE BOTTOM"
+                        "3rd on the bottom"
                     } else {
-                        "5TH ON THE BOTTOM"
+                        "5th on the bottom"
                     };
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, w * 1.3), Sense::click());
+                    // a card: the shape's name on top, its box under it, the one picked outlined
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, w * 1.38), Sense::click());
+                    ui.painter().rect_filled(r, 10.0, pal().beige_lt);
                     if i == self.tr_sel {
-                        outline(ui.painter(), r, 2.0, pal().red);
+                        ui.painter().rect_stroke(r, 10.0, Stroke::new(2.0, pal().red));
                     }
-                    ptext_fit(ui.painter(), Pos2::new(r.center().x, r.min.y + 8.0), Align::Center, inv, 1.0, r.width() - 8.0, pal().ink);
-                    let boxr = Rect::from_min_max(r.min + Vec2::new(0.0, 14.0), r.max);
+                    ptext_fit(ui.painter(), Pos2::new(r.center().x, r.min.y + 14.0), Align::Center, inv, 1.1, r.width() - 12.0, pal().ink);
+                    let boxr = Rect::from_min_max(r.min + Vec2::new(8.0, 30.0), r.max - Vec2::new(8.0, 8.0));
                     chord_box_coloured(ui.painter(), boxr, g, &|m| {
                         let (d, c) = degree(m, root);
                         (d.to_string(), c)
@@ -704,7 +706,7 @@ impl App {
             }
         }
         if !bad.is_empty() {
-            dim_line(ui, &format!("Couldn't read: {}", bad.join(" ")), 1.0, pal().red);
+            dim(ui, &format!("Couldn't read: {}", bad.join(" ")), 1.0, pal().red);
         }
         if steps.is_empty() {
             return;
@@ -720,7 +722,7 @@ impl App {
             .iter()
             .map(|s| grip_notes(&s.1).iter().max().map(|m| theory::note_name(*m, self.chord_sp.sharps).to_string()).unwrap_or_default())
             .collect();
-        dim_line(ui, &format!("Top notes: {}", tops.join(" ")), 1.0, pal().ink2);
+        dim(ui, &format!("Top notes: {}", tops.join(" ")), 1.0, pal().ink2);
         // each chord as a box, the notes that moved from the one before in the accent
         let bw = ((ui.available_width() - 8.0) / 3.0).min(120.0);
         let mut hear = None;
@@ -746,7 +748,7 @@ impl App {
         if let Some(n) = hear {
             self.hear(&n);
         }
-        dim_line(ui, "* a note that moved from the chord before", 1.0, pal().dim);
+        dim(ui, "* a note that moved from the chord before", 1.0, pal().dim);
     }
 
     /// OVER A BASS: a triad over each of the twelve bass notes and the chord it makes; pick one to see the grips.

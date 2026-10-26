@@ -162,7 +162,7 @@ impl App {
             }
             ui.add_space(6.0);
             // ---- with the track: follow its speed, lock to its beat
-            dim_line(ui, "With the track", 1.0, pal().ink2);
+            dim(ui, "With the track", 1.0, pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 if pill(ui, "Follow speed", self.mt.follow).clicked() {
                     self.mt.follow = !self.mt.follow;
@@ -179,12 +179,12 @@ impl App {
                 let found = self.mt_beat.as_ref().is_some_and(|b| Some(b.0) == tid);
                 ui.horizontal_wrapped(|ui| {
                     if self.mt_beat_busy {
-                        dim_line(ui, "Listening for the beat...", 1.0, pal().ink2);
+                        dim(ui, "Listening for the beat...", 1.0, pal().ink2);
                     } else if found {
                         let period = self.mt_beat.as_ref().map_or(0.5, |b| b.1 .0) * self.mt_scale;
-                        dim_line(ui, &format!("Locked: {:.0} bpm", 60.0 / period.max(0.05)), 1.0, pal().ink2);
+                        dim(ui, &format!("Locked: {:.0} bpm", 60.0 / period.max(0.05)), 1.0, pal().ink2);
                     } else {
-                        dim_line(ui, "Play the song once (so it's kept) and the beat is found", 1.0, pal().dim);
+                        dim(ui, "Play the song once (so it's kept) and the beat is found", 1.0, pal().dim);
                     }
                     if found {
                         if pill_w(ui, "x2", 44.0, self.mt_scale < 1.0).clicked() {
@@ -204,7 +204,7 @@ impl App {
                     }
                 });
                 if self.speed != 100 {
-                    dim_line(ui, "Locked clicks sound cleanest at 100% speed", 1.0, pal().dim);
+                    dim(ui, "Locked clicks sound cleanest at 100% speed", 1.0, pal().dim);
                 }
             }
             ui.horizontal(|ui| {
@@ -293,7 +293,7 @@ impl App {
                     changed = true;
                 }
             });
-            dim_line(ui, "Bars of click, then bars of silence - keep time on your own", 1.0, pal().dim);
+            dim(ui, "Bars of click, then bars of silence - keep time on your own", 1.0, pal().dim);
             ui.horizontal_wrapped(|ui| {
                 label(ui, "Faster", 56.0);
                 let r = if self.mt.ramp_bars == 0 { "OFF".to_string() } else { self.mt.ramp_bars.to_string() };
@@ -311,7 +311,7 @@ impl App {
                     changed = true;
                 }
             });
-            dim_line(ui, "Every so many bars the tempo goes up", 1.0, pal().dim);
+            dim(ui, "Every so many bars the tempo goes up", 1.0, pal().dim);
             if changed {
                 self.metro_apply();
                 self.save_settings();
@@ -394,7 +394,7 @@ impl App {
                 }
             });
         }
-        dim_line(ui, "Tap A beat for its volume: 3 Loud ... 0 silent", 1.0, pal().dim);
+        dim(ui, "Tap A beat for its volume: 3 Loud ... 0 silent", 1.0, pal().dim);
     }
 
     /// One beat: its number and its volume pips (true when tapped).
