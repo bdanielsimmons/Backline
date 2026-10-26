@@ -1810,6 +1810,21 @@ pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
             p.rect_stroke(Rect::from_center_size(c, Vec2::new(26.0, 18.0)), 5.0, s);
             p.add(egui::Shape::convex_polygon(vec![at(-3.5, -5.0), at(5.5, 0.0), at(-3.5, 5.0)], col, Stroke::NONE));
         }
+        5 => {
+            // a playlist: three lines and a note
+            for y in [-7.0, -2.0, 3.0] {
+                p.line_segment([at(-11.0, y), at(3.0, y)], s);
+            }
+            p.circle_filled(at(6.0, 7.0), 3.0, col);
+            p.line_segment([at(8.5, 7.0), at(8.5, -6.0)], s);
+            p.line_segment([at(8.5, -6.0), at(12.0, -4.0)], s);
+        }
+        6 => {
+            // an album: a record
+            p.circle_stroke(c, 10.0, s);
+            p.circle_stroke(c, 4.0, Stroke::new(1.4, col));
+            p.circle_filled(c, 1.4, col);
+        }
         3 => {
             // a bookshelf: three books standing and one leaning, on a shelf
             p.line_segment([at(-12.0, 9.0), at(12.0, 9.0)], s);

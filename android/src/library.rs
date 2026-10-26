@@ -187,7 +187,7 @@ impl App {
     fn my_tracks_ui(&mut self, ui: &mut egui::Ui) {
         // four tiles, Spotify's library: Liked, Playlists, Albums (and artists), Kept (and the phone's files)
         let liked_n = if self.liked.is_empty() { String::new() } else { format!(" {}", self.liked.len()) };
-        let tiles = [(format!("Liked{}", liked_n), 4usize, 0u8), ("Playlists".to_string(), 2, 1), ("Albums".to_string(), 0, 2), ("Kept".to_string(), 1, 4)];
+        let tiles = [(format!("Liked{}", liked_n), 4usize, 0u8), ("Playlists".to_string(), 5, 1), ("Albums".to_string(), 6, 2), ("Kept".to_string(), 1, 4)];
         let w = ui.available_width();
         let tw = (w - 8.0) / 2.0;
         let (area, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * 48.0 + 8.0), Sense::hover());
@@ -352,13 +352,16 @@ impl App {
                 let mut open = None;
                 egui::ScrollArea::vertical().id_salt("lists").auto_shrink([false, false]).show(ui, |ui| {
                     for (i, c) in lists.iter().enumerate() {
-                        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 14.0), Sense::click());
+                        // a dense row: the name, then how many songs, dimmer, on the same line
+                        let _ = i;
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::click());
                         let p = ui.painter();
-                        if i % 2 == 1 {
-                            fill_rect(p, r, pal().row_alt);
+                        if resp.is_pointer_button_down_on() {
+                            p.rect_filled(r, 6.0, pal().beige_lt);
                         }
-                        ptext_fit(p, Pos2::new(r.min.x + 8.0, r.min.y + 11.0), Align::Min, &c.title.to_uppercase(), 2.0, r.width() - 16.0, pal().ink);
-                        ptext_fit(p, Pos2::new(r.min.x + 8.0, r.min.y + 27.0), Align::Min, &c.subtitle.to_uppercase(), 1.0, r.width() - 16.0, pal().ink2);
+                        let sw = text_w(&c.subtitle, 1.1) + 12.0;
+                        ptext_fit(p, Pos2::new(r.min.x + 10.0, r.center().y), Align::Min, &c.title, 1.3, r.width() - sw - 20.0, pal().ink);
+                        ptext(p, Pos2::new(r.max.x - 8.0, r.center().y), Align::Max, &c.subtitle.to_lowercase(), 1.1, pal().dim);
                         if resp.clicked() {
                             open = Some(c.clone());
                         }
