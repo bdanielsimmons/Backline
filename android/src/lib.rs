@@ -1484,7 +1484,8 @@ impl App {
         let cur = SKIN.load(Ordering::Relaxed);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                for (k, name) in SKIN_NAMES.iter().enumerate() {
+                // just a few on the phone: Olive, Aqua, Dark and Sleek Dark
+                for (k, name) in SKIN_NAMES.iter().enumerate().filter(|(k, _)| [0usize, 1, 2, 9].contains(k)) {
                     if retro_btn(ui, &crate::lines_ui::nice(name), k == cur).clicked() {
                         SKIN.store(k, Ordering::Relaxed);
                         self.wear();
@@ -1539,7 +1540,7 @@ impl eframe::App for App {
         if !self.zoom_set {
             let w = ctx.screen_rect().width();
             if w > 50.0 {
-                ctx.set_zoom_factor(ctx.zoom_factor() * w / 340.0);
+                ctx.set_zoom_factor(ctx.zoom_factor() * w / 414.0);
                 self.zoom_set = true;
             }
         }
@@ -1882,6 +1883,17 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // the folder songs can be copied to (reachable over USB, no permission needed)
     if let Some(p) = app.external_data_path() {
         std::env::set_var("BACKLINE_FILES", p);
+    }
+    // what happened last run, where it can be read over USB: Tidal's log (sign-in errors and all), and whether the
+    // sign-in file is there now (the app's own folder can't be read from outside)
+    if let (Some(home), Some(files)) = (std::env::var_os("BACKLINE_HOME"), std::env::var_os("BACKLINE_FILES")) {
+        let (home, files) = (std::path::PathBuf::from(home), std::path::PathBuf::from(files));
+        let _ = std::fs::create_dir_all(&files);
+        let _ = std::fs::copy(home.join("log.txt"), files.join("last_log.txt"));
+        let signed = home.join("session.json").exists();
+        let size = std::fs::metadata(home.join("session.json")).map(|m| m.len()).unwrap_or(0);
+        let _ = std::fs::write(files.join("start.txt"), format!("sign-in file there at start: {} ({} bytes)
+", signed, size));
     }
     // a test phone (a file named MUTE in Backline's folder) plays silently, like the desktop's test copies
     if std::env::var_os("BACKLINE_FILES").is_some_and(|d| std::path::Path::new(&d).join("MUTE").exists()) {
