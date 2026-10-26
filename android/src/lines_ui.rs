@@ -149,7 +149,9 @@ impl App {
             if pill_w(ui, "-", 30.0, false).clicked() {
                 self.ln_bpm = self.ln_bpm.saturating_sub(5).max(20);
             }
-            label(ui, &format!("{} bpm", self.ln_bpm), 62.0);
+            let bt = format!("{} bpm", self.ln_bpm);
+            let (br, _) = ui.allocate_exact_size(Vec2::new(text_w(&bt, 1.2) + 10.0, 32.0), Sense::hover());
+            ptext(ui.painter(), br.center(), Align::Center, &bt, 1.2, pal().ink);
             if pill_w(ui, "+", 30.0, false).clicked() {
                 self.ln_bpm = (self.ln_bpm + 5).min(400);
             }

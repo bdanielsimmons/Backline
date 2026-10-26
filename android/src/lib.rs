@@ -1578,11 +1578,16 @@ impl App {
             }
             self.picked = Some((pid, i));
         }
-        let label = format!("{}  \u{25BE}", items.get(cur).copied().unwrap_or(""));
-        let w = text_w(&label, 1.2) + 22.0;
+        let label = items.get(cur).copied().unwrap_or("");
+        let w = text_w(label, 1.2) + 38.0;
         let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click());
         ui.painter().rect_filled(r, 16.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
-        ptext(ui.painter(), r.center(), Align::Center, &label, 1.2, pal().ink);
+        ptext(ui.painter(), Pos2::new(r.min.x + 13.0, r.center().y), Align::Min, label, 1.2, pal().ink);
+        // a small down arrow
+        let c = Pos2::new(r.max.x - 14.0, r.center().y);
+        let s = Stroke::new(1.6, pal().ink2);
+        ui.painter().line_segment([c + Vec2::new(-4.0, -2.0), c + Vec2::new(0.0, 2.5)], s);
+        ui.painter().line_segment([c + Vec2::new(0.0, 2.5), c + Vec2::new(4.0, -2.0)], s);
         if resp.clicked() {
             self.picker = Some((id.to_string(), items.iter().map(|s| s.to_string()).collect(), cur));
         }
