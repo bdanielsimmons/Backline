@@ -638,7 +638,7 @@ impl App {
     }
 
     /// The song's bytes, from the phone (a file, or the copy kept when it played).
-    fn song_bytes(&self, id: i64) -> Option<Vec<u8>> {
+    pub(crate) fn song_bytes(&self, id: i64) -> Option<Vec<u8>> {
         match self.files.iter().find(|f| f.0.id == id) {
             Some(f) => std::fs::read(&f.1).ok(),
             None => cache::get(id),

@@ -7,9 +7,80 @@ use crate::*;
 
 impl App {
     /// The click as set, from the top of the bar (or silence when it is off).
+    /// The tempo it clicks at now: its own, or (FOLLOW SPEED, practising) moved with the song's speed.
+    fn metro_tempo(&self) -> f32 {
+        let playing = self.cur.is_some() && !self.paused && !self.stopped;
+        if self.mt.follow && self.practice && playing {
+            self.mt_bpm as f32 * self.speed as f32 / 100.0
+        } else {
+            self.mt_bpm as f32
+        }
+    }
+
+    /// With the track, every frame: a click that follows the speed is set again when the speed moves; a click locked
+    /// to the song is laid into the song itself on its beats (found once the song is kept), so it can't drift.
+    pub(crate) fn metro_track(&mut self) {
+        if self.mt.on && self.mt.follow && self.speed != self.mt_speed_seen {
+            self.mt_speed_seen = self.speed;
+            self.metro_apply();
+        }
+        let tid = self.cur_track().map(|t| t.id);
+        let playing = tid.is_some() && !self.paused && !self.stopped;
+        let want = self.mt.on && self.mt.sync && playing;
+        if want && !self.mt_beat_busy && self.mt_beat.as_ref().map(|b| b.0) != tid {
+            if let Some(id) = tid.filter(|id| !self.mt_beat_failed.contains(id)) {
+                if let Some(bytes) = self.song_bytes(id) {
+                    self.mt_beat_busy = true;
+                    let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                    std::thread::spawn(move || {
+                        let _ = tx.send(Msg::Beats(id, band::detect_beats(bytes)));
+                        ctx.request_repaint();
+                    });
+                }
+            }
+        }
+        let locked = want && self.mt_beat.as_ref().is_some_and(|b| Some(b.0) == tid);
+        let sig = if locked { 1 + (self.mt_scale * 100.0) as u64 + ((self.mt.shift_ms + 1000) as u64) * 1000 + (self.mt.beats as u64) * 10_000_000 } else { 0 };
+        if sig == self.mt_laid {
+            return;
+        }
+        self.mt_laid = sig;
+        if locked {
+            let (_, (_, _, grid)) = self.mt_beat.clone().unwrap();
+            // x2 puts a click between each pair, /2 keeps every other one
+            let mut beats: Vec<f64> = Vec::new();
+            for (k, b) in grid.iter().enumerate() {
+                if self.mt_scale < 1.0 {
+                    beats.push(*b as f64);
+                    if let Some(n) = grid.get(k + 1) {
+                        beats.push((*b as f64 + *n as f64) / 2.0);
+                    }
+                } else if self.mt_scale > 1.0 {
+                    if k % 2 == 0 {
+                        beats.push(*b as f64);
+                    }
+                } else {
+                    beats.push(*b as f64);
+                }
+            }
+            let shift = self.mt.shift_ms as f64 / 1000.0;
+            let beats: Vec<f64> = beats.iter().map(|b| b + shift).collect();
+            let n = self.mt.beats.max(1) as usize;
+            let accent: Vec<bool> = (0..beats.len()).map(|k| k % n == 0).collect();
+            let (hi, lo) = band::click_sounds();
+            self.player.ctl.set_song_clicks(Some(player::SongClicks { beats, accent, hi, lo, gain: 0.8 }));
+            // the separate click goes quiet while the song carries it
+            self.player.send(Cmd::Pcm(0, Vec::new(), Vec::new(), 0.0));
+        } else {
+            self.player.ctl.set_song_clicks(None);
+            self.metro_apply();
+        }
+    }
+
     pub(crate) fn metro_apply(&mut self) {
-        if self.mt.on {
-            let tempo = self.mt_bpm as f32;
+        let locked = self.mt.sync && self.mt_laid != 0;
+        if self.mt.on && !locked {
+            let tempo = self.metro_tempo();
             let body = band::click_loop(&self.mt, tempo);
             let beats = self.mt.beats.clamp(1, 32) as usize;
             let cycle = beats * if self.mt.gap_play > 0 { (self.mt.gap_play + self.mt.gap_mute.max(1)) as usize } else { 1 };
@@ -90,6 +161,52 @@ impl App {
                 return;
             }
             ui.add_space(6.0);
+            // ---- with the track: follow its speed, lock to its beat
+            dim_line(ui, "With the track", 1.0, pal().ink2);
+            ui.horizontal_wrapped(|ui| {
+                if retro_btn(ui, "Follow speed", self.mt.follow).clicked() {
+                    self.mt.follow = !self.mt.follow;
+                    changed = true;
+                }
+                if retro_btn(ui, "Lock to the track", self.mt.sync).clicked() {
+                    self.mt.sync = !self.mt.sync;
+                    self.mt_laid = u64::MAX;
+                    changed = true;
+                }
+            });
+            if self.mt.sync {
+                let tid = self.cur_track().map(|t| t.id);
+                let found = self.mt_beat.as_ref().is_some_and(|b| Some(b.0) == tid);
+                ui.horizontal_wrapped(|ui| {
+                    if self.mt_beat_busy {
+                        dim_line(ui, "Listening for the beat...", 1.0, pal().ink2);
+                    } else if found {
+                        let period = self.mt_beat.as_ref().map_or(0.5, |b| b.1 .0) * self.mt_scale;
+                        dim_line(ui, &format!("Locked: {:.0} bpm", 60.0 / period.max(0.05)), 1.0, pal().ink2);
+                    } else {
+                        dim_line(ui, "Play the song once (so it's kept) and the beat is found", 1.0, pal().dim);
+                    }
+                    if found {
+                        if retro_btn_w(ui, "x2", 44.0, self.mt_scale < 1.0).clicked() {
+                            self.mt_scale = if self.mt_scale < 1.0 { 1.0 } else { 0.5 };
+                        }
+                        if retro_btn_w(ui, "/2", 44.0, self.mt_scale > 1.0).clicked() {
+                            self.mt_scale = if self.mt_scale > 1.0 { 1.0 } else { 2.0 };
+                        }
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    label(ui, "Shift", 56.0);
+                    let d = stepper(ui, &format!("{:+} ms", self.mt.shift_ms), 70.0);
+                    if d != 0 {
+                        self.mt.shift_ms = (self.mt.shift_ms + d * 10).clamp(-500, 500);
+                        changed = true;
+                    }
+                });
+                if self.speed != 100 {
+                    dim_line(ui, "Locked clicks sound cleanest at 100% speed", 1.0, pal().dim);
+                }
+            }
             ui.horizontal(|ui| {
                 // its own volume: louder or softer against the song
                 label(ui, "VOL", 36.0);

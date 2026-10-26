@@ -113,6 +113,8 @@ pub(crate) enum Msg {
     Done(Result<String, String>),
     /// how far the song is from A440 (cents, confidence)
     Tuning(i64, Option<(i32, f32)>),
+    /// a song's beat (its usual length, the first one, every beat), for locking the metronome to it
+    Beats(i64, Option<band::BeatInfo>),
     /// a WAV saved (where) or not
     Exported(Result<String, String>),
     Code(Result<DeviceCode, String>),
@@ -347,6 +349,14 @@ pub(crate) struct App {
     pub settings_open: bool,
     /// the metronome's full settings showing (meter, accents, sound, gap, faster, volume)
     pub mt_more: bool,
+    /// the beat found in a song (whose), the scale x2 and /2 put on it, a search under way, the songs with none,
+    /// what the clicks were last laid for, and the speed the click last followed
+    pub mt_beat: Option<(i64, band::BeatInfo)>,
+    pub mt_scale: f32,
+    pub mt_beat_busy: bool,
+    pub mt_beat_failed: Vec<i64>,
+    pub mt_laid: u64,
+    pub mt_speed_seen: u32,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -533,6 +543,12 @@ impl App {
             ln_loop: false,
             settings_open: false,
             mt_more: false,
+            mt_beat: None,
+            mt_scale: 1.0,
+            mt_beat_busy: false,
+            mt_beat_failed: Vec::new(),
+            mt_laid: 0,
+            mt_speed_seen: 100,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],
@@ -799,6 +815,20 @@ impl App {
                         Err(e) => format!("That didn't work: {}", e),
                     }
                 }
+                Msg::Beats(id, r) => {
+                    self.mt_beat_busy = false;
+                    match r {
+                        Some(b) => {
+                            self.mt_beat = Some((id, b));
+                            self.mt_scale = 1.0;
+                            self.mt_laid = 0;
+                        }
+                        None => {
+                            self.mt_beat_failed.push(id);
+                            self.note = "Couldn't find a steady beat in this one".to_string();
+                        }
+                    }
+                }
                 Msg::Tuning(id, r) => {
                     self.tuning_busy = false;
                     match r {
@@ -965,6 +995,7 @@ impl App {
                 }
             }
         }
+        self.metro_track();
         // the sleep timer: fade out over the last 20 seconds, then pause (the volume comes back for next time)
         if let Some(at) = self.sleep_at {
             let left = at.saturating_duration_since(Instant::now()).as_secs_f32();
