@@ -21,10 +21,18 @@ const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", 
 
 impl App {
     pub(crate) fn chords_ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(t) = tab_row(ui, &["FIND A CHORD", "ANALYZER", "TRIADS"], self.ch_tab as usize) {
+        if let Some(t) = tab_row(ui, &["Find", "Analyzer", "Triads"], self.ch_tab as usize) {
             self.ch_tab = t as u8;
         }
         ui.add_space(4.0);
+        // a chord picked: Oolimo's way, the long neck down the left and its voicings down the right
+        if self.ch_tab == 0 && self.cf_neck {
+            if let Some(c) = theory::chord_notes(self.chord_q.trim()) {
+                self.chord_neck_view(ui, &c);
+                return;
+            }
+            self.cf_neck = false;
+        }
         egui::ScrollArea::vertical().id_salt("chords").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
             match self.ch_tab {
@@ -34,6 +42,84 @@ impl App {
             }
             ui.add_space(16.0);
         });
+    }
+
+    /// The chord on the long neck (frets 0 to 15 down the screen, the lit voicing's notes named by their role and
+    /// the chord's other notes faint), its voicings down the right (tap one to light it and hear it), up and down to
+    /// step through them, and CHANGE back to the picker.
+    fn chord_neck_view(&mut self, ui: &mut egui::Ui, c: &theory::ChordNotes) {
+        let q = self.chord_q.trim().to_string();
+        let shapes = self.shapes_for(&q, c);
+        if !shapes.is_empty() {
+            self.cf_voice = self.cf_voice.min(shapes.len() - 1);
+        }
+        let (head, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+        ptext(ui.painter(), Pos2::new(head.min.x + 2.0, head.center().y), Align::Min, &q, 3.2, pal().ink);
+        let cr = Rect::from_min_size(Pos2::new(head.max.x - 84.0, head.min.y + 4.0), Vec2::new(84.0, 32.0));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr));
+        if retro_btn_w(&mut child, "Change", 80.0, false).clicked() {
+            self.cf_neck = false;
+        }
+        let notes: Vec<String> = c.named.iter().map(|(n, i)| format!("{} {}", n, i)).collect();
+        let (nl, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
+        ptext_fit(ui.painter(), Pos2::new(nl.min.x + 2.0, nl.center().y), Align::Min, &notes.join("   "), 1.1, nl.width(), pal().dim);
+        ui.add_space(4.0);
+        let avail = ui.available_rect_before_wrap();
+        let body = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - 64.0));
+        let col_w = (body.width() * 0.36).min(130.0);
+        let neck_r = Rect::from_min_max(body.min, Pos2::new(body.max.x - col_w - 8.0, body.max.y));
+        let lit = shapes.get(self.cf_voice).copied();
+        long_neck(ui.painter(), neck_r, c, lit.as_ref());
+        // the voicings, a column of chord boxes
+        let col_r = Rect::from_min_max(Pos2::new(body.max.x - col_w, body.min.y), body.max);
+        let mut col = ui.new_child(egui::UiBuilder::new().max_rect(col_r).layout(egui::Layout::top_down(Align::Min)));
+        let mut pick = None;
+        egui::ScrollArea::vertical().id_salt("voicings").auto_shrink([false, false]).show(&mut col, |ui| {
+            let (root, pcs) = (c.root, c.pcs.clone());
+            for (k, g) in shapes.iter().enumerate() {
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(col_w - 6.0, (col_w - 6.0) * 1.1), Sense::click());
+                ui.painter().rect_filled(r, 8.0, pal().beige_lt);
+                if k == self.cf_voice {
+                    ui.painter().rect_stroke(r, 8.0, Stroke::new(2.0, pal().red));
+                }
+                chord_box_labelled(ui.painter(), r.shrink(4.0), g, &|m| degree_in(m, root, &pcs).0.to_string());
+                if resp.clicked() {
+                    pick = Some(k);
+                }
+                ui.add_space(4.0);
+            }
+            if shapes.is_empty() {
+                para(ui, "No comfortable shape in reach.", pal().dim);
+            }
+        });
+        if let Some(k) = pick {
+            self.cf_voice = k;
+            self.hear(&grip_notes(&shapes[k]));
+        }
+        // up, play, down
+        let tr = Rect::from_min_max(Pos2::new(avail.min.x, avail.max.y - 60.0), avail.max);
+        let mid = tr.center();
+        let p = ui.painter().clone();
+        p.circle_filled(mid, 24.0, pal().red);
+        play_glyph(&p, mid, false, pal().bar_txt);
+        if ui.interact(Rect::from_center_size(mid, Vec2::splat(48.0)), ui.id().with("cv_play"), Sense::click()).clicked() {
+            match shapes.get(self.cf_voice) {
+                Some(g) => self.hear(&grip_notes(g)),
+                None => self.hear(&piano_voicing(c)),
+            }
+        }
+        for (dx, d) in [(-80.0, -1i32), (80.0, 1)] {
+            let cc = mid + Vec2::new(dx, 0.0);
+            let s = Stroke::new(2.4, pal().ink);
+            let y = if d < 0 { 4.0 } else { -4.0 };
+            p.line_segment([cc + Vec2::new(-9.0, y), cc + Vec2::new(0.0, -y)], s);
+            p.line_segment([cc + Vec2::new(0.0, -y), cc + Vec2::new(9.0, y)], s);
+            if ui.interact(Rect::from_center_size(cc, Vec2::splat(48.0)), ui.id().with(("cv_step", d)), Sense::click()).clicked() && !shapes.is_empty() {
+                let n = shapes.len() as i32;
+                self.cf_voice = ((self.cf_voice as i32 + d).rem_euclid(n)) as usize;
+                self.hear(&grip_notes(&shapes[self.cf_voice]));
+            }
+        }
     }
 
     /// Guitar shapes for a chord, worked out once and kept.
@@ -119,6 +205,9 @@ impl App {
                             self.chord_q = name.clone();
                             if let Some(c) = theory::chord_notes(&name) {
                                 self.hear(&piano_voicing(&c));
+                                // straight on to the neck
+                                self.cf_neck = true;
+                                self.cf_voice = 0;
                             }
                         }
                     }
@@ -129,10 +218,9 @@ impl App {
         ui.horizontal(|ui| {
             let w = ui.available_width() - 82.0;
             text_box(ui, &mut self.chord_q, w, "or type any chord: Dm7, G7#9, Fmaj7/A...");
-            if retro_btn_w(ui, "STRUM", 74.0, false).clicked() {
-                if let Some(c) = theory::chord_notes(&self.chord_q) {
-                    self.hear(&piano_voicing(&c));
-                }
+            if retro_btn_w(ui, "Show", 74.0, false).clicked() && theory::chord_notes(&self.chord_q).is_some() {
+                self.cf_neck = true;
+                self.cf_voice = 0;
             }
         });
         let Some(c) = theory::chord_notes(self.chord_q.trim()) else {

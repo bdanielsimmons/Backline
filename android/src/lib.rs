@@ -249,6 +249,9 @@ pub(crate) struct App {
     pub ch_tab: u8,
     pub cf_root: Option<i32>,
     pub cf_fam: Option<usize>,
+    /// FIND A CHORD: the chord picked, shown on the long neck (false: the picker), and which voicing is lit
+    pub cf_neck: bool,
+    pub cf_voice: usize,
     pub chord_q: String,
     pub shape_cache: HashMap<String, Vec<[Option<u8>; 6]>>,
     pub an_frets: [Option<u8>; 6],
@@ -376,6 +379,8 @@ impl App {
             ch_tab: 0,
             cf_root: None,
             cf_fam: None,
+            cf_neck: false,
+            cf_voice: 0,
             chord_q: String::new(),
             shape_cache: HashMap::new(),
             an_frets: [None; 6],
@@ -1255,6 +1260,74 @@ pub(crate) fn src_icon(p: &egui::Painter, c: Pos2, k: usize, col: Color32) {
                 pts.push(at(x * 0.62, y * 0.62 - 1.0));
             }
             p.add(egui::Shape::line(pts, s));
+        }
+    }
+}
+
+/// The long neck, Oolimo's way: the strings down the screen (low E at the left), frets 0 to 15, the inlays, the
+/// fret numbers at the left. The lit voicing's notes are named by their role in the chord; the chord's other notes
+/// show faint all the way up.
+pub(crate) fn long_neck(p: &egui::Painter, r: Rect, c: &theory::ChordNotes, lit: Option<&[Option<u8>; 6]>) {
+    const OPEN: [i32; 6] = [40, 45, 50, 55, 59, 64];
+    let frets = 15;
+    let x0 = r.min.x + 26.0;
+    let sw = (r.width() - 40.0) / 5.0;
+    let y0 = r.min.y + 18.0;
+    let fh = (r.height() - 24.0) / frets as f32;
+    p.rect_filled(r, 10.0, pal().beige_lt);
+    let line = pal().beige_dk;
+    for f in [3, 5, 7, 9, 15] {
+        p.circle_filled(Pos2::new(x0 + 2.5 * sw, y0 + (f as f32 - 0.5) * fh), 3.5, line);
+    }
+    for x in [1.5, 3.5] {
+        p.circle_filled(Pos2::new(x0 + x * sw, y0 + 11.5 * fh), 3.5, line);
+    }
+    for f in 0..=frets {
+        let y = y0 + f as f32 * fh;
+        p.line_segment([Pos2::new(x0, y), Pos2::new(x0 + 5.0 * sw, y)], Stroke::new(if f == 0 { 4.0 } else { 1.2 }, line));
+        if f > 0 {
+            ptext(p, Pos2::new(r.min.x + 12.0, y - fh / 2.0), Align::Center, &f.to_string(), 0.9, pal().dim);
+        }
+    }
+    for s in 0..6 {
+        let x = x0 + s as f32 * sw;
+        p.line_segment([Pos2::new(x, y0), Pos2::new(x, y0 + frets as f32 * fh)], Stroke::new(1.8 - s as f32 * 0.2, pal().ink2));
+    }
+    let rad = (sw * 0.36).min(fh * 0.42).min(11.0);
+    let dot = |s: usize, f: u8, strong: bool| {
+        let x = x0 + s as f32 * sw;
+        let y = if f == 0 { y0 - 9.0 } else { y0 + (f as f32 - 0.5) * fh };
+        let pc = (OPEN[s] + f as i32).rem_euclid(12);
+        let (deg, col) = degree_in(pc, c.root, &c.pcs);
+        if strong {
+            if pc == c.root.rem_euclid(12) {
+                p.rect_filled(Rect::from_center_size(Pos2::new(x, y), Vec2::splat(rad * 2.0)), 3.0, col);
+            } else {
+                p.circle_filled(Pos2::new(x, y), rad, col);
+            }
+            ptext(p, Pos2::new(x, y), Align::Center, deg, 1.0, Color32::from_gray(15));
+        } else {
+            p.circle_filled(Pos2::new(x, y), rad * 0.45, col.gamma_multiply(0.5));
+        }
+    };
+    for s in 0..6 {
+        for f in 0..=frets as u8 {
+            let pc = (OPEN[s] + f as i32).rem_euclid(12);
+            let on_lit = lit.is_some_and(|g| g[s] == Some(f));
+            if c.pcs.iter().any(|q| q.rem_euclid(12) == pc) && !on_lit {
+                dot(s, f, false);
+            }
+        }
+    }
+    if let Some(g) = lit {
+        for s in 0..6 {
+            match g[s] {
+                Some(f) => dot(s, f, true),
+                None => {
+                    let x = x0 + s as f32 * sw;
+                    ptext(p, Pos2::new(x, y0 - 9.0), Align::Center, "x", 1.1, pal().red);
+                }
+            }
         }
     }
 }
