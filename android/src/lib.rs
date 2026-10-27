@@ -708,6 +708,8 @@ impl App {
     pub(crate) fn play(&mut self, i: usize) {
         if self.cur != Some(i) {
             self.resume_at = None;
+            // a different song starts at its own speed
+            self.speed = 100;
         }
         let Some(t) = self.queue.get(i).cloned() else { return };
         self.recent.retain(|r| r.id != t.id || r.title != t.title);

@@ -1169,6 +1169,10 @@ impl App {
             self.chart_follow(t.id);
         }
         self.semis = 0;
+        // a different song starts at its own speed (the same one again, as on repeat, keeps yours)
+        if self.wave.0 != t.id {
+            self.speed = 100;
+        }
         self.stem_on = [true; 4];
         // a new song shows whole
         self.wv_zoom = 1.0;
@@ -3031,9 +3035,11 @@ impl App {
                 self.queue = Arc::new(queue.iter().map(|v| v.to_track()).collect());
                 self.orig_queue = None;
                 self.shuffle = false;
-                self.speed = if l.speed == 0 { 100 } else { l.speed.clamp(25, 250) };
                 self.practice = true;
                 self.play_index(index.min(self.queue.len().saturating_sub(1)));
+                // where you left off, at the speed you left it
+                self.speed = if l.speed == 0 { 100 } else { l.speed.clamp(25, 250) };
+                self.sync_loop();
                 if l.pos > 3.0 {
                     let t = (l.pos - 2.0).max(0.0);
                     if self.buffering {
