@@ -39,6 +39,8 @@ mod genskin;
 mod lines;
 #[path = "data/meta.rs"]
 mod meta;
+#[path = "data/pack.rs"]
+mod pack;
 #[path = "data/sources.rs"]
 mod sources;
 #[path = "data/store.rs"]
@@ -211,6 +213,9 @@ enum Msg {
     /// a share file written (where), or read (its contents)
     ShareSaved(Result<String, String>),
     ShareIn(Result<store::Share, String>),
+    /// a pack read (to tick what to bring in), and one saved (where)
+    PackIn(Result<pack::Opened, String>),
+    PackSaved(Result<String, String>),
     /// your own Tidal playlists, for adding to: (id, name)
     TidalLists(Result<Vec<(String, String)>, String>),
     /// a song put in a Tidal playlist: what to say
@@ -503,6 +508,10 @@ enum Action {
     ShareImport,
     /// the preview's go-ahead: save the export / bring the import in
     ShareSave,
+    /// save a pack of the ticked pieces; open one (a file window); put the ticked pieces of the open pack in place
+    PackMake,
+    PackOpen,
+    PackUnlock,
     ShareTake,
     /// pick one of your Tidal playlists for a song
     PlaylistPickTidal(Track),
@@ -2593,6 +2602,11 @@ struct App {
     share_view: Option<(bool, store::Share)>,
     /// what's ticked in that preview: songs (their loops) and playlists (by name); None until the panel opens
     share_pick: Option<(HashSet<i64>, HashSet<String>)>,
+    /// PREFERENCES > SHARE WITH A FRIEND: the pieces left out of a pack (all in to begin with), and loops and playlists in it
+    pack_off: Vec<String>,
+    pack_loops: bool,
+    /// a pack being opened: its pieces, ticked or not
+    pack_in: Option<pack::Opened>,
     /// the WHAT'S NEW panel's notes (open while Some), and the last version you saw them for
     news: Option<Vec<(String, String)>>,
     seen_build: u64,
@@ -3390,6 +3404,9 @@ impl App {
             loops_mode: 0,
             share_view: None,
             share_pick: None,
+            pack_off: Vec::new(),
+            pack_loops: true,
+            pack_in: None,
             news: None,
             seen_build: 0,
             grp_adding: false,
@@ -6784,6 +6801,7 @@ impl eframe::App for App {
         self.skin_loading_panel(ctx);
         self.viz_panel(ctx);
         self.share_panel(ctx, &mut acts);
+        self.pack_panel(ctx, &mut acts);
         self.news_panel(ctx);
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);

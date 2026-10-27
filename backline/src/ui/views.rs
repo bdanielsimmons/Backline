@@ -1876,6 +1876,54 @@ impl App {
         }
     }
 
+    /// A pack being opened, over the dimmed app: each piece in it, ticked (one that would replace yours starts
+    /// unticked, and says so), then UNLOCK or cancel. Its loops and playlists come after, in the import window.
+    pub(crate) fn pack_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let Some(mut p) = self.pack_in.take() else { return };
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pack_dim"))).rect_filled(
+            screen,
+            0.0,
+            egui::Color32::from_black_alpha(170),
+        );
+        let mut close = false;
+        egui::Area::new(egui::Id::new("pack_panel")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(
+            ctx,
+            |ui| {
+                egui::Frame::none().fill(pal().app_bg).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(16.0).show(ui, |ui| {
+                    ui.set_width(440.0_f32.min(screen.width() - 40.0));
+                    title_line(ui, "OPEN A PACK", 3.0, pal().ink);
+                    para(ui, "Tick what to bring in. Each piece goes where it belongs and switches its part of Backline on.", pal().ink2);
+                    ui.add_space(4.0);
+                    for part in p.parts.iter_mut() {
+                        let label = if part.replaces { format!("{}  (REPLACES YOURS)", part.label) } else { part.label.clone() };
+                        if crate::check_box(ui, &label, part.on).clicked() {
+                            part.on = !part.on;
+                        }
+                    }
+                    if p.share.is_some() {
+                        para(ui, "LOOPS & PLAYLISTS: you pick which ones next. They're added to yours, nothing is replaced.", pal().ink2);
+                    }
+                    if p.parts.iter().any(|x| x.replaces && x.on) {
+                        para(ui, "A ticked piece marked REPLACES YOURS takes the place of the one you have.", pal().red);
+                    }
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if retro_btn(ui, "UNLOCK", false).clicked() {
+                            acts.push(Action::PackUnlock);
+                        }
+                        if retro_btn(ui, "CANCEL", false).clicked() {
+                            close = true;
+                        }
+                    });
+                });
+            },
+        );
+        if !(close || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
+            self.pack_in = Some(p);
+        }
+    }
+
     /// The export / import preview, over the dimmed app: what is in the file (songs, loops, playlists) and, for an
     /// import, what is new to you and what can't play here - then go ahead or cancel.
     pub(crate) fn share_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {

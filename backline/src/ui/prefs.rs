@@ -286,6 +286,36 @@ impl App {
                         para(ui, &format!("Saved songs: {}", crate::cache::dir().display()), pal().dim);
                         para(ui, &format!("Settings and library: {}", crate::api::config_dir().display()), pal().dim);
 
+                        section_header(ui, "SHARE WITH A FRIEND");
+                        para(ui, "Put your plan, books, lines, chord melodies and loops in one file. Your friend drops it on Backline and each part switches on. Your progress (the plan's log, keepers, diary) never goes in.", pal().ink2);
+                        let have = crate::pack::available();
+                        if have.is_empty() {
+                            para(ui, "Nothing to share yet besides loops and playlists.", pal().dim);
+                        }
+                        ui.horizontal_wrapped(|ui| {
+                            for (key, name) in &have {
+                                let on = !self.pack_off.iter().any(|k| k == key);
+                                if crate::check_box(ui, name, on).clicked() {
+                                    if on {
+                                        self.pack_off.push(key.to_string());
+                                    } else {
+                                        self.pack_off.retain(|k| k != key);
+                                    }
+                                }
+                            }
+                            if crate::check_box(ui, "LOOPS & PLAYLISTS", self.pack_loops).clicked() {
+                                self.pack_loops = !self.pack_loops;
+                            }
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            if retro_btn(ui, "MAKE A PACK...", false).tip("Saves the ticked parts to one file to send.").clicked() {
+                                acts.push(Action::PackMake);
+                            }
+                            if retro_btn(ui, "OPEN A PACK...", false).tip("Or drop a pack on Backline's window.").clicked() {
+                                acts.push(Action::PackOpen);
+                            }
+                        });
+
                         section_header(ui, "UPDATES");
                         let status = match self.upd_state {
                             1 => "Downloading an update...".to_string(),

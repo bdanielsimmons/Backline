@@ -1292,7 +1292,16 @@ impl App {
         self.keep_all(ids)
     }
 
-    pub(crate) fn handle_paths(&mut self, paths: Vec<PathBuf>) {
+    pub(crate) fn handle_paths(&mut self, mut paths: Vec<PathBuf>) {
+        // a pack dropped on the window opens as a pack, not as music
+        if let Some(i) = paths.iter().position(|p| crate::pack::is_pack(p)) {
+            let p = paths.remove(i);
+            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+            std::thread::spawn(move || {
+                let _ = tx.send(Msg::PackIn(crate::pack::open(&p)));
+                ctx.request_repaint();
+            });
+        }
         if paths.is_empty() {
             return;
         }
@@ -1459,6 +1468,19 @@ impl App {
                 Err(e) => self.set_err(format!("EXPORT: {}", e)),
             },
             Msg::ShareIn(Ok(s)) => self.share_view = Some((true, s)),
+            Msg::PackIn(Ok(p)) => {
+                if p.parts.is_empty() && p.share.is_none() {
+                    self.set_note("NOTHING NEW IN THAT PACK: YOU HAVE IT ALL ALREADY");
+                } else {
+                    self.show_prefs = false;
+                    self.pack_in = Some(p);
+                }
+            }
+            Msg::PackIn(Err(e)) => self.set_err(format!("PACK: {}", e)),
+            Msg::PackSaved(r) => match r {
+                Ok(p) => self.set_note(&format!("PACK SAVED: {}. SEND IT, AND DROP IT ON BACKLINE TO OPEN IT", p)),
+                Err(e) => self.set_err(format!("PACK: {}", e)),
+            },
             Msg::ShareIn(Err(e)) => self.set_err(format!("IMPORT: {}", e)),
             Msg::TidalLists(r) => {
                 self.tidal_lists_busy = false;
@@ -2377,6 +2399,55 @@ impl App {
                 self.new_pl.clear();
             }
             Action::ShareExport => self.share_view = Some((false, self.store.share())),
+            Action::PackMake => {
+                let keys: Vec<&'static str> =
+                    crate::pack::available().into_iter().map(|(k, _)| k).filter(|k| !self.pack_off.iter().any(|o| o == k)).collect();
+                let share = if self.pack_loops { serde_json::to_string_pretty(&self.store.share()).ok() } else { None };
+                if keys.is_empty() && share.is_none() {
+                    return self.set_note("TICK SOMETHING TO PUT IN THE PACK");
+                }
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let Some(path) = rfd::FileDialog::new()
+                        .set_title("Save a pack for a friend")
+                        .set_file_name("Backline pack.backline")
+                        .add_filter("Backline pack", &["backline"])
+                        .save_file()
+                    else {
+                        return;
+                    };
+                    let r = crate::pack::make(&path, &keys, share).map(|_| path.to_string_lossy().to_string());
+                    let _ = tx.send(Msg::PackSaved(r));
+                    ctx.request_repaint();
+                });
+            }
+            Action::PackOpen => self.apply(Action::ShareImport),
+            Action::PackUnlock => {
+                let Some(p) = self.pack_in.take() else { return };
+                match crate::pack::unlock(&p.parts) {
+                    Ok(done) => {
+                        let on = |k: &str| p.parts.iter().any(|x| x.on && x.key == k);
+                        // what reads its file once: read it again
+                        if on("reading") {
+                            self.rd_reload();
+                        }
+                        if on("pattern") {
+                            crate::lines::reload_book();
+                        }
+                        if on("melodies") {
+                            self.cm_list = None;
+                        }
+                        if !done.is_empty() {
+                            self.set_note(&format!("UNLOCKED: {}", done.join(", ")));
+                        }
+                        // the loops and playlists: the usual import window, to pick from
+                        if let Some(s) = p.share {
+                            self.share_view = Some((true, s));
+                        }
+                    }
+                    Err(e) => self.set_err(format!("PACK: {}", e)),
+                }
+            }
             Action::Bookmark => {
                 if let Some(t) = self.cur_track().filter(|t| !self.is_demo(t.id)) {
                     let at = self.pos();
@@ -2430,6 +2501,12 @@ impl App {
                     else {
                         return;
                     };
+                    // a pack picked here opens as a pack
+                    if crate::pack::is_pack(&path) {
+                        let _ = tx.send(Msg::PackIn(crate::pack::open(&path)));
+                        ctx.request_repaint();
+                        return;
+                    }
                     let r = std::fs::read_to_string(&path)
                         .map_err(|e| e.to_string())
                         .and_then(|t| serde_json::from_str::<crate::store::Share>(&t).map_err(|e| e.to_string()))

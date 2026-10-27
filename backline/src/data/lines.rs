@@ -65,6 +65,11 @@ fn loaded() -> (&'static str, &'static [BookLine]) {
     })
 }
 
+/// Read the book again next time (a new one was put in place).
+pub fn reload_book() {
+    *BOOK.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
 /// Every pattern of the pattern book, in its order (none when there is no book).
 pub fn book() -> &'static [BookLine] {
     loaded().1
