@@ -510,7 +510,8 @@ enum Action {
     ShareSave,
     /// save a pack of the ticked pieces; open one (a file window); put the ticked pieces of the open pack in place
     PackMake,
-    PackOpen,
+    /// open a pack from a file (false) or from a folder (true: one unzipped, or the pieces put together by hand)
+    PackOpen(bool),
     PackUnlock,
     ShareTake,
     /// pick one of your Tidal playlists for a song

@@ -2421,7 +2421,19 @@ impl App {
                     ctx.request_repaint();
                 });
             }
-            Action::PackOpen => self.apply(Action::ShareImport),
+            Action::PackOpen(folder) => {
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let picked = if folder {
+                        rfd::FileDialog::new().set_title("Pick the pack's folder").pick_folder()
+                    } else {
+                        rfd::FileDialog::new().set_title("Open a pack").add_filter("Backline pack", &["backline", "zip"]).pick_file()
+                    };
+                    let Some(path) = picked else { return };
+                    let _ = tx.send(Msg::PackIn(crate::pack::open(&path)));
+                    ctx.request_repaint();
+                });
+            }
             Action::PackUnlock => {
                 let Some(p) = self.pack_in.take() else { return };
                 match crate::pack::unlock(&p.parts) {

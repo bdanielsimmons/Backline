@@ -312,7 +312,13 @@ impl App {
                                 acts.push(Action::PackMake);
                             }
                             if retro_btn(ui, "OPEN A PACK...", false).tip("Or drop a pack on Backline's window.").clicked() {
-                                acts.push(Action::PackOpen);
+                                acts.push(Action::PackOpen(false));
+                            }
+                            if retro_btn(ui, "OPEN A FOLDER...", false)
+                                .tip("A pack that was unzipped (a Mac can do that by itself), or a folder with the pieces in it.")
+                                .clicked()
+                            {
+                                acts.push(Action::PackOpen(true));
                             }
                         });
 
