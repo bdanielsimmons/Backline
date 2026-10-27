@@ -491,6 +491,7 @@ impl App {
                                     _ => RowState::Normal,
                                 };
                                 let queued = self.queued(i);
+                                crate::row_stems(t.id);
                                 let r = list_row(
                                     ui,
                                     i,

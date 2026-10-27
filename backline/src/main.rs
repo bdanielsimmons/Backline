@@ -711,6 +711,7 @@ fn list_row(
 ) -> Option<egui::Response> {
     // taken even when the row is off screen, so it never lands on the next one
     let heart = ROW_HEART.with(|h| h.take());
+    let split = ROW_STEMS.with(|s| s.take());
     let w = ui.available_width();
     // (taller with the library's zoom)
     let row_h = ROW_H * font::ui_scale();
@@ -765,6 +766,18 @@ fn list_row(
     };
     if stored {
         pixmap(p, Pos2::new(rect.max.x - 10.0 - rw - 16.0, cy - 4.0), 2.0, &CHECK[..], fg2);
+        rw += 16.0;
+    }
+    // split into stems: four little faders
+    if split {
+        let x = rect.max.x - 10.0 - rw - 16.0;
+        let mr = Rect::from_min_size(Pos2::new(x - 2.0, rect.min.y), Vec2::new(16.0, rect.height()));
+        for (k, h) in [6.0, 9.0, 5.0, 8.0].iter().enumerate() {
+            let bx = x + k as f32 * 3.0;
+            fill_rect(p, Rect::from_min_max(Pos2::new(bx, cy + 4.0 - h), Pos2::new(bx + 2.0, cy + 4.0)), fg2);
+        }
+        ui.interact(mr, ui.id().with(("stems_mark", idx, rect.min.y as i32)), Sense::hover())
+            .tip("Stems ready: drums, bass, vocals and the rest can be turned on and off.");
         rw += 16.0;
     }
     // a heart, when the caller asked for one
@@ -1281,6 +1294,13 @@ thread_local! {
     /// set just before `list_row` to give that row a heart (Some(liked)); a click on it is left in HEART_HIT
     static ROW_HEART: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
     static HEART_HIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// set just before `list_row` when that row's song is split into stems
+    static ROW_STEMS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Mark the next `list_row` when its song has stems.
+fn row_stems(id: i64) {
+    ROW_STEMS.with(|s| s.set(stems::is_split(id)));
 }
 
 /// Give the next `list_row` a heart: filled when the song is liked, a faint outline when not.
@@ -1440,6 +1460,7 @@ fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, lik
     for (i, t) in tracks.iter().enumerate() {
         let state = if playing_id == Some(t.id) { RowState::Playing } else { RowState::Normal };
         row_heart(liked.contains(&t.id));
+        row_stems(t.id);
         let r = list_row(
             ui,
             i,
@@ -2333,6 +2354,8 @@ struct App {
     q_drop: bool,
     /// MY TRACKS: the sources turned off (by SOURCES key)
     mine_off: Vec<String>,
+    /// MY TRACKS shows the songs split into stems instead of the liked ones
+    mine_stems: bool,
     /// the metronome's own volume (0..1), apart from the main volume
     mt_vol: f32,
     sleep_at: Option<Instant>,
@@ -3184,6 +3207,7 @@ impl App {
             q_manual: 0,
             q_drop: true,
             mine_off: Vec::new(),
+            mine_stems: false,
             mt_vol: 0.8,
             q_added: HashSet::new(),
             q_next: 0,
@@ -3746,6 +3770,7 @@ impl App {
         if let Some(b) = st["chart_lock"].as_bool() {
             app.chart_lock = b;
         }
+        app.mine_stems = st["mine_stems"].as_bool().unwrap_or(false);
         if let Some(z) = st["neck_zoom"].as_f64() {
             app.neck_zoom = (z as f32).clamp(0.8, 2.2);
         }
@@ -4301,6 +4326,7 @@ impl App {
             "neck_zoom": self.neck_zoom,
             "q_drop": self.q_drop,
             "mine_off": self.mine_off,
+            "mine_stems": self.mine_stems,
             "mt_vol": self.mt_vol,
             "seen_build": self.seen_build,
             "tr_whole": self.tr_whole,

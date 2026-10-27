@@ -1148,7 +1148,7 @@ impl App {
             }
         }
         // a song with loops saved before songs were remembered: remember it now
-        if self.store.sections.contains_key(&t.id) && !self.is_demo(t.id) {
+        if (self.store.sections.contains_key(&t.id) || stems::is_split(t.id)) && !self.is_demo(t.id) {
             self.remember_song(t);
         }
         match self.loops.get(&t.id).copied().filter(|_| !self.is_demo(t.id)) {
@@ -1682,10 +1682,16 @@ impl App {
                     Err(e) => self.set_err(format!("EXPORT FAILED: {}", e)),
                 }
             }
-            Msg::Stems(_, r) => {
+            Msg::Stems(id, r) => {
                 self.stem_busy = 0;
                 match r {
-                    Ok(()) => self.set_note("STEMS READY. USE THEM IN THE STEMS TAB"),
+                    Ok(()) => {
+                        // remembered, so MY TRACKS > WITH STEMS can name it
+                        if let Some(t) = self.queue.iter().find(|t| t.id == id).cloned() {
+                            self.remember_song(&t);
+                        }
+                        self.set_note("STEMS READY. USE THEM IN THE STEMS TAB")
+                    }
                     Err(e) if e == "cancelled" => self.set_note("SPLIT CANCELLED"),
                     Err(e) => self.set_err(format!("STEMS FAILED: {}", e)),
                 }
@@ -3279,6 +3285,7 @@ impl App {
             Action::StemAll => self.apply_mix([true; 4]),
             Action::StemClear => {
                 let _ = std::fs::remove_dir_all(api::config_dir().join("stems"));
+                stems::forget_split();
                 self.stem_on = [true; 4];
                 self.set_note("ALL STEMS DELETED");
             }

@@ -748,7 +748,12 @@ impl App {
     pub(crate) fn mine_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "MY TRACKS", 3.0, pal().ink);
-        title_line(ui, "every song you liked, from every source", 2.0, pal().ink2);
+        title_line(
+            ui,
+            if self.mine_stems { "every song split into stems, liked or not" } else { "every song you liked, from every source" },
+            2.0,
+            pal().ink2,
+        );
         ui.horizontal_wrapped(|ui| {
             label(ui, "SOURCES", 74.0);
             for (key, name) in crate::SOURCES {
@@ -762,11 +767,41 @@ impl App {
                     self.dirty = true;
                 }
             }
+            ui.add_space(12.0);
+            if crate::check_box(ui, "WITH STEMS", self.mine_stems)
+                .tip("Only the songs already split into drums, bass, vocals and the rest, liked or not.")
+                .clicked()
+            {
+                self.mine_stems = !self.mine_stems;
+                self.dirty = true;
+            }
         });
         let shows = |key: &str| !self.mine_off.iter().any(|k| k == key);
-        let mut tracks: Vec<Track> = self.store.hearts.iter().filter(|e| shows(&e.kind)).map(|e| e.to_track()).collect();
+        let mut tracks: Vec<Track>;
         let mut waiting = false;
-        if shows("tidal") && !self.offline {
+        if self.mine_stems {
+            // every split song this PC knows by name (one split before songs were remembered gets its name when played)
+            let mut unnamed = 0;
+            tracks = Vec::new();
+            for id in stems::split_ids() {
+                match self.store.songs.get(&id) {
+                    Some(v) if shows(&v.kind) => tracks.push(v.to_track()),
+                    Some(_) => {}
+                    None => unnamed += 1,
+                }
+            }
+            tracks.sort_by(|a, b| a.artists_text().to_lowercase().cmp(&b.artists_text().to_lowercase()).then(a.title.cmp(&b.title)));
+            if unnamed > 0 {
+                dim_line(ui, &format!("{} MORE SPLIT SONGS SHOW HERE ONCE YOU PLAY THEM AGAIN", unnamed), 1.0, pal().dim);
+            }
+            if tracks.is_empty() {
+                para(ui, "No songs split yet. Play a song, open PRACTICE > STEMS and press SPLIT THIS TRACK.", pal().ink2);
+                return;
+            }
+        } else {
+            tracks = self.store.hearts.iter().filter(|e| shows(&e.kind)).map(|e| e.to_track()).collect();
+        }
+        if shows("tidal") && !self.offline && !self.mine_stems {
             match &self.lib_page {
                 Some(p) => tracks.extend(p.tracks.iter().cloned()),
                 None => waiting = true,
@@ -935,6 +970,7 @@ impl App {
             let state = if playing == Some(e.id) { RowState::Playing } else { RowState::Normal };
             let stored = if yt { cache::has(e.id) } else { true };
             crate::row_heart(self.liked.contains(&e.id));
+            crate::row_stems(e.id);
             let r = list_row(
                 ui,
                 i,
@@ -2146,6 +2182,7 @@ impl App {
             let state = if playing == Some(v.id) { RowState::Playing } else { RowState::Normal };
             let stored = v.kind == "file" || cache::has(v.id);
             crate::row_heart(self.liked.contains(&v.id));
+            crate::row_stems(v.id);
             // a loop shows as its name and where it is, the song after it
             let title = match v.loop_ab {
                 Some((a, b)) => format!("LOOP: {} ({}-{})  {}", v.loop_name, fmt_time(a), fmt_time(b), v.title),
@@ -2679,6 +2716,7 @@ impl App {
                 "file" => "[FILE] ",
                 _ => "",
             };
+            crate::row_stems(id);
             let r = list_row(
                 ui,
                 vi,
@@ -2755,6 +2793,7 @@ impl App {
             table_header(ui, "TRACK", "POPULARITY", "LENGTH", true);
             for (k, t) in found.iter().enumerate() {
                 let state = if playing == Some(t.id) { RowState::Playing } else { RowState::Normal };
+                crate::row_stems(t.id);
                 let r = list_row(
                     ui,
                     k,
@@ -2853,6 +2892,7 @@ impl App {
                 .unwrap_or_else(|| "A SONG (PLAY IT ONCE TO NAME IT)".to_string());
             let mins = week.get(id).copied().unwrap_or(0);
             let state = if playing == Some(*id) { RowState::Playing } else { RowState::Normal };
+            crate::row_stems(*id);
             let r = list_row(
                 ui,
                 k,
@@ -4621,14 +4661,23 @@ impl App {
                             pal().dim,
                         );
                     }
-                } else if retro_btn_w(ui, "SPLIT THIS TRACK", 190.0, false)
-                    .tip(format!(
-                        "Splits the track into drums, bass, vocals and other. It takes a few minutes and is kept afterwards (about {} for this song).",
-                        cache::fmt_size(stems::size_guess(self.track_len()))
-                    ))
-                    .clicked()
-                {
-                    acts.push(Action::StemSplit);
+                } else {
+                    let len = self.track_len();
+                    if retro_btn_w(ui, "SPLIT THIS TRACK", 190.0, false)
+                        .tip("Splits the track into drums, bass, vocals and other, on this PC. Kept afterwards.")
+                        .clicked()
+                    {
+                        acts.push(Action::StemSplit);
+                    }
+                    // what it will cost before you press it
+                    let t = stems::time_guess(len);
+                    let time = if t < 90 { format!("{} SEC", t.div_ceil(5) * 5) } else { format!("{} MIN", t.div_ceil(60)) };
+                    crate::views::dim_line(
+                        ui,
+                        &format!("ABOUT {} AND {} ON DISK", time, cache::fmt_size(stems::size_guess(len))),
+                        1.0,
+                        pal().dim,
+                    );
                 }
                 });
             }

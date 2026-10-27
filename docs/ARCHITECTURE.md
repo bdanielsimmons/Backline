@@ -57,6 +57,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Synth sounds (metronome, band, chords and lines played back, count-in) | `audio/band.rs` |
 | Tidal API, offline switch, liked-songs copy | `data/api.rs` |
 | Song cache (kept songs) | `data/cache.rs` |
+| Stems: splitting (HT-Demucs), the split songs (`is_split` for the row mark set by `row_stems`, MY TRACKS > WITH STEMS), the time/size guess before a split (`time_guess`, `size_guess`) | `audio/stems.rs` |
 | Guitar Pro files (.gp: bars, notes with string/fret, key and time, chord names and grids, the recording inside) | `data/gp.rs` |
 | Transcriptions: Backline's own shareable format (JSON, one per tune, in `transcriptions/`), kept moves (`moves.json`) | `data/transcription.rs` |
 | CHORD MELODIES (PRACTICE): SONGS - bars written out (`draw_bars`, `bar_items`: stems, beams, rests, ties, key and time signatures), moves spotted (`suggest`), the pinned panel (`cm_focus`, `move_steps`, `focus_dots`); MOVES - the ones kept | `ui/melodies.rs` |

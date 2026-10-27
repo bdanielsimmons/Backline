@@ -581,6 +581,7 @@ impl App {
                             };
                             let queued = self.queued(i);
                             row_heart(self.liked.contains(&t.id));
+                            crate::row_stems(t.id);
                             let r = list_row(
                                 ui,
                                 i,

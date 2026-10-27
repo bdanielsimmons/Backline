@@ -85,6 +85,56 @@ pub fn have_stems(id: i64) -> bool {
     stems_dir(id).join("ok").exists()
 }
 
+/// The songs split so far, read from disk once (then kept until a split finishes or the stems are deleted).
+fn split_set() -> &'static Mutex<Option<std::collections::HashSet<i64>>> {
+    static S: OnceLock<Mutex<Option<std::collections::HashSet<i64>>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(None))
+}
+
+fn with_split<R>(f: impl FnOnce(&std::collections::HashSet<i64>) -> R) -> R {
+    let mut g = split_set().lock().unwrap_or_else(|e| e.into_inner());
+    let set = g.get_or_insert_with(|| {
+        let mut s = std::collections::HashSet::new();
+        if let Ok(rd) = std::fs::read_dir(crate::api::config_dir().join("stems")) {
+            for e in rd.flatten() {
+                if let Some(id) = e.file_name().to_str().and_then(|n| n.parse::<i64>().ok()) {
+                    if e.path().join("ok").exists() {
+                        s.insert(id);
+                    }
+                }
+            }
+        }
+        s
+    });
+    f(set)
+}
+
+/// Is this song split (cheap enough for every row of a list)?
+pub fn is_split(id: i64) -> bool {
+    with_split(|s| s.contains(&id))
+}
+
+/// Every song split so far.
+pub fn split_ids() -> Vec<i64> {
+    with_split(|s| s.iter().copied().collect())
+}
+
+/// The stems on disk changed: read them again next time.
+pub fn forget_split() {
+    *split_set().lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// About how long a split takes on this computer, in seconds: from the last split here, or about a quarter of the
+/// song's length before the first one.
+pub fn time_guess(secs: f32) -> u64 {
+    let rate = std::fs::read_to_string(crate::api::config_dir().join("stems").join("rate"))
+        .ok()
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .filter(|r| *r > 0.0 && *r < 50.0)
+        .unwrap_or(0.25);
+    (secs.max(0.0) * rate).round() as u64 + 10
+}
+
 /// Total size of all saved stems, in bytes.
 pub fn stems_size() -> u64 {
     walk(&crate::api::config_dir().join("stems"))
@@ -324,6 +374,7 @@ fn separate_inner(bytes: Vec<u8>, id: i64) -> Result<(), String> {
     DONE.store(0, Ordering::Relaxed);
     TOTAL.store(0, Ordering::Relaxed);
     set_stage("PREPARING");
+    let t0 = std::time::Instant::now();
     init_runtime()?;
     let (l, r) = decode_44k(bytes)?;
     let n = l.len();
@@ -390,6 +441,10 @@ fn separate_inner(bytes: Vec<u8>, id: i64) -> Result<(), String> {
         write_wav(&d.join(format!("{}.wav", FILES[s])), &pcm)?;
     }
     std::fs::write(d.join("ok"), b"1").map_err(|e| e.to_string())?;
+    // how fast this computer splits (seconds per second of song), for the next guess
+    let rate = t0.elapsed().as_secs_f32() / (n as f32 / 44100.0).max(1.0);
+    let _ = std::fs::write(d.parent().unwrap_or(&d).join("rate"), format!("{:.3}", rate));
+    forget_split();
     set_stage("");
     Ok(())
 }
