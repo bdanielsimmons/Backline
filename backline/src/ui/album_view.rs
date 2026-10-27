@@ -138,18 +138,15 @@ impl App {
             }
         }
 
-        // ---- mild tilt, only while the mouse is on or right next to the cover
-        // (it starts to lean a little way out from the cover, and lifts a touch while the mouse is on it)
-        let reach = a / 2.0 * 1.5;
+        // ---- a slight tilt, only while the mouse is on the cover itself (no zoom)
+        let reach = a / 2.0;
         let calm = crate::skin::calm();
         let target = match hover.filter(|_| !calm) {
             Some(pp) if (pp.x - center.x).abs() < reach && (pp.y - center.y).abs() < reach => {
-                Vec2::new(((pp.x - center.x) / reach).clamp(-1.0, 1.0), ((pp.y - center.y) / reach).clamp(-1.0, 1.0)) * 0.62
+                Vec2::new(((pp.x - center.x) / reach).clamp(-1.0, 1.0), ((pp.y - center.y) / reach).clamp(-1.0, 1.0)) * 0.35
             }
             _ => Vec2::ZERO,
         };
-        let on_cover = !calm && hover.is_some_and(|pp| Rect::from_center_size(center, Vec2::splat(a)).contains(pp));
-        let lift = ui.ctx().animate_bool_with_time(ui.id().with("art_lift"), on_cover, 0.18);
         let k = 1.0 - (-dt * 12.0).exp();
         self.art_tilt += (target - self.art_tilt) * k;
         let tilt = self.art_tilt;
@@ -165,7 +162,7 @@ impl App {
             Pos2::new(center.x + push.x + x * cy * sc, center.y + push.y + y * cx * sc)
         };
         let corners = |h: f32| [xf(-h, -h), xf(h, -h), xf(h, h), xf(-h, h)];
-        let h = a / 2.0 * (1.0 + 0.025 * lift);
+        let h = a / 2.0;
 
         {
             // click the cover to put it on a record (and back)
