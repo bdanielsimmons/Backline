@@ -16,7 +16,8 @@ use crate::{
 };
 use crate::{check_box, dropdown};
 use eframe::egui::{self, Align, Pos2, Rect, Sense, Vec2};
-use egui::Color32;
+use egui::{Color32, Stroke};
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 /// "45 SEC", "12 MIN", "1 H 05 MIN"
@@ -556,6 +557,42 @@ fn sub_tabs(ui: &mut egui::Ui, items: &[(Sec, &str)], cur: usize) -> Option<usiz
             x += w;
         }
         hit
+    })
+}
+
+/// The LOOPS page's songs, filtered and in order.
+struct SpotData {
+    songs: Vec<SpotSong>,
+}
+
+/// One song on the LOOPS page: its loops (with the time spent on each) and bookmarks, and its minutes.
+struct SpotSong {
+    id: i64,
+    v: Option<store::Version>,
+    loops: Vec<(usize, store::Section, u32)>,
+    marks: Vec<(usize, store::Bookmark)>,
+    /// practised this week, and in all (with its loops), in seconds
+    mins: u32,
+    total: u32,
+    /// the day its newest loop was saved
+    newest: String,
+}
+
+/// A song's waveform as kept on disk (50 peaks a second), read once and kept for the LOOPS page.
+fn song_wave(id: i64) -> Option<std::rc::Rc<Vec<u8>>> {
+    thread_local! {
+        static WAVES: std::cell::RefCell<HashMap<i64, Option<std::rc::Rc<Vec<u8>>>>> = std::cell::RefCell::new(HashMap::new());
+    }
+    WAVES.with(|w| {
+        w.borrow_mut()
+            .entry(id)
+            .or_insert_with(|| {
+                std::fs::read(crate::api::config_dir().join("waves").join(format!("{}.pk", id)))
+                    .ok()
+                    .filter(|b| b.len() > 50)
+                    .map(std::rc::Rc::new)
+            })
+            .clone()
     })
 }
 
@@ -2829,320 +2866,481 @@ impl App {
     pub(crate) fn loops_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "LOOPS", 3.0, pal().ink);
-        para(ui, "Songs you saved loops on or practiced, no tune needed. Click a loop to jump straight to it, or a song to play it. Right-click for more.", pal().ink2);
-        self.share_buttons(ui, acts);
         self.name_old_loops();
+        let data = self.spot_data();
+        // the song picked: one asked for, else the song playing, else the first
+        let playing = self.cur_track().map(|t| t.id);
+        let has = |id: i64| data.songs.iter().any(|s| s.id == id);
+        let pick = self.loops_pick.filter(|p| has(*p)).or(playing.filter(|p| has(*p))).or(data.songs.first().map(|s| s.id));
+        if ui.available_width() >= 640.0 {
+            // two panes: the songs on the left, the one picked on the right
+            ui.horizontal_top(|ui| {
+                let lw = 250.0;
+                ui.allocate_ui_with_layout(Vec2::new(lw, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_width(lw);
+                    self.loops_controls(ui, acts);
+                    ui.add_space(6.0);
+                    self.loops_songs(ui, &data, pick);
+                });
+                let top = ui.cursor().min;
+                ui.add_space(14.0);
+                ui.painter().line_segment(
+                    [Pos2::new(top.x + 6.0, top.y), Pos2::new(top.x + 6.0, top.y + 600.0)],
+                    Stroke::new(1.0_f32, pal().row_alt),
+                );
+                ui.vertical(|ui| {
+                    ui.set_width(ui.available_width());
+                    self.loops_detail(ui, acts, &data, pick);
+                });
+            });
+        } else if let Some(open) = self.loops_pick.filter(|p| has(*p)) {
+            // narrow: one song at a time, the list a click away
+            if retro_btn(ui, "< ALL SONGS", false).clicked() {
+                self.loops_pick = None;
+            }
+            ui.add_space(8.0);
+            self.loops_detail(ui, acts, &data, Some(open));
+        } else {
+            self.loops_controls(ui, acts);
+            ui.add_space(6.0);
+            self.loops_songs(ui, &data, None);
+            if self.loops_mode == 2 {
+                ui.add_space(14.0);
+                self.groups_view(ui, acts);
+            }
+        }
+        ui.add_space(20.0);
+    }
+
+    /// The filter, which week, and the rest (what to show, the order, export / import) in "...".
+    fn loops_controls(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let w = ui.available_width().min(250.0);
+        ui.horizontal(|ui| {
+            let (ic, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
+            crate::icon_in(ui.painter(), ic.shrink(4.0), &crate::IC_FILTER, pal().ink2);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w - 30.0, bh()), Sense::hover());
+            let _ = field(ui, &mut self.ed, crate::tools::F_LOOPS_FILTER, &mut self.loops_filter, rect, "Filter", false);
+        });
+        ui.horizontal(|ui| {
+            if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practiced or looped in the last 7 days.").clicked() {
+                self.loops_all = false;
+            }
+            if retro_btn(ui, "ALL", self.loops_all).tip("Every song with a loop or a bookmark.").clicked() {
+                self.loops_all = true;
+            }
+            let more = retro_btn_w(ui, "...", 34.0, false).tip("What to show, the order, export and import.");
+            let pop = ui.id().with("loops_more");
+            if more.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pop));
+            }
+            egui::popup_below_widget(ui, pop, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(230.0);
+                dim_line(ui, "SHOW", 1.0, pal().dim);
+                for (i, name) in ["Loops and bookmarks", "Loops", "Bookmarks"].iter().enumerate() {
+                    let mark = if self.loops_show as usize == i { "> " } else { "   " };
+                    if menu_item(ui, &format!("{}{}", mark, name)) {
+                        self.loops_show = i as u8;
+                        self.dirty = true;
+                    }
+                }
+                dim_line(ui, "ORDER", 1.0, pal().dim);
+                let cur = if self.loops_mode == 2 { 3 } else { self.loops_sort.min(2) as usize };
+                for (i, name) in ["Recent", "A-Z", "Time spent", "By group"].iter().enumerate() {
+                    let mark = if cur == i { "> " } else { "   " };
+                    if menu_item(ui, &format!("{}{}", mark, name)) {
+                        if i == 3 {
+                            self.loops_mode = 2;
+                        } else {
+                            self.loops_mode = 0;
+                            self.loops_sort = i as u8;
+                        }
+                        self.dirty = true;
+                    }
+                }
+                dim_line(ui, "SHARE", 1.0, pal().dim);
+                if menu_item(ui, "   Export loops & playlists...") {
+                    acts.push(Action::ShareExport);
+                }
+                if menu_item(ui, "   Import from another computer...") {
+                    acts.push(Action::ShareImport);
+                }
+            });
+        });
+    }
+
+    /// The songs, filtered and in order, with their loops and bookmarks.
+    fn spot_data(&self) -> SpotData {
         let today = store::today_days();
         let week_start = store::date_str(today - 6);
-        let mut week: std::collections::HashMap<i64, u32> = std::collections::HashMap::new();
+        let mut week: HashMap<i64, u32> = HashMap::new();
         for d in self.store.days.iter().filter(|d| d.date >= week_start) {
             for (id, s) in &d.songs {
                 *week.entry(*id).or_default() += s;
             }
         }
-        // how they're shown: each loop, by song, or by group
-        if let Some(v) = crate::tab_row(ui, &["EACH LOOP", "BY SONG", "GROUPS"], self.loops_mode as usize) {
-            self.loops_mode = v as u8;
+        // time spent on each loop, from the diary
+        let mut spent: HashMap<(i64, i32, i32), u32> = HashMap::new();
+        for d in &self.store.days {
+            for (k, v) in &d.loop_time {
+                if let Some((id, a, b)) = store::parse_loop_key(k) {
+                    *spent.entry((id, (a * 10.0).round() as i32, (b * 10.0).round() as i32)).or_default() += v.0;
+                }
+            }
         }
+        let spent_on = |id: i64, s: &store::Section| {
+            spent.get(&(id, (s.a * 10.0).round() as i32, (s.b * 10.0).round() as i32)).copied().unwrap_or(0)
+        };
+        let (show_loops, show_marks) = (self.loops_show != 2, self.loops_show != 1);
+        // the songs: practised this week, or with a loop saved this week (ALL: every song with a loop or bookmark)
+        let mut ids: Vec<i64> = week.keys().copied().collect();
+        for (id, l) in &self.store.sections {
+            if !l.is_empty() && (self.loops_all || l.iter().any(|s| s.saved >= week_start)) && !ids.contains(id) {
+                ids.push(*id);
+            }
+        }
+        if self.loops_all {
+            for (id, l) in &self.store.marks {
+                if !l.is_empty() && !ids.contains(id) {
+                    ids.push(*id);
+                }
+            }
+        }
+        let filter = self.loops_filter.trim().to_string();
+        let mut songs: Vec<SpotSong> = Vec::new();
+        for id in &ids {
+            let v = self.store.songs.get(id).cloned();
+            let song = v.as_ref().map(|v| format!("{} {} {}", v.artist, v.title, v.album)).unwrap_or_default();
+            let song_hit = filter.is_empty() || crate::filter_score(&filter, &[&song]).is_some();
+            let hit = |texts: &[&str]| song_hit || crate::filter_score(&filter, texts).is_some();
+            let loops: Vec<(usize, store::Section, u32)> = if show_loops {
+                self.store
+                    .sections
+                    .get(id)
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .filter(|(_, s)| hit(&[&s.name, &s.group, &s.note]))
+                    .map(|(i, s)| (i, s.clone(), spent_on(*id, s)))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let marks: Vec<(usize, store::Bookmark)> = if show_marks {
+                self.store.marks.get(id).into_iter().flatten().cloned().enumerate().filter(|(_, m)| hit(&[&m.name])).collect()
+            } else {
+                Vec::new()
+            };
+            // a song only practised shows when nothing narrows the list
+            if loops.is_empty() && marks.is_empty() && (!song_hit || !filter.is_empty() || self.loops_show == 2) {
+                continue;
+            }
+            let mins = week.get(id).copied().unwrap_or(0);
+            let total = loops.iter().map(|l| l.2).sum::<u32>() + mins;
+            let newest = loops.iter().map(|l| l.1.saved.clone()).max().unwrap_or_default();
+            songs.push(SpotSong { id: *id, v, loops, marks, mins, total, newest });
+        }
+        let name_of = |s: &SpotSong| s.v.as_ref().map(|v| v.title.to_lowercase()).unwrap_or_default();
+        match self.loops_sort {
+            1 => songs.sort_by(|a, b| name_of(a).cmp(&name_of(b)).then(a.id.cmp(&b.id))),
+            2 => songs.sort_by(|a, b| b.total.cmp(&a.total).then(a.id.cmp(&b.id))),
+            _ => songs.sort_by(|a, b| b.mins.cmp(&a.mins).then(b.newest.cmp(&a.newest)).then(a.id.cmp(&b.id))),
+        }
+        SpotData { songs }
+    }
+
+    /// The left pane: one two-line row per song.
+    fn loops_songs(&mut self, ui: &mut egui::Ui, data: &SpotData, pick: Option<i64>) {
+        let playing = self.cur_track().map(|t| t.id);
+        let row = |ui: &mut egui::Ui, key: i64, title: &str, sub: &str| -> bool {
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
+            let p = ui.painter();
+            let on = pick == Some(key);
+            if on {
+                p.rect_filled(r, 6.0, pal().row_sel);
+            } else if resp.hovered() {
+                p.rect_filled(r, 6.0, pal().sel);
+            }
+            let x = r.min.x + 10.0;
+            let col = if playing == Some(key) { pal().bar_txt } else { pal().ink };
+            let clip = Rect::from_min_max(r.min, Pos2::new(r.max.x - 8.0, r.max.y)).intersect(p.clip_rect());
+            ptext(&p.with_clip_rect(clip), Pos2::new(x, r.min.y + 15.0), Align::Min, title, 1.6, col);
+            ptext_fit(p, Pos2::new(r.min.x + 10.0, r.min.y + 32.0), Align::Min, sub, 1.0, r.width() - 20.0, pal().ink2);
+            resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+        };
+        if data.songs.is_empty() {
+            let msg = if !self.loops_filter.trim().is_empty() {
+                "Nothing matches."
+            } else if self.loops_all {
+                "No loops or bookmarks yet. In PRACTICE, set A and B and press SAVE LOOP, or press + MARK."
+            } else {
+                "Nothing this week yet. Practice a song or save a loop and it shows up here. ALL has every song."
+            };
+            para(ui, msg, pal().ink2);
+            return;
+        }
+        for s in &data.songs {
+            let (title, artist) = match &s.v {
+                Some(v) => (v.title.clone(), v.artist.clone()),
+                None => ("A song (play it once to name it)".to_string(), String::new()),
+            };
+            let spots = s.loops.len() + s.marks.len();
+            let mut sub = artist;
+            if spots > 0 {
+                sub = format!("{}{}{} {}", sub, if sub.is_empty() { "" } else { "  ·  " }, spots, if spots == 1 { "spot" } else { "spots" });
+            }
+            if s.mins >= 60 {
+                sub = format!("{}  ·  {}", sub, mins_text(s.mins));
+            }
+            if row(ui, s.id, &title, &sub) {
+                self.loops_pick = Some(s.id);
+            }
+        }
+    }
+
+    /// The right pane: the song picked (its map, then each loop and bookmark), or the groups.
+    fn loops_detail(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, data: &SpotData, pick: Option<i64>) {
         if self.loops_mode == 2 {
             self.groups_view(ui, acts);
             return;
         }
-        self.loops_by_song = self.loops_mode == 1;
-        ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practiced or looped in the last 7 days.").clicked() {
-                self.loops_all = false;
+        let Some(c) = data.songs.iter().find(|s| Some(s.id) == pick) else { return };
+        let playing = self.cur_track().map(|t| t.id) == Some(c.id);
+        let (la, lb, now) = (self.loop_a, self.loop_b, self.pos());
+        // ---- the song, and a button to play it
+        let (title, artist) = match &c.v {
+            Some(v) => (v.title.clone(), v.artist.clone()),
+            None => ("A song (play it once to name it)".to_string(), String::new()),
+        };
+        let (hr, hresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+        let play_r = Rect::from_center_size(Pos2::new(hr.max.x - 18.0, hr.center().y), Vec2::splat(30.0));
+        {
+            let p = ui.painter();
+            let room = (hr.width() - 60.0).max(40.0);
+            let clip = Rect::from_min_max(hr.min, Pos2::new(hr.min.x + room, hr.max.y)).intersect(p.clip_rect());
+            let tw = ptext(&p.with_clip_rect(clip), Pos2::new(hr.min.x, hr.center().y), Align::Min, &title, 2.6, if playing { pal().bar_txt } else { pal().ink });
+            if !artist.is_empty() && tw < room && room - tw > 70.0 {
+                ptext_fit(p, Pos2::new(hr.min.x + tw + 12.0, hr.center().y + 2.0), Align::Min, &artist, 1.4, room - tw - 16.0, pal().ink2);
             }
-            if retro_btn(ui, "ALL", self.loops_all).tip("Every saved loop.").clicked() {
-                self.loops_all = true;
+            p.circle_filled(play_r.center(), 15.0, pal().bar_txt);
+            let c0 = play_r.center();
+            p.add(egui::Shape::convex_polygon(
+                vec![c0 + Vec2::new(-4.0, -6.5), c0 + Vec2::new(7.0, 0.0), c0 + Vec2::new(-4.0, 6.5)],
+                pal().app_bg,
+                Stroke::NONE,
+            ));
+        }
+        if let Some(v) = &c.v {
+            let pr = ui.interact(play_r, ui.id().with(("spot_play", c.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play the song.");
+            if pr.clicked() {
+                acts.push(Action::PlaySaved(v.clone(), None));
             }
-        });
-        ui.add_space(4.0);
-        let mut ids: Vec<i64> = week.keys().copied().collect();
-        for (id, l) in &self.store.sections {
-            if (self.loops_all || l.iter().any(|s| s.saved >= week_start)) && !ids.contains(id) {
-                ids.push(*id);
-            }
+            let liked = self.liked.contains(&v.id);
+            hresp.context_menu(|ui| {
+                crate::song_items(ui, acts, &v.to_track(), liked, v.kind == "tidal");
+            });
         }
-        if !self.loops_by_song {
-            self.clips_list(ui, acts, &ids, &week_start);
-            return;
-        }
-        let newest =
-            |id: &i64| self.store.sections.get(id).and_then(|l| l.iter().map(|s| s.saved.clone()).max()).unwrap_or_default();
-        ids.sort_by(|a, b| week.get(b).cmp(&week.get(a)).then(newest(b).cmp(&newest(a))).then(a.cmp(b)));
-        if ids.is_empty() {
-            para(
-                ui,
-                if self.loops_all {
-                    "No saved loops yet. In PRACTICE, set A and B on a song and press SAVE LOOP."
-                } else {
-                    "Nothing this week yet. Practice or save a loop, and its song shows up here. ALL has every song with a saved loop."
-                },
-                pal().ink2,
-            );
-            return;
-        }
-        let playing = self.cur_track().map(|t| t.id);
-        for (k, id) in ids.iter().enumerate() {
-            let v = self.store.songs.get(id).cloned();
-            let name = v
-                .as_ref()
-                .map(|v| format!("{} - {}", v.artist, v.title))
-                .unwrap_or_else(|| "A SONG (PLAY IT ONCE TO NAME IT)".to_string());
-            let mins = week.get(id).copied().unwrap_or(0);
-            let state = if playing == Some(*id) { RowState::Playing } else { RowState::Normal };
-            crate::row_stems(*id);
-            let r = list_row(
-                ui,
-                k,
-                None,
-                || name.clone(),
-                || if mins >= 60 { format!("{} THIS WEEK", mins_text(mins)) } else { String::new() },
-                state,
-                false,
-                false,
-            );
-            if let (Some(r), Some(v)) = (r, &v) {
-                if r.clicked() {
-                    acts.push(Action::PlaySaved(v.clone(), None));
+        ui.add_space(8.0);
+        // ---- the map: the song end to end, bookmarks named above their ticks, loops as bands, time below
+        let len = c
+            .v
+            .as_ref()
+            .map(|v| v.dur)
+            .filter(|d| *d > 1.0)
+            .or_else(|| song_wave(c.id).map(|w| w.len() as f32 / 50.0).filter(|d| *d > 1.0))
+            .unwrap_or_else(|| {
+                let lmax = c.loops.iter().map(|l| l.1.b).fold(0.0f32, f32::max);
+                let mmax = c.marks.iter().map(|m| m.1.t).fold(0.0f32, f32::max);
+                lmax.max(mmax) * 1.08 + 5.0
+            });
+        let (all, sresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.0 + 60.0 + 16.0), Sense::click());
+        let sr = Rect::from_min_size(Pos2::new(all.min.x, all.min.y + 16.0), Vec2::new(all.width(), 60.0));
+        let at = |t: f32| sr.min.x + (t / len).clamp(0.0, 1.0) * sr.width();
+        {
+            let p = ui.painter();
+            p.rect_filled(sr, 5.0, pal().row_alt);
+            if let Some(w) = song_wave(c.id) {
+                let n = sr.width().max(1.0) as usize;
+                let wl = (w.len() as f32 / 50.0).max(0.1);
+                let mut x = sr.min.x;
+                for k in (0..n).step_by(2) {
+                    let (t0, t1) = (k as f32 / n as f32 * len, (k + 2) as f32 / n as f32 * len);
+                    let (i0, i1) = ((t0 / wl * w.len() as f32) as usize, (t1 / wl * w.len() as f32) as usize);
+                    // the slice's average, not its loudest peak, and spread out: a loud mastered song still shows its shape
+                    let slice = w.get(i0.min(w.len())..i1.max(i0 + 1).min(w.len())).unwrap_or(&[]);
+                    let avg = slice.iter().map(|&x| x as f32).sum::<f32>() / slice.len().max(1) as f32 / 255.0;
+                    let h = avg.powi(4) * (sr.height() / 2.0 - 3.0) + 1.0;
+                    p.line_segment(
+                        [Pos2::new(x, sr.center().y - h), Pos2::new(x, sr.center().y + h)],
+                        Stroke::new(1.0_f32, pal().ink2.gamma_multiply(0.45)),
+                    );
+                    x += 2.0;
                 }
-                let (liked, tidal) = (self.liked.contains(&v.id), v.kind == "tidal");
-                r.context_menu(|ui| {
-                    crate::song_items(ui, acts, &v.to_track(), liked, tidal);
+            }
+            for (_, s, _) in &c.loops {
+                let band = Rect::from_min_max(Pos2::new(at(s.a), sr.min.y), Pos2::new(at(s.b).max(at(s.a) + 3.0), sr.max.y));
+                let on = playing && la.is_some_and(|a| (a - s.a).abs() < 0.05) && lb.is_some_and(|b| (b - s.b).abs() < 0.05);
+                p.rect_filled(band, 2.0, pal().bar_txt.gamma_multiply(if on { 0.6 } else { 0.32 }));
+            }
+            // bookmark names above their ticks, skipping one that would land on the last
+            let mut last_end = f32::MIN;
+            for (_, m) in &c.marks {
+                let col = Color32::from_rgb(m.col[0], m.col[1], m.col[2]);
+                let x = at(m.t);
+                p.line_segment([Pos2::new(x, sr.min.y), Pos2::new(x, sr.max.y)], Stroke::new(2.0_f32, col));
+                if !m.name.is_empty() && x - 2.0 > last_end {
+                    let w = ptext(p, Pos2::new(x - 2.0, all.min.y + 7.0), Align::Min, &m.name, 1.0, col);
+                    last_end = x + w + 6.0;
+                }
+            }
+            if playing {
+                let x = at(now);
+                p.line_segment([Pos2::new(x, sr.min.y - 2.0), Pos2::new(x, sr.max.y + 2.0)], Stroke::new(1.5_f32, pal().ink));
+            }
+            for k in 0..4 {
+                let t = len * k as f32 / 3.0;
+                let al = match k {
+                    0 => Align::Min,
+                    3 => Align::Max,
+                    _ => Align::Center,
+                };
+                ptext(p, Pos2::new(sr.min.x + sr.width() * k as f32 / 3.0, sr.max.y + 9.0), al, &fmt_time(t), 1.0, pal().dim);
+            }
+        }
+        if let Some(v) = &c.v {
+            let sresp = sresp.on_hover_cursor(egui::CursorIcon::PointingHand);
+            if let Some(pp) = sresp.hover_pos().filter(|pp| sr.contains(*pp)) {
+                let t = ((pp.x - sr.min.x) / sr.width()).clamp(0.0, 1.0) * len;
+                egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), ui.id().with(("strip_tip", c.id)), |ui| {
+                    ui.label(format!("Play from {}", fmt_time(t)));
                 });
-            }
-            let loops = self.store.sections.get(id).cloned().unwrap_or_default();
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
-                ui.add_space(28.0);
-                if loops.is_empty() {
-                    dim_line(ui, "NO LOOPS SAVED, PRACTICED ONLY", 1.0, pal().dim);
+                if sresp.clicked() {
+                    acts.push(Action::PlayAt(v.clone(), t));
                 }
-                for (i, s) in loops.iter().enumerate() {
-                    let label = format!("{}  {}-{}", s.name.to_uppercase(), fmt_time(s.a), fmt_time(s.b));
-                    let b = retro_btn(ui, &label, false).tip("Plays the song on this loop. Right-click to forget it.");
-                    if b.clicked() {
-                        if let Some(v) = &v {
+            }
+        }
+        ui.add_space(10.0);
+        // ---- each loop and bookmark: starred loops first, the rest in song order
+        if c.loops.is_empty() && c.marks.is_empty() {
+            para(ui, "Practiced, nothing saved yet. Set A and B in PRACTICE and press SAVE LOOP, or press + MARK.", pal().ink2);
+            return;
+        }
+        enum Row<'a> {
+            Loop(usize, &'a store::Section, u32),
+            Mark(usize, &'a store::Bookmark),
+        }
+        let mut rows: Vec<(bool, f32, Row)> = c.loops.iter().map(|(i, s, w)| (s.fav, s.a, Row::Loop(*i, s, *w))).collect();
+        rows.extend(c.marks.iter().map(|(i, m)| (false, m.t, Row::Mark(*i, m))));
+        rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.total_cmp(&b.1)));
+        let mut drop_mark = None;
+        for (_, _, row) in &rows {
+            match row {
+                Row::Loop(i, s, w) => {
+                    let on = playing && la.is_some_and(|a| (a - s.a).abs() < 0.05) && lb.is_some_and(|b| (b - s.b).abs() < 0.05);
+                    let h = if s.note.is_empty() { 32.0 } else { 50.0 };
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+                    let p = ui.painter();
+                    if on {
+                        p.rect_filled(r, 6.0, pal().row_sel);
+                    } else if resp.hovered() {
+                        p.rect_filled(r, 6.0, pal().sel);
+                    }
+                    let cy = r.min.y + 16.0;
+                    p.rect_filled(Rect::from_center_size(Pos2::new(r.min.x + 18.0, cy), Vec2::new(14.0, 8.0)), 2.0, pal().bar_txt.gamma_multiply(0.65));
+                    let mut meta = format!("{}-{}", fmt_time(s.a), fmt_time(s.b));
+                    if *w >= 60 {
+                        meta = format!("{}   {}", meta, mins_text(*w));
+                    }
+                    if !s.group.is_empty() {
+                        meta = format!("{}   {}", s.group.to_uppercase(), meta);
+                    }
+                    let mw = ptext(p, Pos2::new(r.max.x - 40.0, cy), Align::Max, &meta, 1.0, pal().ink2);
+                    ptext_fit(p, Pos2::new(r.min.x + 36.0, cy), Align::Min, &s.name, 1.6, (r.width() - mw - 90.0).max(20.0), if on { pal().bar_txt } else { pal().ink });
+                    if !s.note.is_empty() {
+                        ptext_fit(p, Pos2::new(r.min.x + 36.0, r.min.y + 35.0), Align::Min, &s.note, 1.3, r.width() - 80.0, pal().dim);
+                    }
+                    let star_r = Rect::from_center_size(Pos2::new(r.max.x - 18.0, cy), Vec2::splat(24.0));
+                    let sh = ui
+                        .interact(star_r, ui.id().with(("loop_star", c.id, *i)), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .tip(if s.fav { "Starred. Click to unstar." } else { "Star it as one that matters, like a part for a gig coming up." });
+                    let star_col = if s.fav {
+                        STAR_COL
+                    } else if sh.hovered() || resp.hovered() {
+                        pal().dim
+                    } else {
+                        pal().dim.gamma_multiply(0.35)
+                    };
+                    crate::icon_in(ui.painter(), star_r.shrink(6.0), &crate::IC_STAR, star_col);
+                    if sh.clicked() {
+                        if let Some(x) = self.store.sections.get_mut(&c.id).and_then(|l| l.get_mut(*i)) {
+                            x.fav = !x.fav;
+                            self.store_dirty = true;
+                        }
+                    }
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Plays it on a loop. Right-click to rename it or add a note.");
+                    if resp.clicked() && !sh.clicked() {
+                        if let Some(v) = &c.v {
                             acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
                         }
                     }
-                    b.context_menu(|ui| {
-                        if let Some(v) = &v {
+                    resp.context_menu(|ui| {
+                        if menu_item(ui, "Rename / add a note...") {
+                            self.clip_edit = Some((c.id, *i));
+                            self.clip_name = s.name.clone();
+                            self.clip_note = s.note.clone();
+                            self.clip_group = s.group.clone();
+                            ui.close_menu();
+                        }
+                        if let Some(v) = &c.v {
                             if menu_item(ui, "Add this loop to a playlist...") {
                                 acts.push(Action::PlaylistPickLoop(v.to_track(), s.a, s.b, s.name.clone()));
                                 ui.close_menu();
                             }
                         }
                         if menu_item(ui, "Forget this loop") {
-                            acts.push(Action::ForgetLoop(*id, i));
+                            acts.push(Action::ForgetLoop(c.id, *i));
+                            ui.close_menu();
+                        }
+                    });
+                    if self.clip_edit == Some((c.id, *i)) {
+                        self.loop_editor(ui, acts);
+                    }
+                }
+                Row::Mark(i, m) => {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
+                    let p = ui.painter();
+                    if resp.hovered() {
+                        p.rect_filled(r, 6.0, pal().sel);
+                    }
+                    let cy = r.center().y;
+                    let col = Color32::from_rgb(m.col[0], m.col[1], m.col[2]);
+                    p.rect_filled(Rect::from_center_size(Pos2::new(r.min.x + 18.0, cy), Vec2::new(3.0, 14.0)), 1.0, col);
+                    let mw = ptext(p, Pos2::new(r.max.x - 40.0, cy), Align::Max, &fmt_time(m.t), 1.0, pal().ink2);
+                    let name = if m.name.is_empty() { "Bookmark" } else { &m.name };
+                    ptext_fit(p, Pos2::new(r.min.x + 36.0, cy), Align::Min, name, 1.6, (r.width() - mw - 90.0).max(20.0), if m.name.is_empty() { pal().ink2 } else { pal().ink });
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Plays the song from here. Right-click to remove it.");
+                    if resp.clicked() {
+                        if let Some(v) = &c.v {
+                            acts.push(Action::PlayAt(v.clone(), m.t));
+                        }
+                    }
+                    resp.context_menu(|ui| {
+                        if menu_item(ui, "Remove this bookmark") {
+                            drop_mark = Some(*i);
                             ui.close_menu();
                         }
                     });
                 }
-            });
-            ui.add_space(8.0);
-        }
-        ui.add_space(20.0);
-    }
-
-    /// Every loop on its own, newest first: its name, the song it is from, where, and your note. Click to play it;
-    /// right-click to rename it, note it, play the whole song or forget it.
-    fn clips_list(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, ids: &[i64], week_start: &str) {
-        let mut clips: Vec<(i64, usize, store::Section)> = Vec::new();
-        for id in ids {
-            for (i, s) in self.store.sections.get(id).into_iter().flatten().enumerate() {
-                // this week: loops saved this week, or on a song practised this week
-                if self.loops_all || s.saved.as_str() >= week_start || s.saved.is_empty() {
-                    clips.push((*id, i, s.clone()));
-                }
             }
         }
-        // a filter box, the order, and the starred ones only
-        ui.horizontal_wrapped(|ui| {
-            let (ic, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
-            crate::icon_in(ui.painter(), ic.shrink(4.0), &crate::IC_FILTER, pal().ink2);
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
-            let _ = field(
-                ui,
-                &mut self.ed,
-                crate::tools::F_LOOPS_FILTER,
-                &mut self.loops_filter,
-                rect,
-                "Filter by name, song, group or note",
-                false,
-            );
-            if !self.loops_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter.").clicked() {
-                self.loops_filter.clear();
-            }
-            ui.add_space(6.0);
-            const SORTS: [&str; 4] = ["NEWEST", "NAME", "TIME SPENT", "SONG"];
-            if let Some(i) = dropdown(ui, "loops_sort", "SORT", &SORTS, self.loops_sort as usize, 120.0) {
-                self.loops_sort = i as u8;
-                self.dirty = true;
-            }
-            let star = retro_btn(ui, "   ONLY", self.loops_fav).tip("Only the loops you starred.");
-            crate::icon_in(
-                ui.painter(),
-                Rect::from_center_size(star.rect.left_center() + Vec2::new(14.0, 0.0), Vec2::splat(12.0)),
-                &crate::IC_STAR,
-                STAR_COL,
-            );
-            if star.clicked() {
-                self.loops_fav = !self.loops_fav;
-                self.dirty = true;
-            }
-        });
-        ui.add_space(4.0);
-        if self.loops_fav {
-            clips.retain(|c| c.2.fav);
-        }
-        let song_of = |id: i64| self.store.songs.get(&id).map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_default();
-        let filter = self.loops_filter.trim().to_string();
-        if !filter.is_empty() {
-            clips.retain(|c| crate::filter_score(&filter, &[&c.2.name, &song_of(c.0), &c.2.group, &c.2.note]).is_some());
-        }
-        // time spent on each, from the diary
-        let spent = |id: i64, s: &store::Section| -> u32 {
-            self.store
-                .days
-                .iter()
-                .flat_map(|d| d.loop_time.iter())
-                .filter_map(|(k, v)| {
-                    store::parse_loop_key(k)
-                        .filter(|x| x.0 == id && (x.1 - s.a).abs() < 0.06 && (x.2 - s.b).abs() < 0.06)
-                        .map(|_| v.0)
-                })
-                .sum()
-        };
-        // (the songs come from a map, in no set order: ties always fall the same way)
-        let tie = |a: &(i64, usize, store::Section), b: &(i64, usize, store::Section)| a.0.cmp(&b.0).then(a.1.cmp(&b.1));
-        match self.loops_sort {
-            1 => clips.sort_by(|a, b| a.2.name.to_lowercase().cmp(&b.2.name.to_lowercase()).then(tie(a, b))),
-            2 => clips.sort_by(|a, b| spent(b.0, &b.2).cmp(&spent(a.0, &a.2)).then(tie(a, b))),
-            3 => clips.sort_by(|a, b| {
-                song_of(a.0).to_lowercase().cmp(&song_of(b.0).to_lowercase()).then(a.2.a.total_cmp(&b.2.a)).then(tie(a, b))
-            }),
-            _ => clips.sort_by(|a, b| b.2.saved.cmp(&a.2.saved).then(tie(a, b))),
-        }
-        let spent_on: Vec<u32> = clips.iter().map(|c| spent(c.0, &c.2)).collect();
-        if clips.is_empty() && (self.loops_fav || !filter.is_empty()) {
-            para(
-                ui,
-                if self.loops_fav {
-                    "No starred loops here. Click the star on a loop to keep it close."
-                } else {
-                    "No loops match."
-                },
-                pal().ink2,
-            );
-            return;
-        }
-        if clips.is_empty() {
-            para(ui, "No loops here yet. In PRACTICE, set A and B on a song, name the loop and press SAVE LOOP.", pal().ink2);
-            return;
-        }
-        let playing = (self.cur_track().map(|t| t.id), self.loop_a, self.loop_b);
-        for (k, (id, i, s)) in clips.iter().enumerate() {
-            let v = self.store.songs.get(id).cloned();
-            let from = v
-                .as_ref()
-                .map(|v| format!("{} - {}", v.artist, v.title))
-                .unwrap_or_else(|| "a song (play it once to name it)".to_string());
-            let on = playing.0 == Some(*id)
-                && playing.1.is_some_and(|a| (a - s.a).abs() < 0.05)
-                && playing.2.is_some_and(|b| (b - s.b).abs() < 0.05);
-            let h = if s.note.is_empty() { 44.0 } else { 62.0 };
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
-            let p = ui.painter();
-            if on {
-                p.rect_filled(r, 2.0, pal().row_sel);
-            } else if resp.hovered() {
-                p.rect_filled(r, 2.0, pal().sel);
-            } else if k % 2 == 1 {
-                p.rect_filled(r, 2.0, pal().row_alt);
-            }
-            let x = r.min.x + 12.0;
-            let col = if on { pal().bar_txt } else { pal().ink };
-            ptext(p, Pos2::new(x, r.min.y + 13.0), Align::Min, &s.name.to_uppercase(), 2.0, col);
-            let when = if s.saved.is_empty() { String::new() } else { format!("   SAVED {}", s.saved) };
-            let when = if spent_on[k] >= 60 { format!("   WORKED {}{}", mins_text(spent_on[k]), when) } else { when };
-            let when = if s.group.is_empty() { when } else { format!("   IN {}{}", s.group.to_uppercase(), when) };
-            let sub = format!("FROM {}   {}-{}{}", from.to_uppercase(), fmt_time(s.a), fmt_time(s.b), when);
-            ptext_fit(p, Pos2::new(x, r.min.y + 31.0), Align::Min, &sub, 1.0, r.width() - 24.0, pal().ink2);
-            if !s.note.is_empty() {
-                ptext_fit(p, Pos2::new(x, r.min.y + 48.0), Align::Min, &s.note, 2.0, r.width() - 24.0, pal().dim);
-            }
-            // the star: click to keep it close (it sits over the row, so it takes the click)
-            let sr = Rect::from_center_size(Pos2::new(r.max.x - 22.0, r.min.y + 18.0), Vec2::splat(26.0));
-            let sh = ui
-                .interact(sr, ui.id().with(("loop_star", *id, *i)), Sense::click())
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            let sh = sh.tip(if s.fav {
-                "Starred as one that matters. Click to unstar."
-            } else {
-                "Star it as one that matters, like a part for a gig coming up."
-            });
-            let star_col = if s.fav {
-                STAR_COL
-            } else if sh.hovered() || resp.hovered() {
-                pal().dim
-            } else {
-                pal().dim.gamma_multiply(0.35)
-            };
-            crate::icon_in(ui.painter(), sr.shrink(6.0), &crate::IC_STAR, star_col);
-            if sh.clicked() {
-                if let Some(x) = self.store.sections.get_mut(id).and_then(|l| l.get_mut(*i)) {
-                    x.fav = !x.fav;
+        if let Some(k) = drop_mark {
+            if let Some(l) = self.store.marks.get_mut(&c.id) {
+                if k < l.len() {
+                    l.remove(k);
                     self.store_dirty = true;
                 }
             }
-            let resp = resp
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip("Plays it on a loop. Right-click to rename it or add a note.");
-            if resp.clicked() && !sh.clicked() {
-                if let Some(v) = &v {
-                    acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
-                }
-            }
-            let liked = v.as_ref().is_some_and(|v| self.liked.contains(&v.id));
-            resp.context_menu(|ui| {
-                if menu_item(ui, "Rename / add a note...") {
-                    self.clip_edit = Some((*id, *i));
-                    self.clip_name = s.name.clone();
-                    self.clip_note = s.note.clone();
-                    self.clip_group = s.group.clone();
-                    ui.close_menu();
-                }
-                if let Some(v) = &v {
-                    if menu_item(ui, "Add this loop to a playlist...") {
-                        acts.push(Action::PlaylistPickLoop(v.to_track(), s.a, s.b, s.name.clone()));
-                        ui.close_menu();
-                    }
-                    if menu_item(ui, "Play the whole song") {
-                        acts.push(Action::PlaySaved(v.clone(), None));
-                        ui.close_menu();
-                    }
-                    crate::song_items(ui, acts, &v.to_track(), liked, v.kind == "tidal");
-                }
-                if menu_item(ui, if s.fav { "Unstar it" } else { "Star it (one that matters)" }) {
-                    if let Some(x) = self.store.sections.get_mut(id).and_then(|l| l.get_mut(*i)) {
-                        x.fav = !x.fav;
-                        self.store_dirty = true;
-                    }
-                    ui.close_menu();
-                }
-                if menu_item(ui, "Forget this loop") {
-                    acts.push(Action::ForgetLoop(*id, *i));
-                    ui.close_menu();
-                }
-            });
-            // renaming / noting this one
-            if self.clip_edit == Some((*id, *i)) {
-                self.loop_editor(ui, acts);
-            }
         }
-        ui.add_space(20.0);
     }
 
     /// Loops saved before songs were remembered: name them from wherever the song is known (tunes, files, lists,

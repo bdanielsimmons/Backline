@@ -2972,6 +2972,15 @@ impl App {
                 self.player.send(Cmd::Seek(s.a));
             }
             Action::PlaySaved(v, lp) => self.play_saved(&v, lp),
+            Action::PlayAt(v, t) => {
+                let here = self.cur_track().map(|t| t.id) == Some(v.id);
+                self.play_saved(&v, None);
+                if here || !self.buffering {
+                    self.player.send(Cmd::Seek(t));
+                } else {
+                    self.pending_seek = Some(t);
+                }
+            }
             Action::EditLoop(id, i, name, note, group) => {
                 if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
                     if !name.trim().is_empty() {

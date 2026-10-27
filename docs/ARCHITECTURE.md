@@ -25,6 +25,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | App state, actions, messages, library page, main loop | `main.rs` |
 | Practice logic (sources, tunes, loops, diary, trainer, stems, metronome, playlists) | `extras.rs` |
 | Practice screens (FILES / YT / SC / TUNES / DIARY / LOOPS lists, practice panel, lead sheet) | `ui/views.rs` |
+| LOOPS page: songs on the left, the one picked on the right (`loops_view`; narrow windows: list, then one song with < ALL SONGS); `spot_data` gathers songs, loops, bookmarks; `loops_detail` draws the map (`song_wave`) and rows; SHOW / ORDER / export in the "..." menu (`loops_controls`); `Action::PlayAt` plays from a bookmark | `ui/views.rs` |
 | Library window, sign-in, Tidal search box, EQ dock, presets | `ui/library_win.rs` |
 | Window frames and title strips: `title_slot` / `title_right` (controls inside the strip), `page_rect` / `PAGE_PAD` (12 pt margin inside every window), `SKIN_TITLE_H` | `ui/widgets.rs`, `ui/winamp_draw.rs` (`draw_frame`) |
 | Skin colours and missing pictures: `soften` (no glare), `backing` (panels stay on their side), borrowed pieces from the generated default skin in `load`; audit all saved skins with the ignored test `audit_skins` (BACKLINE_SKINS=folder) | `data/winamp.rs` |
@@ -96,7 +97,7 @@ Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font on
 
 - Test copies use a separate profile: `BACKLINE_HOME=<folder>`; they open off-screen, never take focus, and make no sound.
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
-- `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops groups prog news mini mini_eq_pl mine yt diary
+- `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops loopsong groups prog news mini mini_eq_pl mine yt diary
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
   fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine ear
   (BACKLINE_EAR=<drill index 0-12> opens a drill with a question answered; the atonal ones are 8-12) atonal

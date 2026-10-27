@@ -442,6 +442,8 @@ enum Action {
     PlayNotes(Vec<i32>),
     /// play a kept song (from LOOPS or the diary), and go to this loop of it
     PlaySaved(store::Version, Option<(f32, f32)>),
+    /// play a kept song from this point (a bookmark, or a click on its strip in LOOPS)
+    PlayAt(store::Version, f32),
     /// forget saved loop `usize` of this song
     ForgetLoop(i64, usize),
     /// rename a saved loop and set its note: (song, which, name, note)
@@ -2569,7 +2571,10 @@ struct App {
     /// LOOPS shows every song with a loop (else just this week's)
     loops_all: bool,
     /// LOOPS grouped under their songs (else every loop on its own, newest first)
-    loops_by_song: bool,
+    /// LOOPS shows: 0 loops and bookmarks, 1 loops, 2 bookmarks
+    loops_show: u8,
+    /// the song open on the LOOPS page (None: the one playing, else the first)
+    loops_pick: Option<i64>,
     /// the loop being renamed / noted in LOOPS (song id, which), and what is typed
     clip_edit: Option<(i64, usize)>,
     clip_name: String,
@@ -3371,7 +3376,8 @@ impl App {
             sec_name: String::new(),
             pending_seek: None,
             loops_all: false,
-            loops_by_song: false,
+            loops_show: 0,
+            loops_pick: None,
             clip_edit: None,
             clip_name: String::new(),
             clip_note: String::new(),
@@ -3974,7 +3980,12 @@ impl App {
         }
         app.diary_span = st["diary_span"].as_u64().unwrap_or(0).min(2) as u8;
         app.diary_reading = st["diary_reading"].as_bool().unwrap_or(true);
-        app.loops_sort = st["loops_sort"].as_u64().unwrap_or(0).min(3) as u8;
+        // (sorting by song is what LOOPS always does now: that old choice reads as A-Z)
+        app.loops_sort = match st["loops_sort"].as_u64().unwrap_or(0) {
+            3 => 1,
+            s => s.min(2) as u8,
+        };
+        app.loops_show = st["loops_show"].as_u64().unwrap_or(0).min(2) as u8;
         app.loops_fav = st["loops_fav"].as_bool().unwrap_or(false);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
@@ -4141,6 +4152,11 @@ impl App {
                 app.lib_tab = Tab::Recent;
             }
             Ok("loops") => app.sec = Sec::Loops,
+            // the LOOPS page open on the song with the most loops
+            Ok("loopsong") => {
+                app.sec = Sec::Loops;
+                app.loops_pick = app.store.sections.iter().max_by_key(|(id, l)| (l.len(), **id)).map(|(id, _)| *id);
+            }
             Ok("groups") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
@@ -4390,6 +4406,7 @@ impl App {
             "diary_span": self.diary_span,
             "diary_reading": self.diary_reading,
             "loops_sort": self.loops_sort,
+            "loops_show": self.loops_show,
             "loops_fav": self.loops_fav,
             "pomo_sound": self.pomo_sound,
             "timer_more": serde_json::to_value(&self.tm).unwrap_or_default(),
