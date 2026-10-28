@@ -2449,7 +2449,10 @@ impl App {
                         if on("melodies") {
                             self.cm_list = None;
                         }
-                        if !done.is_empty() {
+                        if !done.is_empty() && !crate::PRACTICE {
+                            // kept in Backline's folder: the practice version, opened later, finds them there
+                            self.set_note(&format!("KEPT: {}. THEY SHOW IN THE PRACTICE VERSION", done.join(", ")));
+                        } else if !done.is_empty() {
                             self.set_note(&format!("UNLOCKED: {}", done.join(", ")));
                         }
                         // the loops and playlists: the usual import window, to pick from

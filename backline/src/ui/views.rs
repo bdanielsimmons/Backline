@@ -1909,6 +1909,8 @@ impl App {
     /// unticked, and says so), then UNLOCK or cancel. Its loops and playlists come after, in the import window.
     pub(crate) fn pack_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
         let Some(mut p) = self.pack_in.take() else { return };
+        // the practice version's download, for this computer
+        const PRACTICE_FILE: &str = if cfg!(target_os = "macos") { "BACKLINE-PRACTICE-MAC.TAR.GZ" } else { "BACKLINE-PRACTICE.EXE" };
         let screen = ctx.screen_rect();
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pack_dim"))).rect_filled(
             screen,
@@ -1935,6 +1937,21 @@ impl App {
                     }
                     if p.parts.iter().any(|x| x.replaces && x.on) {
                         para(ui, "A ticked piece marked REPLACES YOURS takes the place of the one you have.", pal().red);
+                    }
+                    // the plain player has no DIARY, MY PLAN, LINES or READING: say so, rather than unlock into nothing
+                    if !crate::PRACTICE && !p.parts.is_empty() {
+                        crate::views::dim_line(
+                            ui,
+                            "THIS IS THE PLAIN PLAYER: MY PLAN, THE BOOKS, LINES AND CHORD MELODIES ARE IN THE PRACTICE VERSION.",
+                            1.0,
+                            pal().red,
+                        );
+                        crate::views::dim_line(
+                            ui,
+                            &format!("GET {} FROM THE RELEASES PAGE. WHAT YOU UNLOCK HERE SHOWS UP THERE.", PRACTICE_FILE),
+                            1.0,
+                            pal().red,
+                        );
                     }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
