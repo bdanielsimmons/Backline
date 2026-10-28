@@ -1,8 +1,8 @@
 //! LINES (under PRACTICE): SLONIMSKY'S DIARY - his melodic patterns, built the way he built them - and SCALES played
 //! straight or in intervals. Each line is written out in notation and tab, played (looped if you like) with the
 //! note sounding lit up, and every time through is counted.
-//! Also the PRACTICE PROGRESSIONS under TUNES: Roman-numeral progressions in any key, sent to the lead sheet so the
-//! band can play them.
+//! Also CHORDS > PROGRESSIONS: Roman-numeral progressions in any key, sent to the lead sheet so the band can play
+//! them.
 
 use super::*;
 use crate::lines;
@@ -292,14 +292,27 @@ impl App {
         crate::tour::mark("LINESVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
-        // shown in this order; each tab keeps its own number (ARPEGGIOS came last)
-        const ORDER: [u8; 6] = [0, 1, 4, 2, 3, 5];
-        let shown = ORDER.iter().position(|t| *t == self.ln_tab).unwrap_or(0);
-        if let Some(t) =
-            tab_row(ui, &["SLONIMSKY'S DIARY", "SCALES", "ARPEGGIOS", "PENTATONICS & MORE", "SUPERIMPOSE", "ATONAL"], shown)
-        {
-            self.ln_tab = ORDER[t];
+        // three groups on top, the pages of the open one under them (each page keeps its own number)
+        const GROUPS: [(&str, &[(u8, &str)]); 3] = [
+            ("PATTERNS", &[(0, "SLONIMSKY'S DIARY"), (5, "ATONAL")]),
+            ("SCALES", &[(1, "SCALES"), (4, "ARPEGGIOS"), (2, "PENTATONICS & MORE")]),
+            ("OVER CHORDS", &[(3, "SUPERIMPOSE")]),
+        ];
+        let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.ln_tab)).unwrap_or(0);
+        let names: Vec<&str> = GROUPS.iter().map(|g| g.0).collect();
+        if let Some(g) = tab_row(ui, &names, group) {
+            if g != group {
+                self.ln_tab = GROUPS[g].1[0].0;
+            }
         }
+        // (a group of one page needs no buttons under it)
+        ui.horizontal_wrapped(|ui| {
+            for (t, name) in GROUPS[group].1.iter().filter(|_| GROUPS[group].1.len() > 1) {
+                if retro_btn(ui, name, *t == self.ln_tab).clicked() {
+                    self.ln_tab = *t;
+                }
+            }
+        });
         ui.add_space(6.0);
         // only the improvising tabs play a line over something
         self.ln_backing = None;
@@ -325,8 +338,8 @@ impl App {
         let before = self.ln_bpm;
         let before_sub = self.ln_sub;
         let gap = 60.0 / self.ln_bpm.max(20) as f32 / self.ln_sub.max(1) as f32;
-        // everything on one row: play, loop, tempo, feel, what it is played over, favourite
-        ui.horizontal_wrapped(|ui| {
+        // two centred rows: play, loop and the tempo; then the feel, what it is played over, and favourite
+        crate::views::centered_row(ui, "ln_play", |ui| {
             self.seq_button(
                 ui,
                 acts,
@@ -360,7 +373,8 @@ impl App {
                 self.ln_bpm = (self.ln_bpm + 5).min(400);
             }
             crate::views::label(ui, "BPM", 40.0);
-            ui.add_space(10.0);
+        });
+        crate::views::centered_row(ui, "ln_feel_row", |ui| {
             // the feel: how many notes to a beat - the usual ones, tuplets, or (OTHER) any number you type
             const FEELS: [&str; 8] = ["1/4", "1/8", "TRIPLETS", "1/16", "QUINTUPLETS", "SEXTUPLETS", "SEPTUPLETS", "OTHER"];
             let cur = if (1..=7).contains(&self.ln_sub) { self.ln_sub as usize - 1 } else { 7 };
@@ -474,7 +488,8 @@ impl App {
                 sections.push(l.sec_name);
             }
         }
-        ui.horizontal_wrapped(|ui| {
+        // the part, its chapter and the base moves: each menu centred on a row of its own
+        crate::views::centered_row(ui, "ln_part_row", |ui| {
             let part_names: Vec<String> = parts.iter().map(|s| s.to_uppercase()).collect();
             let pn: Vec<&str> = part_names.iter().map(String::as_str).collect();
             if let Some(i) = dropdown(ui, "ln_part", "PART", &pn, part.min(pn.len().saturating_sub(1)), 200.0) {
@@ -482,6 +497,8 @@ impl App {
                     self.ln_at = k;
                 }
             }
+        });
+        crate::views::centered_row(ui, "ln_chap_row", |ui| {
             let cn: Vec<&str> = chapters.iter().map(|c| c.1.as_str()).collect();
             let ci = chapters.iter().position(|c| c.0 == chap).unwrap_or(0);
             if let Some(i) = dropdown(ui, "ln_chap", "CHAPTER", &cn, ci, 240.0) {
@@ -489,6 +506,8 @@ impl App {
                     self.ln_at = k;
                 }
             }
+        });
+        crate::views::centered_row(ui, "ln_sec_row", |ui| {
             if sections.len() > 1 || sections.first().is_some_and(|s| !s.is_empty()) {
                 let sec_names: Vec<String> = sections.iter().map(|s| format!("BY {}", s.to_uppercase())).collect();
                 let sn: Vec<&str> = sec_names.iter().map(String::as_str).collect();
@@ -503,7 +522,7 @@ impl App {
         // this section's patterns: step through them, or pick one at random
         let group: Vec<usize> = (0..n).filter(|i| book[*i].chap == chap && book[*i].sec_name == sec).collect();
         let pos = group.iter().position(|i| *i == self.ln_at).unwrap_or(0);
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "ln_pager", |ui| {
             if retro_btn_w(ui, "<", 34.0, false).clicked() {
                 self.ln_at = if pos == 0 { group[group.len() - 1] } else { group[pos - 1] };
             }
@@ -547,18 +566,13 @@ impl App {
                 }
             });
         });
-        let at = self.ln_at;
-        let line = &book[at];
-        let seq_txt = format!("[{}]", line.seq.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "));
-        section_header(ui, &format!("{}   -   PAGE {}", seq_txt, line.page));
-        book_marker(ui, &line.layout(), &seq_txt);
         // where it starts, and which way
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "ln_start_row", |ui| {
             let starts: Vec<String> = (0..12)
-                .map(|pc| if pc == 0 { "C (AS WRITTEN)".to_string() } else { theory::note_name(pc, false).to_string() })
+                .map(|pc| if pc == 0 { crate::font::as_label("C (as written)") } else { theory::note_name(pc, false).to_string() })
                 .collect();
             let sn: Vec<&str> = starts.iter().map(String::as_str).collect();
-            if let Some(i) = dropdown(ui, "ln_start", "START ON", &sn, self.ln_root.clamp(0, 11) as usize, 150.0) {
+            if let Some(i) = dropdown(ui, "ln_start", "START ON", &sn, self.ln_root.clamp(0, 11) as usize, 0.0) {
                 self.ln_root = i as i32;
             }
             if retro_btn(ui, "BACKWARDS", self.ln_back)
@@ -567,9 +581,14 @@ impl App {
             {
                 self.ln_back = !self.ln_back;
             }
-            let names: Vec<&str> = line.content().iter().map(|pc| theory::note_name(*pc + self.ln_root.max(0), false)).collect();
-            crate::views::dim_line(ui, &format!("NOTES: {}", names.join(" ")), 1.0, pal().ink2);
         });
+        let at = self.ln_at;
+        let line = &book[at];
+        let seq_txt = format!("[{}]", line.seq.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "));
+        section_header(ui, &format!("{}   -   PAGE {}", seq_txt, line.page));
+        book_marker(ui, &line.layout(), &seq_txt);
+        let names: Vec<&str> = line.content().iter().map(|pc| theory::note_name(*pc + self.ln_root.max(0), false)).collect();
+        crate::views::dim_centered(ui, &format!("NOTES: {}", names.join(" ")));
         // moved by up to a fifth either way, the book's fingering moves with it
         let shift = {
             let r = self.ln_root.max(0);
@@ -657,23 +676,8 @@ impl App {
     /// With no pattern book: lines built from Slonimsky's own system - the octave cut into equal parts, notes added
     /// between, below or above the principal tones.
     fn slonimsky_system(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "ADD PATTERN BOOK...", false)
-                .tip("Add a pattern book file here, or drop it on the window.")
-                .clicked()
-            {
-                if let Some(path) = rfd::FileDialog::new().add_filter("Pattern book", &["txt"]).pick_file() {
-                    self.add_pattern_book(&path);
-                }
-            }
-            crate::views::dim_line(
-                ui,
-                "OR DROP ONE ON THE WINDOW. UNTIL THEN, HERE ARE LINES BUILT ON SLONIMSKY'S SYSTEM.",
-                1.0,
-                pal().dim,
-            );
-        });
-        ui.horizontal_wrapped(|ui| {
+        // the choices on two centred rows; adding a pattern book under "..."
+        crate::views::centered_row(ui, "sl_row", |ui| {
             let dn: Vec<&str> = lines::DIVISIONS.iter().map(|d| d.0).collect();
             if let Some(i) = dropdown(ui, "sl_div", "OCTAVE CUT BY", &dn, self.sl_div.min(dn.len() - 1), 160.0) {
                 self.sl_div = i;
@@ -692,12 +696,35 @@ impl App {
                 self.sl_pat = 0;
             }
         });
+        crate::views::centered_row(ui, "sl_row2", |ui| {
+            let starts: Vec<&str> = (0..12).map(|pc| theory::note_name(pc, false)).collect();
+            if let Some(i) = dropdown(ui, "sl_start", "START ON", &starts, self.ln_root.clamp(0, 11) as usize, 0.0) {
+                self.ln_root = i as i32;
+            }
+            if retro_btn(ui, "BACKWARDS", self.ln_back).tip("Play the same notes in reverse.").clicked() {
+                self.ln_back = !self.ln_back;
+            }
+            let more = retro_btn_w(ui, "...", 34.0, false).tip("Add a pattern book.");
+            let pop = ui.id().with("sl_more");
+            if more.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pop));
+            }
+            egui::popup_below_widget(ui, pop, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(240.0);
+                if crate::menu_item(ui, "Add a pattern book...") {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Pattern book", &["txt"]).pick_file() {
+                        self.add_pattern_book(&path);
+                    }
+                }
+                crate::views::dim_line(ui, "Or drop one on the window. Until then, these lines are built on Slonimsky's system.", 1.0, pal().dim);
+            });
+        });
         let (dname, s, dabout) = lines::DIVISIONS[self.sl_div.min(lines::DIVISIONS.len() - 1)];
         let figs = lines::figures(s, self.sl_kind);
         let n = figs.len().max(1);
         self.sl_pat = self.sl_pat.min(n - 1);
         let fig = figs.get(self.sl_pat).cloned().unwrap_or_else(|| vec![0]);
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "sl_pager", |ui| {
             if retro_btn_w(ui, "<", 34.0, false).clicked() {
                 self.sl_pat = (self.sl_pat + n - 1) % n;
             }
@@ -721,15 +748,6 @@ impl App {
         let lo = fig.iter().copied().min().unwrap_or(0).min(0);
         let marks: Vec<i32> = fig.iter().map(|x| x - lo).collect();
         book_marker(ui, &marks, &order);
-        ui.horizontal_wrapped(|ui| {
-            let starts: Vec<&str> = (0..12).map(|pc| theory::note_name(pc, false)).collect();
-            if let Some(i) = dropdown(ui, "sl_start", "START ON", &starts, self.ln_root.clamp(0, 11) as usize, 110.0) {
-                self.ln_root = i as i32;
-            }
-            if retro_btn(ui, "BACKWARDS", self.ln_back).tip("Play the same notes in reverse.").clicked() {
-                self.ln_back = !self.ln_back;
-            }
-        });
         let mut notes = lines::slonimsky_line(48 + self.ln_root.clamp(0, 11), s, &fig);
         if self.ln_back {
             notes.reverse();
@@ -747,105 +765,56 @@ impl App {
     /// SCALES: any scale, straight or in intervals and groups, over one or two octaves.
     // ------------------------------------------------------------------ practice progressions (under TUNES)
 
-    /// PRACTICE PROGRESSIONS at the foot of the tunes list: each group folds open (the arrow turns down) to show its
-    /// progressions; click one to put it on the lead sheet for the band.
-    pub(crate) fn progressions_list(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        section_header(ui, "PRACTICE PROGRESSIONS");
-        para(ui, "Practise these chord progressions in every key, with the band.", pal().ink2);
+    /// CHORDS > PROGRESSIONS: one row of choices (the family, key, chord size, major or minor), a line on the family,
+    /// then its progressions; click one to put it on the lead sheet for the band.
+    pub(crate) fn progressions_page(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let sets = lines::progression_sets();
-        let groups = sets.len() + 1;
-        self.prog_shown.resize(groups, false);
-        // the key and chord size, while any group is open
-        if self.prog_shown.iter().any(|o| *o) {
-            const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+        let mut fams: Vec<String> = sets.iter().map(|s| crate::font::as_label(s.0)).collect();
+        fams.push("Mine".to_string());
+        let fam_names: Vec<&str> = fams.iter().map(|s| s.as_str()).collect();
+        self.prog_fam = self.prog_fam.min(sets.len());
+        const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+        ui.horizontal_wrapped(|ui| {
+            if let Some(f) = dropdown(ui, "prog_fam", "FAMILY", &fam_names, self.prog_fam, 0.0) {
+                self.prog_fam = f;
+                self.prog_ask = None;
+            }
+            if let Some(k) = dropdown(ui, "prog_key", "KEY", &KEYS, self.prog_key as usize, 0.0) {
+                self.prog_key = k as i32;
+            }
+            if let Some(c) = dropdown(ui, "prog_7", &crate::font::as_label("Size"), &["Triads", "7ths"], self.prog_7 as usize, 0.0) {
+                self.prog_7 = c == 1;
+            }
+            if let Some(m) = dropdown(ui, "prog_minor", &crate::font::as_label("Tonic"), &["Major", "Minor"], self.prog_minor as usize, 0.0) {
+                self.prog_minor = m == 1;
+            }
+        });
+        ui.add_space(4.0);
+        let g = self.prog_fam;
+        let mine = g == sets.len();
+        let (about, progs): (&str, Vec<String>) = if mine {
+            (
+                "Type your own progression in Roman numerals. Examples: I VI II V I, II bII7 I, I #I° II V I, VII°5 III7 VI. Upper case numerals take the key's own chord. Add m, 7, °, °5 (half-diminished) or + to change it. A b or # before or after the numeral moves the root.",
+                self.store.my_progs.clone(),
+            )
+        } else {
+            (sets[g].1, sets[g].2.clone())
+        };
+        para(ui, about, pal().ink2);
+        if mine {
             ui.horizontal_wrapped(|ui| {
-                if let Some(k) = dropdown(ui, "prog_key", "KEY", &KEYS, self.prog_key as usize, 110.0) {
-                    self.prog_key = k as i32;
-                }
-                ui.add_space(12.0);
-                if retro_btn(ui, "TRIADS", !self.prog_7).clicked() {
-                    self.prog_7 = false;
-                }
-                if retro_btn(ui, "7THS", self.prog_7).clicked() {
-                    self.prog_7 = true;
-                }
-                ui.add_space(8.0);
-                if retro_btn(ui, "MAJOR", !self.prog_minor).clicked() {
-                    self.prog_minor = false;
-                }
-                if retro_btn(ui, "MINOR", self.prog_minor).tip("Make the I chords minor.").clicked() {
-                    self.prog_minor = true;
+                let w = (ui.available_width() - 80.0).max(120.0);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                let o = field(ui, &mut self.ed, crate::tools::F_PROG_NEW, &mut self.prog_new, r, "I VI II V I", false);
+                if (o.enter || retro_btn_w(ui, "ADD", 70.0, false).clicked()) && !self.prog_new.trim().is_empty() {
+                    self.store.my_progs.push(self.prog_new.trim().to_string());
+                    self.prog_new.clear();
+                    self.store_dirty = true;
                 }
             });
-            ui.add_space(4.0);
-            crate::views::dim_line(
-                ui,
-                "TRIADS FIRST, THEN 7THS. CLICK ONE TO PUT IT ON THE LEAD SHEET. RIGHT-CLICK FOR ALL 12 KEYS AND MORE.",
-                1.0,
-                pal().dim,
-            );
         }
-        for g in 0..groups {
-            let mine = g == sets.len();
-            let (name, about, progs): (&str, &str, Vec<String>) = if mine {
-                (
-                    "MY PROGRESSIONS",
-                    "Type your own progression in Roman numerals. Examples: I VI II V I, II bII7 I, I #I° II V I, VII°5 III7 VI. Upper case numerals take the key's own chord. Add m, 7, °, °5 (half-diminished) or + to change it. A b or # before or after the numeral moves the root.",
-                    self.store.my_progs.clone(),
-                )
-            } else {
-                (sets[g].0, sets[g].1, sets[g].2.clone())
-            };
-            // the group's row: an arrow pointing right (closed) or down (open), then its name
-            let open = self.prog_shown[g];
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh() + 4.0), Sense::click());
-            let p = ui.painter();
-            if resp.hovered() {
-                p.rect_filled(r, 0.0, pal().row_sel.gamma_multiply(0.5));
-            }
-            let c = Pos2::new(r.min.x + 12.0, r.center().y);
-            let pts = if open {
-                vec![c + Vec2::new(-5.0, -3.0), c + Vec2::new(5.0, -3.0), c + Vec2::new(0.0, 4.0)]
-            } else {
-                vec![c + Vec2::new(-3.0, -5.0), c + Vec2::new(4.0, 0.0), c + Vec2::new(-3.0, 5.0)]
-            };
-            p.add(egui::Shape::convex_polygon(pts, pal().ink, Stroke::NONE));
-            ptext(
-                p,
-                Pos2::new(r.min.x + 26.0, r.center().y),
-                Align::Min,
-                &format!("{}  ({})", name, progs.len()),
-                2.0,
-                pal().ink,
-            );
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                self.prog_shown[g] = !open;
-            }
-            if !open {
-                continue;
-            }
-            // in a box of its own, so a long family (diatonic) doesn't push the page away
-            crate::views::contained(ui, ("prog_box", g), |ui| {
-                ui.indent(("prog_group", g), |ui| {
-                    crate::views::dim_line(ui, &crate::font::as_label(&about), 1.0, pal().ink2);
-                    if mine {
-                        ui.horizontal_wrapped(|ui| {
-                            let w = (ui.available_width() - 80.0).max(120.0);
-                            let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-                            let o =
-                                field(ui, &mut self.ed, crate::tools::F_PROG_NEW, &mut self.prog_new, r, "I VI II V I", false);
-                            if (o.enter || retro_btn_w(ui, "ADD", 70.0, false).clicked()) && !self.prog_new.trim().is_empty() {
-                                self.store.my_progs.push(self.prog_new.trim().to_string());
-                                self.prog_new.clear();
-                                self.store_dirty = true;
-                            }
-                        });
-                    }
-                    self.progression_rows(ui, acts, g, &progs, mine);
-                });
-            });
-            ui.add_space(4.0);
-        }
+        self.progression_rows(ui, acts, g, &progs, mine);
+        ui.add_space(20.0);
     }
 
     /// A progression onto the lead sheet (in the key picked, or round all 12), for the band.

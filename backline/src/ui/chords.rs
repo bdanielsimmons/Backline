@@ -18,7 +18,7 @@ impl App {
         const GROUPS: [(&str, &[(u8, &str)]); 3] = [
             ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
             ("SHAPES", &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")]),
-            ("HARMONY", &[(6, "SCALE HARMONY"), (5, "PASSING CHORDS"), (7, "MOVES (EXPERIMENTAL)")]),
+            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "MOVES (EXPERIMENTAL)")]),
         ];
         let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
         let names: Vec<&str> = GROUPS.iter().map(|g| g.0).collect();
@@ -27,8 +27,9 @@ impl App {
                 self.chords_tab = GROUPS[g].1[0].0;
             }
         }
+        // (a group of one page needs no buttons under it)
         ui.horizontal_wrapped(|ui| {
-            for (t, name) in GROUPS[group].1.iter() {
+            for (t, name) in GROUPS[group].1.iter().filter(|_| GROUPS[group].1.len() > 1) {
                 if retro_btn(ui, name, *t == self.chords_tab).clicked() {
                     self.chords_tab = *t;
                 }
@@ -43,6 +44,7 @@ impl App {
             4 => self.clusters(ui, acts),
             5 => self.passing(ui, acts),
             6 => self.scale_harmony(ui, acts),
+            8 => self.progressions_page(ui, acts),
             _ => self.moves(ui, acts),
         }
     }
@@ -309,7 +311,7 @@ impl App {
         // the neck, as big as you like
         let zoom = self.neck_zoom;
         ui.horizontal(|ui| {
-            crate::views::label(ui, "NECK SIZE", 100.0);
+            crate::views::form_label(ui, "NECK SIZE");
             if retro_btn_w(ui, "-", 28.0, false).clicked() {
                 self.neck_zoom = (self.neck_zoom - 0.15).max(0.8);
                 self.dirty = true;
@@ -703,7 +705,7 @@ impl App {
                 for (j, (name, g, root, pcs)) in chunk.iter().enumerate() {
                     let i = row * per + j;
                     ui.vertical(|ui| {
-                        crate::views::label(ui, name, 100.0);
+                        crate::views::form_label(ui, name);
                         let (r, resp) = ui.allocate_exact_size(Vec2::new(96.0, 116.0), Sense::click());
                         if lit == Some(i) {
                             ui.painter().rect_filled(r.expand(3.0), 4.0, pal().bar_txt.gamma_multiply(0.25));

@@ -584,14 +584,3 @@ pub const LISTEN_GOSPEL: Kinds = &[
         ],
     ),
 ];
-
-/// How the masters worked, in a line each (what is on the record, not legend), and the Backline tool that matches.
-pub const MASTERS: &[(&str, &str, &str)] = &[
-    ("PAT METHENY", "Tunes, listening and bandstands. Hours of playing and of listening to a few records closely, and tunes learned because older players called them.", "TUNE OF THE WEEK, LISTENING, the band on the lead sheet."),
-    ("WES MONTGOMERY", "One player, copied completely. Charlie Christian's solos learned note for note by ear, for about a year, until they were his own.", "A loop on the record at 70%, then up; TAKES to compare."),
-    ("JOE PASS", "Melody first. Be able to play any tune's melody the way people sing it, then add the chords; scales drilled early until automatic.", "The lead sheet, CHORD MELODIES, SCALES."),
-    ("MICHAEL BRECKER", "Small fragments, not whole solos: a few bars from a record, then changed, repeated and taken through every key. Notebooks full of them.", "A loop through 12 KEYS in the TRAINER, SLONIMSKY'S DIARY."),
-    ("KURT ROSENWINKEL", "A tune or two a week from the book, played at sessions with older players; bebop learned by listening up close. Said he never transcribed.", "TUNE OF THE WEEK, the band, LISTENING."),
-    ("JULIAN LAGE", "Records himself improvising at the start of each session, listens back only after a couple of weeks, to catch his own habits. Plays quietly and lightly.", "RECORD at the start, ALL TAKES at the end of the week."),
-    ("HAL GALPER", "Practise what resonates and drop what bores you; work from the melody, not the chord-scale chart; practise making mistakes.", "The ROUTINE is yours to change - turn steps off, keep what sticks."),
-];

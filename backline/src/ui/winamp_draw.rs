@@ -866,7 +866,7 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         // a single letter: a note or a loop end ("A AND B", "TO B") stays a capital; otherwise it is the word "a"
         let next = words.get(i + 1).copied().unwrap_or("");
         let prev = if i > 0 { words[i - 1] } else { "" };
-        // (B to G alone are always notes; A is one beside "and", "or", a dash, after a colon or before a bracket)
+        // (B to G alone are always notes; A is one beside "and", "or", a dash or "=", after a colon or before a bracket)
         // (beside another note letter it is a note too: "D E F G A B C", "A B" as a loop's ends)
         let note = |w: &str| {
             let c = w.trim_matches(|c: char| !c.is_alphanumeric());
@@ -879,8 +879,8 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
                 || next.is_empty()
                 || next.starts_with('(')
                 || prev.ends_with(':')
-                || matches!(next, "AND" | "OR" | "-" | "&")
-                || matches!(prev, "AND" | "OR" | "TO" | "&" | "-"));
+                || matches!(next, "AND" | "OR" | "-" | "&" | "=")
+                || matches!(prev, "AND" | "OR" | "TO" | "&" | "-" | "="));
         // names spelled their own way
         const NAMES: [(&str, &str); 5] =
             [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal"), ("YT-DLP", "yt-dlp")];
@@ -897,6 +897,8 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
                 && o[..o.len() - 2].chars().all(|c| c.is_ascii_digit())
                 && matches!(&o[o.len() - 2..], "ST" | "ND" | "RD" | "TH")
         };
+        // a decade ("70S", "2000S") reads 70s
+        let decade = |c: &str| c.len() > 2 && c.ends_with('S') && c[..c.len() - 1].chars().all(|d| d.is_ascii_digit());
         // small words stay small inside a title ("Set A and B", "Pick One of Each")
         const SMALL: [&str; 15] =
             ["A", "AN", "AND", "OR", "OF", "TO", "IN", "ON", "AT", "THE", "FOR", "WITH", "BY", "FROM", "AS"];
@@ -906,7 +908,7 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
             // the word "I" (I'M, I'LL...) is always a capital
             out.push('I');
             out.push_str(&w[1..].to_lowercase());
-        } else if ordinal {
+        } else if ordinal || decade(core) {
             out.push_str(&w.to_lowercase());
         } else if roman || w.chars().any(|c| c.is_ascii_digit()) || KEEP.contains(&core) || (letter_name && !first) {
             out.push_str(w);
@@ -1156,6 +1158,8 @@ mod tests {
         assert_eq!(display_case("BILLIE'S BOUNCE"), "Billie's Bounce");
         assert_eq!(display_case("UP-TEMPO"), "Up-Tempo");
         assert_eq!(display_case("EQ"), "EQ");
+        assert_eq!(display_case("90S & 2000S"), "90s & 2000s");
+        assert_eq!(display_case("G = 5    A = 13"), "G = 5    A = 13");
         assert_eq!(display_case("1 OF 10 KINDS IN YOUR SET"), "1 of 10 kinds in your set");
         assert_eq!(display_case("Already mixed"), "Already mixed");
         assert_eq!(display_case("PICK UP WHERE I LEFT OFF"), "Pick up where I left off");

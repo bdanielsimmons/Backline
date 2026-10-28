@@ -7,8 +7,8 @@ use crate::font::{ptext, ptext_fit, spx, text_w};
 use crate::sources;
 use crate::stems;
 use crate::store::{self, Ext};
-use crate::tools::{F_LOOK, F_LOOP_A, F_LOOP_B, F_SPEED, F_TR_LOOPS, F_TR_STEP, F_TUNE_IREAL};
-pub(crate) use crate::widgets::{dim_line, label};
+use crate::tools::{F_LOOK, F_LOOP_A, F_LOOP_B, F_SPEED, F_TR_LOOPS, F_TR_STEP};
+pub(crate) use crate::widgets::{dim_line, form_label, label};
 use crate::{
     bh, cache, chip, col_header, col_on, fill_rect, fmt_t, fmt_time, inset, lcd_box, list_row, menu_item, outline, pal, para,
     play_buttons, retro_btn, retro_btn_w, section_header, tab_row, table_header, title_line, track_cells, window_deco, Action,
@@ -770,7 +770,8 @@ impl App {
             ui.add_space(6.0);
             let (ic, _) = ui.allocate_exact_size(Vec2::new(22.0, bh()), Sense::hover());
             crate::icon_in(ui.painter(), ic.shrink(4.0), &crate::IC_FILTER, pal().ink2);
-            let w = (ui.available_width() - 60.0).max(80.0);
+            // (the full width; room for the clear button only once there is something to clear)
+            let w = (ui.available_width() - if self.lib_filter.is_empty() { 8.0 } else { 44.0 }).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let _ = field(ui, &mut self.ed, crate::tools::F_LIB_FILTER, &mut self.lib_filter, rect, hint, false);
             if !self.lib_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter.").clicked() {
@@ -792,19 +793,30 @@ impl App {
             pal().ink2,
         );
         ui.horizontal_wrapped(|ui| {
-            label(ui, "SOURCES", 74.0);
-            for (key, name) in crate::SOURCES {
-                let on = !self.mine_off.iter().any(|k| k == key);
-                if crate::check_box(ui, name, on).clicked() {
-                    if on {
-                        self.mine_off.push(key.to_string());
-                    } else {
-                        self.mine_off.retain(|k| k != key);
-                    }
-                    self.dirty = true;
-                }
+            // the sources in a small list of ticks under one button, so the row never wraps
+            let n_on = crate::SOURCES.iter().filter(|(k, _)| !self.mine_off.iter().any(|o| o == k)).count();
+            let what = if n_on == crate::SOURCES.len() { "all".to_string() } else { format!("{} of {}", n_on, crate::SOURCES.len()) };
+            let src = retro_btn(ui, &crate::font::as_label(&format!("Sources: {}", what)), n_on < crate::SOURCES.len())
+                .tip("Which places' songs to list: Tidal, your files, SoundCloud, YouTube.");
+            let pop = ui.id().with("mine_sources");
+            if src.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pop));
             }
-            ui.add_space(12.0);
+            egui::popup_below_widget(ui, pop, &src, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(170.0);
+                for (key, name) in crate::SOURCES {
+                    let on = !self.mine_off.iter().any(|k| k == key);
+                    if crate::check_box(ui, name, on).clicked() {
+                        if on {
+                            self.mine_off.push(key.to_string());
+                        } else {
+                            self.mine_off.retain(|k| k != key);
+                        }
+                        self.dirty = true;
+                    }
+                }
+            });
+            ui.add_space(8.0);
             if crate::check_box(ui, "WITH STEMS", self.mine_stems)
                 .tip("Only the songs already split into drums, bass, vocals and the rest, liked or not.")
                 .clicked()
@@ -1002,7 +1014,16 @@ impl App {
             _ => &self.sc_results,
         };
         let playing = self.cur_track().map(|t| t.id);
-        col_header(ui, true);
+        // the column names once a page: not again over the liked songs when the page's own list has them above
+        let above = match which {
+            4 => !self.store.files.is_empty(),
+            5 => !self.store.yt.is_empty(),
+            6 => !self.store.sc.is_empty(),
+            _ => false,
+        };
+        if !above {
+            col_header(ui, true);
+        }
         for (i, e) in list.iter().enumerate() {
             let state = if playing == Some(e.id) { RowState::Playing } else { RowState::Normal };
             let stored = if yt { cache::has(e.id) } else { true };
@@ -1407,18 +1428,26 @@ impl App {
         ui.add_space(6.0);
         title_line(ui, "MY FILES", 3.0, pal().ink);
         let n = self.store.files.len();
-        title_line(ui, &format!("{} {}, played from where they are", n, if n == 1 { "file" } else { "files" }), 2.0, pal().ink2);
-        ui.add_space(4.0);
+        // how many, then one ADD with its choices under it (the count short, so they share a line)
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "ADD FILES", false).clicked() {
-                acts.push(Action::AddFiles);
+            label(ui, &format!("{} {}", n, if n == 1 { "file" } else { "files" }), 0.0);
+            let add = retro_btn(ui, "+ ADD", false).tip("Add files or a folder, or look for new files in your folders. Nothing is copied: they play from where they are.");
+            let pop = ui.id().with("files_add");
+            if add.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pop));
             }
-            if retro_btn(ui, "ADD FOLDER", false).clicked() {
-                acts.push(Action::AddFolder);
-            }
-            if retro_btn(ui, "RESCAN", false).tip("Look for new files in the folders you added.").clicked() {
-                acts.push(Action::Rescan);
-            }
+            egui::popup_below_widget(ui, pop, &add, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(220.0);
+                if menu_item(ui, "Add files...") {
+                    acts.push(Action::AddFiles);
+                }
+                if menu_item(ui, "Add a folder...") {
+                    acts.push(Action::AddFolder);
+                }
+                if menu_item(ui, "Look for new files in your folders") {
+                    acts.push(Action::Rescan);
+                }
+            });
         });
         if self.files_busy {
             let stage = crate::extras::FILES_STAGE.load(Ordering::Relaxed);
@@ -1433,7 +1462,7 @@ impl App {
         if self.store.files.is_empty() && !self.files_busy {
             ui.add_space(6.0);
             let tail = if PRACTICE { " Loops, speed and sections all work on them." } else { "" };
-            para(ui, &format!("Drag audio files or folders onto this window, or use the buttons. Nothing is copied: files stay where they are.{}", tail), pal().ink2);
+            para(ui, &format!("Drag audio files or folders onto this window, or use + ADD. Nothing is copied: files stay where they are.{}", tail), pal().ink2);
         }
         if !self.store.folders.is_empty() {
             section_header(ui, "WATCHED FOLDERS (CLICK TO STOP)");
@@ -2480,7 +2509,9 @@ impl App {
             ui.add_space(6.0);
         } else {
             title_line(ui, "TUNES", 3.0, pal().ink);
-            if let Some(i) = tab_row(ui, &["YOUR TUNES", "RECOMMENDED"], self.tunes_tab as usize) {
+            // (how many: on the tab)
+            let yours = format!("YOUR TUNES · {}", self.store.tunes.len());
+            if let Some(i) = tab_row(ui, &[yours.as_str(), "RECOMMENDED"], self.tunes_tab as usize) {
                 self.tunes_tab = i as u8;
             }
             ui.add_space(4.0);
@@ -2488,14 +2519,20 @@ impl App {
                 self.recommended_tunes(ui, acts);
                 return;
             }
-            title_line(ui, &format!("{} tunes in your repertoire", self.store.tunes.len()), 2.0, pal().ink2);
-            ui.add_space(4.0);
         }
         ui.horizontal_wrapped(|ui| {
             let w = (ui.available_width() - 78.0).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-            let o = field(ui, &mut self.ed, F_NEW_TUNE, &mut self.new_tune, rect, "New tune name", false);
-            if o.enter || retro_btn_w(ui, "ADD", 70.0, false).clicked() {
+            let o = field(ui, &mut self.ed, F_NEW_TUNE, &mut self.new_tune, rect, "Add a tune, or paste an iReal link", false);
+            let go = o.enter
+                || retro_btn_w(ui, "ADD", 70.0, false)
+                    .tip("Type a tune's name, or paste an iReal Pro link or playlist: every song in it becomes a tune with its chart.")
+                    .clicked();
+            if go && self.new_tune.trim().to_ascii_lowercase().starts_with("ireal") {
+                // an iReal link: imported, not added as a name
+                self.ireal_in = std::mem::take(&mut self.new_tune).trim().to_string();
+                acts.push(Action::ImportIreal(None));
+            } else if go {
                 // looked up once, on Enter or ADD: a better spelling shows as cards to pick from; none, and it's added
                 let typed = self.new_tune.trim().to_string();
                 let found = if typed.chars().count() >= 3 { self.tune_matches(&typed) } else { Vec::new() };
@@ -2510,22 +2547,9 @@ impl App {
             }
         });
         self.tune_suggestions(ui, acts);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
-        let _ =
-            field(ui, &mut self.ed, F_TUNE_IREAL, &mut self.tunes_ireal, rect, "iReal Pro link or playlist (irealb://)", false);
-        if retro_btn(ui, "IMPORT IREAL", false)
-            .tip("Paste an iReal Pro link or a whole playlist above. Every song becomes a tune with its chart.")
-            .clicked()
-        {
-            self.ireal_in = std::mem::take(&mut self.tunes_ireal);
-            acts.push(Action::ImportIreal(None));
-        }
         ui.add_space(4.0);
         if self.store.tunes.is_empty() {
             para(ui, "Your repertoire, with the recordings you study for each tune. To add a recording, right-click a song in any list and choose ADD TO A TUNE. Or play it and press ADD CURRENT inside a tune.", pal().ink2);
-        }
-        if !self.store.tunes.is_empty() {
-            table_header(ui, "TUNE", "RECORDINGS", "PRACTICED", false);
         }
         // your tunes under the kind each is (a blues, rhythm changes, a ballad...): the kind it has in your set, else
         // the kind the session lists give it, else OTHER; the ones in your set marked
@@ -2544,9 +2568,6 @@ impl App {
             self.store.tunes.iter().enumerate().map(|(i, t)| (kind_of(&t.name), i)).collect();
         let rank = |k: &Option<&str>| k.map_or(usize::MAX, |k| kinds.iter().position(|x| *x == k).unwrap_or(usize::MAX - 1));
         order.sort_by_key(|(k, i)| (rank(k), *i));
-        if self.store.tunes.iter().any(|t| self.store.routine_set.values().any(|v| v.eq_ignore_ascii_case(&t.name))) {
-            crate::views::dim_line(ui, "* is a tune in your set (Diary > Routine).", 1.0, pal().dim);
-        }
         let mut last: Option<Option<&str>> = None;
         for (kind, i) in order {
             if last != Some(kind) {
@@ -2563,17 +2584,31 @@ impl App {
                 || {
                     if crate::winamp_ui::chrome_on() {
                         // (with a skin: how well you know it is the dots drawn on the row, not text)
-                        format!("        {}{}", if in_set { "* " } else { "" }, t.name)
+                        format!("        {}", t.name)
                     } else {
                         format!(
-                            "[{}] {}{}",
+                            "[{}] {}",
                             "#".repeat(t.status.min(3) as usize + 1) + &"-".repeat(3 - t.status.min(3) as usize),
-                            if in_set { "* " } else { "" },
                             t.name
                         )
                     }
                 },
-                || format!("{}	{}", t.versions.len(), if mins == 0 { "-".to_string() } else { mins_text(mins * 60) }),
+                // what you have for it, in words: in your set, recordings, time practised
+                || {
+                    let mut bits: Vec<String> = Vec::new();
+                    if in_set {
+                        bits.push("In your set".to_string());
+                    }
+                    bits.push(match t.versions.len() {
+                        0 => "No recordings yet".to_string(),
+                        1 => "1 recording".to_string(),
+                        n => format!("{} recordings", n),
+                    });
+                    if mins > 0 {
+                        bits.push(mins_text(mins * 60).to_lowercase());
+                    }
+                    bits.join(" · ")
+                },
                 RowState::Normal,
                 false,
                 false,
@@ -2600,10 +2635,6 @@ impl App {
                     }
                 }
             }
-        }
-        if self.pick.is_none() {
-            ui.add_space(10.0);
-            self.progressions_list(ui, acts);
         }
         ui.add_space(20.0);
     }
@@ -2700,28 +2731,47 @@ impl App {
                 acts.push(Action::TuneDetails(i));
             }
         }
-        for (fid, lab, hint) in [
-            (crate::tools::F_T_WRITER, "WRITTEN BY", "Composer and lyricist"),
-            (crate::tools::F_T_YEAR, "YEAR", "When it was written or first recorded"),
-            (crate::tools::F_T_FROM, "FROM", "The show, film or album it comes from"),
-            (crate::tools::F_T_STYLE, "STYLE", "Swing, ballad, bossa, waltz"),
-        ] {
-            let t = &mut self.store.tunes[i];
-            let val = match fid {
-                crate::tools::F_T_WRITER => &mut t.written_by,
-                crate::tools::F_T_YEAR => &mut t.year,
-                crate::tools::F_T_FROM => &mut t.from,
-                _ => &mut t.style,
-            };
-            // a wider label column than the rows above: "WRITTEN BY" needs it
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
-            let lw = (text_w("WRITTEN BY", 2.0) + 14.0).max(76.0);
-            ptext(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.center().y), Align::Min, lab, 2.0, pal().ink2);
-            let fr = Rect::from_min_max(Pos2::new(rect.min.x + lw, rect.min.y), rect.max);
-            let o = field(ui, &mut self.ed, fid, val, fr, hint, false);
-            self.store_dirty |= o.changed;
+        // who wrote it, when, from where, the style: one line, the boxes to fix them under DETAILS
+        ui.horizontal_wrapped(|ui| {
+            let t = &self.store.tunes[i];
+            let bits: Vec<&str> =
+                [&t.written_by, &t.year, &t.from, &t.style].iter().map(|v| v.trim()).filter(|v| !v.is_empty()).collect();
+            let line = if bits.is_empty() { "Who wrote it, when, where from".to_string() } else { bits.join(" · ") };
+            let room = (ui.available_width() - 110.0).max(60.0);
+            let (r, _) = ui.allocate_exact_size(Vec2::new(room.min(text_w(&line, 2.0) + 12.0), bh()), Sense::hover());
+            ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &line, 2.0, room - 8.0, pal().ink2);
+            if retro_btn(ui, if self.tune_more { "HIDE DETAILS" } else { "DETAILS" }, self.tune_more)
+                .tip("Written by, year, where it's from and its style, to fix by hand.")
+                .clicked()
+            {
+                self.tune_more = !self.tune_more;
+            }
+        });
+        if self.tune_more {
+            for (fid, lab, hint) in [
+                (crate::tools::F_T_WRITER, "WRITTEN BY", "Composer and lyricist"),
+                (crate::tools::F_T_YEAR, "YEAR", "When it was written or first recorded"),
+                (crate::tools::F_T_FROM, "FROM", "The show, film or album it comes from"),
+                (crate::tools::F_T_STYLE, "STYLE", "Swing, ballad, bossa, waltz"),
+            ] {
+                let t = &mut self.store.tunes[i];
+                let val = match fid {
+                    crate::tools::F_T_WRITER => &mut t.written_by,
+                    crate::tools::F_T_YEAR => &mut t.year,
+                    crate::tools::F_T_FROM => &mut t.from,
+                    _ => &mut t.style,
+                };
+                // a wider label column than the rows above: "WRITTEN BY" needs it
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
+                let lw = (text_w("WRITTEN BY", 2.0) + 14.0).max(76.0);
+                ptext(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.center().y), Align::Min, lab, 2.0, pal().ink2);
+                let fr = Rect::from_min_max(Pos2::new(rect.min.x + lw, rect.min.y), rect.max);
+                let o = field(ui, &mut self.ed, fid, val, fr, hint, false);
+                self.store_dirty |= o.changed;
+            }
         }
         ui.add_space(4.0);
+        // what to do with it: one row, the rest under "..."
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "PLAY ALL", false).clicked() {
                 acts.push(Action::PlayTune(i, false));
@@ -2735,45 +2785,65 @@ impl App {
             {
                 acts.push(Action::LookUp(i));
             }
-            if retro_btn(ui, ["AUTO", "JAZZ", "GOSPEL", "ANY"][self.look_style as usize % 4], self.look_style > 0)
-                .tip("The kind of recordings LOOK UP favors. AUTO means jazz when the tune is a known standard.")
-                .clicked()
-            {
-                acts.push(Action::LookStyle);
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            let w = (ui.available_width() - 4.0).max(120.0);
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-            let o = field(
-                ui,
-                &mut self.ed,
-                F_LOOK,
-                &mut self.look_q,
-                rect,
-                "Look up a title, or title and artist (empty: this tune)",
-                false,
-            );
-            if o.enter {
-                acts.push(Action::LookUp(i));
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "PLAY-ALONG", false)
-                .tip("Searches YouTube for backing tracks of this tune, in your browser.")
-                .clicked()
-            {
-                acts.push(Action::PlayAlong(tname.clone()));
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "ADD CURRENT", false).tip("Add the recording that is playing now.").clicked() {
                 acts.push(Action::AddCurrentToTune(i));
             }
-            if retro_btn(ui, if self.del_arm { "SURE? CLICK AGAIN" } else { "REMOVE TUNE" }, self.del_arm).clicked() {
-                acts.push(Action::RemoveTune(i));
+            let more = retro_btn_w(ui, "...", 34.0, false).tip("What LOOK UP favors, play-alongs, remove the tune.");
+            let pop = ui.id().with("tune_more_menu");
+            if more.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pop));
             }
+            egui::popup_below_widget(ui, pop, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(240.0);
+                dim_line(ui, "LOOK UP FAVORS", 1.0, pal().dim);
+                for (k, name) in ["Auto (jazz for a known standard)", "Jazz", "Gospel", "Any"].iter().enumerate() {
+                    let mark = if self.look_style as usize % 4 == k { "> " } else { "   " };
+                    if menu_item(ui, &format!("{}{}", mark, name)) {
+                        self.look_style = k as u8;
+                    }
+                }
+                ui.separator();
+                if menu_item(ui, "   Play-alongs on YouTube...") {
+                    acts.push(Action::PlayAlong(tname.clone()));
+                }
+                if menu_item(ui, "   Remove this tune...") {
+                    if !self.del_arm {
+                        acts.push(Action::RemoveTune(i));
+                    }
+                }
+            });
         });
+        // asked before it goes
+        if self.del_arm {
+            ui.horizontal_wrapped(|ui| {
+                label(ui, &format!("Remove {}, with its recordings?", tname), 0.0);
+                if retro_btn(ui, "REMOVE", true).clicked() {
+                    acts.push(Action::RemoveTune(i));
+                }
+                if retro_btn(ui, "KEEP IT", false).clicked() {
+                    self.del_arm = false;
+                }
+            });
+        }
+        // a search of your own, once LOOK UP has been used
+        if self.look_busy || self.look_for == tname || !self.look_q.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                let w = (ui.available_width() - 4.0).max(120.0);
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                let o = field(
+                    ui,
+                    &mut self.ed,
+                    F_LOOK,
+                    &mut self.look_q,
+                    rect,
+                    "Look up a title, or title and artist (empty: this tune)",
+                    false,
+                );
+                if o.enter {
+                    acts.push(Action::LookUp(i));
+                }
+            });
+        }
 
         // ---- the recordings
         section_header(ui, &format!("RECORDINGS TO STUDY ({})", nvers));
@@ -2863,7 +2933,10 @@ impl App {
 
         // ---- other versions (only after LOOK UP)
         if self.look_busy {
-            dim_line(ui, "SEARCHING...", 2.0, pal().ink2);
+            dim_line(ui, "SEARCHING... (WHO WROTE IT FIRST, THEN TIDAL: IT TAKES A FEW SECONDS)", 2.0, pal().ink2);
+        } else if self.look_for == tname && self.look_tracks.is_empty() {
+            // looked up, and nothing came back worth studying
+            dim_line(ui, "NO RECORDINGS FOUND ON TIDAL. TRY ITS FULL TITLE, OR TITLE AND ARTIST, IN THE BOX ABOVE", 1.0, pal().ink2);
         }
         if self.look_for == tname && !self.look_tracks.is_empty() {
             section_header(ui, "RECORDINGS TO STUDY");
@@ -3137,7 +3210,8 @@ impl App {
                 sub = format!("{}{}{} {}", sub, if sub.is_empty() { "" } else { "  ·  " }, spots, if spots == 1 { "spot" } else { "spots" });
             }
             if s.mins >= 60 {
-                sub = format!("{}  ·  {}", sub, mins_text(s.mins));
+                // (lower case, as "spots" is: the line is mixed case and stays as written)
+                sub = format!("{}  ·  {}", sub, mins_text(s.mins).to_lowercase());
             }
             if row(ui, s.id, &title, &sub) {
                 self.loops_pick = Some(s.id);
@@ -3427,7 +3501,7 @@ impl App {
         title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
         // MY PLAN only when there is a plan file of your own
         let mine = crate::plan::have_plan();
-        let tabs: &[&str] = if mine { &["DIARY", "ROUTINE", "LISTENING", "MASTERS", "MY PLAN"] } else { &["DIARY", "ROUTINE", "LISTENING", "MASTERS"] };
+        let tabs: &[&str] = if mine { &["DIARY", "ROUTINE", "LISTENING", "MY PLAN"] } else { &["DIARY", "ROUTINE", "LISTENING"] };
         if self.diary_tab as usize >= tabs.len() {
             self.diary_tab = 0;
         }
@@ -3436,10 +3510,9 @@ impl App {
         }
         ui.add_space(6.0);
         match self.diary_tab {
-            4 => return self.plan_view(ui, acts),
+            3 => return self.plan_view(ui, acts),
             1 => return self.routine_view(ui, acts),
             2 => return self.listening_view(ui, acts),
-            3 => return self.masters_view(ui),
             _ => {}
         }
         let today = store::today_days();
@@ -3467,16 +3540,20 @@ impl App {
             + live;
         let total: u32 = self.store.days.iter().map(|d| d.secs.values().sum::<u32>()).sum::<u32>() + live;
         let practised = (0..7).filter(|k| day_secs(self, today - k) > 0).count();
+        // three tiles, roomy; the days practised and all time under the pointer
         let tiles = [
             ("TODAY", mins_text(day_secs(self, today))),
             ("7 DAYS", mins_text(week)),
             ("THIS MONTH", mins_text(month)),
-            ("PRACTISED", format!("{} OF 7 DAYS", practised)),
-            ("ALL TIME", mins_text(total)),
         ];
         let w = ui.available_width();
-        let tw = ((w - 4.0 * 6.0) / 5.0).floor().max(60.0);
-        let (sr, _) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::hover());
+        let tw = ((w - 2.0 * 6.0) / 3.0).floor().max(60.0);
+        let (sr, sresp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::hover());
+        sresp.on_hover_text(format!(
+            "Practised on {} of the last 7 days. All time: {}.",
+            practised,
+            mins_text(total).to_lowercase()
+        ));
         for (k, (name, val)) in tiles.iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(sr.min.x + k as f32 * (tw + 6.0), sr.min.y), Vec2::new(tw, 46.0));
             inset(ui.painter(), r, pal().lcd);
@@ -4279,7 +4356,8 @@ impl App {
 
         // ---- the panel's tabs: the loop and speed tools first, then the bigger tools (TRAINER, PITCH & EAR, STEMS)
         let cur = if self.more { self.mtab as usize + 1 } else { 0 };
-        if let Some(i) = tab_row(ui, &["LOOP & SPEED", "TRAINER", "PITCH & EAR", "STEMS", "BOOKMARKS", "RECORD"], cur) {
+        // (short names, so the six fit on one row)
+        if let Some(i) = tab_row(ui, &["LOOP", "TRAINER", "PITCH", "STEMS", "BOOKMARKS", "RECORD"], cur) {
             self.more = i > 0;
             if i > 0 {
                 self.mtab = (i - 1) as u8;
@@ -4302,7 +4380,8 @@ impl App {
         let ab_top = ui.cursor().min.y;
         let a_txt = self.loop_a.map(fmt_t).unwrap_or_else(|| "-:--.-".to_string());
         let b_txt = self.loop_b.map(fmt_t).unwrap_or_else(|| "-:--.-".to_string());
-        ui.horizontal_wrapped(|ui| {
+        // three rows, each centred: A and B; the loop's buttons and moving about; the speed
+        centered_row(ui, "ab_row", |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             if retro_btn_w(ui, "A", 34.0, false).tip("Loop start here  ([ key)").clicked() && active {
                 acts.push(Action::SetAAt(pos));
@@ -4329,8 +4408,21 @@ impl App {
                 b_txt,
                 "Nudge earlier or later, or click and type a time like 2:05.",
             );
-            divider(ui);
+        });
+        ui.add_space(6.0);
+        centered_row(ui, "loop_btns", |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
             let ink = pal().ink;
+            if crate::icon_btn_w(ui, &crate::IC_REW, false, ink, 34.0).tip("Back two seconds  (, key)").clicked() {
+                acts.push(Action::SeekRel(-2.0));
+            }
+            if crate::icon_btn_w(ui, &crate::IC_PREV, false, ink, 34.0)
+                .tip("Restart: back to the loop start (or the track start)  (. key)")
+                .clicked()
+            {
+                acts.push(Action::Seek(self.loop_a.unwrap_or(0.0)));
+            }
+            divider(ui);
             if crate::icon_btn_w(ui, &crate::IC_REP, self.loop_on && both, ink, 34.0).tip("Loop on / off  (\\ key)").clicked() {
                 acts.push(Action::LoopToggle);
             }
@@ -4353,25 +4445,13 @@ impl App {
             }
         });
         row_mark(ui, "LOOPROW", ab_top);
-        ui.add_space(12.0);
+        ui.add_space(6.0);
 
-        // ---- moving around, the speed, and MORE
+        // ---- the speed
         let speed_top = ui.cursor().min.y;
-        ui.horizontal_wrapped(|ui| {
+        centered_row(ui, "speed_row", |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            let ink = pal().ink;
-            if crate::icon_btn_w(ui, &crate::IC_REW, false, ink, 34.0).tip("Back two seconds  (, key)").clicked() {
-                acts.push(Action::SeekRel(-2.0));
-            }
-            if crate::icon_btn_w(ui, &crate::IC_PREV, false, ink, 34.0)
-                .tip("Restart: back to the loop start (or the track start)  (. key)")
-                .clicked()
-            {
-                acts.push(Action::Seek(self.loop_a.unwrap_or(0.0)));
-            }
-            let _ = ink;
-            divider(ui);
-            label(ui, "SPEED", 64.0);
+            label(ui, "SPEED", 0.0);
             // the usual speeds in a drop-down, and - / + for 1% at a time (click the number to type any, 25 to 250)
             let sp = retro_btn_w(ui, "v", 34.0, false).tip("Pick a speed.");
             let menu = ui.id().with("speed_menu");
@@ -4605,7 +4685,7 @@ impl App {
             let song = if t.artist.is_empty() { t.title.clone() } else { format!("{} - {}", t.artist, t.title) };
             dim_line(ui, &format!("BOOKMARKS IN {}", song.to_uppercase()), 2.0, pal().ink);
         }
-        ui.horizontal_wrapped(|ui| {
+        centered_row(ui, "marks_add", |ui| {
             if retro_btn(ui, &format!("+ BOOKMARK AT {}", fmt_t(now)), false)
                 .tip(format!(
                     "Adds a bookmark where the song is now (or press {}, or alt + click the waveform).",
@@ -4672,7 +4752,7 @@ impl App {
         }
     }
 
-    /// The practice panel's other tabs: TRAINER (0), PITCH & EAR (1), STEMS (2), BOOKMARKS (3).
+    /// The practice panel's other tabs: TRAINER (0), PITCH (1), STEMS (2), BOOKMARKS (3).
     fn more_tools(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let tid = self.cur_track().map(|t| t.id);
         if self.mtab == 3 {
@@ -4686,7 +4766,7 @@ impl App {
         match self.mtab {
             0 => {
                 // the count-off is its own thing: clicks before every pass of the loop, with or without the trainer
-                ui.horizontal_wrapped(|ui| {
+                centered_row(ui, "trainer_0", |ui| {
                     label(ui, "COUNT-OFF", 92.0);
                     let ci = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
                     if retro_btn_w(ui, &ci, 92.0, self.count_in > 0)
@@ -4715,7 +4795,7 @@ impl App {
                     }
                 });
                 ui.add_space(8.0);
-                ui.horizontal_wrapped(|ui| {
+                centered_row(ui, "trainer_1", |ui| {
                     label(ui, "TRAIN", 56.0);
                     if retro_btn_w(ui, if self.trainer { "ON" } else { "OFF" }, 56.0, self.trainer)
                         .tip("Plays the loop a set number of times, then speeds up by a set percent.")
@@ -4730,7 +4810,7 @@ impl App {
                         }
                     }
                 });
-                ui.horizontal_wrapped(|ui| {
+                centered_row(ui, "trainer_2", |ui| {
                     label(ui, "THEN", 60.0);
                     if retro_btn(ui, "FASTER", !self.trainer_keys).tip("After the passes, the speed goes up.").clicked() {
                         acts.push(Action::TrainerKeys(false));
@@ -4742,7 +4822,7 @@ impl App {
                         acts.push(Action::TrainerKeys(true));
                     }
                 });
-                ui.horizontal_wrapped(|ui| {
+                centered_row(ui, "trainer_3", |ui| {
                     label(ui, "EVERY", 60.0);
                     self.num_step(
                         ui,
@@ -4764,9 +4844,9 @@ impl App {
                         "How much faster each step is. Or type it.",
                     );
                 });
-                dim_line(ui, "STARTS AT THE SPEED SET ABOVE AND STOPS AT 100%", 1.0, pal().dim);
+                dim_centered(ui, "STARTS AT THE SPEED SET ABOVE AND STOPS AT 100%");
                 ui.add_space(8.0);
-                ui.horizontal_wrapped(|ui| {
+                centered_row(ui, "trainer_4", |ui| {
                     if retro_btn_w(ui, "FOCUS", 76.0, self.focus_mode)
                         .tip("Hides the lists, leaving just the player and these tools.")
                         .clicked()
@@ -4776,7 +4856,7 @@ impl App {
                 });
             }
             1 => {
-                ui.horizontal_wrapped(|ui| {
+                centered_row(ui, "pitch_0", |ui| {
                                         label(ui, "PITCH", 56.0);
                                         if retro_btn_w(ui, "-", 28.0, false)
                                             .tip("Lower the pitch a semitone. The speed stays.")
@@ -4817,6 +4897,9 @@ impl App {
                                         if retro_btn_w(ui, "+", 28.0, false).tip("Raise the pitch a semitone. The speed stays.").clicked() {
                                             acts.push(Action::Transpose(100));
                                         }
+                                    });
+                // the tuning, the ear mode and saving it: a second row
+                centered_row(ui, "pitch_1", |ui| {
                                         let cur_id = self.cur_track().map(|t| t.id);
                                         match self.tuning {
                                             Some((id, c, _)) if Some(id) == cur_id && c.abs() > 4 => {
@@ -4855,7 +4938,8 @@ impl App {
                                     });
             }
             _ => {
-                ui.horizontal_wrapped(|ui| {
+                let mut stem_note: Option<String> = None;
+                centered_row(ui, "stems_0", |ui| {
                     label(ui, "STEMS", 56.0);
                     if self.stem_busy == 1 {
                     lcd_box(ui, &stems::stage_text(), 300.0, pal().ink2);
@@ -4900,12 +4984,7 @@ impl App {
                     // what they take on this computer
                     if let Some(id) = tid {
                         let (this, all) = stems::sizes(id);
-                        crate::views::dim_line(
-                            ui,
-                            &format!("THIS SONG'S STEMS: {}   ALL STEMS: {}", cache::fmt_size(this), cache::fmt_size(all)),
-                            1.0,
-                            pal().dim,
-                        );
+                        stem_note = Some(format!("THIS SONG'S STEMS: {}   ALL STEMS: {}", cache::fmt_size(this), cache::fmt_size(all)));
                     }
                 } else {
                     let len = self.track_len();
@@ -4918,14 +4997,12 @@ impl App {
                     // what it will cost before you press it
                     let t = stems::time_guess(len);
                     let time = if t < 90 { format!("{} SEC", t.div_ceil(5) * 5) } else { format!("{} MIN", t.div_ceil(60)) };
-                    crate::views::dim_line(
-                        ui,
-                        &format!("ABOUT {} AND {} ON DISK", time, cache::fmt_size(stems::size_guess(len))),
-                        1.0,
-                        pal().dim,
-                    );
+                    stem_note = Some(format!("ABOUT {} AND {} ON DISK", time, cache::fmt_size(stems::size_guess(len))));
                 }
                 });
+                if let Some(t) = stem_note {
+                    dim_centered(ui, &t);
+                }
             }
         }
     }
@@ -5269,6 +5346,42 @@ mod summary_tests {
 }
 
 /// A thin upright line between groups of controls in a row.
+/// A dim line of words centred across the page or panel.
+pub(crate) fn dim_centered(ui: &mut egui::Ui, text: &str) {
+    let text = if crate::winamp_ui::chrome_on() { crate::winamp_ui::caps_words(text) } else { text.to_string() };
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(1.5) + 8.0), Sense::hover());
+    ptext_fit(ui.painter(), r.center(), Align::Center, &text, 1.5, r.width() - 12.0, pal().ink2);
+}
+
+/// A row of controls centred across the page or panel (its width is taken from the frame before). Too wide for the
+/// room, it wraps from the left instead.
+pub(crate) fn centered_row(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
+    let key = ui.id().with(("centered_row", id));
+    let w: f32 = ui.ctx().data(|d| d.get_temp(key)).unwrap_or(0.0);
+    let room = ui.available_width();
+    if w > room {
+        let r = ui.horizontal_wrapped(add).response.rect;
+        // (it fits on one line again, with room to spare: centre it from the next frame; a row that only just fits
+        // stays as it is, so it never flips back and forth)
+        if r.height() <= bh() + 6.0 && r.width() < room - 8.0 {
+            ui.ctx().data_mut(|d| d.insert_temp(key, r.width()));
+            ui.ctx().request_repaint();
+        }
+        return;
+    }
+    ui.horizontal(|ui| {
+        let pad = ((room - w) / 2.0).max(0.0).floor();
+        ui.add_space(pad);
+        let x0 = ui.cursor().min.x;
+        add(ui);
+        let used = ui.min_rect().max.x - x0;
+        if (used - w).abs() > 0.5 {
+            ui.ctx().data_mut(|d| d.insert_temp(key, used));
+            ui.ctx().request_repaint();
+        }
+    });
+}
+
 fn divider(ui: &mut egui::Ui) {
     let h = crate::bh();
     let (r, _) = ui.allocate_exact_size(Vec2::new(9.0, h), Sense::hover());

@@ -2270,7 +2270,7 @@ impl App {
         title_line(ui, "EAR TRAINING", 3.0, pal().ink);
         ui.add_space(4.0);
         let drill = self.ear.drill.min(DRILLS.len() - 1);
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "ear_0", |ui| {
             let names: Vec<&str> = DRILLS.iter().map(|d| d.name).collect();
             // the drill's colour
             let (r, _) = ui.allocate_exact_size(Vec2::new(12.0, bh()), Sense::hover());
@@ -2321,7 +2321,7 @@ impl App {
     /// chords are played, one row each. A change starts a fresh question.
     fn ear_chord_controls(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let mut o = self.store.ear_chords.clone();
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "ear_1", |ui| {
             if let Some(i) = crate::dropdown(ui, "ear_mode", "IN PLAY", &MODES, (o.mode as usize).min(2), 0.0) {
                 o.mode = i as u8;
             }
@@ -2355,7 +2355,7 @@ impl App {
             }
         });
         if o.mode == 0 && self.ear.choose {
-            ui.horizontal_wrapped(|ui| {
+            crate::views::centered_row(ui, "ear_2", |ui| {
                 for (l, name) in LEVELS.iter().enumerate() {
                     let on = o.levels.contains(&l);
                     if check_box(ui, name, on).clicked() {
@@ -2382,7 +2382,7 @@ impl App {
             for (l, name) in LEVELS.iter().enumerate() {
                 ui.add_space(4.0);
                 mini_header(ui, name);
-                ui.horizontal_wrapped(|ui| {
+                crate::views::centered_row(ui, "ear_3", |ui| {
                     for i in level_chords(l) {
                         let label = CHORDS[i].label;
                         let on = o.mine.iter().any(|m| m == label);
@@ -2401,15 +2401,18 @@ impl App {
             }
         }
         ui.add_space(2.0);
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "ear_4", |ui| {
             if let Some(i) = crate::dropdown(ui, "ear_voicing", "VOICING", &VOICINGS, (o.voicing as usize).min(5), 0.0) {
                 o.voicing = i as u8;
             }
-            if let Some(i) = crate::dropdown(ui, "ear_root", "", &ROOTS, o.same_root as usize, 0.0) {
-                o.same_root = i == 1;
-            }
             if let Some(i) = crate::dropdown(ui, "ear_bass", "", &BASSES, o.no_bass as usize, 0.0) {
                 o.no_bass = i == 1;
+            }
+        });
+        // (two short rows, so each fits and sits centred)
+        crate::views::centered_row(ui, "ear_bass_row", |ui| {
+            if let Some(i) = crate::dropdown(ui, "ear_root", "", &ROOTS, o.same_root as usize, 0.0) {
+                o.same_root = i == 1;
             }
             if check_box(ui, "TOP NOTE", o.top).on_hover_text("After the chord: which of its notes is on top?").clicked() {
                 o.top = !o.top;
@@ -3088,7 +3091,9 @@ impl App {
         let grow = lv.iter().copied().find(|l| level_in_play(&o, *l) < level_chords(*l).len());
         let shrink = lv.iter().rev().copied().find(|l| level_in_play(&o, *l) > START.min(level_chords(*l).len()));
         let mut set: Option<(usize, usize)> = None;
-        ui.horizontal_wrapped(|ui| {
+        let mut hint = false;
+        // the buttons centred under the score; what earns more chords on a centred line of its own
+        crate::views::centered_row(ui, "ear_growth", |ui| {
             if let Some(l) = grow {
                 let have = level_in_play(&o, l);
                 let all = level_chords(l);
@@ -3098,7 +3103,7 @@ impl App {
                         set = Some((l, (have + 2).min(all.len())));
                     }
                 } else {
-                    crate::views::dim_line(ui, "GET 80% IN A SESSION AND MORE CHORDS COME INTO PLAY", 1.0, pal().dim);
+                    hint = true;
                 }
             }
             if let Some(l) = shrink {
@@ -3107,6 +3112,9 @@ impl App {
                 }
             }
         });
+        if hint {
+            crate::views::dim_centered(ui, "GET 80% IN A SESSION AND MORE CHORDS COME INTO PLAY");
+        }
         if let Some((l, n)) = set {
             let g = &mut self.store.ear_chords.grown;
             if g.len() <= l {

@@ -64,7 +64,6 @@ pub const F_TR_STEP: u32 = 44;
 pub const F_CHART_Q: u32 = 45;
 pub const F_BAND_BPM: u32 = 46;
 pub const F_UNIT: u32 = 47;
-pub const F_TUNE_IREAL: u32 = 48;
 pub const F_LOOK: u32 = 49;
 pub const F_WINAMP: u32 = 50;
 pub const F_BAR: u32 = 51;
@@ -1071,10 +1070,10 @@ impl App {
         let playing_title = playing.as_ref().map(|t| t.title.clone());
         // what is on show: a saved tune, or whatever is playing (looked up on its own)
         let (name, key, bpm, info, text, live) = match (ti, playing_title) {
-            // a practice progression from TUNES
+            // a practice progression from CHORDS (its pill above says what it is: no line under the title)
             _ if self.prac_chart.is_some() => {
                 let (title, chart) = self.prac_chart.clone().unwrap_or_default();
-                (title, String::new(), 0, "Practice progression".to_string(), chart, false)
+                (title, String::new(), 0, String::new(), chart, false)
             }
             (Some(i), _) => {
                 let t = &self.store.tunes[i];

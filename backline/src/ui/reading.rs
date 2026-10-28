@@ -1375,10 +1375,14 @@ impl App {
         }
         ui.add_space(10.0);
         section_header(ui, "HOW TO WORK");
-        if let Some(v) = tab_row(
+        // (a dropdown: six tabs wrapped onto two rows)
+        if let Some(v) = dropdown(
             ui,
+            "rd_guide",
+            "TOPIC",
             &["THE BASICS", "A DAILY ROUTINE", "THE MARKS", "DUETS", "WHEN IT'S HARD", "BEYOND THE BOOK"],
             self.rd_guide as usize,
+            0.0,
         ) {
             self.rd_guide = v as u8;
         }
@@ -1425,8 +1429,14 @@ impl App {
                 "A little every day beats a lot once a week. Work at your own pace and mark things done when they are.",
             ],
         };
+        // the tips in full, wrapped (they are what the page teaches, not a note to tuck away)
         for tip in tips {
-            para(ui, tip, pal().ink2);
+            let text = if crate::winamp_ui::chrome_on() { crate::winamp_ui::caps_words(tip) } else { tip.to_string() };
+            for line in crate::font::wrap(&text, 2.0, ui.available_width() - 20.0) {
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * crate::font::spx(2.0) + 6.0), Sense::hover());
+                ptext(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, &line, 2.0, pal().ink2);
+            }
+            ui.add_space(6.0);
         }
         ui.add_space(20.0);
     }
@@ -1700,7 +1710,7 @@ impl App {
         self.rd_part = self.rd_part.min(piece.parts.len() - 1);
         if piece.parts.len() > 1 {
             ui.horizontal_wrapped(|ui| {
-                crate::views::label(ui, "YOUR PART", 100.0);
+                crate::views::form_label(ui, "YOUR PART");
                 for (i, (pn, _)) in piece.parts.iter().enumerate() {
                     if retro_btn(ui, &crate::font::as_label(&pn), self.rd_part == i).clicked() {
                         self.rd_part = i;

@@ -7,11 +7,11 @@
 //! syllables (moveable Do from the first note, and fixed Do).
 
 use super::*;
+pub(crate) use crate::atonal_core::*;
 use crate::ear;
 use crate::lines;
 use crate::theory;
 use serde::{Deserialize, Serialize};
-pub(crate) use crate::atonal_core::*;
 
 // ------------------------------------------------------------------ the private file
 
@@ -115,14 +115,6 @@ pub(crate) const KINDS: [&str; 3] = ["ALTERNATE TRIADS", "TETRACHORDS JOINED", "
 /// The interval cycles: name, semitones.
 pub(crate) const CYCLES: [(&str, i32); 4] = [("MINOR 3RDS", 3), ("MAJOR 3RDS", 4), ("4THS", 5), ("TRITONES", 6)];
 
-
-
-
-
-
-
-
-
 /// A written note's name with its octave: "D\u{266D}5".
 fn note_label(m: i32) -> String {
     let (letter, acc, oct) = lines::spell(m, false);
@@ -139,7 +131,6 @@ fn note_label(m: i32) -> String {
 }
 
 // ------------------------------------------------------------------ every string, every finger
-
 
 // ------------------------------------------------------------------ the tab
 
@@ -259,7 +250,22 @@ impl App {
         let empty = self.at.file.as_ref().map_or(true, |f| f.lines.is_empty());
         if empty {
             para(ui, "No lines of your own yet. They are kept in a file on this computer only, atonal_lines.json in Backline's folder, and are never part of Backline. Drop a file of lines on the window to add it.", pal().ink2);
-            crate::views::dim_line(ui, &file_path().display().to_string(), 1.0, pal().dim);
+            // where the file goes, on a button (the path itself is too long for the page)
+            let path = file_path();
+            ui.horizontal(|ui| {
+                ui.add_space(4.0);
+                if retro_btn(ui, "OPEN BACKLINE'S FOLDER", false).tip(format!("Your lines go in atonal_lines.json here, on this computer only. Drop a file of lines on the window to add it.
+{}", path.display())).clicked() {
+                    if let Some(d) = path.parent() {
+                        #[cfg(windows)]
+                        let _ = std::process::Command::new("explorer").arg(d).spawn();
+                        #[cfg(not(windows))]
+                        let _ = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
+                            .arg(d)
+                            .spawn();
+                    }
+                }
+            });
             return;
         }
         let Some(file) = self.at.file.as_ref() else { return };
@@ -780,7 +786,10 @@ mod tests {
                 header: "C-5 | A+4-9".to_string(),
                 source: "a lesson page".to_string(),
                 gaps: String::new(),
-                notes: vec![AtNote { midi: 61, len: 0.25, unsure: true, chord: false }, AtNote { midi: 64, len: 0.25, unsure: false, chord: true }],
+                notes: vec![
+                    AtNote { midi: 61, len: 0.25, unsure: true, chord: false },
+                    AtNote { midi: 64, len: 0.25, unsure: false, chord: true },
+                ],
             }],
         };
         let text = to_text(&f);

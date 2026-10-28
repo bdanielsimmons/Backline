@@ -43,7 +43,7 @@ enum Scene {
     /// practice mode off (to show where it is switched on)
     PracticeOff,
     Practice,
-    /// practice mode with MORE open on a tab (0 TRAINER, 1 PITCH & EAR, 2 STEMS)
+    /// practice mode with MORE open on a tab (0 TRAINER, 1 PITCH, 2 STEMS)
     PracticeMore(u8),
     /// the album view in practice mode, with its little practice strip
     AlbumPractice,

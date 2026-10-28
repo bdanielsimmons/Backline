@@ -320,8 +320,10 @@ impl App {
             self.pn_label = i as u8;
         }
         if pent {
-            ui.horizontal_wrapped(|ui| {
-                crate::views::label(ui, "ADD", 100.0);
+            // the two choices stacked in the column the dropdowns are in
+            ui.horizontal(|ui| {
+                crate::views::form_label(ui, "ADD");
+                ui.vertical(|ui| {
                 let blue = if major_pent { "BLUE NOTE (\u{266D}3)" } else { "BLUE NOTE (\u{266D}5)" };
                 if crate::check_box(ui, blue, self.pn_blue).tip("The blues scale: the pentatonic with the blue note added").clicked() {
                     self.pn_blue = !self.pn_blue;
@@ -332,6 +334,7 @@ impl App {
                 {
                     self.pn_between = !self.pn_between;
                 }
+                });
             });
         }
         // the position shown, as the scale lists them (nb: the whole neck)
@@ -637,11 +640,6 @@ impl App {
 
 pub(crate) use crate::si_core::*;
 
-
-
-
-
-
 impl App {
     /// SUPERIMPOSE: a shape over a chord - the usual choices for it, or any shape you pick - with each note marked
     /// a chord tone, a tension or a note to avoid, on the neck and the piano, and played over the chord.
@@ -817,19 +815,34 @@ impl App {
             })
             .collect();
         crate::views::dim_line(ui, &line.join("    "), 1.0, pal().ink);
-        ui.horizontal_wrapped(|ui| {
-            for (name, col) in [
-                ("CHORD TONE", pal().ink),
-                ("TENSION", Color32::from_rgb(95, 168, 211)),
-                ("AVOID", Color32::from_rgb(220, 70, 60)),
-            ] {
-                let (r, _) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::hover());
-                ui.painter().rect_filled(r, 1.0, col);
-                crate::views::label(ui, name, 0.0);
-                ui.add_space(10.0);
+        // the key, small and centred: a square for each colour, a ring for the chord's notes the shape leaves out
+        // (on two lines when one won't fit)
+        let key: [(&str, Color32, bool); 4] = [
+            ("CHORD TONE", pal().ink, false),
+            ("TENSION", Color32::from_rgb(95, 168, 211), false),
+            ("AVOID", Color32::from_rgb(220, 70, 60), false),
+            ("RING: IN THE CHORD, NOT THE SHAPE", pal().dim, true),
+        ];
+        let item_w = |t: &str| 14.0 + text_w(t, 1.0) + 16.0;
+        let room = ui.available_width();
+        let all: f32 = key.iter().map(|k| item_w(k.0)).sum();
+        let rows: Vec<&[(&str, Color32, bool)]> = if all <= room { vec![&key[..]] } else { vec![&key[..3], &key[3..]] };
+        for row in rows {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(room, 18.0), Sense::hover());
+            let p = ui.painter();
+            let w: f32 = row.iter().map(|k| item_w(k.0)).sum::<f32>() - 16.0;
+            let mut x = r.center().x - w / 2.0;
+            for (name, col, ring) in row {
+                let c = Pos2::new(x + 5.0, r.center().y);
+                if *ring {
+                    p.circle_stroke(c, 4.5, Stroke::new(1.2_f32, *col));
+                } else {
+                    p.rect_filled(Rect::from_center_size(c, Vec2::splat(9.0)), 1.0, *col);
+                }
+                ptext(p, Pos2::new(x + 14.0, c.y), Align::Min, name, 1.0, pal().ink2);
+                x += item_w(name);
             }
-            crate::views::label(ui, "  RINGS: THE CHORD'S OWN NOTES NOT IN THE SHAPE", 0.0);
-        });
+        }
 
         // the line: the shape up two octaves and back, over the chord
         let mut up: Vec<i32> = (52..=76i32).filter(|m| shape.contains(&m.rem_euclid(12))).collect();
@@ -978,7 +991,7 @@ impl App {
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let cur = order.iter().position(|i| scales[*i].1 == self.pf_scale).unwrap_or(0);
         ui.horizontal(|ui| {
-            crate::views::label(ui, "SCALE", 100.0);
+            crate::views::form_label(ui, "SCALE");
             let widest = names.iter().map(|s| crate::font::text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
             if let Some(i) =
                 crate::dropdown_fixed(ui, "pf_scale", &names, cur, widest.min(ui.available_width() - 60.0).max(200.0))
@@ -1040,7 +1053,7 @@ impl App {
             .collect();
         let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
         ui.horizontal(|ui| {
-            crate::views::label(ui, "SHOW", 100.0);
+            crate::views::form_label(ui, "SHOW");
             let pick = (self.pf_pos as usize).min(np);
             if retro_btn_w(ui, "<", 34.0, false).tip("The position below").clicked() {
                 self.pf_pos = ((pick + np) % (np + 1)) as u8;

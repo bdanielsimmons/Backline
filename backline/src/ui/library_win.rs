@@ -432,15 +432,18 @@ impl App {
         let look = crate::gen_look(self.wa_worn.as_ref());
         let museum = self.wa_worn.clone().filter(|_| look == 0);
         let cur = SKIN.load(Ordering::Relaxed) % PALS.len();
-        for (gi, (title, g)) in [(0usize, ("ORIGINAL", 2usize))] {
+        for (gi, (title, g)) in [(0usize, ("Backline skins", 2usize))] {
             ui.add_space(6.0);
             // folded up: its name and the one worn from it; open to pick another
             let worn_here = (if g == 0 { self.wa_worn.is_none() } else { look == g }).then(|| SKIN_NAMES[cur]);
             let head = format!(
-                "{} {}{}",
+                "{} {}",
                 if self.skins_open[gi] { "-" } else { "+" },
-                title,
-                worn_here.map(|n| format!(":  {}", n)).unwrap_or_default()
+                crate::font::as_label(&format!(
+                    "{}{}",
+                    title,
+                    worn_here.map(|n| format!("  ·  {}", crate::winamp_ui::display_case(&n.to_uppercase()))).unwrap_or_default()
+                ))
             );
             if menu_item(ui, &head) {
                 self.skins_open[gi] = !self.skins_open[gi];
@@ -460,9 +463,12 @@ impl App {
         }
         ui.add_space(6.0);
         let head = format!(
-            "{} WINAMP{}",
+            "{} {}",
             if self.skins_open[2] { "-" } else { "+" },
-            museum.as_ref().map(|w| format!(":  {}", w.1.to_uppercase())).unwrap_or_default()
+            crate::font::as_label(&format!(
+                "Winamp skins{}",
+                museum.as_ref().map(|w| format!("  ·  {}", w.1)).unwrap_or_default()
+            ))
         );
         if menu_item(ui, &head) {
             self.skins_open[2] = !self.skins_open[2];
@@ -1064,15 +1070,18 @@ impl App {
         ];
         if PRACTICE {
             rows.extend([
-                ("", "Practice", false, 0),
+                // practice in three groups: what you play, how it works, every day
+                ("", "Repertoire", false, 0),
                 ("note", "Tunes", here(Sec::Tunes), 10),
-                ("diary", "Diary", here(Sec::Diary), 11),
                 ("loop", "Loops", here(Sec::Loops), 12),
-                ("book", "Reading", here(Sec::Reading), 13),
-                ("chords", "Chords", here(Sec::Chords), 14),
-                ("ear", "Ear Training", here(Sec::Ear), 17),
-                ("lines", "Lines", here(Sec::Lines), 15),
                 ("melody", "Chord Melodies", here(Sec::Melodies), 16),
+                ("", "Theory", false, 0),
+                ("chords", "Chords", here(Sec::Chords), 14),
+                ("lines", "Lines", here(Sec::Lines), 15),
+                ("ear", "Ear Training", here(Sec::Ear), 17),
+                ("", "Daily", false, 0),
+                ("diary", "Diary", here(Sec::Diary), 11),
+                ("book", "Reading", here(Sec::Reading), 13),
             ]);
         }
         let foot = [
@@ -1230,10 +1239,10 @@ impl App {
         items.push(("guide", self.wa_guide, "Outline and name each of this skin's buttons.".into(), 6));
         let d = 26.0 * font::ui_scale();
         let names = self.icon_names;
-        // (with names: the icons spread across the list's width, a word under each)
+        // the icons spread evenly across the list's width (with names: a word under each)
         let n = items.len() as f32;
-        let step = if names { ((r.width() - 20.0) / n).max(d + 3.0) } else { d + 3.0 };
-        let mut x = r.min.x + 10.0 + if names { (step - d) / 2.0 } else { 0.0 };
+        let step = ((r.width() - 20.0) / n).max(d + 3.0);
+        let mut x = r.min.x + 10.0 + (step - d) / 2.0;
         for (icon, on, tip, key) in items {
             let b = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(d));
             x += step;
@@ -1384,8 +1393,9 @@ impl App {
                 acts.push(Action::ClearStatus);
             }
         }
-        // (not on the BACKLINE pages: settings, skins, the log)
-        if !(self.show_tl || self.show_winamp || self.show_log || self.show_cache) {
+        // (on Home only: the player at the foot already shows the song everywhere else)
+        let home = self.sec == Sec::Tidal && !self.page.as_ref().is_some_and(|p| p.library);
+        if home && !(self.show_tl || self.show_winamp || self.show_log || self.show_cache) {
             self.continue_bar(ui, acts);
         }
         ui.add_space(4.0);

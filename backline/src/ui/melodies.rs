@@ -874,6 +874,7 @@ impl App {
     /// CHORD MELODIES: SONGS and MOVES.
     pub(crate) fn melodies_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
+        title_line(ui, "CHORD MELODIES", 3.0, pal().ink);
         if let Some(t) = tab_row(ui, &["SONGS", "MOVES"], self.cm_tab as usize) {
             self.cm_tab = t as u8;
         }
@@ -986,7 +987,7 @@ impl App {
         let now = self.cm_now(&tune);
         // ---- pinned at the top: playing, and the beats picked (a loop, a move) up close
         ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "PLAY", 100.0);
+            crate::views::form_label(ui, "PLAY");
             let playing = self.cm_play.is_some();
             if retro_btn(ui, if playing { "STOP" } else { "PLAY" }, playing).clicked() {
                 if playing {
@@ -1122,23 +1123,30 @@ impl App {
     /// The top of SONGS: bringing tunes in, the tune, what is shown.
     fn cm_top(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, list: &[(std::path::PathBuf, String)]) {
         para(ui, "Study your transcriptions bar by bar. Each shows the chord names and grips, and the notes on a staff with tab and note names. Play at any speed, loop a few bars and click a beat to see what it is. Keep the moves you like.", pal().ink2);
+        // bringing tunes in: one + ADD, its choices under it
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "IMPORT GUITAR PRO...", false)
-                .tip("Turn Guitar Pro files (.gp) into transcriptions Backline keeps. You won't need the originals after.")
-                .clicked()
-            {
-                acts.push(Action::CmImport(false));
+            let add = retro_btn(ui, "+ ADD", false).tip("Import Guitar Pro files or a transcription, or open their folder.");
+            let pop = ui.id().with("cm_add");
+            if add.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pop));
             }
-            if retro_btn(ui, "IMPORT A TRANSCRIPTION...", false)
-                .tip("Add a Backline transcription file (.json) someone sent you.")
-                .clicked()
-            {
-                acts.push(Action::CmImport(true));
-            }
-            if retro_btn(ui, "OPEN FOLDER", false)
-                .tip("Open the folder your transcriptions are kept in. Copy one from here to send it.")
-                .clicked()
-            {
+            let mut open = false;
+            egui::popup_below_widget(ui, pop, &add, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(260.0);
+                // (Guitar Pro files become transcriptions Backline keeps: the originals aren't needed after)
+                if crate::menu_item(ui, "Import Guitar Pro files (.gp)...") {
+                    acts.push(Action::CmImport(false));
+                }
+                // (a Backline transcription file someone sent you)
+                if crate::menu_item(ui, "Import a transcription (.json)...") {
+                    acts.push(Action::CmImport(true));
+                }
+                // (copy one from there to send it)
+                if crate::menu_item(ui, "Open the transcriptions folder") {
+                    open = true;
+                }
+            });
+            if open {
                 let d = transcription::dir();
                 let _ = std::fs::create_dir_all(&d);
                 // in the file manager (Explorer on Windows), not the browser
@@ -1164,7 +1172,7 @@ impl App {
         }
         // what is shown: all of it unless you leave some out (leave the chord names out to name them yourself first)
         ui.horizontal_wrapped(|ui| {
-            crate::views::label(ui, "SHOW", 100.0);
+            crate::views::form_label(ui, "SHOW");
             for (i, n) in ["CHORD NAMES", "GRIPS", "STAFF", "TAB", "NOTE NAMES"].iter().enumerate() {
                 if crate::check_box(ui, n, self.cm_show[i]).clicked() {
                     self.cm_show[i] = !self.cm_show[i];

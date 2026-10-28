@@ -1881,7 +1881,8 @@ impl App {
             Msg::Tuning(id, r) => {
                 self.tuning_busy = false;
                 match r {
-                    Some((c, conf)) if conf >= 0.04 => {
+                    Err(e) => self.set_err(format!("COULDN'T GET THE TRACK TO CHECK ITS TUNING: {}", e)),
+                    Ok(Some((c, conf))) if conf >= 0.04 => {
                         self.tuning = Some((id, c, conf));
                         let mut how = if c.abs() <= 4 {
                             "IT IS TUNED TO A440".to_string()
@@ -2350,7 +2351,6 @@ impl App {
                     format!("USING YOUR {} SIGN-IN. CLOSE THAT BROWSER IF IT FAILS.", sources::SC_BROWSERS[n as usize])
                 };
             }
-            Action::LookStyle => self.look_style = (self.look_style + 1) % 4,
             Action::PlaylistPick(t) => {
                 self.set_note(&format!("PICK A PLAYLIST FOR: {}", t.title.to_uppercase()));
                 self.pl_pick = Some(t);
@@ -2619,19 +2619,16 @@ impl App {
                 if self.tuning_busy {
                     return;
                 }
-                let bytes = match self.srcmap.get(&t.id) {
-                    Some(Src::File(p)) => std::fs::read(p).ok(),
-                    _ => cache::get(t.id),
-                };
-                let Some(bytes) = bytes else {
-                    self.set_note("PLAY IT ONCE FIRST SO IT IS STORED, THEN CHECK THE TUNING");
-                    return;
-                };
+                // the file, the stored copy, or (not stored: storing tracks is off, or it never finished) the track
+                // fetched again to listen to
+                let src = self.srcmap.get(&t.id).cloned();
+                let (lossless, api) = (self.prefer_lossless, self.api.clone());
                 self.tuning_busy = true;
                 self.set_note("LISTENING FOR THE TUNING...");
                 let (tx, ctx, id) = (self.tx.clone(), self.ctx.clone(), t.id);
                 std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Tuning(id, crate::tuning::detect(bytes)));
+                    let r = crate::fetch_audio(&api, id, lossless, false, src).map(crate::tuning::detect);
+                    let _ = tx.send(Msg::Tuning(id, r));
                     ctx.request_repaint();
                 });
             }

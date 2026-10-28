@@ -898,7 +898,7 @@ pub(crate) fn dropdown(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str],
 pub(crate) fn choice_line(ui: &mut egui::Ui, id: &str, name: &str, items: &[&str], sel: usize, w: f32) -> Option<usize> {
     let mut out = None;
     ui.horizontal(|ui| {
-        label(ui, name, 100.0);
+        form_label(ui, name);
         // as wide as its longest option (so it doesn't jump about), never past the page; the text stays full size
         let widest = items.iter().map(|s| text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
         let room = (ui.available_width() - 4.0).max(120.0);
@@ -952,7 +952,14 @@ fn dropdown_list(
     dots: &[Color32],
 ) -> Option<usize> {
     let cur = items.get(sel).copied().unwrap_or("");
-    let text = if title.is_empty() { cur.to_string() } else { format!("{}: {}", title, cur) };
+    // (a title in capitals reads as a word beside a choice in mixed case: "Input: Microphone", not "INPUT: Microphone")
+    // (each half cased on its own: a mixed-case title would leave a choice in capitals as it is)
+    let (title, cur) = if winamp_ui::chrome_on() {
+        (winamp_ui::display_case(title).into_owned(), winamp_ui::display_case(cur).into_owned())
+    } else {
+        (title.to_string(), cur.to_string())
+    };
+    let text = if title.is_empty() { cur.clone() } else { format!("{}: {}", title, cur) };
     let w = if fixed { min_w } else { (text_w(&text, 2.0) + 38.0).max(min_w) };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let key = egui::Id::new(("dd", id));
@@ -1127,7 +1134,9 @@ fn about_line(ui: &mut egui::Ui, text: &str) {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0 * spx(px) + 10.0), Sense::hover());
     // (up to what is in view: a page in a scroll area can be wider than its window; nothing drawn past it)
     let room = rect.width().min(ui.clip_rect().max.x - rect.min.x - 14.0) - 12.0;
-    let p = ui.painter().with_clip_rect(Rect::from_min_size(rect.min, Vec2::new(room + 12.0, rect.height())).intersect(ui.clip_rect()));
+    let p = ui
+        .painter()
+        .with_clip_rect(Rect::from_min_size(rect.min, Vec2::new(room + 12.0, rect.height())).intersect(ui.clip_rect()));
     let p = &p;
     let hot = resp.hovered();
     let col = if hot { pal().ink } else { pal().ink2 };
@@ -1286,6 +1295,28 @@ pub(crate) fn goertzel(x: &[f32], f: f32, rate: f32) -> f32 {
     }
     let p = s1 * s1 + s2 * s2 - c * s1 * s2;
     p.max(0.0).sqrt() * 2.0 / x.len() as f32
+}
+
+/// A label at the start of a form's row. The rows of a page share one column, as wide as the longest label shown
+/// (measured last frame), so the dropdowns after them line up.
+pub(crate) fn form_label(ui: &mut egui::Ui, text: &str) {
+    let key = egui::Id::new("form_label_col");
+    let nr = ui.ctx().cumulative_pass_nr();
+    let need = (100.0 * crate::font::ui_scale()).max(crate::text_w(text, 2.0) + 14.0);
+    // (this frame, the widest so far this frame, the widest last frame)
+    let (f, mut cur, mut prev): (u64, f32, f32) = ui.ctx().data(|d| d.get_temp(key)).unwrap_or((0, 0.0, 0.0));
+    if f != nr {
+        if (cur - prev).abs() > 0.5 {
+            ui.ctx().request_repaint();
+        }
+        prev = cur;
+        cur = 0.0;
+    }
+    cur = cur.max(need);
+    ui.ctx().data_mut(|d| d.insert_temp(key, (nr, cur, prev)));
+    let w = prev.max(need);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+    ptext(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, text, 2.0, pal().ink2);
 }
 
 pub(crate) fn label(ui: &mut egui::Ui, text: &str, w: f32) {

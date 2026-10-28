@@ -37,12 +37,12 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Floating tools: focus timer, metronome, band, number boxes, field ids `F_*` | `ui/tools.rs` |
 | Tidal artist pages: FOLLOW / RADIO (`Action::Follow`, `api.follow_artist`), the bio (`api::parse_bio`, `bio_view` in main.rs), NEW FROM ARTISTS YOU FOLLOW in the library's ARTISTS tab (`api.followed_new`, Tidal's v2 feed) | `data/api.rs`, `main.rs` |
 | RECORD (practice panel tab): your input via cpal (`audio/record.rs`), mixed with what the player kept (`tour::mix`, `player::rec_start_heard`) into WAVs under takes/; takes live in `store.takes` (not as tune recordings), ALL TAKES panel; EDIT INFO for files has ALBUM and FILE NAME (rename on disk, `file_moved` migrates the id) | `audio/record.rs`, `ui/record.rs`, `extras.rs` (`rec_toggle`, `save_info`) |
-| DIARY tabs ROUTINE / LISTENING / MASTERS: tune of the week from `data/canon.rs` (session tunes by kind, gospel by era; kinds take turns via `store.routine_count`), six steps that open tools set up (`Action::RoutineGo`), done-list per day, listening counts; TRAINER "UP A 4TH - 12 KEYS" (`trainer_keys`, `check_trainer`) | `ui/routine.rs`, `data/canon.rs`, `extras.rs` |
+| DIARY tabs ROUTINE / LISTENING: tune of the week from `data/canon.rs` (session tunes by kind, gospel by era; kinds take turns via `store.routine_count`), six steps that open tools set up (`Action::RoutineGo`), done-list per day, listening counts; TRAINER "UP A 4TH - 12 KEYS" (`trainer_keys`, `check_trainer`) | `ui/routine.rs`, `data/canon.rs`, `extras.rs` |
 | DIARY tab MY PLAN (only when `plan.json` is in the config folder; private, never committed): weeks/days/blocks from the file, today's blocks on a timer (`PlanState`, `plan_tick` chimes and moves on), done blocks in `plan_log.json`; ahead/behind tips per block (`Block.ahead`/`behind`), GUIDE TONES AND ARPEGGIOS on the neck from each week's `changes` (`chord_parts`, `chord_dots`, walk from `arpeggios::tune_line`), RELOAD, KEEPERS (`Keeper`, `keepers_today`, private `plan_keepers.json`; fun slot adds, Review plays two a day), a song of the week (`Week.song`), PROGRESS (`plan_minutes`, `streak`; ticked blocks credit the diary as "My Plan: <block>" via `plan_credit`), UP A RUNG / NEXT STEP buttons that move a block along (`Moves` in private `plan_moves.json`, `fill_moved`); BACKLINE_OPEN=plan | `ui/plan.rs`, `extras.rs` |
 | Files: "Show in Explorer" (`Action::ShowFile`, cached Tidal songs too via `cache::file_of`); a file gone from disk is dropped from every list (`file_gone`, at start-up and when it comes up to play) | `extras.rs`, `main.rs` |
-| CHORDS: find, analyzer, voicings, passing chords (tabs in three groups; `chords_tab` numbers stay fixed) | `ui/chords.rs`; triads/moves `ui/triads.rs`; clusters `ui/clusters.rs` |
+| CHORDS: find, analyzer, voicings, passing chords, PROGRESSIONS (tabs in three groups, `GROUPS` in `chords_view`, PROGRESSIONS under HARMONY; `chords_tab` numbers stay fixed; 8 = PROGRESSIONS, `progressions_page` in `ui/lines.rs`, one row of dropdowns, family in `prog_fam`) | `ui/chords.rs`; triads/moves `ui/triads.rs`; clusters `ui/clusters.rs` |
 | CHORDS tab SCALE HARMONY: the chords of a parent scale (major, melodic/harmonic minor, harmonic major) as cards, what to solo with over each (`si_auto` shapes, triad pairs), a vamp sent to the band via `prac_chart` | `ui/harmony.rs` |
-| LINES: Slonimsky, scales, the line player (`line_player`: one row - play, loop, tempo, feel, OVER from the shared `ln_over`, favorite; `line_score`) | `ui/lines.rs` (UI), `data/lines.rs` (patterns) |
+| LINES: tabs in three groups (PATTERNS / SCALES / OVER CHORDS, `GROUPS` in `lines_view`; `ln_tab` numbers stay fixed); Slonimsky, scales, the line player (`line_player`: one row - play, loop, tempo, feel, OVER from the shared `ln_over`, favorite; `line_score`) | `ui/lines.rs` (UI), `data/lines.rs` (patterns) |
 | LINES improvising tab PENTATONICS & MORE: pentatonic / hexatonic (triad pairs) / diminished / chromatic options families, `family_scales()`, exercises; PENTATONICS (boxes, `positions()` for any scale / notes per string, `neck_view`) | `ui/improv.rs` |
 | LINES tab ATONAL (after Sandole): YOUR LINES from the private `atonal_lines.json` in Backline's folder (never in the repo; format documented on `AtFile`; notes as written, `unsure` marked in `ear::acc_col`, fixed by clicking a note: -/+ or the neck, delete, add; saved at once), GENERATED LINES (`alternate_triads`, `joined_scale`/`tetrachord_line`, `interval_cycle`), ANALYSIS (`interval_name`, `trichords`, `tetrachords`, `scales_holding` over `scale_list`, `syllables`); state in `App.at` (`AtState`); the score with marked notes and a click-to-select is `line_score_marked` in `ui/lines.rs` | `ui/atonal.rs` (the generators and fingering in `ui/atonal_core.rs`, shared with the phone) |
 | LINES tab ARPEGGIOS: a chord's notes inside its scale's positions (the chords of a scale, or any chord), exercises, through a tune (guide tones, arpeggios, 3-5-7-9) | `ui/arpeggios.rs` |
@@ -90,7 +90,7 @@ Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font on
 
 ## Adding things
 
-- **A tab under LINES / CHORDS:** add its name to the `tab_row` list in that file and a branch for its index.
+- **A tab under LINES / CHORDS:** add it to a group in that file's `GROUPS` (a new number) and a branch for its number.
 - **A text box:** reserve an `F_*` id in `ui/tools.rs`, call `views::field(ui, &mut self.ed, F_ID, &mut text, rect, hint, multi)`.
 - **A saved per-song thing:** a field on the relevant `store` struct with `#[serde(default)]` so old files still load.
 
@@ -98,7 +98,7 @@ Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font on
 
 - Test copies use a separate profile: `BACKLINE_HOME=<folder>`; they open off-screen, never take focus, and make no sound.
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
-- `BACKLINE_OPEN=<name>` opens a screen at start: practice zoom lists loops loopsong groups prog news mini mini_eq_pl mine yt diary
+- `BACKLINE_OPEN=<name>` opens a screen at start: practice trainer pitch stems zoom lists loops loopsong groups prog news mini mini_eq_pl mine yt diary listening
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
   fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine ear
   (BACKLINE_EAR=<drill index 0-12> opens a drill with a question answered; the atonal ones are 8-12) atonal

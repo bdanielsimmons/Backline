@@ -235,7 +235,7 @@ enum Msg {
     /// a click in the macOS menu bar
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Menu(String),
-    Tuning(i64, Option<(i32, f32)>),
+    Tuning(i64, Result<Option<(i32, f32)>, String>),
     UpdateStaged(Result<(), String>),
     YtList(String, Result<(String, Vec<store::Ext>), String>),
     ScMeta(store::Ext),
@@ -532,7 +532,6 @@ enum Action {
     PlaylistOpen(Option<usize>),
     RemoveList(usize),
     YtKeep(i64),
-    LookStyle,
     ScBrowser,
     ScKeep(i64),
     Offline(bool),
@@ -2885,8 +2884,8 @@ struct App {
     sc_dir: usize,
     /// the last sequence played, to go round again
     seq_last: Option<Vec<Vec<i32>>>,
-    /// PRACTICE PROGRESSIONS: which groups are folded open, key, minor, 7th chords, all twelve keys, one being typed
-    prog_shown: Vec<bool>,
+    /// CHORDS > PROGRESSIONS: the family shown, key, minor, 7th chords, all twelve keys, one being typed
+    prog_fam: usize,
     prog_key: i32,
     prog_minor: bool,
     prog_7: bool,
@@ -3064,7 +3063,8 @@ struct App {
     /// the lead sheet stays put (LOCKED) instead of following the song playing (the default)
     chart_lock: bool,
     ireal_in: String,
-    tunes_ireal: String,
+    /// a tune's page: its written-by / year / from / style boxes open
+    tune_more: bool,
     look_q: String,
     chart_cache: (String, chart::Chart),
 }
@@ -3320,7 +3320,7 @@ impl App {
             thumb: None,
             thumb_tried: false,
             tour_seen: false,
-            icon_names: true,
+            icon_names: false,
             first_look: false,
             lib_zoom: 1.0,
             lib_rect: Rect::NOTHING,
@@ -3605,7 +3605,7 @@ impl App {
             sc_oct: 2,
             sc_dir: 2,
             seq_last: None,
-            prog_shown: Vec::new(),
+            prog_fam: 0,
             prog_key: 0,
             prog_minor: false,
             prog_7: true,
@@ -3726,7 +3726,7 @@ impl App {
             chart_rn: true,
             chart_lock: false,
             ireal_in: String::new(),
-            tunes_ireal: String::new(),
+            tune_more: false,
             look_q: String::new(),
             chart_cache: (String::new(), chart::Chart::default()),
         };
@@ -3829,7 +3829,8 @@ impl App {
         if let Some(b) = st["tour_seen"].as_bool() {
             app.tour_seen = b;
         }
-        if let Some(b) = st["icon_names"].as_bool() {
+        // (a new key: everyone starts with the names hidden, the old "icon_names" is ignored)
+        if let Some(b) = st["icon_words"].as_bool() {
             app.icon_names = b;
         }
         // watch the sound outputs: something plugged in or out, or a Bluetooth device coming or going, and Backline
@@ -4159,6 +4160,12 @@ impl App {
                 app.more = true;
                 app.mtab = 4;
             }
+            // the practice panel's other tabs
+            Ok(t @ ("trainer" | "pitch" | "stems")) => {
+                app.practice = true;
+                app.more = true;
+                app.mtab = ["trainer", "pitch", "stems"].iter().position(|x| *x == t).unwrap_or(0) as u8;
+            }
             Ok("lists") => app.sec = Sec::Lists,
             // the library's ARTISTS tab (BACKLINE_OPEN=artist opens an artist's page once the library is in: Msg::Page)
             Ok("artists") => {
@@ -4180,8 +4187,8 @@ impl App {
                 app.loops_mode = 2;
             }
             Ok("prog") => {
-                app.sec = Sec::Tunes;
-                app.prog_shown = vec![true];
+                app.sec = Sec::Chords;
+                app.chords_tab = 8;
             }
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
@@ -4197,9 +4204,13 @@ impl App {
                 app.sec = Sec::Diary;
                 app.diary_tab = 1;
             }
+            Ok("listening") => {
+                app.sec = Sec::Diary;
+                app.diary_tab = 2;
+            }
             Ok("plan") => {
                 app.sec = Sec::Diary;
-                app.diary_tab = 4;
+                app.diary_tab = 3;
             }
             Ok("analyzer") => {
                 app.sec = Sec::Chords;
@@ -4353,7 +4364,7 @@ impl App {
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
             "tour_seen": self.tour_seen,
-            "icon_names": self.icon_names,
+            "icon_words": self.icon_names,
             "icon_build": update::build(),
             "auto_restart": self.auto_restart,
             "intro": self.intro,

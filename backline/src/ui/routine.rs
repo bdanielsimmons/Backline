@@ -1,4 +1,4 @@
-//! DIARY > ROUTINE, LISTENING and MASTERS. ROUTINE: your set (one tune of each kind you are working on - a blues,
+//! DIARY > ROUTINE and LISTENING. ROUTINE: your set (one tune of each kind you are working on - a blues,
 //! rhythm changes, a ballad...) and suggestions for a session with how to do each in Backline. The lists live in
 //! data/canon.rs.
 
@@ -8,7 +8,7 @@ use crate::canon;
 /// What to practise, and how to do it here: (what, how in Backline). A checkbox each, for today.
 pub(crate) const SUGGESTIONS: [(&str, &str); 7] = [
     ("LISTEN BEFORE YOU PLAY", "Play a recording of a tune from your set, twice, guitar down. Click the tune, then a recording in TUNES. Loop the head with A and B in the PRACTICE panel."),
-    ("LEARN THE MELODY BY EAR", "Slow the loop down until you can play along without the sheet. Use SPEED in the PRACTICE panel, and the pitch stays the same. Then move it up a 4th in PITCH & EAR and find it again."),
+    ("LEARN THE MELODY BY EAR", "Slow the loop down until you can play along without the sheet. Use SPEED in the PRACTICE panel, and the pitch stays the same. Then move it up a 4th in PITCH and find it again."),
     ("PLAY THE CHANGES WITH THE BAND", "Comp shells with the band, then run arpeggios through the tune. Click a tune in your set to put its chart on the right. Press PLAY BAND on the lead sheet. For arpeggios, go to LINES > ARPEGGIOS."),
     ("ONE LICK THROUGH 12 KEYS", "Loop 4 to 8 bars you love from a record and take them through every key. In TRAINER, set THEN to UP A 4TH to move the loop every few passes. Play it back in each key by ear."),
     ("RECORD A SOLO", "Record three choruses with the band. Go to PRACTICE > RECORD and turn on WITH THE BAND. Don't listen back today."),
@@ -36,21 +36,20 @@ impl App {
         let showing =
             self.prac_chart.as_ref().map(|c| c.0.clone()).or_else(|| self.chart_tune().map(|i| self.store.tunes[i].name.clone()));
         let mut covered = 0;
+        // the kinds' names in one column, as wide as the longest, so the choices line up
+        let kind_w = kinds.iter().map(|(k, _)| text_w(&crate::winamp_ui::caps_words(k), 2.0)).fold(0.0, f32::max) + 16.0;
         for (kind, list) in kinds.iter() {
             let picked = self.store.routine_set.get(*kind).cloned().filter(|s| !s.is_empty());
             if picked.is_some() {
                 covered += 1;
             }
             ui.horizontal_wrapped(|ui| {
-                crate::views::label(ui, kind, 190.0);
-                match &picked {
-                    Some(name) => {
-                        let on = showing.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name));
-                        if retro_btn(ui, &crate::font::as_label(&name), on).tip("Shows its chart on the right.").clicked() {
-                            acts.push(Action::PreviewTune(name.clone()));
-                        }
+                crate::views::label(ui, kind, kind_w / crate::font::ui_scale());
+                if let Some(name) = &picked {
+                    let on = showing.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name));
+                    if retro_btn(ui, &crate::font::as_label(name), on).tip("Shows its chart on the right.").clicked() {
+                        acts.push(Action::PreviewTune(name.clone()));
                     }
-                    None => crate::views::label(ui, "-", 30.0),
                 }
                 // the kind's tunes; the ones already in your tunes marked
                 let mut items: Vec<String> = vec![if picked.is_some() { "Change".to_string() } else { "Pick one".to_string() }];
@@ -81,7 +80,7 @@ impl App {
         section_header(ui, "A SESSION");
         para(
             ui,
-            "Ideas for today, from how the masters practiced. Do what you have time for, and tick what you did. See MASTERS for where they come from.",
+            "Ideas for today, from how the masters practiced. Do what you have time for, and tick what you did.",
             pal().ink2,
         );
         let date = store::today_str();
@@ -92,7 +91,13 @@ impl App {
                 let w = ui.available_width() - 34.0;
                 ui.vertical(|ui| {
                     ui.set_width(w);
-                    title_line(ui, what, 2.0, if ticked { pal().ink2 } else { pal().ink });
+                    // (a step's name as a title, not shouted)
+                    let what = if crate::winamp_ui::chrome_on() {
+                        crate::winamp_ui::as_title(|| crate::winamp_ui::display_case(what).into_owned())
+                    } else {
+                        what.to_string()
+                    };
+                    title_line(ui, &what, 2.0, if ticked { pal().ink2 } else { pal().ink });
                     para(ui, how, pal().ink2);
                 });
                 // the checkbox, on the right
@@ -127,10 +132,13 @@ impl App {
             if retro_btn(ui, "GOSPEL", self.listen_gospel).clicked() {
                 self.listen_gospel = true;
             }
+            if !self.listen_gospel {
+                ui.add_space(10.0);
+                if retro_btn(ui, "GUITARISTS ONLY", self.listen_guitar).clicked() {
+                    self.listen_guitar = !self.listen_guitar;
+                }
+            }
         });
-        if !self.listen_gospel && retro_btn(ui, "GUITARISTS ONLY", self.listen_guitar).clicked() {
-            self.listen_guitar = !self.listen_guitar;
-        }
         let kinds = if self.listen_gospel { canon::LISTEN_GOSPEL } else { canon::LISTEN_JAZZ };
         let guitar = self.listen_guitar && !self.listen_gospel;
         let playing_album = self.cur_track().map(|t| t.album.to_lowercase());
@@ -153,11 +161,13 @@ impl App {
                 }
                 let y = r.center().y;
                 let w = r.width();
+                // names as written with the skinned look (all caps would come back as "Ella fitzgerald"), else in capitals
+                let cap = |t: &str| if crate::winamp_ui::chrome_on() { t.to_string() } else { t.to_uppercase() };
                 crate::font::ptext_fit(
                     p,
                     Pos2::new(r.min.x + 8.0, y),
                     Align::Min,
-                    &artist.to_uppercase(),
+                    &cap(artist),
                     2.0,
                     w * 0.38,
                     pal().ink2,
@@ -166,7 +176,7 @@ impl App {
                     p,
                     Pos2::new(r.min.x + 8.0 + w * 0.4, y),
                     Align::Min,
-                    &album.to_uppercase(),
+                    &cap(album),
                     2.0,
                     w * 0.48,
                     pal().ink,
@@ -182,17 +192,6 @@ impl App {
                     acts.push(Action::PlayRecord(artist.to_string(), album.to_string()));
                 }
             }
-        }
-        ui.add_space(20.0);
-    }
-
-    /// MASTERS: how they worked, and the matching tool here.
-    pub(crate) fn masters_view(&mut self, ui: &mut egui::Ui) {
-        para(ui, "How the masters practiced, and what in Backline does the same job. The pattern: tunes, close listening, small ideas taken everywhere, people, and melody over theory.", pal().ink2);
-        for (name, how, tool) in canon::MASTERS.iter() {
-            section_header(ui, name);
-            para(ui, how, pal().ink);
-            crate::views::dim_line(ui, &format!("HERE: {}", tool.to_uppercase()), 1.0, pal().ink2);
         }
         ui.add_space(20.0);
     }

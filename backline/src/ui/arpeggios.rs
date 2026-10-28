@@ -232,7 +232,7 @@ impl App {
             .collect();
         let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
         ui.horizontal(|ui| {
-            crate::views::label(ui, "SHOW", 100.0);
+            crate::views::form_label(ui, "SHOW");
             let pick = (self.ar_pos as usize).min(np);
             if retro_btn_w(ui, "<", 34.0, false).tip("The position below").clicked() {
                 self.ar_pos = ((pick + np) % (np + 1)) as u8;

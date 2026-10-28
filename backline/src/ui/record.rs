@@ -13,7 +13,7 @@ impl App {
         }
         para(ui, "Record yourself over the band, a loop or a song. Each take is kept with its tune. Listen back at the end of the week, the way you would study a record. Monitor yourself through your interface, not through Backline.", pal().ink2);
         // ---- the input, the tune it goes with, the band
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "rec_0", |ui| {
             if self.rec_devs.is_empty() {
                 crate::views::label(ui, "NO INPUT FOUND", 0.0);
             } else {
@@ -23,8 +23,11 @@ impl App {
                     self.rec_dev = Some(self.rec_devs[i].clone());
                 }
             }
-            let mut tunes: Vec<String> = vec!["FREE PLAY".to_string()];
-            tunes.extend(self.store.tunes.iter().map(|t| t.name.to_uppercase()));
+        });
+        // the tune it goes with, and the band, on a row of their own
+        crate::views::centered_row(ui, "rec_tune_row", |ui| {
+            let mut tunes: Vec<String> = vec![crate::font::as_label("Free play")];
+            tunes.extend(self.store.tunes.iter().map(|t| crate::font::as_label(&t.name)));
             let tunes: Vec<&str> = tunes.iter().map(String::as_str).collect();
             let sel = (self.rec_tune as usize).min(tunes.len() - 1);
             if let Some(i) = dropdown(ui, "rec_tune", "TUNE", &tunes, sel, 0.0) {
@@ -37,7 +40,7 @@ impl App {
         });
         // ---- REC, the time, the level
         ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
+        crate::views::centered_row(ui, "rec_1", |ui| {
             // REC: a dot and the word, red and blinking while the take runs
             let (r, resp) = ui.allocate_exact_size(Vec2::new(86.0 * crate::font::ui_scale(), bh()), Sense::click());
             let p = ui.painter();
