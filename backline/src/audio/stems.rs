@@ -81,6 +81,20 @@ pub fn stems_dir(id: i64) -> PathBuf {
     crate::api::config_dir().join("stems").join(id.to_string())
 }
 
+/// Show this song's stems in Explorer / Finder (the four WAV files).
+pub fn open_folder(id: i64) {
+    let d = stems_dir(id);
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer").arg(&d).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+        let _ = std::process::Command::new(opener).arg(&d).spawn();
+    }
+}
+
 pub fn have_stems(id: i64) -> bool {
     stems_dir(id).join("ok").exists()
 }

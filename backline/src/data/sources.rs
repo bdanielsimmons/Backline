@@ -717,19 +717,32 @@ pub fn yt_fetch(src: &str) -> Result<Vec<u8>, String> {
 }
 
 // --------------------------------------------------------------- analysis
-/// Loudness envelope, 50 values per second (0..255), for drawing the waveform.
-pub fn wave_peaks(bytes: Vec<u8>) -> Option<Vec<u8>> {
+/// The loudness envelope, 50 values per second (0..255), for drawing the waveform, and a fine outline for zooming in: the lowest and highest sample of each
+/// millisecond, scaled so the loudest moment reaches the edge.
+pub fn wave_data(bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<[i8; 2]>)> {
     let src = SymSource::new(bytes).ok()?;
     let ch = src.channels().max(1) as usize;
     let per = (src.sample_rate() / 50).max(1) as usize;
+    let rate = src.sample_rate().max(1) as u64;
     let mut out = Vec::new();
+    let mut fine: Vec<[i16; 2]> = Vec::new();
     let (mut peak, mut n, mut c) = (0i32, 0usize, 0usize);
+    // (milliseconds counted from the frame number, so a 44.1 kHz song doesn't drift)
+    let (mut lo, mut hi, mut frame) = (0i16, 0i16, 0u64);
     for s in src {
         peak = peak.max((s as i32).abs());
+        lo = lo.min(s);
+        hi = hi.max(s);
         c += 1;
         if c == ch {
             c = 0;
             n += 1;
+            frame += 1;
+            if frame * 1000 / rate > fine.len() as u64 {
+                fine.push([lo, hi]);
+                lo = 0;
+                hi = 0;
+            }
             if n == per {
                 let v = (peak as f32 / 32768.0).clamp(0.0, 1.0).powf(0.6);
                 out.push((v * 255.0) as u8);
@@ -739,10 +752,14 @@ pub fn wave_peaks(bytes: Vec<u8>) -> Option<Vec<u8>> {
         }
     }
     if out.is_empty() {
-        None
-    } else {
-        Some(out)
+        return None;
     }
+    let top = fine.iter().map(|p| (p[0] as i32).abs().max((p[1] as i32).abs())).max().unwrap_or(1).max(1) as f32;
+    let scale = |v: i16| {
+        let f = v as f32 / top;
+        (f.signum() * f.abs().powf(0.8) * 127.0) as i8
+    };
+    Some((out, fine.into_iter().map(|p| [scale(p[0]), scale(p[1])]).collect()))
 }
 
 /// Samples from `a` to `b` seconds of an encoded song (all of it with `b` at 0), with its channels and rate.
@@ -970,6 +987,38 @@ pub fn find_chart(name: &str) -> Result<(String, String, String), (String, Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fine_wave_shows_each_attack() {
+        // one second of stereo silence with a short note starting at half a second
+        let n = 44100usize;
+        let mut data = Vec::new();
+        for i in 0..n {
+            let t = i as f32 / 44100.0;
+            let v = if (0.5..0.52).contains(&t) { (16000.0 * (t * 440.0 * std::f32::consts::TAU).sin()) as i16 } else { 0 };
+            data.extend_from_slice(&v.to_le_bytes());
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        for v in [16u32] { wav.extend_from_slice(&v.to_le_bytes()); }
+        for v in [1u16, 2] { wav.extend_from_slice(&v.to_le_bytes()); }
+        for v in [44100u32, 44100 * 4] { wav.extend_from_slice(&v.to_le_bytes()); }
+        for v in [4u16, 16] { wav.extend_from_slice(&v.to_le_bytes()); }
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&data);
+        let (coarse, fine) = wave_data(wav).expect("a wave");
+        assert_eq!(coarse.len(), 50);
+        assert_eq!(fine.len(), 1000);
+        // silent before, full height during the note, silent again after
+        assert_eq!(fine[400], [0, 0]);
+        let (lo, hi) = fine[502..510].iter().fold((0, 0), |(l, h), p| (p[0].min(l), p[1].max(h)));
+        assert!(hi >= 120 && lo <= -120, "{} {}", lo, hi);
+        assert_eq!(fine[600], [0, 0]);
+    }
 
     #[test]
     fn youtube_ids_from_any_link() {

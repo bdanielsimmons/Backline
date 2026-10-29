@@ -240,6 +240,8 @@ enum Msg {
     YtList(String, Result<(String, Vec<store::Ext>), String>),
     ScMeta(store::Ext),
     Wave(i64, Option<Vec<u8>>),
+    /// The waveform's fine outline (`sources::wave_data`), for zooming in.
+    WaveFine(i64, Vec<[i8; 2]>),
     Exported(Result<String, String>),
     /// LOOK UP result: tune name, who wrote it, other versions found on Tidal
     Lookup(String, Result<sources::Work, String>, Vec<(Track, u32)>),
@@ -580,6 +582,10 @@ enum Action {
     StemSolo(usize),
     StemAll,
     StemClear,
+    /// Delete one song's stems.
+    StemDelete(i64),
+    /// Show one song's stems in Explorer / Finder.
+    StemOpen(i64),
     Continue,
     Trainer,
     TapTempo,
@@ -2539,6 +2545,8 @@ struct App {
 
     // ---- practice tools
     wave: (i64, Option<Vec<u8>>),
+    /// The playing song's fine outline (a low and high per millisecond), held only while it plays.
+    wave_fine: (i64, Option<Vec<[i8; 2]>>),
     focus_mode: bool,
     more: bool,
     /// stems: 0 idle, 1 downloading the tool, 2 splitting a track
@@ -3358,6 +3366,7 @@ impl App {
             f_note: String::new(),
             show_form: false,
             wave: (0, None),
+            wave_fine: (0, None),
             focus_mode: false,
             more: false,
             stem_busy: 0,

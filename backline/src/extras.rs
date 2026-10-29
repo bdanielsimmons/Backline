@@ -1191,6 +1191,7 @@ impl App {
             .or_else(|| crate::meta::get(t.id).and_then(|m| m.bpm).map(u32::from))
             .unwrap_or(0);
         self.wave = (t.id, None);
+        self.wave_fine = (t.id, None);
         self.sync_loop();
     }
 
@@ -1230,28 +1231,37 @@ impl App {
     }
 
     pub(crate) fn start_wave(&mut self, id: i64, bytes: &[u8]) {
-        if self.wave.0 == id && self.wave.1.is_some() {
+        if self.wave.0 == id && self.wave.1.is_some() && self.wave_fine.0 == id && self.wave_fine.1.is_some() {
             return;
         }
         self.wave = (id, None);
+        self.wave_fine = (id, None);
+        // the envelope is kept on disk; the fine outline (for zooming in) is worked out again each time
+        let mut cached = false;
         if let Ok(b) = std::fs::read(wave_path(id)) {
             if b.len() > 50 {
                 self.wave = (id, Some(b));
-                return;
+                cached = true;
             }
         }
         let bytes = bytes.to_vec();
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
-            let w = sources::wave_peaks(bytes);
-            if let Some(w) = &w {
-                let p = wave_path(id);
-                if let Some(d) = p.parent() {
-                    let _ = std::fs::create_dir_all(d);
+            let d = sources::wave_data(bytes);
+            if !cached {
+                let w = d.as_ref().map(|d| d.0.clone());
+                if let Some(w) = &w {
+                    let p = wave_path(id);
+                    if let Some(d) = p.parent() {
+                        let _ = std::fs::create_dir_all(d);
+                    }
+                    let _ = std::fs::write(&p, w);
                 }
-                let _ = std::fs::write(&p, w);
+                let _ = tx.send(Msg::Wave(id, w));
             }
-            let _ = tx.send(Msg::Wave(id, w));
+            if let Some((_, f)) = d {
+                let _ = tx.send(Msg::WaveFine(id, f));
+            }
             ctx.request_repaint();
         });
     }
@@ -1694,6 +1704,11 @@ impl App {
             Msg::Wave(id, w) => {
                 if self.wave.0 == id {
                     self.wave.1 = w;
+                }
+            }
+            Msg::WaveFine(id, f) => {
+                if self.wave_fine.0 == id {
+                    self.wave_fine.1 = Some(f);
                 }
             }
             Msg::Exported(r) => {
@@ -3387,6 +3402,17 @@ impl App {
                 self.stem_on = [true; 4];
                 self.set_note("ALL STEMS DELETED");
             }
+            Action::StemDelete(id) => {
+                // back to the whole song first if a mix of stems is playing
+                if self.cur_track().is_some_and(|t| t.id == id) && self.stem_on != [true; 4] {
+                    self.apply_mix([true; 4]);
+                }
+                let _ = std::fs::remove_dir_all(stems::stems_dir(id));
+                stems::forget_split();
+                self.stem_on = [true; 4];
+                self.set_note("THIS SONG'S STEMS DELETED");
+            }
+            Action::StemOpen(id) => stems::open_folder(id),
             Action::CmImport(own) => {
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {

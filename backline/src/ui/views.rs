@@ -4021,7 +4021,26 @@ impl App {
         if active {
             let p = ui.painter().clone();
             // waveform
-            if let (Some(id), (wid, Some(w))) = (tid, &self.wave) {
+            // zoomed in to under ~40 ms a pixel: the fine outline, every pick attack its own spike; the part already
+            // played a little brighter
+            let played = |x: f32| if x < at(shown) { pal().ink2.gamma_multiply(0.85) } else { pal().ink2.gamma_multiply(0.55) };
+            let fine = match (tid, &self.wave_fine) {
+                (Some(id), (fid, Some(f))) if *fid == id && f.len() > 2 && span / inn.width().max(1.0) < 0.04 => Some(f),
+                _ => None,
+            };
+            if let Some(f) = fine {
+                let cols = inn.width().max(1.0) as usize;
+                let (mid, half) = (inn.center().y, inn.height() * 0.5);
+                let n = f.len();
+                for c in 0..cols {
+                    let a = (((start + span * c as f32 / cols as f32) * 1000.0) as usize).min(n - 1);
+                    let b = (((start + span * (c + 1) as f32 / cols as f32) * 1000.0) as usize).clamp(a + 1, n);
+                    let (lo, hi) = f[a..b].iter().fold((0i8, 0i8), |(l, h), p| (l.min(p[0]), h.max(p[1])));
+                    let x = inn.min.x + c as f32;
+                    let (y0, y1) = (mid - hi as f32 / 127.0 * half, mid - lo as f32 / 127.0 * half);
+                    fill_rect(&p, Rect::from_min_max(Pos2::new(x, y0.min(mid - 0.5)), Pos2::new(x + 1.0, y1.max(mid + 0.5))), played(x));
+                }
+            } else if let (Some(id), (wid, Some(w))) = (tid, &self.wave) {
                 if *wid == id && w.len() > 2 {
                     let cols = (inn.width() / 2.0).max(1.0) as usize;
                     let mid = inn.center().y;
@@ -4037,7 +4056,7 @@ impl App {
                         fill_rect(
                             &p,
                             Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)),
-                            pal().ink2.gamma_multiply(0.55),
+                            played(x),
                         );
                     }
                 }
@@ -4956,6 +4975,7 @@ impl App {
             }
             _ => {
                 let mut stem_note: Option<String> = None;
+                let mut stem_files = None;
                 centered_row(ui, "stems_0", |ui| {
                     label(ui, "STEMS", 56.0);
                     if self.stem_busy == 1 {
@@ -5002,6 +5022,7 @@ impl App {
                     if let Some(id) = tid {
                         let (this, all) = stems::sizes(id);
                         stem_note = Some(format!("THIS SONG'S STEMS: {}   ALL STEMS: {}", cache::fmt_size(this), cache::fmt_size(all)));
+                        stem_files = Some(id);
                     }
                 } else {
                     let len = self.track_len();
@@ -5019,6 +5040,35 @@ impl App {
                 });
                 if let Some(t) = stem_note {
                     dim_centered(ui, &t);
+                }
+                // this song's stem files: show them, or delete them (a second click to be sure)
+                if let Some(id) = stem_files {
+                    let sure_key = egui::Id::new("stem_del_sure");
+                    let now = ui.input(|i| i.time);
+                    let sure = ui.ctx().data(|d| d.get_temp::<(i64, f64)>(sure_key)).is_some_and(|(i, t)| i == id && now - t < 4.0);
+                    centered_row(ui, "stems_files", |ui| {
+                        if retro_btn_w(ui, "OPEN FOLDER", 130.0, false)
+                            .tip("Shows this song's four stem files (drums, bass, vocals, other) on your computer.")
+                            .clicked()
+                        {
+                            acts.push(Action::StemOpen(id));
+                        }
+                        let text = if sure { "CLICK AGAIN TO DELETE" } else { "DELETE THESE STEMS" };
+                        if retro_btn_w(ui, text, 210.0, sure)
+                            .tip("Deletes this song's stems to free space. The song itself stays. You can split it again any time.")
+                            .clicked()
+                        {
+                            if sure {
+                                ui.ctx().data_mut(|d| d.remove::<(i64, f64)>(sure_key));
+                                acts.push(Action::StemDelete(id));
+                            } else {
+                                ui.ctx().data_mut(|d| d.insert_temp(sure_key, (id, now)));
+                            }
+                        }
+                    });
+                    if sure {
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+                    }
                 }
             }
         }
