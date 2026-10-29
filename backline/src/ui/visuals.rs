@@ -465,7 +465,15 @@ impl Pipes {
             let c = [(self.rnd() * NX as f32) as i32, (self.rnd() * NY as f32) as i32, (self.rnd() * NZ as f32) as i32];
             if self.free(c) {
                 self.used.insert((c[0], c[1], c[2]));
-                let col = (self.rnd() * PIPE_COLS.len() as f32) as usize % PIPE_COLS.len();
+                // a colour not already on screen, when there is one left
+                let taken: Vec<usize> = self.heads.iter().map(|h| h.2).collect();
+                let mut col = (self.rnd() * PIPE_COLS.len() as f32) as usize % PIPE_COLS.len();
+                for _ in 0..PIPE_COLS.len() {
+                    if !taken.contains(&col) {
+                        break;
+                    }
+                    col = (col + 1) % PIPE_COLS.len();
+                }
                 let d = (self.rnd() * 6.0) as usize % 6;
                 self.heads.push((c, d, col, true));
                 self.segs.push((c, c, col, true));
@@ -522,7 +530,7 @@ impl Pipes {
         }
         // a fixed camera a little above and to the side, as the screensaver had
         let (ay, ax) = (0.5f32, 0.35f32);
-        let scale = r.height().min(r.width() * 0.62) * 1.1;
+        let scale = r.height().min(r.width() * 0.62) * 1.35;
         let proj = |c: [i32; 3]| -> (Pos2, f32, f32) {
             let (mut x, mut y, mut z) =
                 (c[0] as f32 - (NX - 1) as f32 / 2.0, c[1] as f32 - (NY - 1) as f32 / 2.0, c[2] as f32 - (NZ - 1) as f32 / 2.0);
@@ -538,18 +546,30 @@ impl Pipes {
             Ball(Pos2, f32, usize),
         }
         let mut items: Vec<(f32, It)> = Vec::new();
+        // the nearest tube touching each cell: a ball there is drawn just in front of it, never under a tube's cut end
+        let mut near: std::collections::HashMap<[i32; 3], f32> = Default::default();
+        for &(a, b, _, _) in &self.segs {
+            if a != b {
+                let z = (proj(a).2 + proj(b).2) / 2.0;
+                for c in [a, b] {
+                    let e = near.entry(c).or_insert(f32::MAX);
+                    *e = e.min(z);
+                }
+            }
+        }
+        let ball_z = |c: [i32; 3], z: f32| near.get(&c).copied().unwrap_or(z).min(z) - 0.05;
         for &(a, b, col, joint) in &self.segs {
             let ((pa, fa, za), (pb, fb, zb)) = (proj(a), proj(b));
             if a != b {
                 items.push(((za + zb) / 2.0, It::Tube(pa, 0.3 * fa, pb, 0.3 * fb, col)));
             }
             if joint {
-                items.push((za - 0.35, It::Ball(pa, 0.3 * fa * 1.3, col)));
+                items.push((ball_z(a, za), It::Ball(pa, 0.3 * fa * 1.3, col)));
             }
         }
         for &(c, _, col, _) in &self.heads {
             let (pc, fc, zc) = proj(c);
-            items.push((zc - 0.3, It::Ball(pc, 0.3 * fc, col)));
+            items.push((ball_z(c, zc), It::Ball(pc, 0.3 * fc * 1.06, col)));
         }
         items.sort_by(|a, b| b.0.total_cmp(&a.0));
         let shade = |c: [u8; 3], k: f32| {
@@ -677,7 +697,7 @@ impl App {
         (f, dt)
     }
 
-    /// The chosen visuals in `r` (slot: 0 full screen, 1 Now Playing, 2 the deck, 3 the playlist bar's).
+    /// The chosen visuals in `r` (slot: 0 full screen, 2 the deck, 3 the playlist bar's).
     pub(crate) fn vis_paint(&mut self, ui: &egui::Ui, r: Rect, slot: u8) {
         let (f, dt) = self.vis_frame(ui.ctx());
         let preset = self.vis_preset.min(PRESETS.len() - 1);

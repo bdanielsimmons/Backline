@@ -2319,8 +2319,6 @@ struct App {
     // ---- visuals (ui/visuals.rs)
     vis_gl: Arc<Mutex<visuals::Gl>>,
     vis_preset: usize,
-    /// Visuals behind Now Playing.
-    vis_np: bool,
     vis_full: bool,
     vis_saver: bool,
     vis_was_fs: bool,
@@ -3232,7 +3230,6 @@ impl App {
             show_spec: true,
             vis_gl: Arc::new(Mutex::new(visuals::Gl::default())),
             vis_preset: 0,
-            vis_np: false,
             vis_full: false,
             vis_saver: false,
             vis_was_fs: false,
@@ -3803,7 +3800,6 @@ impl App {
         if let Some(v) = st["vis_preset"].as_str() {
             app.vis_preset = visuals::find(v);
         }
-        app.vis_np = st["vis_np"].as_bool().unwrap_or(false);
         if let Some(m) = st["vis_idle"].as_u64() {
             app.vis_idle = m as u32;
         }
@@ -4446,7 +4442,6 @@ impl App {
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
             "vis_preset": visuals::PRESETS[self.vis_preset.min(visuals::PRESETS.len() - 1)].name,
-            "vis_np": self.vis_np,
             "vis_idle": self.vis_idle,
             "tour_seen": self.tour_seen,
             "icon_words": self.icon_names,
