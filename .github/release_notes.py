@@ -3,7 +3,8 @@
 Usage: release_notes.py <new tag> <previous tag or ""> <notes file to write>
 
 Every commit since the previous release becomes a line in the notes (its subject, plus any "- " points
-in its body). A body line starting with "New:" marks a big feature: it is listed first in the notes and
+in its body). Unless the newest commit (the release) has a "Notes:" line in its body: then only the "- " lines
+under it are the notes, a short summary of what changes for the person using it. A body line starting with "New:" marks a big feature: it is listed first in the notes and
 added to the top of the README's What's new list, without a version number and only once (the last 10
 are kept).
 """
@@ -19,7 +20,21 @@ log = subprocess.run(
 ).stdout
 
 changes, new = [], []
-for entry in log.split("\x1e")[1:]:
+entries = log.split("\x1e")[1:]
+# a summary written for the release replaces the list of every commit
+summary = []
+if entries:
+    body = entries[0].partition("\x1f")[2]
+    lines = [l.strip() for l in body.splitlines()]
+    if "Notes:" in lines:
+        for l in lines[lines.index("Notes:") + 1:]:
+            if l.startswith("- "):
+                summary.append(l)
+            elif l.lower().startswith("new:"):
+                continue
+            elif l and not l.lower().startswith("co-authored-by"):
+                break
+for entry in entries:
     subject, _, body = entry.partition("\x1f")
     subject = re.sub(r"\s*\[(no )?release\]", "", subject.strip())
     if subject.startswith("README: what's new") or subject in ("", "Release"):
@@ -36,6 +51,11 @@ for entry in log.split("\x1e")[1:]:
         else:
             lines[-1] += " " + s  # a wrapped line continues the point above it
     changes.append("\n".join(lines))
+
+if summary:
+    changes = summary
+    # and the big features are the ones the release names
+    new = [l.strip()[4:].strip() for l in entries[0].partition("")[2].splitlines() if l.strip().lower().startswith("new:")]
 
 out = []
 if new:

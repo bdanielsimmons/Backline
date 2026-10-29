@@ -250,7 +250,8 @@ enum Msg {
     Notes(i64, u8, Option<notes::NoteMap>),
     Exported(Result<String, String>),
     /// LOOK UP result: tune name, who wrote it, other versions found on Tidal
-    Lookup(String, Result<sources::Work, String>, Vec<(Track, u32)>),
+    /// A tune looked up: who wrote it, and recordings (from Tidal, or YouTube without it: those come with their links).
+    Lookup(String, Result<sources::Work, String>, Vec<(Track, u32)>, Vec<store::Ext>),
     /// who wrote a tune and when, looked up on its own when the tune is opened
     TuneDetails(String, Result<sources::Work, String>),
     Chart(String, Result<(String, String, String), (String, Vec<String>)>),
@@ -2319,6 +2320,10 @@ struct App {
     // ---- visuals (ui/visuals.rs)
     vis_gl: Arc<Mutex<visuals::Gl>>,
     vis_preset: usize,
+    /// Visuals in Now Playing, in place of the cover.
+    vis_np: bool,
+    /// Automatic gain and beats for the visuals.
+    vis_agc: visuals::Agc,
     vis_full: bool,
     vis_saver: bool,
     vis_was_fs: bool,
@@ -3229,7 +3234,9 @@ impl App {
             art_view: false,
             show_spec: true,
             vis_gl: Arc::new(Mutex::new(visuals::Gl::default())),
-            vis_preset: 0,
+            vis_preset: visuals::find("Down the Drain"),
+            vis_np: false,
+            vis_agc: Default::default(),
             vis_full: false,
             vis_saver: false,
             vis_was_fs: false,
@@ -3797,6 +3804,7 @@ impl App {
         }
         // always the best quality Tidal gives (it sends lossless when it will, else 320): no setting
         app.prefer_lossless = true;
+        app.vis_np = st["vis_np"].as_bool().unwrap_or(false);
         if let Some(v) = st["vis_preset"].as_str() {
             app.vis_preset = visuals::find(v);
         }
@@ -4270,6 +4278,20 @@ impl App {
                 app.sec = Sec::Diary;
                 app.diary_tab = 1;
             }
+            // Now Playing with the tour song (BACKLINE_VIS=<preset>: with visuals in place of the cover)
+            Ok("nowplaying") => {
+                if let Some(p) = tour_song::ready() {
+                    let t = sources::ext_for_file(&p).to_track();
+                    app.srcmap.insert(t.id, Src::File(p));
+                    app.queue = Arc::new(vec![t]);
+                    app.play_index(0);
+                }
+                app.art_view = true;
+                if let Ok(v) = std::env::var("BACKLINE_VIS") {
+                    app.vis_preset = visuals::find(&v);
+                    app.vis_np = true;
+                }
+            }
             Ok("visuals") => {
                 if let Ok(v) = std::env::var("BACKLINE_VIS") {
                     app.vis_preset = visuals::find(&v);
@@ -4441,7 +4463,8 @@ impl App {
             "volume": self.volume,
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
-            "vis_preset": visuals::PRESETS[self.vis_preset.min(visuals::PRESETS.len() - 1)].name,
+            "vis_preset": visuals::save_name(self.vis_preset),
+            "vis_np": self.vis_np,
             "vis_idle": self.vis_idle,
             "tour_seen": self.tour_seen,
             "icon_words": self.icon_names,

@@ -2950,10 +2950,15 @@ impl App {
 
         // ---- other versions (only after LOOK UP)
         if self.look_busy {
-            dim_line(ui, "SEARCHING... (WHO WROTE IT FIRST, THEN TIDAL: IT TAKES A FEW SECONDS)", 2.0, pal().ink2);
+            dim_line(ui, "SEARCHING... (WHO WROTE IT FIRST, THEN THE RECORDINGS: IT TAKES A FEW SECONDS)", 2.0, pal().ink2);
         } else if self.look_for == tname && self.look_tracks.is_empty() {
             // looked up, and nothing came back worth studying
-            dim_line(ui, "NO RECORDINGS FOUND ON TIDAL. TRY ITS FULL TITLE, OR TITLE AND ARTIST, IN THE BOX ABOVE", 1.0, pal().ink2);
+            let msg = if crate::sources::ytdlp_path().is_none() && !self.api.has_token() {
+                "NO RECORDINGS FOUND. WITHOUT TIDAL, BACKLINE LOOKS ON YOUTUBE: GET YT-DLP UNDER YOUTUBE (IT'S FREE)"
+            } else {
+                "NO RECORDINGS FOUND. TRY ITS FULL TITLE, OR TITLE AND ARTIST, IN THE BOX ABOVE"
+            };
+            dim_line(ui, msg, 1.0, pal().ink2);
         }
         if self.look_for == tname && !self.look_tracks.is_empty() {
             section_header(ui, "RECORDINGS TO STUDY");
@@ -5084,8 +5089,24 @@ impl App {
                                                     acts.push(Action::Transpose(-c - self.semis));
                                                 }
                                             }
+                                            Some((id, _, conf)) if Some(id) == cur_id && conf >= 0.0 && !self.tuning_busy => {
+                                                if retro_btn_w(ui, "IN TUNE (A440)", 140.0, true)
+                                                    .tip("This recording is at A440 already: play along as it is. Click to measure again.")
+                                                    .clicked()
+                                                {
+                                                    acts.push(Action::FindTuning);
+                                                }
+                                            }
                                             _ => {
-                                                if retro_btn_w(ui, if self.tuning_busy { "LISTENING..." } else { "FIND TUNING" }, 116.0, false)
+                                                let unclear = matches!(self.tuning, Some((id, _, conf)) if Some(id) == cur_id && conf < 0.0);
+                                                let label = if self.tuning_busy {
+                                                    "LISTENING..."
+                                                } else if unclear {
+                                                    "UNCLEAR: TRY AGAIN"
+                                                } else {
+                                                    "FIND TUNING"
+                                                };
+                                                if retro_btn_w(ui, label, if unclear { 160.0 } else { 116.0 }, false)
                                                     .tip("Measures how far this recording is from A440 and offers to fix it. Old records and some modern tracks are off.")
                                                     .clicked()
                                                 {

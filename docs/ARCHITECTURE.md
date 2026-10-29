@@ -100,7 +100,7 @@ Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font on
 
 - Test copies use a separate profile: `BACKLINE_HOME=<folder>`; they open off-screen, never take focus, and make no sound.
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
-- `BACKLINE_OPEN=<name>` opens a screen at start: practice trainer pitch stems zoom lists loops loopsong groups prog news mini mini_eq_pl mine yt diary listening
+- `BACKLINE_OPEN=<name>` opens a screen at start: practice trainer pitch stems zoom lists loops loopsong groups prog news mini mini_eq_pl mine yt diary listening visuals nowplaying
   diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks triads cluster group export superimpose
   fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine ear
   (BACKLINE_EAR=<drill index 0-12> opens a drill with a question answered; the atonal ones are 8-12) atonal

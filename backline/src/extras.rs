@@ -1465,7 +1465,19 @@ impl App {
                 Err(e) => self.set_err(format!("IMPORT: {}", e)),
             },
             Msg::News(r) => match r {
-                Ok(n) if !n.is_empty() => self.news = Some(n),
+                Ok(mut n) if !n.is_empty() => {
+                    let num = |t: &str| t.rsplit('.').next().and_then(|x| x.parse::<u64>().ok()).unwrap_or(0);
+                    let (seen, me) = (self.seen_build, crate::update::build());
+                    if seen > 0 && seen < me {
+                        let newer: Vec<_> = n.iter().filter(|(t, _)| num(t) > seen).cloned().collect();
+                        if !newer.is_empty() {
+                            n = newer;
+                        }
+                    } else {
+                        n.truncate(3);
+                    }
+                    self.news = Some(n);
+                }
                 Ok(_) => self.set_note("NO RELEASE NOTES FOUND"),
                 Err(e) => self.set_err(format!("WHAT'S NEW: {}", e)),
             },
@@ -1777,8 +1789,12 @@ impl App {
                     Err(e) => self.set_err(format!("STEM TOOL DOWNLOAD FAILED: {}", e)),
                 }
             }
-            Msg::Lookup(name, info, tracks) => {
+            Msg::Lookup(name, info, tracks, found) => {
                 self.look_busy = false;
+                // YouTube recordings: playable from the list like any other song
+                for e in &found {
+                    self.register(&e.to_version());
+                }
                 match info {
                     Ok(w) => {
                         if w.writers.is_empty() {
@@ -1946,7 +1962,10 @@ impl App {
                         }
                         self.set_note(&how);
                     }
-                    _ => self.set_note("COULDN'T TELL. THERE IS TOO LITTLE PITCHED MUSIC TO MEASURE"),
+                    _ => {
+                        self.tuning = Some((id, 0, -1.0));
+                        self.set_note("COULDN'T TELL. THERE IS TOO LITTLE PITCHED MUSIC TO MEASURE");
+                    }
                 }
             }
             Msg::UpdateStaged(r) => match r {
@@ -3057,8 +3076,30 @@ impl App {
                     };
                     let composer = listed.unwrap_or_else(|| info.as_ref().map(|w| w.writers.clone()).unwrap_or_default());
                     let composer = composer.split(|c| c == ',' || c == '\n').next().unwrap_or("").replace(" (words)", "");
-                    let tracks = api.popular(&name, &known, style, composer.trim()).unwrap_or_default();
-                    let _ = tx.send(Msg::Lookup(tune_name, info, tracks));
+                    let mut tracks = api.popular(&name, &known, style, composer.trim()).unwrap_or_default();
+                    // no Tidal (or nothing there): recordings from YouTube instead, so everyone gets suggestions
+                    let mut found = Vec::new();
+                    if tracks.is_empty() && sources::ytdlp_path().is_some() {
+                        let q = match style {
+                            1 if !composer.trim().is_empty() => format!("{} {} jazz", name, composer.trim()),
+                            1 => format!("{} jazz standard", name),
+                            2 => format!("{} gospel", name),
+                            _ => name.clone(),
+                        };
+                        if let Ok(mut list) = sources::yt_search(&q) {
+                            // recordings, not lessons or play-alongs
+                            list.retain(|e| {
+                                let t = e.title.to_lowercase();
+                                e.dur < 720.0
+                                    && !["lesson", "tutorial", "play-along", "play along", "playalong", "how to", "backing track", "tab)", "tabs"]
+                                        .iter()
+                                        .any(|w| t.contains(w))
+                            });
+                            tracks = list.iter().map(|e| (e.to_track(), 0)).collect();
+                            found = list;
+                        }
+                    }
+                    let _ = tx.send(Msg::Lookup(tune_name, info, tracks, found));
                     ctx.request_repaint();
                 });
             }

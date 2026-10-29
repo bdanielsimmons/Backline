@@ -431,6 +431,38 @@ pub fn sc_search(query: &str) -> Result<Vec<Ext>, String> {
     Ok(list)
 }
 
+/// Search YouTube (no account needed): the first dozen videos.
+pub fn yt_search(query: &str) -> Result<Vec<Ext>, String> {
+    let exe = ytdlp_path().ok_or_else(|| "yt-dlp is not installed - press GET YT-DLP".to_string())?;
+    let out = command(&exe)
+        .args(["--no-warnings", "--flat-playlist", "--dump-json"])
+        .arg(format!("ytsearch12:{}", query))
+        .output()
+        .map_err(|e| format!("could not run yt-dlp: {}", e))?;
+    let mut list: Vec<Ext> = Vec::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let Some(vid) = v["id"].as_str().filter(|s| valid_id(s)) else { continue };
+        if list.iter().any(|e| e.src == vid) {
+            continue;
+        }
+        list.push(Ext {
+            kind: "yt".to_string(),
+            id: hash_id(&format!("yt:{}", vid)),
+            src: vid.to_string(),
+            title: v["title"].as_str().unwrap_or("YouTube clip").to_string(),
+            artist: v["channel"].as_str().or_else(|| v["uploader"].as_str()).unwrap_or("YouTube").replace(" - Topic", ""),
+            album: String::new(),
+            dur: v["duration"].as_f64().unwrap_or(0.0) as f32,
+            cover: format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", vid),
+        });
+    }
+    if list.is_empty() {
+        return Err(if out.status.success() { "nothing found".to_string() } else { last_line(&out.stderr) });
+    }
+    Ok(list)
+}
+
 /// A SoundCloud track, playlist, likes page or profile link: list what is in it (first 100).
 pub fn sc_list(url: &str) -> Result<Vec<Ext>, String> {
     let exe = ytdlp_path().ok_or_else(|| "yt-dlp is not installed - press GET YT-DLP".to_string())?;

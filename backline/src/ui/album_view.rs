@@ -112,8 +112,13 @@ impl App {
             p.add(egui::Shape::mesh(v));
         }
 
-        // ---- visualizer, soft and behind everything (only under the cover when lyrics split the view)
-        if self.show_spec {
+        // ---- visuals, in place of the cover (with or without one), under the words and the controls
+        if self.vis_np {
+            self.vis_paint(ui, full, 1);
+        }
+
+        // ---- visualizer, soft and behind everything (only under the cover when lyrics split the view; not with visuals)
+        if self.show_spec && !self.vis_np {
             let zone = if lyrics_on && self.spec_lyr == 0 {
                 Rect::from_min_max(full.min, Pos2::new(art_zone.max.x + 14.0, full.max.y))
             } else {
@@ -138,6 +143,8 @@ impl App {
             }
         }
 
+        // ---- the cover (the visuals take its place when on)
+        if !self.vis_np {
         // ---- a slight tilt, only while the mouse is on the cover itself (no zoom)
         let reach = a / 2.0;
         let calm = crate::skin::calm();
@@ -250,6 +257,8 @@ impl App {
                     }
                 }
             }
+        }
+
         }
 
         // ---- caption
@@ -638,10 +647,11 @@ impl App {
                 if sp.secondary_clicked() {
                     self.viz_panel = Some(1);
                 }
-                let vb = icon_btn(ui, &IC_VIS, false, ink)
-                    .tip("Visuals: the whole screen moving to the music (G). Right-click to pick one.");
+                let vb = icon_btn(ui, &IC_VIS, self.vis_np, ink)
+                    .tip("Visuals in place of the cover, the controls still here. Right-click to pick one. G: full screen.");
                 if vb.clicked() {
-                    acts.push(Action::Visuals);
+                    self.vis_np = !self.vis_np;
+                    self.dirty = true;
                 }
                 vb.context_menu(|ui| self.vis_menu(ui));
                 if icon_btn(ui, if fs { &IC_WIN } else { &IC_FULL }, false, ink)

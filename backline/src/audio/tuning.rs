@@ -88,7 +88,8 @@ fn spectrum(x: &[f32], sr: f32, from: f32, to: f32) -> Option<(Vec<f32>, f32)> {
 /// Offset of the recording from A440 in cents (positive = sharp) and how clear the answer is.
 /// `x` is mono audio at `sr` Hz.
 pub fn offset_cents(x: &[f32], sr: f32) -> Option<(i32, f32)> {
-    let (white, bin_hz) = spectrum(x, sr, 10.0, 60.0)?;
+    // (two minutes from 10 s in: enough tonal music to measure, even after a drum or talking intro)
+    let (white, bin_hz) = spectrum(x, sr, 10.0, 130.0)?;
     let score = |cents: f32| -> f32 {
         let mut s = 0.0;
         for m in 52..=100 {
@@ -231,7 +232,7 @@ pub fn decode_mono(bytes: Vec<u8>, secs: f32) -> Option<(Vec<f32>, f32)> {
 
 /// Decode a stored track and measure its tuning.
 pub fn detect(bytes: Vec<u8>) -> Option<(i32, f32)> {
-    let (x, sr) = decode_mono(bytes, 65.0)?;
+    let (x, sr) = decode_mono(bytes, 135.0)?;
     offset_cents(&x, sr)
 }
 // WRAPPER-END
