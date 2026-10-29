@@ -14,6 +14,8 @@ mod decode;
 mod intro;
 #[path = "audio/media.rs"]
 mod media;
+#[path = "audio/notes.rs"]
+mod notes;
 #[path = "audio/player.rs"]
 mod player;
 #[path = "audio/record.rs"]
@@ -242,6 +244,8 @@ enum Msg {
     Wave(i64, Option<Vec<u8>>),
     /// The waveform's fine outline (`sources::wave_data`), for zooming in.
     WaveFine(i64, Vec<[i8; 2]>),
+    /// The note view's map for a song and the stems it was made from (0: the whole song).
+    Notes(i64, u8, Option<notes::NoteMap>),
     Exported(Result<String, String>),
     /// LOOK UP result: tune name, who wrote it, other versions found on Tidal
     Lookup(String, Result<sources::Work, String>, Vec<(Track, u32)>),
@@ -2294,6 +2298,13 @@ struct App {
     wv_free: bool,
     /// the practice waveform's height (1 = normal; you drag it), kept with your settings
     wv_h: f32,
+    /// The waveform shows the song by pitch (the note view) instead of loudness.
+    wv_notes: bool,
+    /// The note view's map: the song, the stems it was made from (0: the whole song), the map once made.
+    notes: (i64, u8, Option<Arc<notes::NoteMap>>),
+    notes_busy: bool,
+    /// The map as pictures, 2048 columns each (made when first drawn).
+    notes_tex: Vec<egui::TextureHandle>,
     bands: Vec<f32>,
     peaks: Vec<f32>,
     show_log: bool,
@@ -3187,6 +3198,10 @@ impl App {
             wv_start: 0.0,
             wv_free: false,
             wv_h: 1.0,
+            wv_notes: false,
+            notes: (0, 0, None),
+            notes_busy: false,
+            notes_tex: Vec::new(),
             bands: vec![0.0; 32],
             peaks: vec![0.0; 32],
             show_log: false,
@@ -3770,6 +3785,7 @@ impl App {
         }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
+        app.wv_notes = PRACTICE && st["wv_notes"].as_bool().unwrap_or(false);
         if let Some(v) = st["wv_h"].as_f64() {
             app.wv_h = v as f32;
         }
@@ -4386,6 +4402,7 @@ impl App {
             "tr_whole": self.tr_whole,
             "mark_col": self.mark_col,
             "wv_h": self.wv_h,
+            "wv_notes": self.wv_notes,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],

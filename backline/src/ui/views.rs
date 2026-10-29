@@ -3942,7 +3942,98 @@ impl App {
         self.keep_for_practice(id);
     }
 
+    /// The note view in the waveform's place: the song by pitch (`notes::NoteMap`) as a heat map, a keyboard down the
+    /// left lighting the loudest notes where it's playing, and the name of the note under the mouse.
+    #[allow(clippy::too_many_arguments)]
+    fn notes_strip(&mut self, ui: &egui::Ui, p: &egui::Painter, keys: Rect, inn: Rect, start: f32, span: f32, shown: f32, id: i64) {
+        use crate::notes::{FPS, LO, ROWS};
+        self.start_notes(id);
+        let Some(m) = self.notes.2.clone().filter(|_| self.notes.0 == id) else {
+            let msg = if self.notes_busy {
+                "WORKING OUT THE NOTES..."
+            } else if self.notes.0 == id && self.notes.1 == 0 && stems::have_stems(id) {
+                "TURN A STEM ON TO SEE ITS NOTES"
+            } else {
+                "NO NOTES TO SHOW"
+            };
+            ptext(p, inn.center(), Align::Center, msg, 1.0, pal().ink2);
+            return;
+        };
+        const CH: usize = 2048;
+        if self.notes_tex.is_empty() {
+            let (lo, hi) = (pal().lcd, pal().ink);
+            let lut: Vec<egui::Color32> = (0..256)
+                .map(|i| {
+                    let f = (i as f32 / 255.0).powf(0.8);
+                    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * f) as u8;
+                    egui::Color32::from_rgb(mix(lo.r(), hi.r()), mix(lo.g(), hi.g()), mix(lo.b(), hi.b()))
+                })
+                .collect();
+            for k in 0..m.cols.div_ceil(CH) {
+                let (c0, c1) = (k * CH, ((k + 1) * CH).min(m.cols));
+                let w = c1 - c0;
+                let mut img = egui::ColorImage::new([w, ROWS], lo);
+                for c in c0..c1 {
+                    for r in 0..ROWS {
+                        img.pixels[(ROWS - 1 - r) * w + (c - c0)] = lut[m.at(c, r) as usize];
+                    }
+                }
+                self.notes_tex.push(ui.ctx().load_texture(format!("notes{}_{}", id, k), img, egui::TextureOptions::LINEAR));
+            }
+        }
+        let (c0, c1) = (start * FPS, (start + span) * FPS);
+        let x_of = |c: f32| inn.min.x + (c / FPS - start) / span * inn.width();
+        for (k, tex) in self.notes_tex.iter().enumerate() {
+            let w = tex.size()[0] as f32;
+            let (k0, k1) = ((k * CH) as f32, (k * CH) as f32 + w);
+            let (a, b) = (c0.max(k0), c1.min(k1));
+            if b <= a {
+                continue;
+            }
+            let r = Rect::from_min_max(Pos2::new(x_of(a), inn.min.y), Pos2::new(x_of(b), inn.max.y));
+            let uv = Rect::from_min_max(Pos2::new((a - k0) / w, 0.0), Pos2::new((b - k0) / w, 1.0));
+            p.image(tex.id(), r, uv, egui::Color32::WHITE);
+        }
+        // a faint line at every C, and the keyboard, its keys lit where the sound is loudest now
+        let rh = inn.height() / ROWS as f32;
+        let y_of = |r: usize| inn.max.y - (r + 1) as f32 * rh;
+        let col = ((shown * FPS) as usize).min(m.cols.saturating_sub(1));
+        let peak = (0..ROWS).map(|r| m.at(col, r)).max().unwrap_or(0) as u32;
+        for r in 0..ROWS {
+            let midi = LO + r as i32;
+            let y = y_of(r);
+            if midi % 12 == 0 {
+                fill_rect(p, Rect::from_min_max(Pos2::new(inn.min.x, y + rh - 0.5), Pos2::new(inn.max.x, y + rh)), pal().ink2.gamma_multiply(0.25));
+            }
+            let black = matches!(midi.rem_euclid(12), 1 | 3 | 6 | 8 | 10);
+            let lit = peak > 120 && m.at(col, r) as u32 * 10 >= peak * 9;
+            let w = if black { keys.width() * 0.6 } else { keys.width() };
+            let c = if lit {
+                pal().ink
+            } else if black {
+                egui::Color32::from_gray(28)
+            } else {
+                egui::Color32::from_gray(200)
+            };
+            p.rect_filled(Rect::from_min_size(Pos2::new(keys.min.x, y), Vec2::new(w, (rh - 0.5).max(0.5))), 0.0, c);
+        }
+        // the note under the mouse
+        if let Some(pp) = ui.input(|i| i.pointer.hover_pos()).filter(|pp| inn.contains(*pp) || keys.contains(*pp)) {
+            const NAMES: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+            let r = (((inn.max.y - pp.y) / rh) as i32).clamp(0, ROWS as i32 - 1);
+            let midi = LO + r;
+            let name = format!("{}{}", NAMES[midi.rem_euclid(12) as usize], midi / 12 - 1);
+            let at = Pos2::new(pp.x + 12.0, pp.y - 8.0);
+            let w = crate::font::text_w(&name, 1.0) + 8.0;
+            p.rect_filled(Rect::from_min_size(at, Vec2::new(w, 16.0)), 3.0, egui::Color32::from_black_alpha(200));
+            ptext(p, Pos2::new(at.x + 4.0, at.y + 8.0), Align::Min, &name, 1.0, egui::Color32::from_gray(240));
+        }
+    }
+
     fn practice_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32) {
+        // the note view wants room for five octaves
+        let notes_on = self.wv_notes;
+        let wave_h = if notes_on { wave_h.max(190.0) } else { wave_h };
         let dur = self.track_len();
         let pos = self.pos();
         let tid = self.cur_track().map(|t| t.id);
@@ -3980,7 +4071,12 @@ impl App {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
         inset(ui.painter(), bar, pal().lcd);
-        let inn = bar.shrink2(Vec2::new(5.0, 5.0));
+        let mut inn = bar.shrink2(Vec2::new(5.0, 5.0));
+        // (the note view's keyboard down the left)
+        let keys = Rect::from_min_max(inn.min, Pos2::new(inn.min.x + 18.0, inn.max.y));
+        if notes_on {
+            inn.min.x += 22.0;
+        }
         // zoom (like Audacity's): the mouse wheel over the waveform zooms in and out where the mouse is; + and -
         // zoom where the song is playing, FIT shows it all. Only the time gets finer - the height stays
         let dur1 = dur.max(0.001);
@@ -4025,10 +4121,13 @@ impl App {
             // played a little brighter
             let played = |x: f32| if x < at(shown) { pal().ink2.gamma_multiply(0.85) } else { pal().ink2.gamma_multiply(0.55) };
             let fine = match (tid, &self.wave_fine) {
+                _ if notes_on => None,
                 (Some(id), (fid, Some(f))) if *fid == id && f.len() > 2 && span / inn.width().max(1.0) < 0.04 => Some(f),
                 _ => None,
             };
-            if let Some(f) = fine {
+            if let (true, Some(id)) = (notes_on, tid) {
+                self.notes_strip(ui, &p, keys, inn, start, span, shown, id);
+            } else if let Some(f) = fine {
                 let cols = inn.width().max(1.0) as usize;
                 let (mid, half) = (inn.center().y, inn.height() * 0.5);
                 let n = f.len();
@@ -4265,6 +4364,15 @@ impl App {
                 .clicked()
             {
                 zoom_by(self, 2.0);
+            }
+            // the note view, on or off
+            let nx = w1 + w2 + w3 + 12.0 + chip_w("+ MARK");
+            if crate::chip(ui, chip_at(nx, chip_w("NOTES")), "NOTES", self.wv_notes, "wv_notes")
+                .tip("Shows the song by pitch instead of loudness: brighter means louder at that note. The lowest bright bar is usually the note; fainter copies above it are its overtones. On a split song it uses only the stems you have on, so a solo or bass line stands out. Point at it to see the note's name.")
+                .clicked()
+            {
+                self.wv_notes = !self.wv_notes;
+                self.dirty = true;
             }
             if self.wv_zoom > 1.0
                 && crate::chip(ui, chip_at(w1 + w2 + 6.0, w3), "FIT", false, "wv_fit").tip("Show the whole song again.").clicked()

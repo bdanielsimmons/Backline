@@ -1266,6 +1266,34 @@ impl App {
         });
     }
 
+    /// The note view for the song playing: from the stems switched on when it's split, else the whole song (read
+    /// again in the background). Made once per song and set of stems.
+    pub(crate) fn start_notes(&mut self, id: i64) {
+        let split = stems::have_stems(id) && !self.is_demo(id);
+        let on = self.stem_on;
+        let mask = if split { on.iter().enumerate().fold(0u8, |m, (i, o)| m | ((*o as u8) << i)) } else { 0 };
+        if self.notes.0 == id && self.notes.1 == mask && (self.notes_busy || self.notes.2.is_some()) {
+            return;
+        }
+        self.notes = (id, mask, None);
+        self.notes_tex.clear();
+        if split && mask == 0 {
+            return;
+        }
+        self.notes_busy = true;
+        let src = self.srcmap.get(&id).cloned();
+        let (lossless, api, tx, ctx) = (self.prefer_lossless, self.api.clone(), self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let m = if split {
+                stems::load(id).ok().map(|s| crate::notes::from_stems(&s, on))
+            } else {
+                crate::fetch_audio(&api, id, lossless, false, src).ok().and_then(crate::notes::from_bytes)
+            };
+            let _ = tx.send(Msg::Notes(id, mask, m));
+            ctx.request_repaint();
+        });
+    }
+
     // ------------------------------------------------------------ sources
     /// With keeping songs on: these songs are kept one by one in the background, so they play at once and with no
     /// internet (the ones kept already, or waiting their turn, are skipped). How many were added to the line.
@@ -1704,6 +1732,15 @@ impl App {
             Msg::Wave(id, w) => {
                 if self.wave.0 == id {
                     self.wave.1 = w;
+                }
+            }
+            Msg::Notes(id, mask, m) => {
+                if self.notes.0 == id && self.notes.1 == mask {
+                    self.notes_busy = false;
+                    match m {
+                        Some(m) => self.notes.2 = Some(Arc::new(m)),
+                        None => self.set_err("COULDN'T READ THIS SONG FOR THE NOTE VIEW".to_string()),
+                    }
                 }
             }
             Msg::WaveFine(id, f) => {
