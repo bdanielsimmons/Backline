@@ -3721,7 +3721,7 @@ impl App {
             stack_w: 0.0,
             stack_k: 2.0,
             stack_frac: 1.0,
-            prac_h: 300.0,
+            prac_h: 0.0,
             net_down: false,
             net_try: Instant::now(),
             net_wait: 30,
@@ -4033,8 +4033,9 @@ impl App {
         app.loops_fav = st["loops_fav"].as_bool().unwrap_or(false);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
-        if let Some(h) = st["prac_h"].as_f64() {
-            app.prac_h = (h as f32).clamp(220.0, 900.0);
+        // (a height you dragged; none: as tall as it can be. The old "prac_h" is left behind, so everyone starts tall)
+        if let Some(h) = st["prac_h2"].as_f64() {
+            app.prac_h = if h <= 0.0 { 0.0 } else { (h as f32).clamp(120.0, 900.0) };
         }
         if let Some(c) = st["cols"].as_u64() {
             // settings from before the KEY / BPM column: show it once, it can be turned off from the header
@@ -4445,7 +4446,7 @@ impl App {
             "offline": self.offline,
             "sc_browser": sources::SC_BROWSER.load(Ordering::Relaxed),
             "stack_frac": self.stack_frac,
-            "prac_h": self.prac_h,
+            "prac_h2": self.prac_h,
             "eq_h": self.eq_h_user,
             "deck_zoom": self.deck_zoom,
             "eq_zoom": self.eq_zoom,
@@ -6511,8 +6512,14 @@ impl eframe::App for App {
                 let right_w = screen.width() - lib_w;
                 let inner_w = right_w - 28.0;
                 // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)
-                let mut practice_h =
-                    if !self.practice || focus_skin { 0.0 } else { self.prac_h.clamp(120.0, (screen.height() * 0.6).max(120.0)) };
+                // (0: as tall as it can be, the playlist keeping a few songs)
+                let mut practice_h = if !self.practice || focus_skin {
+                    0.0
+                } else if self.prac_h <= 0.0 {
+                    if skin_k.is_some() { screen.height() } else { (screen.height() * 0.6).max(120.0) }
+                } else {
+                    self.prac_h.clamp(120.0, (screen.height() * 0.6).max(120.0))
+                };
                 let max_inner_h = ((screen.height() - practice_h) * 0.5 - 44.0).max(120.0);
                 let auto_s = (inner_w / 300.0).min(max_inner_h / 138.0).clamp(0.8, 3.0);
                 let mut s = if self.stack_frac >= 0.99 {
@@ -6543,7 +6550,7 @@ impl eframe::App for App {
                         }
                     };
                     let h = screen.height();
-                    if self.practice {
+                    if self.practice && skin_k.is_none() {
                         let room = h - base - eq_part(eq_fit) - per_s * s;
                         if practice_h > room {
                             practice_h = room.max(120.0);
@@ -6636,7 +6643,9 @@ impl eframe::App for App {
                 let (practice_h, eq_h) = if skin_k.is_some() && !focus_skin && !self.queue_hidden {
                     // the playlist's frame (58 skin pixels tall) and four songs
                     let k = skin_k.unwrap_or(1.0);
-                    let min_pl = 58.0 * k + 4.0 * 13.0 * k.min(2.0) + 8.0;
+                    // (practising: two songs, the practice panel getting the rest)
+                    let songs = if self.practice { 2.0 } else { 4.0 };
+                    let min_pl = 58.0 * k + songs * 13.0 * k.min(2.0) + 8.0;
                     let eq_now = if self.show_eq { eq_h } else { 0.0 };
                     let mut p = practice_h;
                     if self.practice {
@@ -6767,7 +6776,7 @@ impl eframe::App for App {
                                     - player_h
                                     - if self.show_eq { eq_h } else { 0.0 }
                                     - 58.0 * self.stack_k
-                                    - 4.0 * 13.0 * self.stack_k.min(2.0)
+                                    - 2.0 * 13.0 * self.stack_k.min(2.0)
                                     - 8.0)
                                     .max(160.0)
                             } else {
@@ -6777,7 +6786,7 @@ impl eframe::App for App {
                             self.dirty = true;
                         }
                         Some(None) => {
-                            self.prac_h = 300.0;
+                            self.prac_h = 0.0;
                             self.dirty = true;
                         }
                         None => {}

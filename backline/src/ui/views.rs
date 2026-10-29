@@ -4062,7 +4062,8 @@ impl App {
     fn practice_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32) {
         // the note view wants room for five octaves
         let notes_on = self.wv_notes;
-        let wave_h = if notes_on { wave_h.max(190.0) } else { wave_h };
+        // (about half the panel, so a bigger panel gives fatter rows)
+        let wave_h = if notes_on { wave_h.max(190.0).max(ui.clip_rect().height() * 0.5) } else { wave_h };
         let dur = self.track_len();
         let pos = self.pos();
         let tid = self.cur_track().map(|t| t.id);
