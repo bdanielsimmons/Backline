@@ -888,6 +888,25 @@ pub(crate) fn menu_item(ui: &mut egui::Ui, text: &str) -> bool {
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
+/// A row in a menu that opens a submenu, looking like `menu_item` (the same text and highlight) with an arrow.
+/// egui's own submenu button does the opening; this draws over it.
+pub(crate) fn sub_menu(ui: &mut egui::Ui, text: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let sc = font::ui_scale();
+    let w = (text_w(text, 2.0) + 40.0 * sc).max(150.0 * sc);
+    ui.set_min_width(w);
+    let r = ui.menu_button(egui::RichText::new(" ").size(16.0 * sc), add_contents).response;
+    let rect = Rect::from_min_size(r.rect.min, Vec2::new(r.rect.width().max(w), r.rect.height()));
+    let p = ui.painter();
+    p.rect_filled(rect, 0.0, if r.hovered() { pal().sel } else { ui.visuals().window_fill() });
+    ptext(p, Pos2::new(rect.min.x + 10.0, rect.center().y), Align::Min, text, 2.0, pal().ink);
+    let (c, s) = (Pos2::new(rect.max.x - 10.0 * sc, rect.center().y), 4.0 * sc);
+    p.add(egui::Shape::convex_polygon(
+        vec![c + Vec2::new(-s * 0.6, -s), c + Vec2::new(s * 0.6, 0.0), c + Vec2::new(-s * 0.6, s)],
+        pal().ink,
+        Stroke::NONE,
+    ));
+}
+
 /// Dropdown button: shows `name: current` with a small arrow; the list opens as an overlay
 /// right under it (no layout change). Returns the index chosen this frame.
 pub(crate) fn dropdown(ui: &mut egui::Ui, id: &str, title: &str, items: &[&str], sel: usize, min_w: f32) -> Option<usize> {

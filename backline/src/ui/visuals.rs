@@ -1034,7 +1034,23 @@ impl App {
     }
 
     /// Every preset, by group (for right-click menus).
+    /// What the visuals are set to, as "Group: Name" (a random one also says what it is showing now).
+    pub(crate) fn vis_name(&self) -> String {
+        let p = &PRESETS[self.vis_preset];
+        let group = if p.group == "Milk" { "MilkDrop style" } else { p.group };
+        let mut name = if p.group == p.name { p.name.to_string() } else { format!("{}: {}", group, p.name) };
+        let shown = resolve(self.vis_preset, self.vis_cache.map_or(0.0, |c| c.1.t));
+        if shown != self.vis_preset {
+            name = format!("{}  (now {})", name, PRESETS[shown].name);
+        }
+        name
+    }
+
     pub(crate) fn vis_menu(&mut self, ui: &mut egui::Ui) {
+        // what is picked, first; then the groups (the one holding it marked)
+        crate::views::dim_line(ui, "NOW SHOWING", 1.0, crate::pal().ink2);
+        crate::views::dim_line(ui, &self.vis_name(), 1.6, crate::pal().ink);
+        ui.separator();
         for g in GROUPS {
             let only: Vec<usize> = (0..PRESETS.len()).filter(|&i| PRESETS[i].group == *g).collect();
             if only.len() == 1 {
@@ -1048,7 +1064,8 @@ impl App {
                 continue;
             }
             let title = if *g == "Milk" { "MilkDrop style" } else { *g };
-            ui.menu_button(title, |ui| {
+            let mark = if PRESETS[self.vis_preset].group == *g { "* " } else { "  " };
+            crate::sub_menu(ui, &format!("{}{}", mark, title), |ui| {
                 for (i, p) in PRESETS.iter().enumerate().filter(|(_, p)| p.group == *g) {
                     let mark = if i == self.vis_preset { "* " } else { "  " };
                     if crate::menu_item(ui, &format!("{}{}", mark, p.name)) {
@@ -1060,15 +1077,16 @@ impl App {
             });
         }
         ui.separator();
-        if crate::menu_item(ui, "Full screen  (G)") {
+        if crate::menu_item(ui, "  Full screen  (G)") {
             self.vis_set_full(!self.vis_full, false);
             ui.close_menu();
         }
+        crate::views::dim_line(ui, "SCREENSAVER (NOT WHILE PRACTISING)", 1.0, crate::pal().ink2);
         let idle = [
-            (0u32, "Screensaver: off"),
-            (2, "Screensaver after 2 minutes"),
-            (5, "Screensaver after 5 minutes"),
-            (10, "Screensaver after 10 minutes"),
+            (0u32, "Off"),
+            (2, "After 2 minutes"),
+            (5, "After 5 minutes"),
+            (10, "After 10 minutes"),
         ];
         for (m, label) in idle {
             let mark = if self.vis_idle == m { "* " } else { "  " };
@@ -1078,7 +1096,6 @@ impl App {
                 ui.close_menu();
             }
         }
-        crate::views::dim_line(ui, "(NOT WHILE PRACTISING)", 1.0, crate::pal().dim);
     }
 
     /// Full screen visuals on or off (`saver`: started by being idle, so any touch ends it).
@@ -1160,11 +1177,7 @@ impl App {
             crate::ptext(p, r.min + Vec2::new(28.0, 30.0), egui::Align::Min, &line, 1.6, Color32::from_white_alpha(230));
         }
         // the preset and arrows, bottom middle
-        let shown = resolve(self.vis_preset, self.vis_cache.map_or(0.0, |c| c.1.t));
-        let mut name = format!("{} : {}", PRESETS[self.vis_preset].group, PRESETS[self.vis_preset].name);
-        if shown != self.vis_preset {
-            name = format!("{}  ({})", name, PRESETS[shown].name);
-        }
+        let name = self.vis_name();
         let w = crate::text_w(&name, 1.2) + 30.0;
         let mid = Pos2::new(r.center().x, r.max.y - 44.0);
         let bar = Rect::from_center_size(mid, Vec2::new(w + 120.0, 36.0));

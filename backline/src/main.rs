@@ -2341,6 +2341,8 @@ struct App {
     vis_was_fs: bool,
     vis_shown_at: f64,
     vis_ui_at: f64,
+    /// the visuals' name last shown in Now Playing (a change shows it again)
+    vis_seen: String,
     /// Minutes idle (music playing) before the screensaver; 0 off.
     vis_idle: u32,
     vis_idle_since: Instant,
@@ -3256,6 +3258,7 @@ impl App {
             vis_was_fs: false,
             vis_shown_at: 0.0,
             vis_ui_at: 0.0,
+            vis_seen: String::new(),
             vis_idle: 5,
             vis_idle_since: Instant::now(),
             vis_last: 0.0,

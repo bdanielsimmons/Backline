@@ -115,6 +115,26 @@ impl App {
         // ---- visuals, in place of the cover (with or without one), under the words and the controls
         if self.vis_np {
             self.vis_paint(ui, full, 1);
+            let now = ui.input(|i| i.time);
+            let name = self.vis_name();
+            if self.vis_seen != name {
+                self.vis_seen = name.clone();
+                self.vis_ui_at = now;
+            }
+            if ui.rect_contains_pointer(full) && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
+                self.vis_ui_at = now;
+            }
+            let fade = (1.0 - ((now - self.vis_ui_at) as f32 - 3.0)).clamp(0.0, 1.0);
+            if fade > 0.0 {
+                let label = format!("VISUALS: {}", name);
+                let w = crate::text_w(&label, 1.2) + 32.0;
+                // (top left: clear of the lyrics, which take the right side)
+                let bar = Rect::from_min_size(full.min + Vec2::new(24.0, 16.0), Vec2::new(w, 28.0));
+                let p = ui.painter();
+                p.rect_filled(bar, 14.0, egui::Color32::from_black_alpha((170.0 * fade) as u8));
+                crate::ptext(p, bar.center(), egui::Align::Center, &label, 1.2, egui::Color32::from_white_alpha((235.0 * fade) as u8));
+                ui.ctx().request_repaint();
+            }
         }
 
         // ---- visualizer, soft and behind everything (only under the cover when lyrics split the view; not with visuals)
