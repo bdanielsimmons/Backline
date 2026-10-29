@@ -6509,6 +6509,12 @@ impl eframe::App for App {
                 } else {
                     (self.lib_frac * screen.width()).clamp(280.0, (screen.width() - 560.0).max(280.0))
                 };
+                // practising with a skin: the column keeps the width you gave it, but the deck and playlist stop
+                // growing at about a quarter of the window's height (the deck centred), so the practice panel gets the room
+                let skin_k = skin_k.map(|k| if self.practice && !self.focus_mode { k.min((screen.height() * 0.25 / 116.0).max(1.0)) } else { k });
+                if let Some(k) = skin_k {
+                    self.stack_k = k;
+                }
                 let right_w = screen.width() - lib_w;
                 let inner_w = right_w - 28.0;
                 // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)

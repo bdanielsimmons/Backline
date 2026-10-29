@@ -111,10 +111,12 @@ impl App {
             let snap = |v: f32| (v * font::ppp()).round() / font::ppp();
             Place { o: Pos2::new(snap(room.center().x - 137.5 * s), snap(room.center().y - 58.0 * s)), s }
         } else {
-            // the stack's size; the panel's whole width (its frame margins too), its foot on the playlist below
+            // the stack's size; the panel's whole width (its frame margins too), its foot on the playlist below; centred
+            // when the column is wider than the deck (practising keeps the deck smaller)
             let s = self.stack_k;
             let snap = |v: f32| (v * font::ppp()).round() / font::ppp();
-            Place { o: Pos2::new(snap(area.min.x - 14.0), snap(area.max.y + 14.0 - 116.0 * s)), s }
+            let x = area.min.x - 14.0 + ((area.width() + 28.0 - 275.0 * s) / 2.0).max(0.0);
+            Place { o: Pos2::new(snap(x), snap(area.max.y + 14.0 - 116.0 * s)), s }
         };
         if !self.mini {
             let deck = Rect::from_min_size(pl.o, Vec2::new(275.0, 116.0) * pl.s);
