@@ -383,17 +383,19 @@ impl App {
         t.spr(&p, "monoster", (0.0, if active { 0.0 } else { 12.0 }, 29.0, 12.0), pl.r(239.0, 41.0, 29.0, 12.0));
         // the visualizer, in the skin's own colours (2 = top of the bars ... 17 = bottom, 23 = peaks);
         // click it for bars / wave / both, right-click for all its settings
-        let vz =
-            hit(ui, "viz", pl.r(24.0, 43.0, 76.0, 16.0), false).tip("Visualizer. Click to change it, right-click for settings.");
+        let vz = hit(ui, "viz", pl.r(24.0, 43.0, 76.0, 16.0), false)
+            .tip("Visualizer. Click for bars, wave, both or visuals; right-click for settings.");
         if vz.clicked() {
-            self.viz[0].mode = (self.viz[0].mode + 1) % 3;
+            self.viz[0].mode = (self.viz[0].mode + 1) % 4;
             self.dirty = true;
         }
         if vz.secondary_clicked() {
             self.viz_panel = Some(0);
         }
         let (bands, peaks, wave) = self.viz_data(0);
-        if active {
+        if active && self.viz[0].mode == 3 {
+            self.vis_paint(ui, pl.r(24.0, 43.0, 76.0, 16.0), 2);
+        } else if active {
             skin_viz(&p, pl.o + Vec2::new(24.0, 43.0) * pl.s, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
             // Winamp's own visualizer ran at about 30 frames a second; so does this one (half the work of every frame)
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
@@ -1268,7 +1270,9 @@ impl App {
             piece((205.0, 0.0, 75.0, 38.0), vr);
             let (bands, peaks, wave) = self.viz_data(0);
             let inner = Rect::from_min_size(vr.min + Vec2::new(3.0, 12.0) * k, Vec2::new(72.0, 16.0) * k);
-            if self.cur.is_some() && !self.stopped {
+            if self.cur.is_some() && !self.stopped && self.viz[0].mode == 3 {
+                self.vis_paint(ui, inner, 3);
+            } else if self.cur.is_some() && !self.stopped {
                 // the same style as the player's (bars, wave or both), in the skin's colours
                 skin_viz(&p.with_clip_rect(inner), inner.min, k, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
             }

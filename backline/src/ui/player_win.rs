@@ -83,24 +83,28 @@ impl App {
         let sp = rc(6.0, 50.0, 100.0, 28.0);
         inset(p, sp, pal().lcd);
         let (vb, vp, vw) = self.viz_data(0);
-        viz_draw(
-            p,
-            sp.shrink2(Vec2::new(3.0, 3.0)),
-            &vb,
-            &vp,
-            &vw,
-            self.viz[0].mode,
-            self.viz[0].w,
-            false,
-            1.0,
-            self.viz_tint(self.viz[0].color),
-        );
+        if self.viz[0].mode == 3 {
+            self.vis_paint(ui, sp.shrink2(Vec2::new(3.0, 3.0)), 2);
+        } else {
+            viz_draw(
+                p,
+                sp.shrink2(Vec2::new(3.0, 3.0)),
+                &vb,
+                &vp,
+                &vw,
+                self.viz[0].mode,
+                self.viz[0].w,
+                false,
+                1.0,
+                self.viz_tint(self.viz[0].color),
+            );
+        }
         let spr = ui
             .interact(sp, ui.id().with("spectrum"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to switch between bars, waveform or both. Right-click for all its settings, with a preview.");
+            .tip("Click to switch between bars, waveform, both or visuals. Right-click for all its settings, with a preview.");
         if spr.clicked() {
-            self.viz[0].mode = (self.viz[0].mode + 1) % 3;
+            self.viz[0].mode = (self.viz[0].mode + 1) % 4;
             self.dirty = true;
         }
         if spr.secondary_clicked() {

@@ -70,16 +70,6 @@ mod arpeggios;
 mod atonal;
 #[path = "ui/atonal_core.rs"]
 mod atonal_core;
-#[path = "ui/music_data.rs"]
-mod music_data;
-#[path = "ui/triad_core.rs"]
-mod triad_core;
-#[path = "ui/si_core.rs"]
-mod si_core;
-#[path = "ui/staff.rs"]
-mod staff;
-#[path = "ui/plan.rs"]
-mod plan;
 #[path = "ui/chords.rs"]
 mod chords;
 #[path = "ui/clusters.rs"]
@@ -112,8 +102,12 @@ mod lines_ui;
 mod macmenu;
 #[path = "ui/melodies.rs"]
 mod melodies;
+#[path = "ui/music_data.rs"]
+mod music_data;
 #[path = "ui/palette.rs"]
 mod palette;
+#[path = "ui/plan.rs"]
+mod plan;
 #[path = "ui/player_win.rs"]
 mod player_win;
 #[path = "ui/prefs.rs"]
@@ -124,20 +118,28 @@ mod reading;
 mod record_ui;
 #[path = "ui/routine.rs"]
 mod routine;
+#[path = "ui/si_core.rs"]
+mod si_core;
 #[path = "ui/skin.rs"]
 mod skin;
+#[path = "ui/staff.rs"]
+mod staff;
 #[path = "ui/tools.rs"]
 mod tools;
 #[path = "ui/tour.rs"]
 mod tour;
 #[path = "data/transcription.rs"]
 mod transcription;
+#[path = "ui/triad_core.rs"]
+mod triad_core;
 #[path = "ui/triads.rs"]
 mod triads;
 #[path = "ui/vicon.rs"]
 mod vicon;
 #[path = "ui/views.rs"]
 mod views;
+#[path = "ui/visuals.rs"]
+mod visuals;
 #[path = "ui/viz.rs"]
 mod viz;
 #[path = "ui/winamp_ui.rs"]
@@ -425,6 +427,8 @@ enum Action {
     CopyLog,
     ToggleArt,
     ToggleSpec,
+    /// Full screen visuals on or off.
+    Visuals,
     ToggleLyrics,
     ToggleFullscreen,
     ToggleLike(Track),
@@ -2312,6 +2316,24 @@ struct App {
 
     art_view: bool,
     show_spec: bool,
+    // ---- visuals (ui/visuals.rs)
+    vis_gl: Arc<Mutex<visuals::Gl>>,
+    vis_preset: usize,
+    /// Visuals behind Now Playing.
+    vis_np: bool,
+    vis_full: bool,
+    vis_saver: bool,
+    vis_was_fs: bool,
+    vis_shown_at: f64,
+    vis_ui_at: f64,
+    /// Minutes idle (music playing) before the screensaver; 0 off.
+    vis_idle: u32,
+    vis_idle_since: Instant,
+    vis_last: f64,
+    vis_travel: f32,
+    vis_cache: Option<(u64, visuals::Frame, f32)>,
+    vis_pipes: visuals::Pipes,
+    vis_stars: visuals::Stars,
     spec_op: f32,
     spec_h: f32,
     spec_w: f32,
@@ -3208,6 +3230,21 @@ impl App {
             audio_err_shown: false,
             art_view: false,
             show_spec: true,
+            vis_gl: Arc::new(Mutex::new(visuals::Gl::default())),
+            vis_preset: 0,
+            vis_np: false,
+            vis_full: false,
+            vis_saver: false,
+            vis_was_fs: false,
+            vis_shown_at: 0.0,
+            vis_ui_at: 0.0,
+            vis_idle: 5,
+            vis_idle_since: Instant::now(),
+            vis_last: 0.0,
+            vis_travel: 0.0,
+            vis_cache: None,
+            vis_pipes: Default::default(),
+            vis_stars: Default::default(),
             spec_op: 0.2,
             spec_h: 0.42,
             spec_w: 0.6,
@@ -3763,6 +3800,13 @@ impl App {
         }
         // always the best quality Tidal gives (it sends lossless when it will, else 320): no setting
         app.prefer_lossless = true;
+        if let Some(v) = st["vis_preset"].as_str() {
+            app.vis_preset = visuals::find(v);
+        }
+        app.vis_np = st["vis_np"].as_bool().unwrap_or(false);
+        if let Some(m) = st["vis_idle"].as_u64() {
+            app.vis_idle = m as u32;
+        }
         if let Some(b) = st["spec"].as_bool() {
             app.show_spec = b;
         }
@@ -4230,6 +4274,18 @@ impl App {
                 app.sec = Sec::Diary;
                 app.diary_tab = 1;
             }
+            Ok("visuals") => {
+                if let Ok(v) = std::env::var("BACKLINE_VIS") {
+                    app.vis_preset = visuals::find(&v);
+                }
+                if let Some(p) = tour_song::ready() {
+                    let t = sources::ext_for_file(&p).to_track();
+                    app.srcmap.insert(t.id, Src::File(p));
+                    app.queue = Arc::new(vec![t]);
+                    app.play_index(0);
+                }
+                app.vis_set_full(true, false);
+            }
             Ok("listening") => {
                 app.sec = Sec::Diary;
                 app.diary_tab = 2;
@@ -4389,6 +4445,9 @@ impl App {
             "volume": self.volume,
             "lossless": self.prefer_lossless,
             "spec": self.show_spec,
+            "vis_preset": visuals::PRESETS[self.vis_preset.min(visuals::PRESETS.len() - 1)].name,
+            "vis_np": self.vis_np,
+            "vis_idle": self.vis_idle,
             "tour_seen": self.tour_seen,
             "icon_words": self.icon_names,
             "icon_build": update::build(),
@@ -4848,7 +4907,11 @@ impl App {
                             }
                         }
                         let what = if c.kind == Kind::Album { "ALBUMS" } else { "PLAYLISTS" };
-                        self.set_note(&if on { format!("SAVED TO YOUR {}", what) } else { format!("REMOVED FROM YOUR {}", what) });
+                        self.set_note(&if on {
+                            format!("SAVED TO YOUR {}", what)
+                        } else {
+                            format!("REMOVED FROM YOUR {}", what)
+                        });
                     }
                     Err(e) => self.set_err(format!("Couldn't {} on Tidal: {}", if on { "save it" } else { "remove it" }, e)),
                 },
@@ -6193,6 +6256,10 @@ impl App {
                 self.sync_loop();
             }
             Action::ToggleArt => self.art_view = !self.art_view,
+            Action::Visuals => {
+                let on = !self.vis_full;
+                self.vis_set_full(on, false);
+            }
             Action::ToggleSpec => {
                 self.show_spec = !self.show_spec;
                 self.dirty = true;
@@ -6467,7 +6534,12 @@ impl eframe::App for App {
                 }
             }
 
-            if self.mini {
+            self.vis_idle_check(ctx);
+            if self.vis_full {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none().fill(Color32::BLACK))
+                    .show(ctx, |ui| self.vis_full_ui(ui, &mut acts));
+            } else if self.mini {
                 self.mini_stack_size(ctx);
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(pal().app_bg))
@@ -6511,7 +6583,13 @@ impl eframe::App for App {
                 };
                 // practising with a skin: the column keeps the width you gave it, but the deck and playlist stop
                 // growing at about a quarter of the window's height (the deck centred), so the practice panel gets the room
-                let skin_k = skin_k.map(|k| if self.practice && !self.focus_mode { k.min((screen.height() * 0.25 / 116.0).max(1.0)) } else { k });
+                let skin_k = skin_k.map(|k| {
+                    if self.practice && !self.focus_mode {
+                        k.min((screen.height() * 0.25 / 116.0).max(1.0))
+                    } else {
+                        k
+                    }
+                });
                 if let Some(k) = skin_k {
                     self.stack_k = k;
                 }
@@ -6522,7 +6600,11 @@ impl eframe::App for App {
                 let mut practice_h = if !self.practice || focus_skin {
                     0.0
                 } else if self.prac_h <= 0.0 {
-                    if skin_k.is_some() { screen.height() } else { (screen.height() * 0.6).max(120.0) }
+                    if skin_k.is_some() {
+                        screen.height()
+                    } else {
+                        (screen.height() * 0.6).max(120.0)
+                    }
                 } else {
                     self.prac_h.clamp(120.0, (screen.height() * 0.6).max(120.0))
                 };

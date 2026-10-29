@@ -833,6 +833,9 @@ impl App {
         ui.set_min_width(240.0);
         let before = acts.len();
         let mut done = false;
+        if menu_item(ui, "Visuals, full screen  (G)") {
+            acts.push(Action::Visuals);
+        }
         // what the player's chips do, for a skin's deck (it has none)
         if self.wa_art.is_some() && !self.mini {
             if menu_item(ui, "Now Playing (the song big)") {

@@ -32,6 +32,7 @@ pub enum Cmd {
     SpeedUp,
     SpeedDown,
     Bookmark,
+    Visuals,
 }
 
 pub struct CmdDef {
@@ -69,6 +70,7 @@ pub const CMDS: &[CmdDef] = &[
     CmdDef { cmd: Cmd::SpeedUp, id: "speed_up", label: "Speed up 5 percent", def: Key::ArrowUp, group: 0 },
     CmdDef { cmd: Cmd::SpeedDown, id: "speed_down", label: "Slow down 5 percent", def: Key::ArrowDown, group: 0 },
     CmdDef { cmd: Cmd::Bookmark, id: "bookmark", label: "Bookmark where the song is", def: Key::K, group: 2 },
+    CmdDef { cmd: Cmd::Visuals, id: "visuals", label: "Visuals full screen", def: Key::G, group: 0 },
 ];
 
 pub fn default_binds() -> Vec<Option<Key>> {
@@ -189,6 +191,7 @@ impl App {
             Cmd::SpeedUp => acts.push(Action::Speed(self.speed + 5)),
             Cmd::SpeedDown => acts.push(Action::Speed(self.speed.saturating_sub(5))),
             Cmd::Bookmark => acts.push(Action::Bookmark),
+            Cmd::Visuals => acts.push(Action::Visuals),
         }
     }
 

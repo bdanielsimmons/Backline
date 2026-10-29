@@ -82,6 +82,9 @@ impl App {
             }
             mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
             p.add(egui::Shape::mesh(mesh));
+            if self.vis_np {
+                self.vis_paint(ui, full, 1);
+            }
             // vignette: an oval, clear around the cover and easing smoothly into near-black, reaching it right at the
             // corners (rings of a soft curve, so there are no seams or corners in the shading)
             let edge = Color32::from_rgb(4, 4, 6);
@@ -638,6 +641,13 @@ impl App {
                 if sp.secondary_clicked() {
                     self.viz_panel = Some(1);
                 }
+                let vb = icon_btn(ui, &IC_VIS, self.vis_np, ink)
+                    .tip("Visuals behind the song (MilkDrop style). Right-click to pick one. G: full screen.");
+                if vb.clicked() {
+                    self.vis_np = !self.vis_np;
+                    self.dirty = true;
+                }
+                vb.context_menu(|ui| self.vis_menu(ui));
                 if icon_btn(ui, if fs { &IC_WIN } else { &IC_FULL }, false, ink)
                     .tip(if fs { "Leave fullscreen  (F)" } else { "Fullscreen  (F)" })
                     .clicked()

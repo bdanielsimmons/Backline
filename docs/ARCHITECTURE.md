@@ -59,6 +59,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Tidal API, offline switch, liked-songs copy | `data/api.rs` |
 | Song cache (kept songs) | `data/cache.rs` |
 | Packs for a friend: plan, books, atonal lines, chord melodies, loops & playlists in one zip (`.backline`); made in PREFERENCES > SHARE WITH A FRIEND, opened by dropping it on the window (`handle_paths`) or OPEN A PACK; `pack_panel` ticks the pieces, `PackUnlock` puts them in place | `data/pack.rs` |
+| Visuals: MilkDrop / WMP-style presets as GLSL shaders run through egui_glow paint callbacks (feedback ping-pong per slot: 0 full screen, 1 Now Playing, 2 deck, 3 playlist bar), 3D Pipes and Starfield drawn by egui; `PRESETS` / `GROUPS`, `vis_paint`, `vis_full_ui` (G, Esc), `vis_menu`, idle screensaver `vis_idle_check`; deck visualizer mode 3; `BACKLINE_OPEN=visuals` with `BACKLINE_VIS=<preset>` | `ui/visuals.rs` |
 | Note view (the waveform's NOTES chip): the song by pitch, E1 to E6, 50 a second, from the stems switched on when split (`analyse`, `from_stems`); drawn by `notes_strip` in `ui/views.rs`, made by `start_notes` | `audio/notes.rs` |
 | Stems: splitting (HT-Demucs), the split songs (`is_split` for the row mark set by `row_stems`, MY TRACKS > WITH STEMS), the time/size guess before a split (`time_guess`, `size_guess`) | `audio/stems.rs` |
 | Guitar Pro files (.gp: bars, notes with string/fret, key and time, chord names and grids, the recording inside) | `data/gp.rs` |
