@@ -1059,12 +1059,6 @@ impl App {
                 r.context_menu(|ui| {
                     // (Edit info... comes with the song's own items)
                     crate::song_items(ui, acts, &e.to_track(), liked, false);
-                    if e.kind == "file"
-                        && menu_item(ui, if cfg!(target_os = "macos") { "Show in Finder" } else { "Show in Explorer" })
-                    {
-                        sources::reveal(&e.src);
-                        ui.close_menu();
-                    }
                     crate::link_item(ui, acts, crate::track_link(&e.to_track(), Some(e)));
                     if which >= 4 {
                         // (taking it out of LIKED is Remove from My Tracks, above)
@@ -2268,8 +2262,8 @@ impl App {
                         acts.push(Action::PlaylistOpen(Some(i)));
                     }
                     r.context_menu(|ui| {
-                        if menu_item(ui, "Set picture...") {
-                            acts.push(Action::PlaylistArt(i, true));
+                        if menu_item(ui, "Edit name, description and cover...") {
+                            acts.push(Action::PlaylistEdit(i));
                             ui.close_menu();
                         }
                         if menu_item(ui, "Delete this playlist") {
@@ -2289,29 +2283,34 @@ impl App {
             if retro_btn(ui, "< ALL PLAYLISTS", false).clicked() {
                 acts.push(Action::PlaylistOpen(None));
             }
-            let has_art = !self.store.playlists[pi].art.is_empty();
-            if retro_btn(ui, if has_art { "CHANGE PICTURE..." } else { "PICTURE..." }, false).clicked() {
-                acts.push(Action::PlaylistArt(pi, true));
-            }
-            if has_art && retro_btn(ui, "NO PICTURE", false).clicked() {
-                acts.push(Action::PlaylistArt(pi, false));
+            if retro_btn(ui, "EDIT...", false).tip("Name, description and cover").clicked() {
+                acts.push(Action::PlaylistEdit(pi));
             }
         });
-        // its picture, when it has one
+        // its cover (a record while it has none) beside the name; a click picks one
+        ui.add_space(4.0);
         let url = crate::new_playlist::art_url(&self.store.playlists[pi].art);
-        if !url.is_empty() {
-            ui.add_space(4.0);
+        let desc = self.store.playlists[pi].desc.clone();
+        ui.horizontal_top(|ui| {
             let (r, resp) = ui.allocate_exact_size(Vec2::splat(140.0), Sense::click());
             crate::paint_page_art(ui, &mut self.images, &url, r, false);
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                acts.push(Action::ArtPreview(url.clone(), name.clone(), false));
+            if resp.hovered() {
+                let band = Rect::from_min_max(egui::pos2(r.min.x, r.max.y - 24.0), r.max);
+                ui.painter().rect_filled(band, 0.0, egui::Color32::from_black_alpha(170));
+                ptext_fit(ui.painter(), band.center(), Align::Center, if url.is_empty() { "ADD A COVER" } else { "CHANGE COVER" }, 1.4, r.width() - 10.0, egui::Color32::WHITE);
             }
-        }
-        title_line(ui, &name.to_uppercase(), 3.0, pal().ink);
-        let desc = self.store.playlists[pi].desc.clone();
-        if !desc.is_empty() {
-            para(ui, &desc, pal().ink2);
-        }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                acts.push(Action::PlaylistEdit(pi));
+            }
+            ui.add_space(12.0);
+            ui.vertical(|ui| {
+                ui.add_space(8.0);
+                title_line(ui, &name.to_uppercase(), 3.0, pal().ink);
+                if !desc.is_empty() {
+                    para(ui, &desc, pal().ink2);
+                }
+            });
+        });
         let items = self.store.playlists[pi].items.clone();
         title_line(ui, &format!("{} tracks (right-click one to move or remove it)", items.len()), 2.0, pal().ink2);
         ui.add_space(4.0);

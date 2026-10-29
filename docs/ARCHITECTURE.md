@@ -66,7 +66,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Transcriptions: Backline's own shareable format (JSON, one per tune, in `transcriptions/`), kept moves (`moves.json`) | `data/transcription.rs` |
 | CHORD MELODIES (PRACTICE): SONGS - bars written out (`draw_bars`, `bar_items`: stems, beams, rests, ties, key and time signatures), moves spotted (`suggest`), the pinned panel (`cm_focus`, `move_steps`, `focus_dots`); MOVES - the ones kept | `ui/melodies.rs` |
 | Files, YouTube/SoundCloud (yt-dlp), playlist files | `data/sources.rs` |
-| New Playlist panel (name, description, cover: ready-made `samples()` drawn into `playlist_art/covers`, a picked or dropped picture kept by `keep_art`; Backline or Tidal), `PlaylistNew` / `PlaylistNewWith` / `PlaylistMake`; covers on your playlists (`Playlist.art`, `PlaylistArt`) and Backline-only covers on Tidal playlists (`Store.tidal_art`, put on pages by `tidal_art_on`); pictures load as `img:<path>`; `BACKLINE_OPEN=newplaylist` (BACKLINE_ART=<file>) | `ui/new_playlist.rs` |
+| New Playlist panel (name, description, cover: ready-made `samples()` drawn into `playlist_art/covers`, a picked or dropped picture kept by `keep_art`; Backline or Tidal), `PlaylistNew` / `PlaylistNewWith` / `PlaylistMake`; the same panel edits a playlist you have (`NewPl.edit`, `PlaylistEdit`; the cover box on its page); a Tidal playlist keeps Tidal's cover; pictures load as `img:<path>`; `BACKLINE_OPEN=lists` with BACKLINE_PL=<n> opens playlist n; `BACKLINE_OPEN=newplaylist` (BACKLINE_ART=<file>) | `ui/new_playlist.rs` |
 | Self-update | `data/update.rs` |
 
 ## Shared with the phone app

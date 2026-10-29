@@ -228,8 +228,6 @@ enum Msg {
     TidalListDone(Result<String, String>),
     /// a new playlist made on your Tidal account (its name), shown once the library is loaded again
     TidalListMade(Result<String, String>),
-    /// a new Tidal playlist made with a picture: (its id, the picture) to keep
-    TidalListArt(String, String),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
     /// files added: the songs, the folders, and playlist files read (their name and songs)
     Added(Vec<store::Ext>, Vec<String>, Vec<(String, Vec<i64>)>),
@@ -543,10 +541,8 @@ enum Action {
     PlaylistNewWith(Track, bool),
     /// make the playlist the New Playlist panel describes
     PlaylistMake(new_playlist::NewPl),
-    /// pick a new picture for one of your playlists (None: take it off)
-    PlaylistArt(usize, bool),
-    /// pick a picture for a Tidal playlist, shown in Backline: (its id, false to take it off)
-    TidalListArt(String, bool),
+    /// open the panel on one of your playlists: its name, description and cover
+    PlaylistEdit(usize),
     PlaylistFromQueue,
     PlaylistRemove(usize, usize),
     PlaylistMove(usize, usize, i32),
@@ -1562,16 +1558,13 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::PlaylistPick(t.clone()));
         ui.close_menu();
     }
-    if menu_item(ui, "New Backline playlist with this song...") {
+    // the New Playlist panel switches between Backline and Tidal
+    if menu_item(ui, "New playlist with this song...") {
         acts.push(Action::PlaylistNewWith(t.clone(), false));
         ui.close_menu();
     }
     if t.id > 0 && menu_item(ui, "Add to a Tidal playlist...") {
         acts.push(Action::PlaylistPickTidal(t.clone()));
-        ui.close_menu();
-    }
-    if t.id > 0 && menu_item(ui, "New Tidal playlist with this song...") {
-        acts.push(Action::PlaylistNewWith(t.clone(), true));
         ui.close_menu();
     }
     if menu_item(ui, "Copy name") {
@@ -1640,15 +1633,6 @@ fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, acts: &mut Vec<Acti
                     }
                     if !c.image.is_empty() && menu_item(ui, "View art") {
                         acts.push(Action::ArtPreview(c.image.clone(), c.title.clone(), c.kind == Kind::Artist));
-                        ui.close_menu();
-                    }
-                    // a picture of your own for a playlist (shown in Backline)
-                    if c.kind == Kind::Playlist && menu_item(ui, "Set picture...") {
-                        acts.push(Action::TidalListArt(c.id.clone(), true));
-                        ui.close_menu();
-                    }
-                    if c.kind == Kind::Playlist && c.image.starts_with("img:") && menu_item(ui, "Remove my picture") {
-                        acts.push(Action::TidalListArt(c.id.clone(), false));
                         ui.close_menu();
                     }
                 });
@@ -4278,7 +4262,11 @@ impl App {
                     app.play_index(0);
                 }
             }
-            Ok("lists") => app.sec = Sec::Lists,
+            // (BACKLINE_PL=<n>: with your playlist n open)
+            Ok("lists") => {
+                app.sec = Sec::Lists;
+                app.pl_open = std::env::var("BACKLINE_PL").ok().and_then(|n| n.parse().ok());
+            }
             // the library's ARTISTS tab (BACKLINE_OPEN=artist opens an artist's page once the library is in: Msg::Page)
             Ok("artists") => {
                 app.sec = Sec::Tidal;
@@ -4861,7 +4849,6 @@ impl App {
                     }
                 }
                 Msg::Page(mut p, push) => {
-                    self.tidal_art_on(&mut p);
                     // a tour (or recording one): the library holds only the tour's song (your own comes back after)
                     if p.library && (tour::demo_kind().is_some() || self.tour_play.is_some()) {
                         p.tracks = self.demo_track.iter().cloned().collect();

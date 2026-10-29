@@ -550,8 +550,8 @@ pub struct Store {
     /// SoundCloud / YouTube playlists you saved by link
     pub lists: Vec<SavedList>,
     pub playlists: Vec<Playlist>,
-    /// pictures you gave your Tidal playlists, shown in Backline: playlist id -> a file in Backline's folder
-    pub tidal_art: HashMap<String, String>,
+    /// your files taken out of Backline (by id): a scan of their folder leaves them out
+    pub removed_files: Vec<i64>,
     pub bpm: HashMap<i64, u32>,
     /// tempo and key found by listening to the audio (see meta.rs)
     pub meta: HashMap<i64, crate::meta::Info>,

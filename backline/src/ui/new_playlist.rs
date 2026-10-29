@@ -24,6 +24,8 @@ pub(crate) struct NewPl {
     pub art: String,
     /// on your Tidal account rather than in Backline
     pub tidal: bool,
+    /// one of your playlists being changed (by its place), not a new one
+    pub edit: Option<usize>,
 }
 
 /// A picture for a playlist, kept in Backline's folder (so it stays when the original moves): its new path.
@@ -77,23 +79,6 @@ impl App {
         self.new_pl_dlg = Some(d);
     }
 
-    /// Your pictures on the Tidal playlists you gave one: in a page's lists, and on the playlist's own page.
-    pub(crate) fn tidal_art_on(&self, p: &mut crate::api::Page) {
-        if self.store.tidal_art.is_empty() {
-            return;
-        }
-        for (_, row) in p.rows.iter_mut() {
-            for c in row.iter_mut().filter(|c| c.kind == crate::api::Kind::Playlist) {
-                if let Some(a) = self.store.tidal_art.get(&c.id) {
-                    c.image = art_url(a);
-                }
-            }
-        }
-        if let Some(a) = p.card.as_ref().filter(|c| c.kind == crate::api::Kind::Playlist).and_then(|c| self.store.tidal_art.get(&c.id)) {
-            p.image = art_url(a);
-        }
-    }
-
     /// The New Playlist panel, while it is open.
     pub(crate) fn new_playlist_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
         let Some(mut d) = self.new_pl_dlg.take() else { return };
@@ -110,8 +95,8 @@ impl App {
         let thumbs: Vec<Option<egui::TextureId>> = covers.iter().map(|c| self.images.get(&art_url(c))).collect();
         let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
         let now = ctx.input(|i| i.time) as f32;
-        panel(ctx, "new_playlist", 620.0, |ui| {
-            title_line(ui, if d.tidal { "NEW TIDAL PLAYLIST" } else { "NEW PLAYLIST" }, 3.0, pal().ink);
+        panel(ctx, "new_playlist", if d.tidal { 480.0 } else { 620.0 }, |ui| {
+            title_line(ui, if d.edit.is_some() { "EDIT PLAYLIST" } else { "NEW PLAYLIST" }, 3.0, pal().ink);
             if let Some(t) = &d.track {
                 let what = match &d.loop_ab {
                     Some((_, _, n)) => format!("Starts with the loop \"{}\" of {}", n, t.title),
@@ -121,46 +106,48 @@ impl App {
             }
             ui.add_space(8.0);
             ui.horizontal_top(|ui| {
-                // the cover, as it will look; a picture can be dropped on it (or anywhere on the window)
-                let side = 200.0;
-                let (r, resp) = ui.allocate_exact_size(Vec2::splat(side), Sense::click());
-                let p = ui.painter().clone();
-                match pic {
-                    Some(id) => {
-                        egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
-                    }
-                    None if loading => {
-                        crate::paint_record(&p, r, Some(now));
-                        ui.ctx().request_repaint();
-                    }
-                    None => {
-                        p.rect_filled(r, 0.0, pal().ink2.gamma_multiply(0.12));
-                        let mid = r.center();
-                        crate::ptext_fit(&p, mid - Vec2::new(0.0, 10.0), egui::Align::Center, "DROP A PICTURE", 1.6, side - 20.0, pal().ink2);
-                        crate::ptext_fit(&p, mid + Vec2::new(0.0, 12.0), egui::Align::Center, "or pick a cover below", 1.2, side - 20.0, pal().dim);
-                    }
-                }
-                // a dashed edge while there is no cover yet, bright while a file is dragged over the window
-                if pic.is_none() || hovering {
-                    let col = if hovering || resp.hovered() { pal().ink } else { pal().edge };
-                    let corners = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
-                    for w in corners.windows(2) {
-                        let (a, b) = (w[0], w[1]);
-                        let n = ((b - a).length() / 8.0) as usize;
-                        for k in (0..n).step_by(2) {
-                            let (f0, f1) = (k as f32 / n as f32, (k + 1) as f32 / n as f32);
-                            p.line_segment([a + (b - a) * f0, a + (b - a) * f1], egui::Stroke::new(1.5_f32, col));
+                if !d.tidal {
+                    // the cover, as it will look; a picture can be dropped on it (or anywhere on the window)
+                    let side = 200.0;
+                    let (r, resp) = ui.allocate_exact_size(Vec2::splat(side), Sense::click());
+                    let p = ui.painter().clone();
+                    match pic {
+                        Some(id) => {
+                            egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
+                        }
+                        None if loading => {
+                            crate::paint_record(&p, r, Some(now));
+                            ui.ctx().request_repaint();
+                        }
+                        None => {
+                            p.rect_filled(r, 0.0, pal().ink2.gamma_multiply(0.12));
+                            let mid = r.center();
+                            crate::ptext_fit(&p, mid - Vec2::new(0.0, 10.0), egui::Align::Center, "DROP A PICTURE", 1.6, side - 20.0, pal().ink2);
+                            crate::ptext_fit(&p, mid + Vec2::new(0.0, 12.0), egui::Align::Center, "or pick a cover below", 1.2, side - 20.0, pal().dim);
                         }
                     }
-                } else {
-                    p.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, pal().edge));
-                }
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Pick a picture from this computer").clicked() {
-                    if let Some(p) = pick_art() {
-                        d.art = p;
+                    // a dashed edge while there is no cover yet, bright while a file is dragged over the window
+                    if pic.is_none() || hovering {
+                        let col = if hovering || resp.hovered() { pal().ink } else { pal().edge };
+                        let corners = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+                        for w in corners.windows(2) {
+                            let (a, b) = (w[0], w[1]);
+                            let n = ((b - a).length() / 8.0) as usize;
+                            for k in (0..n).step_by(2) {
+                                let (f0, f1) = (k as f32 / n as f32, (k + 1) as f32 / n as f32);
+                                p.line_segment([a + (b - a) * f0, a + (b - a) * f1], egui::Stroke::new(1.5_f32, col));
+                            }
+                        }
+                    } else {
+                        p.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, pal().edge));
                     }
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Pick a picture from this computer").clicked() {
+                        if let Some(p) = pick_art() {
+                            d.art = p;
+                        }
+                    }
+                    ui.add_space(14.0);
                 }
-                ui.add_space(14.0);
                 ui.vertical(|ui| {
                     let w = ui.available_width();
                     crate::dim_line(ui, "NAME", 1.0, pal().ink2);
@@ -172,7 +159,7 @@ impl App {
                     crate::dim_line(ui, "DESCRIPTION", 1.0, pal().ink2);
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 92.0), Sense::hover());
                     crate::views::field(ui, &mut self.ed, F_NEW_DESC, &mut d.desc, rect, "What it is for (optional)", true);
-                    if tidal_ok {
+                    if tidal_ok && d.edit.is_none() {
                         ui.add_space(8.0);
                         ui.horizontal_wrapped(|ui| {
                             if retro_btn(ui, "IN BACKLINE", !d.tidal).tip("Kept on this computer; can mix every source.").clicked()
@@ -183,53 +170,55 @@ impl App {
                                 d.tidal = true;
                             }
                         });
-                        if d.tidal && !d.art.is_empty() {
-                            crate::dim_line(ui, "Name and description go to Tidal; the cover shows in Backline only.", 1.0, pal().dim);
+                        if d.tidal {
+                            crate::dim_line(ui, "Made on your Tidal account, with Tidal's own cover.", 1.0, pal().dim);
                         }
                     }
                 });
             });
-            // ready-made covers, and your own
-            ui.add_space(12.0);
-            crate::dim_line(ui, "COVERS", 1.0, pal().ink2);
-            ui.add_space(2.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::splat(7.0);
-                for (c, tex) in covers.iter().zip(&thumbs) {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::splat(52.0), Sense::click());
-                    match tex {
-                        Some(id) => {
-                            egui::Image::new(egui::load::SizedTexture::new(*id, r.size())).paint_at(ui, r);
+            if !d.tidal {
+                // ready-made covers, and your own
+                ui.add_space(12.0);
+                crate::dim_line(ui, "COVERS", 1.0, pal().ink2);
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::splat(7.0);
+                    for (c, tex) in covers.iter().zip(&thumbs) {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(52.0), Sense::click());
+                        match tex {
+                            Some(id) => {
+                                egui::Image::new(egui::load::SizedTexture::new(*id, r.size())).paint_at(ui, r);
+                            }
+                            None => {
+                                ui.painter().rect_filled(r, 0.0, pal().ink2.gamma_multiply(0.15));
+                                ui.ctx().request_repaint();
+                            }
                         }
-                        None => {
-                            ui.painter().rect_filled(r, 0.0, pal().ink2.gamma_multiply(0.15));
-                            ui.ctx().request_repaint();
+                        let on = d.art == *c;
+                        if on || resp.hovered() {
+                            let col = if on { pal().ink } else { pal().edge };
+                            ui.painter().rect_stroke(r.expand(2.5), 1.0, egui::Stroke::new(2.0_f32, col));
+                        }
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            d.art = c.clone();
                         }
                     }
-                    let on = d.art == *c;
-                    if on || resp.hovered() {
-                        let col = if on { pal().ink } else { pal().edge };
-                        ui.painter().rect_stroke(r.expand(2.5), 1.0, egui::Stroke::new(2.0_f32, col));
+                });
+                ui.add_space(8.0);
+                ui.horizontal_wrapped(|ui| {
+                    if retro_btn(ui, "YOUR OWN PICTURE...", false).tip("Or drop one on the window").clicked() {
+                        if let Some(p) = pick_art() {
+                            d.art = p;
+                        }
                     }
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        d.art = c.clone();
+                    if !d.art.is_empty() && retro_btn(ui, "NO COVER", false).clicked() {
+                        d.art.clear();
                     }
-                }
-            });
-            ui.add_space(8.0);
-            ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "YOUR OWN PICTURE...", false).tip("Or drop one on the window").clicked() {
-                    if let Some(p) = pick_art() {
-                        d.art = p;
-                    }
-                }
-                if !d.art.is_empty() && retro_btn(ui, "NO COVER", false).clicked() {
-                    d.art.clear();
-                }
-            });
+                });
+            }
             ui.add_space(14.0);
             ui.horizontal(|ui| {
-                if retro_btn_w(ui, "MAKE IT", 120.0, true).clicked() {
+                if retro_btn_w(ui, if d.edit.is_some() { "SAVE" } else { "MAKE IT" }, 120.0, true).clicked() {
                     make = true;
                 }
                 if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {

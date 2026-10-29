@@ -968,8 +968,11 @@ impl App {
             Some(Src::File(p)) => Some(p.clone()),
             _ => cache::file_of(id),
         };
-        let Some(path) = path.filter(|p| p.exists()) else {
-            self.set_note("NOT ON THIS COMPUTER");
+        let Some(path) = path.as_ref().filter(|p| p.exists()).cloned() else {
+            self.set_err(match (path, self.srcmap.get(&id)) {
+                (Some(p), Some(Src::File(_))) => format!("CAN'T SHOW IT: THE FILE ISN'T THERE ANY MORE ({})", p.display()),
+                _ => "CAN'T SHOW IT: THIS SONG ISN'T SAVED ON THIS COMPUTER, IT STREAMS. TURN SAVING ON IN SETTINGS TO KEEP COPIES".to_string(),
+            });
             return;
         };
         #[cfg(windows)]
@@ -1383,7 +1386,7 @@ impl App {
 
     pub(crate) fn rescan(&mut self) {
         let folders = self.store.folders.clone();
-        let known: HashSet<i64> = self.store.files.iter().map(|e| e.id).collect();
+        let known: HashSet<i64> = self.store.files.iter().map(|e| e.id).chain(self.store.removed_files.iter().copied()).collect();
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
             let mut found: Vec<PathBuf> = Vec::new();
@@ -1550,10 +1553,6 @@ impl App {
                 }
                 Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
             },
-            Msg::TidalListArt(id, art) => {
-                self.store.tidal_art.insert(id, art);
-                self.store_dirty = true;
-            }
             Msg::TidalListDone(r) => match r {
                 Ok(note) => self.set_note(&note),
                 Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
@@ -2625,6 +2624,7 @@ impl App {
                     desc: String::new(),
                     art: String::new(),
                     tidal: self.pl_tidal,
+                    edit: None,
                 };
                 self.open_new_playlist(d);
             }
@@ -2632,8 +2632,38 @@ impl App {
                 self.pl_loop = None;
                 self.open_new_playlist(crate::new_playlist::NewPl { track: Some(t), tidal, ..Default::default() });
             }
+            Action::PlaylistEdit(i) => {
+                if let Some(pl) = self.store.playlists.get(i) {
+                    let d = crate::new_playlist::NewPl {
+                        name: pl.name.clone(),
+                        desc: pl.desc.clone(),
+                        art: pl.art.clone(),
+                        edit: Some(i),
+                        ..Default::default()
+                    };
+                    self.open_new_playlist(d);
+                }
+            }
             Action::PlaylistMake(d) => {
-                let art = if d.art.is_empty() { String::new() } else { crate::new_playlist::keep_art(&d.art).unwrap_or_default() };
+                // (a Tidal playlist keeps Tidal's own cover; a cover already kept is not copied again)
+                let kept = d.edit.and_then(|i| self.store.playlists.get(i)).map_or(false, |p| p.art == d.art);
+                let art = if d.art.is_empty() || d.tidal {
+                    String::new()
+                } else if kept {
+                    d.art.clone()
+                } else {
+                    crate::new_playlist::keep_art(&d.art).unwrap_or_default()
+                };
+                if let Some(pl) = d.edit.and_then(|i| self.store.playlists.get_mut(i)) {
+                    if !d.name.trim().is_empty() {
+                        pl.name = d.name.trim().to_string();
+                    }
+                    pl.desc = d.desc.trim().to_string();
+                    pl.art = art;
+                    self.store_dirty = true;
+                    self.serial += 1;
+                    return;
+                }
                 if d.tidal {
                     let name = d.name.trim().to_string();
                     let desc = d.desc.trim().to_string();
@@ -2647,9 +2677,6 @@ impl App {
                             }
                             Ok(u)
                         });
-                        if let (Ok(u), false) = (&r, art.is_empty()) {
-                            let _ = tx.send(Msg::TidalListArt(u.clone(), art));
-                        }
                         let _ = tx.send(Msg::TidalListMade(r.map(|_| name)));
                         ctx.request_repaint();
                     });
@@ -2671,36 +2698,6 @@ impl App {
                 self.pl_pick = None;
                 self.pl_loop = None;
                 self.pl_tidal = false;
-            }
-            Action::PlaylistArt(i, on) => {
-                if i >= self.store.playlists.len() {
-                    return;
-                }
-                let art = if on {
-                    match crate::new_playlist::pick_art().and_then(|p| crate::new_playlist::keep_art(&p)) {
-                        Some(a) => a,
-                        None => return,
-                    }
-                } else {
-                    String::new()
-                };
-                self.store.playlists[i].art = art;
-                self.store_dirty = true;
-                self.serial += 1;
-            }
-            Action::TidalListArt(id, on) => {
-                if on {
-                    match crate::new_playlist::pick_art().and_then(|p| crate::new_playlist::keep_art(&p)) {
-                        Some(a) => {
-                            self.store.tidal_art.insert(id, a);
-                        }
-                        None => return,
-                    }
-                } else {
-                    self.store.tidal_art.remove(&id);
-                }
-                self.store_dirty = true;
-                self.apply(Action::RefreshLibrary);
             }
             Action::PlaylistFromQueue => {
                 if self.queue.is_empty() {
@@ -2873,10 +2870,22 @@ impl App {
                 });
             }
             Action::RemoveExt(id) => {
-                self.store.files.retain(|e| e.id != id);
+                let file = self.store.files.iter().any(|e| e.id == id);
+                if file && !self.store.removed_files.contains(&id) {
+                    self.store.removed_files.push(id);
+                }
+                if self.cur_track().map(|c| c.id) == Some(id) {
+                    self.player.send(Cmd::Stop);
+                }
                 self.store.yt.retain(|e| e.id != id);
                 self.store.sc.retain(|e| e.id != id);
+                self.liked.remove(&id);
+                // (the file list, hearts, playlists, tunes, recent and the queue)
+                self.file_gone(id);
+                cache::remove(id);
+                self.set_note(if file { "REMOVED FROM BACKLINE (THE FILE ITSELF IS STILL ON YOUR DISK)" } else { "REMOVED, AND ITS SAVED COPY DELETED" });
                 self.store_dirty = true;
+                self.serial += 1;
             }
 
             // ---- tunes
