@@ -3978,7 +3978,7 @@ impl App {
         }
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to jump. Shift + drag to select a loop, or inside a loop to slide it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
+            .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
         inset(ui.painter(), bar, pal().lcd);
         let inn = bar.shrink2(Vec2::new(5.0, 5.0));
         // zoom (like Audacity's): the mouse wheel over the waveform zooms in and out where the mouse is; + and -
@@ -4274,8 +4274,8 @@ impl App {
                 self.wv_free = false;
             }
 
-            // shift + drag selects a loop; plain click / drag seeks
-            if resp.drag_started() && shift {
+            // shift + drag (or a drag with the right button) selects a loop; plain click / drag seeks
+            if resp.drag_started_by(egui::PointerButton::Secondary) || (resp.drag_started() && shift) {
                 if let Some(pp) = resp.interact_pointer_pos() {
                     self.sel_anchor = Some(time_at(pp.x));
                 }
