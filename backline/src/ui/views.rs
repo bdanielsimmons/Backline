@@ -3961,14 +3961,26 @@ impl App {
         };
         const CH: usize = 2048;
         if self.notes_tex.is_empty() {
-            let (lo, hi) = (pal().lcd, pal().ink);
+            // heat colours, the same on every skin: dark purple, through red and orange, to pale yellow
+            const HEAT: [[f32; 3]; 8] = [
+                [6.0, 4.0, 16.0],
+                [40.0, 11.0, 84.0],
+                [101.0, 21.0, 110.0],
+                [159.0, 42.0, 99.0],
+                [212.0, 72.0, 66.0],
+                [245.0, 125.0, 21.0],
+                [250.0, 193.0, 39.0],
+                [252.0, 255.0, 164.0],
+            ];
             let lut: Vec<egui::Color32> = (0..256)
                 .map(|i| {
-                    let f = (i as f32 / 255.0).powf(0.8);
-                    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * f) as u8;
-                    egui::Color32::from_rgb(mix(lo.r(), hi.r()), mix(lo.g(), hi.g()), mix(lo.b(), hi.b()))
+                    let v = i as f32 / 255.0 * 7.0;
+                    let (k, f) = ((v as usize).min(6), v - (v as usize).min(6) as f32);
+                    let mix = |j: usize| (HEAT[k][j] + (HEAT[k + 1][j] - HEAT[k][j]) * f) as u8;
+                    egui::Color32::from_rgb(mix(0), mix(1), mix(2))
                 })
                 .collect();
+            let lo = lut[0];
             for k in 0..m.cols.div_ceil(CH) {
                 let (c0, c1) = (k * CH, ((k + 1) * CH).min(m.cols));
                 let w = c1 - c0;
@@ -3994,35 +4006,52 @@ impl App {
             let uv = Rect::from_min_max(Pos2::new((a - k0) / w, 0.0), Pos2::new((b - k0) / w, 1.0));
             p.image(tex.id(), r, uv, egui::Color32::WHITE);
         }
-        // a faint line at every C, and the keyboard, its keys lit where the sound is loudest now
+        // a faint line at every C; the keyboard, its keys lit where the sound is loudest now; and the names down the
+        // side: every note when the rows are tall enough (drag the strip taller), else the C's and the notes lit
+        const NAMES: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+        let name_of = |midi: i32| format!("{}{}", NAMES[midi.rem_euclid(12) as usize], midi / 12 - 1);
+        let lit_col = egui::Color32::from_rgb(252, 200, 60);
         let rh = inn.height() / ROWS as f32;
         let y_of = |r: usize| inn.max.y - (r + 1) as f32 * rh;
         let col = ((shown * FPS) as usize).min(m.cols.saturating_sub(1));
         let peak = (0..ROWS).map(|r| m.at(col, r)).max().unwrap_or(0) as u32;
+        let name_x = keys.max.x + 3.0;
+        let every = rh >= 9.0;
+        let mut last_label = f32::MAX;
         for r in 0..ROWS {
             let midi = LO + r as i32;
             let y = y_of(r);
             if midi % 12 == 0 {
-                fill_rect(p, Rect::from_min_max(Pos2::new(inn.min.x, y + rh - 0.5), Pos2::new(inn.max.x, y + rh)), pal().ink2.gamma_multiply(0.25));
+                fill_rect(p, Rect::from_min_max(Pos2::new(inn.min.x, y + rh - 0.5), Pos2::new(inn.max.x, y + rh)), egui::Color32::from_white_alpha(28));
             }
             let black = matches!(midi.rem_euclid(12), 1 | 3 | 6 | 8 | 10);
             let lit = peak > 120 && m.at(col, r) as u32 * 10 >= peak * 9;
             let w = if black { keys.width() * 0.6 } else { keys.width() };
             let c = if lit {
-                pal().ink
+                lit_col
             } else if black {
                 egui::Color32::from_gray(28)
             } else {
                 egui::Color32::from_gray(200)
             };
             p.rect_filled(Rect::from_min_size(Pos2::new(keys.min.x, y), Vec2::new(w, (rh - 0.5).max(0.5))), 0.0, c);
+            // (labels go bottom to top; one only where it won't sit on the last)
+            if (every || lit || midi % 12 == 0) && last_label - (y + rh / 2.0) >= 9.0 {
+                let col = if lit {
+                    lit_col
+                } else if midi % 12 == 0 {
+                    egui::Color32::from_gray(225)
+                } else {
+                    egui::Color32::from_gray(if black { 110 } else { 160 })
+                };
+                ptext(p, Pos2::new(name_x, y + rh / 2.0), Align::Min, &name_of(midi), 0.7, col);
+                last_label = y + rh / 2.0;
+            }
         }
         // the note under the mouse
         if let Some(pp) = ui.input(|i| i.pointer.hover_pos()).filter(|pp| inn.contains(*pp) || keys.contains(*pp)) {
-            const NAMES: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
             let r = (((inn.max.y - pp.y) / rh) as i32).clamp(0, ROWS as i32 - 1);
-            let midi = LO + r;
-            let name = format!("{}{}", NAMES[midi.rem_euclid(12) as usize], midi / 12 - 1);
+            let name = name_of(LO + r);
             let at = Pos2::new(pp.x + 12.0, pp.y - 8.0);
             let w = crate::font::text_w(&name, 1.0) + 8.0;
             p.rect_filled(Rect::from_min_size(at, Vec2::new(w, 16.0)), 3.0, egui::Color32::from_black_alpha(200));
@@ -4075,7 +4104,7 @@ impl App {
         // (the note view's keyboard down the left)
         let keys = Rect::from_min_max(inn.min, Pos2::new(inn.min.x + 18.0, inn.max.y));
         if notes_on {
-            inn.min.x += 22.0;
+            inn.min.x += 48.0;
         }
         // zoom (like Audacity's): the mouse wheel over the waveform zooms in and out where the mouse is; + and -
         // zoom where the song is playing, FIT shows it all. Only the time gets finer - the height stays

@@ -93,13 +93,29 @@ pub fn analyse(x: &[f32], sr: f32) -> NoteMap {
             .collect();
         hs.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
     });
-    // loudness in dB, the top 0.3% at full and 42 dB below it at nothing
-    let mut db = vec![-140f32; cols * ROWS];
+    let mut lin = vec![0f32; cols * ROWS];
     for (r, row) in rows {
         for (c, v) in row.into_iter().enumerate() {
-            db[c * ROWS + r] = 20.0 * v.max(1e-7).log10();
+            lin[c * ROWS + r] = v;
         }
     }
+    // overtones dimmed: a note an octave, an octave and a fifth, or two octaves above a louder one loses most of
+    // what that note would put there, so the line itself stands out
+    let mut clean = lin.clone();
+    for c in 0..cols {
+        let col = &lin[c * ROWS..(c + 1) * ROWS];
+        for r in 12..ROWS {
+            let mut below = 0.8 * col[r - 12];
+            for d in [19, 24] {
+                if r >= d {
+                    below = below.max(0.6 * col[r - d]);
+                }
+            }
+            clean[c * ROWS + r] = (col[r] - below).max(0.0);
+        }
+    }
+    // loudness in dB, the top 0.3% at full and 42 dB below it at nothing
+    let db: Vec<f32> = clean.iter().map(|v| 20.0 * v.max(1e-7).log10()).collect();
     let mut sorted: Vec<f32> = db.iter().copied().filter(|v| *v > -139.0).collect();
     let top = if sorted.is_empty() {
         0.0
@@ -134,6 +150,20 @@ mod tests {
         // and the next semitone along is quieter, far quieter from the middle of the guitar up
         assert!((m.at(25, (46 - LO) as usize) as u32) * 4 < m.at(25, (45 - LO) as usize) as u32 * 3);
         assert!(m.at(75, (61 - LO) as usize) < m.at(75, (60 - LO) as usize) / 2);
+    }
+
+    #[test]
+    fn overtones_are_dimmed() {
+        // A2 with a strong second harmonic (A3): the A3 row stays well below the note itself
+        let sr = 11025.0;
+        let x: Vec<f32> = (0..sr as usize)
+            .map(|i| {
+                let t = i as f32 / sr;
+                (std::f32::consts::TAU * 110.0 * t).sin() * 0.5 + (std::f32::consts::TAU * 220.0 * t).sin() * 0.3
+            })
+            .collect();
+        let m = analyse(&x, sr);
+        assert!((m.at(25, (57 - LO) as usize) as u32) * 3 < m.at(25, (45 - LO) as usize) as u32 * 2);
     }
 }
 
