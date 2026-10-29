@@ -229,6 +229,10 @@ impl Store {
 pub struct Playlist {
     pub name: String,
     pub items: Vec<Version>,
+    /// its picture: a file in Backline's folder (empty: none)
+    pub art: String,
+    /// what it is for, in your words
+    pub desc: String,
 }
 
 /// A playlist link kept for later: SoundCloud or YouTube (`kind` = "sc" | "yt").
@@ -546,6 +550,8 @@ pub struct Store {
     /// SoundCloud / YouTube playlists you saved by link
     pub lists: Vec<SavedList>,
     pub playlists: Vec<Playlist>,
+    /// pictures you gave your Tidal playlists, shown in Backline: playlist id -> a file in Backline's folder
+    pub tidal_art: HashMap<String, String>,
     pub bpm: HashMap<i64, u32>,
     /// tempo and key found by listening to the audio (see meta.rs)
     pub meta: HashMap<i64, crate::meta::Info>,
@@ -903,10 +909,10 @@ mod share_tests {
         let mut a = Store::default();
         a.sections.insert(1, vec![Section { name: "head".into(), a: 10.0, b: 20.0, ..Default::default() }]);
         a.songs.insert(1, Version { id: 1, title: "Song".into(), ..Default::default() });
-        a.playlists.push(Playlist { name: "Videos".into(), items: vec![Version { id: 1, ..Default::default() }] });
+        a.playlists.push(Playlist { name: "Videos".into(), items: vec![Version { id: 1, ..Default::default() }], ..Default::default() });
         let mut b = Store::default();
         b.sections.insert(1, vec![Section { name: "head".into(), a: 10.0, b: 20.0, ..Default::default() }]);
-        b.playlists.push(Playlist { name: "Videos".into(), items: Vec::new() });
+        b.playlists.push(Playlist { name: "Videos".into(), items: Vec::new(), ..Default::default() });
         let took = b.take_share(a.share());
         assert_eq!(took, Took { loops: 0, playlists: 0, items: 1, tidal: 1, ..Default::default() });
         assert_eq!(b.songs.get(&1).map(|v| v.title.as_str()), Some("Song"));

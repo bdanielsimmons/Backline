@@ -2226,19 +2226,9 @@ impl App {
             let w = (ui.available_width() - 78.0).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let o = field(ui, &mut self.ed, F_NEW_PL, &mut self.new_pl, rect, "New playlist name", false);
-            if !self.pl_tidal && (o.enter || retro_btn_w(ui, "NEW", 70.0, false).tip("Makes a new Backline playlist.").clicked())
-            {
+            // the New Playlist panel: a name, a picture, in Backline or on Tidal (with the song being placed in it)
+            if o.enter || retro_btn_w(ui, "NEW", 70.0, false).tip("Makes a new playlist: name it, give it a picture.").clicked() {
                 acts.push(Action::PlaylistNew(self.pl_pick.clone()));
-            }
-            // a new playlist on your Tidal account, with this song in it
-            if let Some(t) = self.pl_pick.as_ref().filter(|t| t.id > 0 && self.api.has_token() && self.pl_loop.is_none()) {
-                if retro_btn(ui, "NEW ON TIDAL", false)
-                    .tip("Makes a playlist on your Tidal account, with the song in it.")
-                    .clicked()
-                    && !self.new_pl.trim().is_empty()
-                {
-                    acts.push(Action::TidalListAdd(String::new(), self.new_pl.trim().to_string(), t.id));
-                }
             }
         });
         if self.pl_pick.is_none() {
@@ -2278,6 +2268,10 @@ impl App {
                         acts.push(Action::PlaylistOpen(Some(i)));
                     }
                     r.context_menu(|ui| {
+                        if menu_item(ui, "Set picture...") {
+                            acts.push(Action::PlaylistArt(i, true));
+                            ui.close_menu();
+                        }
                         if menu_item(ui, "Delete this playlist") {
                             acts.push(Action::PlaylistDelete(i));
                             ui.close_menu();
@@ -2295,8 +2289,29 @@ impl App {
             if retro_btn(ui, "< ALL PLAYLISTS", false).clicked() {
                 acts.push(Action::PlaylistOpen(None));
             }
+            let has_art = !self.store.playlists[pi].art.is_empty();
+            if retro_btn(ui, if has_art { "CHANGE PICTURE..." } else { "PICTURE..." }, false).clicked() {
+                acts.push(Action::PlaylistArt(pi, true));
+            }
+            if has_art && retro_btn(ui, "NO PICTURE", false).clicked() {
+                acts.push(Action::PlaylistArt(pi, false));
+            }
         });
+        // its picture, when it has one
+        let url = crate::new_playlist::art_url(&self.store.playlists[pi].art);
+        if !url.is_empty() {
+            ui.add_space(4.0);
+            let (r, resp) = ui.allocate_exact_size(Vec2::splat(140.0), Sense::click());
+            crate::paint_page_art(ui, &mut self.images, &url, r, false);
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                acts.push(Action::ArtPreview(url.clone(), name.clone(), false));
+            }
+        }
         title_line(ui, &name.to_uppercase(), 3.0, pal().ink);
+        let desc = self.store.playlists[pi].desc.clone();
+        if !desc.is_empty() {
+            para(ui, &desc, pal().ink2);
+        }
         let items = self.store.playlists[pi].items.clone();
         title_line(ui, &format!("{} tracks (right-click one to move or remove it)", items.len()), 2.0, pal().ink2);
         ui.add_space(4.0);

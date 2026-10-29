@@ -336,7 +336,7 @@ fn image_url(uuid: &str, w: u32, h: u32) -> String {
     if uuid.is_empty() {
         return String::new();
     }
-    if uuid.starts_with("http") || uuid.starts_with("file:") {
+    if uuid.starts_with("http") || uuid.starts_with("file:") || uuid.starts_with("img:") {
         return uuid.to_string(); // YouTube thumbnails are full URLs already
     }
     format!("https://resources.tidal.com/images/{}/{}x{}.jpg", uuid.replace('-', "/"), w, h)
@@ -899,7 +899,7 @@ impl Api {
     }
 
     /// Make a new playlist on your Tidal account; its id.
-    pub fn playlist_create(&self, title: &str) -> Res<String> {
+    pub fn playlist_create(&self, title: &str, description: &str) -> Res<String> {
         guard()?;
         let (tok, country, uid) = self.auth();
         let r = self
@@ -907,7 +907,7 @@ impl Api {
             .post(format!("{}/users/{}/playlists", API, uid))
             .bearer_auth(&tok)
             .query(&[("countryCode", country.as_str())])
-            .form(&[("title", title), ("description", "")])
+            .form(&[("title", title), ("description", description)])
             .send()
             .map_err(e2s)?;
         let st = r.status();

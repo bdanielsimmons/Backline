@@ -76,6 +76,8 @@ mod chords;
 mod clusters;
 #[path = "ui/credits.rs"]
 mod credits;
+#[path = "ui/new_playlist.rs"]
+mod new_playlist;
 #[path = "ui/ear.rs"]
 mod ear;
 #[path = "ui/font.rs"]
@@ -226,6 +228,8 @@ enum Msg {
     TidalListDone(Result<String, String>),
     /// a new playlist made on your Tidal account (its name), shown once the library is loaded again
     TidalListMade(Result<String, String>),
+    /// a new Tidal playlist made with a picture: (its id, the picture) to keep
+    TidalListArt(String, String),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
     /// files added: the songs, the folders, and playlist files read (their name and songs)
     Added(Vec<store::Ext>, Vec<String>, Vec<(String, Vec<i64>)>),
@@ -530,12 +534,19 @@ enum Action {
     /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
     /// playlist with that name
     TidalListAdd(String, String, i64),
-    /// make a new, empty playlist on your Tidal account with this name
-    TidalListNew(String),
     /// put a loop of a song in a playlist: (the song, from, to, the loop's name)
     PlaylistPickLoop(Track, f32, f32, String),
     PlaylistAdd(usize, Track),
+    /// open the New Playlist panel (with this song in it)
     PlaylistNew(Option<Track>),
+    /// open the New Playlist panel for a song: (the song, on Tidal rather than in Backline)
+    PlaylistNewWith(Track, bool),
+    /// make the playlist the New Playlist panel describes
+    PlaylistMake(new_playlist::NewPl),
+    /// pick a new picture for one of your playlists (None: take it off)
+    PlaylistArt(usize, bool),
+    /// pick a picture for a Tidal playlist, shown in Backline: (its id, false to take it off)
+    TidalListArt(String, bool),
     PlaylistFromQueue,
     PlaylistRemove(usize, usize),
     PlaylistMove(usize, usize, i32),
@@ -1075,6 +1086,7 @@ fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<Str
             // (a picture from the web is kept on disk once fetched: covers show offline too)
             let bytes = match real.strip_prefix("file:") {
                 Some(path) => sources::file_art(std::path::Path::new(path)),
+                None if real.starts_with("img:") => std::fs::read(&real[4..]).ok(),
                 None => {
                     let kept = cover_path(&real);
                     match std::fs::read(&kept).ok().filter(|b| b.len() > 100) {
@@ -1545,14 +1557,21 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::PickTune(t.clone()));
         ui.close_menu();
     }
-    // each picker has a name box too: NEW makes a playlist with the song in it (NEW ON TIDAL, one on your Tidal
-    // account)
+    // (each picker has a NEW PLAYLIST button too)
     if menu_item(ui, "Add to a Backline playlist...") {
         acts.push(Action::PlaylistPick(t.clone()));
         ui.close_menu();
     }
+    if menu_item(ui, "New Backline playlist with this song...") {
+        acts.push(Action::PlaylistNewWith(t.clone(), false));
+        ui.close_menu();
+    }
     if t.id > 0 && menu_item(ui, "Add to a Tidal playlist...") {
         acts.push(Action::PlaylistPickTidal(t.clone()));
+        ui.close_menu();
+    }
+    if t.id > 0 && menu_item(ui, "New Tidal playlist with this song...") {
+        acts.push(Action::PlaylistNewWith(t.clone(), true));
         ui.close_menu();
     }
     if menu_item(ui, "Copy name") {
@@ -1621,6 +1640,15 @@ fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, acts: &mut Vec<Acti
                     }
                     if !c.image.is_empty() && menu_item(ui, "View art") {
                         acts.push(Action::ArtPreview(c.image.clone(), c.title.clone(), c.kind == Kind::Artist));
+                        ui.close_menu();
+                    }
+                    // a picture of your own for a playlist (shown in Backline)
+                    if c.kind == Kind::Playlist && menu_item(ui, "Set picture...") {
+                        acts.push(Action::TidalListArt(c.id.clone(), true));
+                        ui.close_menu();
+                    }
+                    if c.kind == Kind::Playlist && c.image.starts_with("img:") && menu_item(ui, "Remove my picture") {
+                        acts.push(Action::TidalListArt(c.id.clone(), false));
                         ui.close_menu();
                     }
                 });
@@ -2548,6 +2576,8 @@ struct App {
     pl_loop: Option<(f32, f32, String)>,
     /// your own Tidal playlists (None until asked for), and whether they are being fetched
     tidal_lists: Option<Vec<(String, String)>>,
+    /// the New Playlist panel, while open
+    new_pl_dlg: Option<new_playlist::NewPl>,
     tidal_lists_busy: bool,
     /// the name typed for a new Tidal playlist (MY LIBRARY > LISTS)
     tidal_new_name: String,
@@ -3397,6 +3427,7 @@ impl App {
             pl_pick: None,
             pl_loop: None,
             tidal_lists: None,
+            new_pl_dlg: None,
             tidal_lists_busy: false,
             tidal_new_name: String::new(),
             lib_filter: String::new(),
@@ -4239,6 +4270,13 @@ impl App {
                 app.practice = true;
                 app.more = true;
                 app.mtab = ["trainer", "pitch", "stems"].iter().position(|x| *x == t).unwrap_or(0) as u8;
+                // with the tour song playing, so the tab shows what it does
+                if let Some(p) = tour_song::ready() {
+                    let t = sources::ext_for_file(&p).to_track();
+                    app.srcmap.insert(t.id, Src::File(p));
+                    app.queue = Arc::new(vec![t]);
+                    app.play_index(0);
+                }
             }
             Ok("lists") => app.sec = Sec::Lists,
             // the library's ARTISTS tab (BACKLINE_OPEN=artist opens an artist's page once the library is in: Msg::Page)
@@ -4303,6 +4341,17 @@ impl App {
                     app.play_index(0);
                 }
                 app.vis_set_full(true, false);
+            }
+            // the New Playlist panel for the tour song (BACKLINE_ART=<picture file>: with that picture picked)
+            Ok("newplaylist") => {
+                let track = tour_song::ready().map(|p| sources::ext_for_file(&p).to_track());
+                app.open_new_playlist(new_playlist::NewPl {
+                    track,
+                    name: "Sunday morning".to_string(),
+                    desc: "Slow ones to learn the heads to, before church.".to_string(),
+                    art: std::env::var("BACKLINE_ART").unwrap_or_default(),
+                    ..Default::default()
+                });
             }
             Ok("listening") => {
                 app.sec = Sec::Diary;
@@ -4812,6 +4861,7 @@ impl App {
                     }
                 }
                 Msg::Page(mut p, push) => {
+                    self.tidal_art_on(&mut p);
                     // a tour (or recording one): the library holds only the tour's song (your own comes back after)
                     if p.library && (tour::demo_kind().is_some() || self.tour_play.is_some()) {
                         p.tracks = self.demo_track.iter().cloned().collect();
@@ -6389,7 +6439,9 @@ impl eframe::App for App {
 
         // files / folders dropped onto the window
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
-        if !dropped.is_empty() {
+        if let (Some(d), Some(pic)) = (self.new_pl_dlg.as_mut(), dropped.iter().find(|p| new_playlist::is_picture(p))) {
+            d.art = pic.to_string_lossy().into_owned();
+        } else if !dropped.is_empty() {
             self.handle_paths(dropped);
         }
         let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
@@ -6949,6 +7001,7 @@ impl eframe::App for App {
         self.help_overlay(ctx, &mut acts);
         self.credits_overlay(ctx);
         self.art_preview_overlay(ctx);
+        self.new_playlist_panel(ctx, &mut acts);
         self.edit_info_panel(ctx);
         self.takes_panel(ctx);
         self.skin_loading_panel(ctx);

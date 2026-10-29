@@ -1225,8 +1225,7 @@ impl App {
                 acts.push(Action::PlaylistFromQueue);
             }
             if menu_item(ui, "New playlist...") {
-                acts.push(Action::Section(crate::Sec::Lists));
-                acts.push(Action::PlaylistOpen(None));
+                acts.push(Action::PlaylistNew(None));
             }
             for (i, pl) in self.store.playlists.iter().enumerate().take(12) {
                 if menu_item(ui, &format!("Open  {}", pl.name)) {

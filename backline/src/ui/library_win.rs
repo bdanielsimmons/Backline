@@ -1503,10 +1503,15 @@ impl App {
                                         );
                                         if o.enter
                                             || retro_btn(ui, "+ NEW PLAYLIST", false)
-                                                .tip("Makes it on your Tidal account.")
+                                                .tip("Makes it on your Tidal account: name it, give it a picture.")
                                                 .clicked()
                                         {
-                                            acts.push(Action::TidalListNew(self.tidal_new_name.clone()));
+                                            let name = std::mem::take(&mut self.tidal_new_name).trim().to_string();
+                                            self.open_new_playlist(crate::new_playlist::NewPl {
+                                                name,
+                                                tidal: true,
+                                                ..Default::default()
+                                            });
                                         }
                                     });
                                     ui.add_space(4.0);
