@@ -60,7 +60,8 @@ pub(crate) type Look = [f32; lk::N];
 /// A theme: a looping path through looks, its keys evenly spaced over `period` seconds; the landscape the music sits
 /// on (an index into `Themes::bases`), and whether the sheet floods when it comes in or goes. Our own worlds' themes
 /// may wind (the canyon's path: two sideways waves, amplitude and frequency each, and one up and down), have a
-/// ceiling (the cavern's, its height) and lift the music higher (`gain`).
+/// ceiling (the cavern's, its height), lift the music higher (`gain`) and follow it more closely from row to row
+/// (`snap`, see `SNAP`).
 pub(crate) struct Theme {
     pub period: f32,
     pub base: usize,
@@ -71,10 +72,11 @@ pub(crate) struct Theme {
     pub rise: [f32; 2],
     pub ceiling: f32,
     pub gain: f32,
+    pub snap: f32,
 }
 
-/// Which world the sheet makes: the terrain (a ground to glide over), a cavern (the ground and a mirror of it
-/// overhead) or a canyon (a valley winding left and right, up and down, the camera flying along it).
+/// Which world the sheet makes: the terrain (a ground to glide over), a cavern (the ground and a flatter copy of it
+/// turned over overhead) or a canyon (a valley winding left and right, up and down, the camera flying along it).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum World {
     Terrain,
@@ -95,8 +97,9 @@ pub(crate) struct Themes {
     pub bases: Vec<[f32; COLS]>,
     pub responses: Vec<Response>,
     pub list: Vec<Theme>,
-    /// our own landscape after the measured ones: the canyon's walls
+    /// our own landscapes after the measured ones: the canyon's walls and the cavern's floor
     pub canyon: usize,
+    pub cavern: usize,
 }
 
 impl Theme {
@@ -163,12 +166,20 @@ pub(crate) fn themes() -> &'static Themes {
             *v = 3.2 * s.powi(4) + 0.6 * s * s;
         }
         t.bases.push(wall);
+        // the cavern's floor: low in the middle, rising gently to both edges, where the bass lifts it to the ceiling
+        t.cavern = t.bases.len();
+        let mut floor = [0f32; COLS];
+        for (c, v) in floor.iter_mut().enumerate() {
+            let s = (c as f32 - 64.0).abs() / 64.0;
+            *v = 0.2 + 1.4 * s * s;
+        }
+        t.bases.push(floor);
         t
     })
 }
 
 fn parse_themes(b: &[u8]) -> Themes {
-    let mut out = Themes { bases: Vec::new(), responses: Vec::new(), list: Vec::new(), canyon: 0 };
+    let mut out = Themes { bases: Vec::new(), responses: Vec::new(), list: Vec::new(), canyon: 0, cavern: 0 };
     if b.len() < 8 || &b[..4] != b"TER2" {
         return out;
     }
@@ -216,7 +227,7 @@ fn parse_themes(b: &[u8]) -> Themes {
         }
         let response = response.min(nr.saturating_sub(1));
         let base = base.min(nb.saturating_sub(1));
-        out.list.push(Theme { period, base, flood, response, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0, gain: 1.0 });
+        out.list.push(Theme { period, base, flood, response, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0, gain: 1.0, snap: SNAP });
     }
     out
 }
@@ -308,7 +319,7 @@ fn own_theme(styles: [&Style; 3], first: usize, period: f32, base: usize, path: 
             }
         })
         .collect();
-    Theme { period, base, flood: false, response: 1, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0, gain: 2.0 }
+    Theme { period, base, flood: false, response: 1, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0, gain: 2.0, snap: SNAP }
 }
 
 fn unit(v: [f32; 3]) -> [f32; 3] {
@@ -320,7 +331,8 @@ fn unit(v: [f32; 3]) -> [f32; 3] {
 fn own_themes() -> &'static [Vec<Theme>; 2] {
     static T: std::sync::OnceLock<[Vec<Theme>; 2]> = std::sync::OnceLock::new();
     T.get_or_init(|| {
-        // the cavern: a valley below and its mirror above, the camera drifting between them
+        // the cavern: a shallow valley below and a flatter copy of it overhead (the bass lifting the valley's sides to
+        // meet it), the camera drifting low between them
         let cave = |fog: [f32; 3], glow: [f32; 3], ramp: [[f32; 3]; 4]| Style {
             fog,
             glow,
@@ -328,11 +340,13 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             xs: 1.2,
             hs: 7.0,
             fog_range: 40.0,
-            fog_start: 18.0,
+            fog_start: 22.0,
             tile: 12.0,
             lift: 31.0,
             clip: 36.0,
-            swell: [40.0, 5.0, 0.2, 0.1],
+            // (the swell only grows toward the camera: a ripple in it would sink every ridge and raise it again on its
+            // way in, too quick at this speed)
+            swell: [40.0, 5.0, 0.04, 0.1],
             bump: 0.2,
             focus: 30.0,
             coc: 0.006,
@@ -343,7 +357,7 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
         };
         let cave_path = |ph: f32| {
             move |a: f32| Key {
-                eye: [18.0 * (a + ph).sin(), 20.0 + 3.0 * (2.0 * a + ph).sin(), 0.0],
+                eye: [18.0 * (a + ph).sin(), 13.0 + 2.0 * (2.0 * a + ph).sin(), 0.0],
                 fwd: unit([0.22 * (a + ph + 0.8).sin(), -0.04 + 0.08 * (a * 2.0 + ph).cos(), 1.0]),
                 fov: 82.0 + 8.0 * (a + ph).cos(),
                 speed: 9.0 + 3.0 * (a * 2.0 + ph).sin(),
@@ -355,7 +369,12 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
         let dusk = cave([0.5, 0.28, 0.3], [1.0, 0.8, 0.5], [[2.4, 1.8, 1.3], [1.5, 0.9, 0.75], [0.7, 0.35, 0.4], [0.15, 0.06, 0.12]]);
         let cavern = [(0, 180.0, 0.0), (1, 200.0, 2.4), (2, 220.0, 4.4)]
             .into_iter()
-            .map(|(first, period, ph)| Theme { ceiling: 40.0, ..own_theme([&amethyst, &jade, &dusk], first, period, 1, cave_path(ph)) })
+            .map(|(first, period, ph)| Theme {
+                ceiling: 40.0,
+                gain: 2.5,
+                snap: 0.25,
+                ..own_theme([&amethyst, &jade, &dusk], first, period, themes().cavern, cave_path(ph))
+            })
             .collect();
         // the canyon: walls on both sides, the floor between them, flown along fast just above the floor
         let walls = |fog: [f32; 3], glow: [f32; 3], ramp: [[f32; 3]; 4]| Style {
@@ -367,9 +386,9 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             fog_range: 40.0,
             fog_start: 22.0,
             tile: 14.0,
-            lift: 35.0,
-            clip: 40.0,
-            swell: [40.0, 3.0, 0.15, 0.1],
+            lift: 31.0,
+            clip: 36.0,
+            swell: [40.0, 3.0, 0.04, 0.1],
             bump: 0.2,
             focus: 32.0,
             coc: 0.005,
@@ -397,7 +416,13 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             (2, 210.0, 4.2, [22.0, 0.025, 14.0, 0.041], [4.0, 0.02]),
         ]
         .into_iter()
-        .map(|(first, period, ph, wind, rise)| Theme { wind, rise, ..own_theme([&red_rock, &glacier, &neon], first, period, walled, canyon_path(ph)) })
+        .map(|(first, period, ph, wind, rise)| Theme {
+            wind,
+            rise,
+            gain: 2.4,
+            snap: 0.22,
+            ..own_theme([&red_rock, &glacier, &neon], first, period, walled, canyon_path(ph))
+        })
         .collect();
         [cavern, canyon]
     })
@@ -440,19 +465,25 @@ const TRIP_BLEND: f64 = 8.0;
 /// A ceiling too high to see: a world without one.
 const NO_CEILING: f32 = 1500.0;
 
-/// What bends a phase's world: its path's winding and rising, its ceiling, how much it lifts the music, and how far
-/// the glow by the front may go (our own worlds' walls are tall: uncapped, the glow would run past its colour).
+/// How far each new row's ground goes from the row before's toward the music's height: the measured looks' (rolling
+/// hills); our own worlds follow the beats more closely.
+const SNAP: f32 = 0.11;
+
+/// What bends a phase's world: its path's winding and rising, its ceiling, how much it lifts the music and how closely
+/// it follows it, and how far the glow by the front may go (our own worlds' walls are tall: uncapped, the glow would
+/// run past its colour).
 #[derive(Clone, Copy)]
 struct Bend {
     wind: [f32; 4],
     rise: [f32; 2],
     ceiling: f32,
     gain: f32,
+    snap: f32,
     glowcap: f32,
 }
 
 impl Bend {
-    const FLAT: Bend = Bend { wind: [0.0; 4], rise: [0.0; 2], ceiling: NO_CEILING, gain: 1.0, glowcap: 1e6 };
+    const FLAT: Bend = Bend { wind: [0.0; 4], rise: [0.0; 2], ceiling: NO_CEILING, gain: 1.0, snap: SNAP, glowcap: 1e6 };
 
     fn of(p: (World, usize)) -> Bend {
         match theme_of(p) {
@@ -461,14 +492,16 @@ impl Bend {
                 rise: t.rise,
                 ceiling: if t.ceiling > 0.0 { t.ceiling } else { NO_CEILING },
                 gain: t.gain,
+                snap: t.snap,
                 glowcap: if p.0 == World::Terrain { 1e6 } else { 0.5 },
             },
             None => Bend::FLAT,
         }
     }
 
-    /// Partway from `a` to `b` as one bend (when another change starts before this one is done): the ceiling, gain
-    /// and glow in between, and the path the stronger of the two at its share (two paths can't be one).
+    /// Partway from `a` to `b` as one bend (when another change starts before this one is done): the ceiling, the
+    /// music's lift and closeness, and the glow in between, and the path the stronger of the two at its share (two
+    /// paths can't be one).
     fn settle(a: Bend, b: Bend, k: f32) -> Bend {
         let amp = |x: &Bend| x.wind[0].abs() + x.wind[2].abs() + x.rise[0].abs();
         let (main, w) = if amp(&b) * k >= amp(&a) * (1.0 - k) { (b, k) } else { (a, 1.0 - k) };
@@ -477,6 +510,7 @@ impl Bend {
             rise: [main.rise[0] * w, main.rise[1]],
             ceiling: a.ceiling + (b.ceiling - a.ceiling) * k,
             gain: a.gain + (b.gain - a.gain) * k,
+            snap: a.snap + (b.snap - a.snap) * k,
             glowcap: glowcap(a, b, k),
         }
     }
@@ -661,7 +695,7 @@ impl Sheet {
     fn fill(&mut self, base: &[f32; COLS]) {
         self.next = -(ROWS as i64);
         for _ in 0..ROWS {
-            self.push(base, &[0.0; 65], 0.0);
+            self.push(base, &[0.0; 65], 0.0, SNAP);
             let s = (self.next - 1).rem_euclid(RING as i64) as usize;
             for c in 0..COLS {
                 self.a[s * COLS + c][0] = base[c];
@@ -676,8 +710,9 @@ impl Sheet {
         (self.seed >> 40) as f32 / 16777216.0
     }
 
-    /// A new row: the landscape `base` (edge to edge) with the music on it (65 values, edge to middle, mirrored).
-    fn push(&mut self, base: &[f32; COLS], vals: &[f32; 65], xoff: f32) {
+    /// A new row: the landscape `base` (edge to edge) with the music on it (65 values, edge to middle, mirrored),
+    /// smoothed over the rows before by `snap` (see `SNAP`).
+    fn push(&mut self, base: &[f32; COLS], vals: &[f32; 65], xoff: f32, snap: f32) {
         let n = self.next;
         let slot = n.rem_euclid(RING as i64) as usize;
         let prev = (n - 1).rem_euclid(RING as i64) as usize;
@@ -686,7 +721,7 @@ impl Sheet {
             let d = (c as i32 - 64).unsigned_abs() as usize;
             let pw = base[c] + vals[64 - d.min(64)];
             // smoothed over the rows before
-            let py = self.a[prev * COLS + c][0] + (pw - self.a[prev * COLS + c][0]) * 0.11;
+            let py = self.a[prev * COLS + c][0] + (pw - self.a[prev * COLS + c][0]) * snap;
             let tw = (self.rnd() * 2.0 - 1.0) * 500.0;
             self.a[slot * COLS + c] = [py, pw, tw, n as f32];
         }
@@ -714,7 +749,8 @@ impl Sheet {
 // ------------------------------------------------------------------------------------------------ the GPU side
 // where a point of the sheet goes in the world being drawn (shared by the sheet and its depth of field): along a
 // winding path (two sideways waves, one up and down, by the row's place from the very first row; during a change of
-// phase, partway from the last one's path to the new one's), and for a cavern's second copy turned over into a ceiling
+// phase, partway from the last one's path to the new one's), and for a cavern's second copy turned over (and a little
+// flatter, so it is no mirror of the floor) into a ceiling
 const PLACE: &str = r#"
 uniform float zbase;
 uniform vec4 windA, windB;
@@ -724,7 +760,7 @@ float wander(vec4 w, float z){ return w.x * sin(w.y * z) + w.z * sin(w.w * z + 1
 float heave(vec2 r, float z){ return r.x * sin(r.y * z + .5); }
 vec3 place(vec3 p){
   float z = p.z + zbase;
-  float y = mirror > .5 ? ceiling - p.y : p.y;
+  float y = mirror > .5 ? ceiling - .75 * p.y : p.y;
   return vec3(p.x + mix(wander(windA, z), wander(windB, z), wmix), y + mix(heave(riseA, z), heave(riseB, z), wmix), p.z);
 }
 "#;
@@ -738,7 +774,7 @@ uniform vec2 c8;
 uniform vec3 fogp;
 uniform vec3 c12;
 uniform vec4 c13;
-out vec2 tc0; out vec2 tc1; out vec2 tc2; out vec3 tc3; out vec3 tc4; out vec3 tc5; out vec3 tc6; out float tc7;
+out vec2 tc0; out vec2 tc1; out vec2 tc2; out vec3 tc3; out vec3 tc4; out vec3 tc5; out vec3 tc6; out float tc7; out float tc8;
 // the tangent: across the sheet, or along it when the normal points down the sheet
 vec3 side(vec3 n){ return n.z < .99 ? normalize(vec3(n.y, -n.x, 0.)) : normalize(vec3(-n.z, 0., n.x)); }
 float near(float z){ float a = clamp(abs(c12.x - z) / c13.x, 0., 1.); return 1. - a * a * (3. - 2. * a); }
@@ -755,7 +791,8 @@ void main(){
   float px = cx + B.w, pz = A.w - zbase;
   vec3 n = normalize(B.xyz);
   tc0 = vec2(float(c), float(slot)) / 127.;
-  tc1 = tc0 * fogp.z;
+  // (a cavern's ceiling gets fine bumps of its own: no mirror of the floor up close)
+  tc1 = tc0 * fogp.z + mirror * vec2(.37, .61);
   // tiles past the lift line settle in from a random height (one per tile), the middle of the sheet first
   float tz = Q.w - zbase + 1. - 50. * (qx / 64.) * (qx / 64.);
   float lift = max((tz - c12.y) * .01, 0.);
@@ -780,15 +817,17 @@ void main(){
   vec3 T = side(N);
   tc3 = T; tc4 = cross(N, T); tc5 = N;
   tc7 = pz - c12.z;
+  // the gap between the floor and a cavern's ceiling here (the ceiling being the floor turned over, see place)
+  tc8 = ceiling - 1.75 * Hf;
 }
 "#;
 
 const SHEET_FS: &str = r#"
 uniform sampler2D bump, ramp;
-uniform float bumpk, glowcap;
+uniform float bumpk, glowcap, mirror;
 uniform vec2 rampfix;
 uniform vec3 glow, fogc, sidec;
-in vec2 tc0; in vec2 tc1; in vec2 tc2; in vec3 tc3; in vec3 tc4; in vec3 tc5; in vec3 tc6; in float tc7;
+in vec2 tc0; in vec2 tc1; in vec2 tc2; in vec3 tc3; in vec3 tc4; in vec3 tc5; in vec3 tc6; in float tc7; in float tc8;
 void main(){
   if (tc7 > 0.) discard;
   vec3 b = texture(bump, tc1).xyz - .5;
@@ -796,6 +835,8 @@ void main(){
   float ndv = abs(dot(tc6, n) / length(n));
   vec3 col = texture(ramp, vec2(ndv * rampfix.x + rampfix.y, .5)).rgb;
   col = mix(col, glow, min(tc2.y, glowcap));
+  // a cavern's floor and ceiling fade into shadow where they meet, so the join is soft; its ceiling a shade darker
+  col *= mix(.3, 1., smoothstep(0., 10., tc8)) * (1. - .15 * mirror);
   col = mix(fogc, col, tc2.x);
   float e = abs(tc0.x - .5);
   col = mix(col, sidec, clamp(8. * e * e * e, 0., 1.));
@@ -1270,6 +1311,7 @@ impl Terrain {
         }
         let (a, b, k) = self.bend_at(inp.t);
         let gain = a.gain + (b.gain - a.gain) * k;
+        let snap = a.snap + (b.snap - a.snap) * k;
         self.vals = vals.map(|v| v * gain);
         // the front moves on; each whole row the leading edge passes, the music makes a new one there
         let l = &self.look;
@@ -1287,7 +1329,7 @@ impl Terrain {
             }
             let (base, vals) = (self.base, self.vals);
             for _ in 0..need.min(ROWS as i64) {
-                self.sheet.push(&base, &vals, 0.0);
+                self.sheet.push(&base, &vals, 0.0, snap);
             }
         }
         // (test switch BACKLINE_TERRAIN_ROWS=<file>: the sheet's rows saved every ten seconds, to compare with reference rows)
@@ -1659,7 +1701,12 @@ impl Terrain {
             gl.uniform_1_i32(cu(name).as_ref(), i as i32);
         }
         gl.uniform_1_f32(cu("blur0").as_ref(), look[lk::BLUR]);
-        gl.uniform_1_f32(cu("leak").as_ref(), look[lk::LEAK]);
+        // a trail stretched far out of shape smears the middle of the last frame over the picture (streaks, a ghost of
+        // the hills: Aurora, Blue and Sepia at times): it fades out as the stretch grows (a reference frame keeps it)
+        let warp = |s: f32| s.max(1e-3).ln().abs();
+        let stretch = warp(look[lk::LSCALE]).max(warp(look[lk::LSCALE + 1]));
+        let fade = if self.dump.is_some() { 1.0 } else { 1.0 - smooth((stretch - 0.3) / 0.3) };
+        gl.uniform_1_f32(cu("leak").as_ref(), look[lk::LEAK] * fade);
         // (the textures here run upward, so the turn goes the other way round)
         gl.uniform_2_f32(cu("rot").as_ref(), -look[lk::ROT].sin(), look[lk::ROT].cos());
         gl.uniform_2_f32(cu("lscale").as_ref(), look[lk::LSCALE], look[lk::LSCALE + 1]);
