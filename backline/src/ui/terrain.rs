@@ -59,8 +59,8 @@ pub(crate) type Look = [f32; lk::N];
 
 /// A theme: a looping path through looks, its keys evenly spaced over `period` seconds; the landscape the music sits
 /// on (an index into `Themes::bases`), and whether the sheet floods when it comes in or goes. Our own worlds' themes
-/// may wind (the canyon's path: two sideways waves, amplitude and frequency each, and one up and down) and have a
-/// ceiling (the cavern's, its height).
+/// may wind (the canyon's path: two sideways waves, amplitude and frequency each, and one up and down), have a
+/// ceiling (the cavern's, its height) and lift the music higher (`gain`).
 pub(crate) struct Theme {
     pub period: f32,
     pub base: usize,
@@ -70,6 +70,7 @@ pub(crate) struct Theme {
     pub wind: [f32; 4],
     pub rise: [f32; 2],
     pub ceiling: f32,
+    pub gain: f32,
 }
 
 /// Which world the sheet makes: the terrain (a ground to glide over), a cavern (the ground and a mirror of it
@@ -215,7 +216,7 @@ fn parse_themes(b: &[u8]) -> Themes {
         }
         let response = response.min(nr.saturating_sub(1));
         let base = base.min(nb.saturating_sub(1));
-        out.list.push(Theme { period, base, flood, response, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0 });
+        out.list.push(Theme { period, base, flood, response, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0, gain: 1.0 });
     }
     out
 }
@@ -307,7 +308,7 @@ fn own_theme(styles: [&Style; 3], first: usize, period: f32, base: usize, path: 
             }
         })
         .collect();
-    Theme { period, base, flood: false, response: 1, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0 }
+    Theme { period, base, flood: false, response: 1, keys, wind: [0.0; 4], rise: [0.0; 2], ceiling: 0.0, gain: 2.0 }
 }
 
 fn unit(v: [f32; 3]) -> [f32; 3] {
@@ -326,11 +327,11 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             ramp,
             xs: 1.6,
             hs: 7.0,
-            fog_range: 70.0,
-            fog_start: 30.0,
+            fog_range: 40.0,
+            fog_start: 18.0,
             tile: 5.0,
-            lift: 90.0,
-            clip: 100.0,
+            lift: 26.0,
+            clip: 36.0,
             swell: [40.0, 5.0, 0.2, 0.1],
             bump: 0.14,
             focus: 45.0,
@@ -342,7 +343,7 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
         };
         let cave_path = |ph: f32| {
             move |a: f32| Key {
-                eye: [18.0 * (a + ph).sin(), 16.0 + 4.0 * (2.0 * a + ph).sin(), 0.0],
+                eye: [18.0 * (a + ph).sin(), 20.0 + 3.0 * (2.0 * a + ph).sin(), 0.0],
                 fwd: unit([0.22 * (a + ph + 0.8).sin(), -0.04 + 0.08 * (a * 2.0 + ph).cos(), 1.0]),
                 fov: 82.0 + 8.0 * (a + ph).cos(),
                 speed: 9.0 + 3.0 * (a * 2.0 + ph).sin(),
@@ -354,7 +355,7 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
         let dusk = cave([0.5, 0.28, 0.3], [1.0, 0.8, 0.5], [[2.4, 1.8, 1.3], [1.5, 0.9, 0.75], [0.7, 0.35, 0.4], [0.15, 0.06, 0.12]]);
         let cavern = [(0, 180.0, 0.0), (1, 200.0, 2.4), (2, 220.0, 4.4)]
             .into_iter()
-            .map(|(first, period, ph)| Theme { ceiling: 34.0, ..own_theme([&amethyst, &jade, &dusk], first, period, 1, cave_path(ph)) })
+            .map(|(first, period, ph)| Theme { ceiling: 40.0, ..own_theme([&amethyst, &jade, &dusk], first, period, 1, cave_path(ph)) })
             .collect();
         // the canyon: walls on both sides, the floor between them, flown along fast just above the floor
         let walls = |fog: [f32; 3], glow: [f32; 3], ramp: [[f32; 3]; 4]| Style {
@@ -363,11 +364,11 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             ramp,
             xs: 1.2,
             hs: 8.0,
-            fog_range: 70.0,
-            fog_start: 38.0,
+            fog_range: 40.0,
+            fog_start: 22.0,
             tile: 6.0,
-            lift: 98.0,
-            clip: 110.0,
+            lift: 30.0,
+            clip: 40.0,
             swell: [40.0, 3.0, 0.15, 0.1],
             bump: 0.15,
             focus: 50.0,
@@ -379,7 +380,7 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
         };
         let canyon_path = |ph: f32| {
             move |a: f32| Key {
-                eye: [6.0 * (a + ph).sin(), 10.0 + 2.0 * (2.0 * a + ph).cos(), 8.0],
+                eye: [6.0 * (a + ph).sin(), 10.0 + 2.0 * (2.0 * a + ph).cos(), 4.0],
                 fwd: unit([0.06 * (a + ph + 0.5).sin(), -0.14 + 0.04 * (2.0 * a + ph).sin(), 1.0]),
                 fov: 86.0 + 8.0 * (a + ph).sin(),
                 speed: 18.0 + 4.0 * (2.0 * a + ph).sin(),
@@ -409,6 +410,91 @@ fn list(w: World) -> &'static [Theme] {
         World::Cavern => &own_themes()[0],
         World::Canyon => &own_themes()[1],
     }
+}
+
+/// A phase's theme: a world and one of its themes.
+fn theme_of(p: (World, usize)) -> Option<&'static Theme> {
+    let l = list(p.0);
+    l.get(p.1.min(l.len().saturating_sub(1)))
+}
+
+/// The phases a song can bring: the one look asked for, the world's looks, or with the plain Terrain every world's
+/// (the measured looks, then the cavern and the canyon as further phases of it).
+fn pool(world: World, theme: Option<usize>) -> Vec<(World, usize)> {
+    let of = |w: World| (0..list(w).len()).map(move |i| (w, i));
+    match (world, theme) {
+        (w, Some(i)) => vec![(w, i.min(list(w).len().saturating_sub(1)))],
+        (World::Terrain, None) => of(World::Terrain).chain(of(World::Cavern)).chain(of(World::Canyon)).collect(),
+        (w, None) => of(w).collect(),
+    }
+}
+
+/// A ceiling too high to see: a world without one.
+const NO_CEILING: f32 = 1500.0;
+
+/// What bends a phase's world: its path's winding and rising, its ceiling, how much it lifts the music, and how far
+/// the glow by the front may go (our own worlds' walls are tall: uncapped, the glow would run past its colour).
+#[derive(Clone, Copy)]
+struct Bend {
+    wind: [f32; 4],
+    rise: [f32; 2],
+    ceiling: f32,
+    gain: f32,
+    glowcap: f32,
+}
+
+impl Bend {
+    const FLAT: Bend = Bend { wind: [0.0; 4], rise: [0.0; 2], ceiling: NO_CEILING, gain: 1.0, glowcap: 1e6 };
+
+    fn of(p: (World, usize)) -> Bend {
+        match theme_of(p) {
+            Some(t) => Bend {
+                wind: t.wind,
+                rise: t.rise,
+                ceiling: if t.ceiling > 0.0 { t.ceiling } else { NO_CEILING },
+                gain: t.gain,
+                glowcap: if p.0 == World::Terrain { 1e6 } else { 0.5 },
+            },
+            None => Bend::FLAT,
+        }
+    }
+
+    /// Partway from `a` to `b` as one bend (when another change starts before this one is done): the ceiling, gain
+    /// and glow in between, and the path the stronger of the two at its share (two paths can't be one).
+    fn settle(a: Bend, b: Bend, k: f32) -> Bend {
+        let amp = |x: &Bend| x.wind[0].abs() + x.wind[2].abs() + x.rise[0].abs();
+        let (main, w) = if amp(&b) * k >= amp(&a) * (1.0 - k) { (b, k) } else { (a, 1.0 - k) };
+        Bend {
+            wind: [main.wind[0] * w, main.wind[1], main.wind[2] * w, main.wind[3]],
+            rise: [main.rise[0] * w, main.rise[1]],
+            ceiling: a.ceiling + (b.ceiling - a.ceiling) * k,
+            gain: a.gain + (b.gain - a.gain) * k,
+            glowcap: glowcap(a, b, k),
+        }
+    }
+}
+
+/// The glow's cap partway from `a` to `b` (uncapped counts as 8: the glow by the front hardly goes past that).
+fn glowcap(a: Bend, b: Bend, k: f32) -> f32 {
+    if k >= 1.0 {
+        return b.glowcap;
+    }
+    let (ca, cb) = (a.glowcap.min(8.0), b.glowcap.min(8.0));
+    ca + (cb - ca) * k
+}
+
+/// A path's sideways offset at `z`, and how it changes along z (first and second): two waves.
+fn wander(w: [f32; 4], z: f64) -> [f64; 3] {
+    let (a, f, b, g) = (w[0] as f64, w[1] as f64, w[2] as f64, w[3] as f64);
+    let ((s1, c1), (s2, c2)) = ((f * z).sin_cos(), (g * z + 1.3).sin_cos());
+    [a * s1 + b * s2, a * f * c1 + b * g * c2, -a * f * f * s1 - b * g * g * s2]
+}
+
+/// A path's rise at `z`, and how it changes along z.
+fn heave(r: [f32; 2], z: f64) -> [f64; 2] {
+    let (a, f) = (r[0] as f64, r[1] as f64);
+    let (s, c) = (f * z + 0.5).sin_cos();
+    [a * s, a * f * c]
 }
 
 // ------------------------------------------------------------------------------------------------ the music
@@ -617,17 +703,19 @@ impl Sheet {
 
 // ------------------------------------------------------------------------------------------------ the GPU side
 // where a point of the sheet goes in the world being drawn (shared by the sheet and its depth of field): along a
-// winding path (two sideways waves, one up and down, by the row's place from the very first row), and for a cavern's
-// second copy turned over into a ceiling
+// winding path (two sideways waves, one up and down, by the row's place from the very first row; during a change of
+// phase, partway from the last one's path to the new one's), and for a cavern's second copy turned over into a ceiling
 const PLACE: &str = r#"
 uniform float zbase;
-uniform vec4 wind;
-uniform vec2 rise;
-uniform float ceiling, mirror;
+uniform vec4 windA, windB;
+uniform vec2 riseA, riseB;
+uniform float wmix, ceiling, mirror;
+float wander(vec4 w, float z){ return w.x * sin(w.y * z) + w.z * sin(w.w * z + 1.3); }
+float heave(vec2 r, float z){ return r.x * sin(r.y * z + .5); }
 vec3 place(vec3 p){
   float z = p.z + zbase;
   float y = mirror > .5 ? ceiling - p.y : p.y;
-  return vec3(p.x + wind.x * sin(wind.y * z) + wind.z * sin(wind.w * z + 1.3), y + rise.x * sin(rise.y * z + .5), p.z);
+  return vec3(p.x + mix(wander(windA, z), wander(windB, z), wmix), y + mix(heave(riseA, z), heave(riseB, z), wmix), p.z);
 }
 "#;
 
@@ -990,13 +1078,14 @@ pub(crate) struct Terrain {
     t_first: bool,
     t_last: f64,
     look: Look,
-    /// the world being made
-    world: World,
-    /// the theme now, its clock's start, the song it is for, and the look it is blending from (with when)
-    theme: usize,
+    /// the phase now (a world and one of its themes), what was asked for, the phase's clock's start, the song it is for,
+    /// and the look and bends it is blending from (with when)
+    phase: (World, usize),
+    asked: Option<(World, Option<usize>)>,
     t0: f64,
     song: u64,
     from: Option<(Look, f64)>,
+    bend_from: Bend,
     /// a reference frame from a file, drawn as it was (the test switch BACKLINE_TERRAIN_FRAME)
     dump: Option<(Look, Vec<f32>, f64, i64)>,
     failed: bool,
@@ -1026,8 +1115,9 @@ impl Default for Terrain {
             t_first: true,
             t_last: -1.0,
             look: themes().list.first().map_or([0.0; lk::N], |t| t.at(0.0)),
-            world: World::Terrain,
-            theme: 0,
+            phase: (World::Terrain, 0),
+            asked: None,
+            bend_from: Bend::FLAT,
             t0: 0.0,
             song: u64::MAX,
             from: None,
@@ -1097,50 +1187,45 @@ impl Terrain {
         let dt = if self.t_last < 0.0 { 0.0 } else { (inp.t - self.t_last).clamp(0.0, 0.25) };
         self.t_last = inp.t;
         let th = themes();
-        // another world starts afresh
-        if inp.world != self.world {
-            self.world = inp.world;
-            self.song = u64::MAX;
-            self.t_first = true;
-            self.from = None;
-            self.ground = None;
-            self.theme = 0;
-        }
-        let list = list(self.world);
-        if list.is_empty() {
+        let pool = pool(inp.world, inp.theme);
+        if pool.is_empty() {
             return;
         }
-        // a new song brings in a theme (another one), blending over twenty seconds
-        let n = list.len();
-        let want = inp.theme.map(|i| i.min(n - 1));
-        if inp.song != self.song || want.map_or(false, |w| w != self.theme) {
+        // a new song (or another choice) brings in another phase, blending over twenty seconds: a look of the terrain,
+        // or the cavern's ceiling coming down, or the ground starting to wind into a canyon
+        let asked = Some((inp.world, inp.theme));
+        if inp.song != self.song || asked != self.asked {
             let first = self.song == u64::MAX;
             self.song = inp.song;
-            let next = want.unwrap_or_else(|| {
-                let mut k = (self.rnd() * n as f32) as usize % n;
-                if k == self.theme && n > 1 {
-                    k = (k + 1) % n;
-                }
-                k
-            });
-            let (old, new) = (&list[self.theme.min(n - 1)], &list[next]);
-            self.resp_from = old.response;
-            if first {
-                self.base = th.bases[new.base];
-                self.sheet.fill(&self.base);
-            } else {
-                self.from = Some((self.look, inp.t));
-                // the landscape changes too: a flood when either theme floods, else a slow blend
-                let flood = old.flood || new.flood;
-                if flood || old.base != new.base {
-                    let kind = if flood { if self.rnd() < 0.5 { 2 } else { 3 } } else { 1 };
-                    self.ground = Some((self.base, inp.t, kind, self.rnd() < 0.5));
-                }
+            self.asked = asked;
+            let mut k = (self.rnd() * pool.len() as f32) as usize % pool.len();
+            if pool[k] == self.phase && pool.len() > 1 {
+                k = (k + 1) % pool.len();
             }
-            self.theme = next;
-            self.t0 = inp.t;
+            let next = pool[k];
+            // (a phase asked for that is already showing carries on)
+            if let (true, Some(old), Some(new)) = (first || next != self.phase, theme_of(self.phase), theme_of(next)) {
+                self.resp_from = old.response;
+                if first {
+                    self.base = th.bases[new.base];
+                    self.sheet.fill(&self.base);
+                } else {
+                    let (a, b, k) = self.bend_at(inp.t);
+                    self.bend_from = if k >= 1.0 { b } else { Bend::settle(a, b, k) };
+                    self.from = Some((self.look, inp.t));
+                    // the landscape changes too: a flood when either theme floods, else a slow blend
+                    let flood = old.flood || new.flood;
+                    if flood || old.base != new.base {
+                        let kind = if flood { if self.rnd() < 0.5 { 2 } else { 3 } } else { 1 };
+                        self.ground = Some((self.base, inp.t, kind, self.rnd() < 0.5));
+                    }
+                }
+                self.phase = next;
+                self.t0 = inp.t;
+            }
         }
-        let target = list[self.theme].at((inp.t - self.t0) as f32);
+        let Some(theme) = theme_of(self.phase) else { return };
+        let target = theme.at((inp.t - self.t0) as f32);
         self.look = match self.from {
             Some((from, ts)) => {
                 let a = ((inp.t - ts) / 20.0) as f32;
@@ -1153,10 +1238,10 @@ impl Terrain {
             }
             None => target,
         };
-        self.base = self.ground_at(inp.t, &th.bases[list[self.theme].base]);
+        self.base = self.ground_at(inp.t, &th.bases[theme.base]);
         // the music now, as this look hears it (during a change, moving over from the way the last one did)
         let db = self.an.levels(&inp.samples, inp.rate);
-        let mut vals = heights(&db, &th.responses[list[self.theme].response]);
+        let mut vals = heights(&db, &th.responses[theme.response]);
         if let Some((_, ts)) = self.from {
             let a = smooth(((inp.t - ts) / 20.0) as f32);
             let old = heights(&db, &th.responses[self.resp_from]);
@@ -1164,7 +1249,9 @@ impl Terrain {
                 vals[k] = old[k] + (vals[k] - old[k]) * a;
             }
         }
-        self.vals = vals;
+        let (a, b, k) = self.bend_at(inp.t);
+        let gain = a.gain + (b.gain - a.gain) * k;
+        self.vals = vals.map(|v| v * gain);
         // the front moves on; each whole row the leading edge passes, the music makes a new one there
         let l = &self.look;
         if self.t_first {
@@ -1226,11 +1313,12 @@ impl Terrain {
         out
     }
 
-    /// The world's bends now: its path's winding and rising, its ceiling, and how many copies of the sheet to draw.
-    fn bend(&self) -> ([f32; 4], [f32; 2], f32, u32) {
-        match list(self.world).get(self.theme) {
-            Some(t) => (t.wind, t.rise, t.ceiling, if self.world == World::Cavern { 2 } else { 1 }),
-            None => ([0.0; 4], [0.0; 2], 0.0, 1),
+    /// The bends at `t`: the phase's, or on their way there from the last ones (from, to, how far).
+    fn bend_at(&self, t: f64) -> (Bend, Bend, f32) {
+        let to = Bend::of(self.phase);
+        match self.from {
+            Some((_, ts)) => (self.bend_from, to, smooth(((t - ts) / 20.0) as f32)),
+            None => (to, to, 1.0),
         }
     }
 
@@ -1306,10 +1394,11 @@ impl Terrain {
         true
     }
 
-    /// Draw the terrain into the spot `info` gives (its own pictures, made again when its size changes).
-    pub(crate) unsafe fn paint(&mut self, gl: &glow::Context, info: &egui::PaintCallbackInfo, slot: u8, inp: &Input) {
+    /// Draw the terrain into the spot `info` gives (its own pictures, made again when its size changes); false when
+    /// the graphics can't (too old for its shaders).
+    pub(crate) unsafe fn paint(&mut self, gl: &glow::Context, info: &egui::PaintCallbackInfo, slot: u8, inp: &Input) -> bool {
         if !self.init(gl) {
-            return;
+            return false;
         }
         if inp.t != self.t_last && self.dump.is_none() {
             self.step(inp);
@@ -1371,26 +1460,29 @@ impl Terrain {
         let t = &self.slots[&slot];
         let zbase = zfront.floor();
         let front = (zfront - zbase) as f32;
-        let (wind, rise, ceiling, copies) = self.bend();
+        let (ba, bb, k) = self.bend_at(self.t_last);
+        let ceiling = ba.ceiling + (bb.ceiling - ba.ceiling) * k;
+        let copies = if ceiling < NO_CEILING * 0.9 { 2 } else { 1 };
         let mut eye = [look[lk::EYE], look[lk::EYE + 1], front - look[lk::EYE + 2]];
         let mut fwd = [look[lk::FWD], look[lk::FWD + 1], look[lk::FWD + 2]];
-        let mut roll = 0.0;
-        if wind != [0.0; 4] || rise != [0.0; 2] {
-            // along a winding path the camera follows it: over it, facing the way it goes a little way ahead, leaning
-            // into its turns
-            let k: [f64; 4] = wind.map(|v| v as f64);
-            let ze = zbase + eye[2] as f64;
-            let x = |z: f64| k[0] * (k[1] * z).sin() + k[2] * (k[3] * z + 1.3).sin();
-            let dx = |z: f64| k[0] * k[1] * (k[1] * z).cos() + k[2] * k[3] * (k[3] * z + 1.3).cos();
-            let ddx = |z: f64| -k[0] * k[1] * k[1] * (k[1] * z).sin() - k[2] * k[3] * k[3] * (k[3] * z + 1.3).sin();
-            let (ra, rf) = (rise[0] as f64, rise[1] as f64);
-            eye[0] += x(ze) as f32;
-            eye[1] += (ra * (rf * ze + 0.5).sin()) as f32;
-            let (sy, cy) = (dx(ze + 10.0).atan() as f32).sin_cos();
-            let climb = (ra * rf * (rf * (ze + 10.0) + 0.5).cos()) as f32;
-            fwd = [fwd[0] * cy + fwd[2] * sy, fwd[1] + climb, -fwd[0] * sy + fwd[2] * cy];
-            roll = (ddx(ze + 5.0) * 8.0).clamp(-0.35, 0.35) as f32;
-        }
+        // along a winding path the camera follows it: over it, facing the way it goes a little way ahead, leaning into
+        // its turns (a straight one changes nothing)
+        let ze = zbase + eye[2] as f64;
+        let kk = k as f64;
+        let side = |z: f64| {
+            let (a, b) = (wander(ba.wind, z), wander(bb.wind, z));
+            [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * kk)
+        };
+        let up = |z: f64| {
+            let (a, b) = (heave(ba.rise, z), heave(bb.rise, z));
+            [a[0] + (b[0] - a[0]) * kk, a[1] + (b[1] - a[1]) * kk]
+        };
+        eye[0] += side(ze)[0] as f32;
+        eye[1] += up(ze)[0] as f32;
+        let (sy, cy) = (side(ze + 10.0)[1].atan() as f32).sin_cos();
+        let climb = up(ze + 10.0)[1] as f32;
+        fwd = [fwd[0] * cy + fwd[2] * sy, fwd[1] + climb, -fwd[0] * sy + fwd[2] * cy];
+        let roll = (side(ze + 5.0)[2] * 8.0).clamp(-0.35, 0.35) as f32;
         let mvp = camera(eye, unit(fwd), look[lk::FOV], w as f32 / h as f32, roll);
         let c12 = [front, front + look[lk::LIFT], front + look[lk::CLIP]];
         let p = &self.progs;
@@ -1417,8 +1509,7 @@ impl Terrain {
         sheet_uniforms(gl, sp, ta, tb, oldest_slot, zbase as f32, &mvp, eye, &look, c12);
         gl.uniform_3_f32(u("fogp").as_ref(), 1.0 / look[lk::FOG_RANGE].max(0.01), look[lk::FOG_START], look[lk::TILE]);
         gl.uniform_1_f32(u("bumpk").as_ref(), look[lk::BUMP]);
-        // (our own worlds' walls are tall: uncapped, the glow by the front would run past its colour into others)
-        gl.uniform_1_f32(u("glowcap").as_ref(), if self.world == World::Terrain { 1e6 } else { 0.5 });
+        gl.uniform_1_f32(u("glowcap").as_ref(), glowcap(ba, bb, k));
         // a reference frame's ramp has 512 colours; ours keeps a few, each at its texel's centre
         if rn > 0.0 {
             gl.uniform_2_f32(u("rampfix").as_ref(), (rn - 1.0) / rn, 0.5 / rn);
@@ -1436,7 +1527,7 @@ impl Terrain {
         gl.bind_texture(glow::TEXTURE_2D, self.ramp);
         gl.bind_vertex_array(self.vao);
         for m in 0..copies {
-            bend_uniforms(gl, sp, wind, rise, ceiling, m);
+            bend_uniforms(gl, sp, ba, bb, k, ceiling, m);
             gl.draw_elements(glow::TRIANGLES, ((ROWS - 1) * (COLS - 1) * 6) as i32, glow::UNSIGNED_SHORT, 0);
         }
 
@@ -1456,7 +1547,7 @@ impl Terrain {
         sheet_uniforms(gl, cp, ta, tb, oldest_slot, zbase as f32, &mvp, eye, &look, c12);
         gl.uniform_2_f32(gl.get_uniform_location(cp, "focus").as_ref(), look[lk::FOCUS], look[lk::COC]);
         for m in 0..copies {
-            bend_uniforms(gl, cp, wind, rise, ceiling, m);
+            bend_uniforms(gl, cp, ba, bb, k, ceiling, m);
             gl.draw_elements(glow::TRIANGLES, ((ROWS - 1) * (COLS - 1) * 6) as i32, glow::UNSIGNED_SHORT, 0);
         }
         gl.disable(glow::DEPTH_TEST);
@@ -1559,15 +1650,20 @@ impl Terrain {
         gl.bind_vertex_array(None);
         gl.use_program(None);
         gl.enable(glow::BLEND);
+        true
     }
 }
 
-/// The world's bends for the vertex programs (see PLACE), and the copy being drawn (a cavern's second copy is its
-/// ceiling).
-unsafe fn bend_uniforms(gl: &glow::Context, p: glow::Program, wind: [f32; 4], rise: [f32; 2], ceiling: f32, copy: u32) {
+/// The bends for the vertex programs (see PLACE): both paths and how far from the first to the second, the ceiling,
+/// and the copy being drawn (a cavern's second copy is its ceiling).
+#[allow(clippy::too_many_arguments)]
+unsafe fn bend_uniforms(gl: &glow::Context, p: glow::Program, a: Bend, b: Bend, k: f32, ceiling: f32, copy: u32) {
     let u = |n: &str| gl.get_uniform_location(p, n);
-    gl.uniform_4_f32(u("wind").as_ref(), wind[0], wind[1], wind[2], wind[3]);
-    gl.uniform_2_f32(u("rise").as_ref(), rise[0], rise[1]);
+    gl.uniform_4_f32(u("windA").as_ref(), a.wind[0], a.wind[1], a.wind[2], a.wind[3]);
+    gl.uniform_4_f32(u("windB").as_ref(), b.wind[0], b.wind[1], b.wind[2], b.wind[3]);
+    gl.uniform_2_f32(u("riseA").as_ref(), a.rise[0], a.rise[1]);
+    gl.uniform_2_f32(u("riseB").as_ref(), b.rise[0], b.rise[1]);
+    gl.uniform_1_f32(u("wmix").as_ref(), k);
     gl.uniform_1_f32(u("ceiling").as_ref(), ceiling);
     gl.uniform_1_f32(u("mirror").as_ref(), copy as f32);
 }

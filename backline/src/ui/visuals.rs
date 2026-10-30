@@ -760,7 +760,13 @@ pub(crate) fn paint_gpu(
     let cb = egui_glow::CallbackFn::new(move |info, painter| {
         if let Ok(mut g) = state.lock() {
             match &terrain {
-                Some(inp) => unsafe { g.terrain.get_or_insert_with(Default::default).paint(painter.gl(), &info, slot, inp) },
+                Some(inp) => {
+                    let ok = unsafe { g.terrain.get_or_insert_with(Default::default).paint(painter.gl(), &info, slot, inp) };
+                    // (graphics too old for the 3D worlds: a plain visual instead of nothing)
+                    if !ok {
+                        unsafe { g.draw(painter.gl(), &info, slot, find("Down the Drain"), &f) };
+                    }
+                }
                 None => unsafe { g.draw(painter.gl(), &info, slot, preset, &f) },
             }
         }
@@ -1081,8 +1087,13 @@ impl App {
             Err(_) => (Vec::new(), 44100.0),
         };
         let song = self.cur_track().map_or(0, |t| t.id as u64);
-        // (test switch BACKLINE_3D_LOOK=<n>: that look of the world)
+        // (test switches BACKLINE_3D_LOOK=<n>: that look of the world; BACKLINE_3D_EVERY=<seconds>: a new phase that
+        // often, as if the song changed)
         let theme = theme.or_else(|| std::env::var("BACKLINE_3D_LOOK").ok().and_then(|v| v.parse().ok()));
+        let song = match std::env::var("BACKLINE_3D_EVERY").ok().and_then(|v| v.parse::<f64>().ok()) {
+            Some(s) if s > 0.0 => song.wrapping_add((ctx.input(|i| i.time) / s) as u64),
+            _ => song,
+        };
         crate::terrain::Input { t: ctx.input(|i| i.time), samples, rate, song, world, theme }
     }
 
