@@ -1,8 +1,9 @@
 //! 3D Wave: a cloth of nineteen strands, each a chain of nineteen points, blown along from a pinned edge, bent
 //! through a soft cage that rolls slowly with time, and drawn as a sheet of light (bright where it turns edge-on, added
-//! up where its folds overlap) over a sky gradient, then given a soft glare. The physics, the cage, the camera, the
-//! sheet's shading and the glare follow a reference step by step (each checked against it); the curve it reads from a
-//! picture (the fold glow) is measured. It doesn't react to the music.
+//! up where its folds overlap) over a sky gradient, then given a soft glare; sparkles drift off the sheet where it moves,
+//! tumbling and glinting. The physics, the cage, the camera, the sheet's shading, the glare and the sparkles follow a
+//! reference step by step (each checked against it); what it reads from pictures (the fold glow, the sparkles' colour
+//! swirl) is measured. It doesn't react to the music.
 
 use eframe::egui;
 use eframe::egui_glow;
@@ -155,9 +156,8 @@ impl Cloth {
         }
     }
 
-    /// The points for this frame: between the last two steps, the strands spread wider or narrower along the length.
-    fn points(&self, s: &Set) -> Vec<[f32; 3]> {
-        let a = self.acc;
+    /// The points `a` of the way between the last two steps, the strands spread wider or narrower along the length.
+    fn points(&self, s: &Set, a: f32) -> Vec<[f32; 3]> {
         self.prev
             .iter()
             .zip(self.pos.iter())
@@ -229,8 +229,8 @@ fn bend(s: &Set, cg: &[[(f32, f32); 4]; 8], p: [f32; 3]) -> [f32; 3] {
     [(sp[0] + dx) * s.scale2[0], (sp[1] + dy) * s.scale2[1], (sp[2] + s.offset[2]) * s.scale2[2]]
 }
 
-/// Perspective (53 degrees up and down) times a step back of two, times the settings' place and turn; by columns.
-fn mvp(s: &Set, aspect: f32) -> [f32; 16] {
+/// The settings' place and turn (by columns): world = turn p + pos.
+fn model(s: &Set) -> [f32; 16] {
     let n = (s.axis[0] * s.axis[0] + s.axis[1] * s.axis[1] + s.axis[2] * s.axis[2]).sqrt();
     let [x, y, z] = s.axis.map(|v| v / n);
     let (sn, cs) = s.turn.to_radians().sin_cos();
@@ -240,25 +240,45 @@ fn mvp(s: &Set, aspect: f32) -> [f32; 16] {
         [y * x * k + z * sn, cs + y * y * k, y * z * k - x * sn],
         [z * x * k - y * sn, z * y * k + x * sn, cs + z * z * k],
     ];
-    let fy = 1.0 / (53.0f32.to_radians() * 0.5).tan();
-    let fx = fy / aspect;
-    let (near, far) = (0.1f32, 1000.0f32);
-    let (za, zb) = (-(far + near) / (far - near), -2.0 * far * near / (far - near));
-    // world = r p + pos; eye = world - (0, 0, 2)
-    let t = [s.pos[0], s.pos[1], s.pos[2] - 2.0];
-    let rows = [
-        [fx * r[0][0], fx * r[0][1], fx * r[0][2], fx * t[0]],
-        [fy * r[1][0], fy * r[1][1], fy * r[1][2], fy * t[1]],
-        [za * r[2][0], za * r[2][1], za * r[2][2], za * t[2] + zb],
-        [-r[2][0], -r[2][1], -r[2][2], -t[2]],
-    ];
     let mut m = [0f32; 16];
-    for (i, row) in rows.iter().enumerate() {
-        for (j, v) in row.iter().enumerate() {
-            m[j * 4 + i] = *v;
+    for i in 0..3 {
+        for j in 0..3 {
+            m[j * 4 + i] = r[i][j];
+        }
+        m[12 + i] = s.pos[i];
+    }
+    m[15] = 1.0;
+    m
+}
+
+/// The camera (by columns): perspective, 53 degrees up and down, 0.1 to 1000, from two units back.
+fn camera(aspect: f32) -> [f32; 16] {
+    let fy = 1.0 / (53.0f32.to_radians() * 0.5).tan();
+    let (near, far) = (0.1f32, 1000.0f32);
+    let mut m = [0f32; 16];
+    m[0] = fy / aspect;
+    m[5] = fy;
+    m[10] = -(far + near) / (far - near);
+    m[11] = -1.0;
+    m[14] = -2.0 * far * near / (far - near) - 2.0 * m[10];
+    m[15] = 2.0;
+    m
+}
+
+/// `a` times `b` (both by columns).
+fn mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+    let mut m = [0f32; 16];
+    for c in 0..4 {
+        for r in 0..4 {
+            m[c * 4 + r] = (0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]).sum();
         }
     }
     m
+}
+
+/// The point `q` through `m`.
+fn apply(m: &[f32; 16], q: [f32; 3]) -> [f32; 4] {
+    [0, 1, 2, 3].map(|r| m[r] * q[0] + m[4 + r] * q[1] + m[8 + r] * q[2] + m[12 + r])
 }
 
 /// The fold glow as a 512-texel table (a smooth monotone curve through `GLOW`).
@@ -469,11 +489,17 @@ struct Progs {
     gauss: Option<glow::Program>,
     sum: Option<glow::Program>,
     out: Option<glow::Program>,
+    facets: Option<glow::Program>,
+    halos: Option<glow::Program>,
 }
 
-/// The wave's state: the cloth, the cage's clock (and the one it is fading from), and the GL objects.
+/// The wave's state: the cloth, the sparkles, the cage's clock (and the one it is fading from), and the GL objects.
 pub(crate) struct Wave {
     cloth: Cloth,
+    sparks: Sparks,
+    /// the test switch BACKLINE_WAVE_SPARKS=1|2|3: the sparkles alone on black (1 their facets, 2 their halos, 3 both),
+    /// for checks against a reference frame
+    only: i32,
     /// a cage still running from before the clock went round, and how much of it is left (1 to 0)
     old: Option<(f32, f32)>,
     t_last: f64,
@@ -483,19 +509,24 @@ pub(crate) struct Wave {
     ibuf: Option<glow::Buffer>,
     net: Option<glow::Texture>,
     glow_tex: Option<glow::Texture>,
+    irid: Option<glow::Texture>,
+    parts: Option<glow::Texture>,
     slots: std::collections::HashMap<u8, Targets>,
 }
 
 impl Default for Wave {
     fn default() -> Self {
         let mut cloth = Cloth::new(&MUSIC);
-        // a minute's motion first, so it opens already moving as it always does
-        for _ in 0..3600 {
+        // a minute's motion first, so it opens already moving as it always does (the sparkles for the last ten seconds:
+        // they fill their pool in five)
+        for _ in 0..3000 {
             cloth.step(&MUSIC);
         }
         cloth.wrapped = false;
-        Wave {
+        let mut w = Wave {
             cloth,
+            sparks: Sparks::new(),
+            only: std::env::var("BACKLINE_WAVE_SPARKS").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
             old: None,
             t_last: -1.0,
             failed: false,
@@ -504,8 +535,16 @@ impl Default for Wave {
             ibuf: None,
             net: None,
             glow_tex: None,
+            irid: None,
+            parts: None,
             slots: Default::default(),
+        };
+        for _ in 0..600 {
+            w.cloth.step(&MUSIC);
+            w.spark_tick();
         }
+        w.cloth.wrapped = false;
+        w
     }
 }
 
@@ -515,22 +554,30 @@ impl Wave {
     fn step(&mut self, t: f64) {
         let dt = if self.t_last < 0.0 { 0.0 } else { (t - self.t_last).clamp(0.0, 0.25) as f32 };
         self.t_last = t;
-        let c = &mut self.cloth;
-        let before = c.time;
-        c.acc += dt * 60.0;
-        while c.acc > 1.0 {
-            c.step(&MUSIC);
-            c.acc -= 1.0;
-            if c.wrapped {
-                c.wrapped = false;
+        let before = self.cloth.time;
+        self.cloth.acc += dt * 60.0;
+        while self.cloth.acc > 1.0 {
+            self.cloth.step(&MUSIC);
+            self.cloth.acc -= 1.0;
+            if self.cloth.wrapped {
+                self.cloth.wrapped = false;
                 self.old = Some((before * 10.0, 1.0));
             }
+            self.spark_tick();
         }
+        let c = &self.cloth;
         let moved = if c.time >= before { (c.time - before) * 10.0 } else { 0.0 };
         if let Some((ot, f)) = self.old {
             let f = f - dt * 60.0 * 0.005;
             self.old = if f <= 0.0 { None } else { Some((ot + moved.max(0.0), f)) };
         }
+    }
+
+    /// One sixtieth of a second of the sparkles, on the sheet as the step just left it.
+    fn spark_tick(&mut self) {
+        let m = model(&MUSIC);
+        let world: Vec<[f32; 3]> = self.outs(1.0).into_iter().map(|q| apply(&m, q)).map(|v| [v[0], v[1], v[2]]).collect();
+        self.sparks.tick(&world, &SPARK);
     }
 
     /// The 19 x 19 net on screen: each cloth point through the cage and the camera. (The test switch
@@ -542,6 +589,13 @@ impl Wave {
                 return b.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
             }
         }
+        let m = mul(&camera(aspect), &model(&MUSIC));
+        self.outs(self.cloth.acc).into_iter().flat_map(|q| apply(&m, q)).collect()
+    }
+
+    /// Each cloth point through the cage (before the place and turn), `a` of the way from the last step but one to
+    /// the last.
+    fn outs(&self, a: f32) -> Vec<[f32; 3]> {
         let s = &MUSIC;
         let cg = cage(s, self.cloth.time * 10.0);
         let cg = match self.old {
@@ -558,15 +612,7 @@ impl Wave {
             }
             None => cg,
         };
-        let m = mvp(s, aspect);
-        let mut out = Vec::with_capacity(N * N * 4);
-        for p in self.cloth.points(s) {
-            let q = bend(s, &cg, p);
-            for r in 0..4 {
-                out.push(m[r] * q[0] + m[4 + r] * q[1] + m[8 + r] * q[2] + m[12 + r]);
-            }
-        }
-        out
+        self.cloth.points(s, a).into_iter().map(|p| bend(s, &cg, p)).collect()
     }
 
     unsafe fn init(&mut self, gl: &glow::Context) -> bool {
@@ -584,9 +630,11 @@ impl Wave {
             gauss: program(gl, &h, QUAD_VS, GAUSS_FS),
             sum: program(gl, &h, QUAD_VS, SUM_FS),
             out: program(gl, &h, QUAD_VS, OUT_FS),
+            facets: program(gl, &h, PARTS_VS, FACET_FS),
+            halos: program(gl, &h, PARTS_VS, HALO_FS),
         };
         let p = &self.progs;
-        if [p.sheet, p.comp, p.source, p.gauss, p.sum, p.out].iter().any(|x| x.is_none()) {
+        if [p.sheet, p.comp, p.source, p.gauss, p.sum, p.out, p.facets, p.halos].iter().any(|x| x.is_none()) {
             self.failed = true;
             return false;
         }
@@ -613,6 +661,11 @@ impl Wave {
         let bytes: Vec<u8> = glow_table().iter().flat_map(|v| [*v, 0.0, 0.0, 1.0]).flat_map(|v| v.to_le_bytes()).collect();
         gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA32F as i32, 512, 1, 0, glow::RGBA, glow::FLOAT, Some(&bytes));
         self.glow_tex = Some(gt);
+        let it = tex(gl, 128, 128, glow::RGBA32F, true);
+        let bytes: Vec<u8> = swirl().iter().flat_map(|c| [c[0], c[1], c[2], 1.0]).flat_map(|v| v.to_le_bytes()).collect();
+        gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA32F as i32, 128, 128, 0, glow::RGBA, glow::FLOAT, Some(&bytes));
+        self.irid = Some(it);
+        self.parts = Some(tex(gl, POOL as i32, 2, glow::RGBA32F, false));
         gl.bind_texture(glow::TEXTURE_2D, None);
         true
     }
@@ -734,7 +787,47 @@ impl Wave {
         let clip = info.clip_rect_in_pixels();
         gl.enable(glow::SCISSOR_TEST);
         gl.scissor(clip.left_px, clip.from_bottom_px, clip.width_px, clip.height_px);
-        gl.draw_arrays(glow::TRIANGLES, 0, 3);
+        if self.only == 0 {
+            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+        } else {
+            gl.clear_color(0.0, 0.0, 0.0, 1.0);
+            gl.clear(glow::COLOR_BUFFER_BIT);
+        }
+
+        // 5. the sparkles, added on top: their facets, then the halos of the ones glinting (the test switch
+        // BACKLINE_WAVE_PARTS=<file>: sparkles from a file instead, eight little-endian floats each, for checks against a
+        // reference frame)
+        let live: Vec<f32> = match std::env::var("BACKLINE_WAVE_PARTS").ok().and_then(|f| std::fs::read(f).ok()) {
+            Some(b) => b.chunks_exact(4).take(POOL * 8).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
+            None => self.sparks.live(),
+        };
+        let n = live.len() / 8;
+        if n > 0 {
+            let mut rows = vec![0f32; POOL * 8];
+            for i in 0..n {
+                rows[i * 4..i * 4 + 4].copy_from_slice(&live[i * 8..i * 8 + 4]);
+                rows[POOL * 4 + i * 4..POOL * 4 + i * 4 + 4].copy_from_slice(&live[i * 8 + 4..i * 8 + 8]);
+            }
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, self.parts);
+            let bytes: Vec<u8> = rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+            gl.tex_sub_image_2d(glow::TEXTURE_2D, 0, 0, 0, POOL as i32, 2, glow::RGBA, glow::FLOAT, glow::PixelUnpackData::Slice(&bytes));
+            gl.active_texture(glow::TEXTURE1);
+            gl.bind_texture(glow::TEXTURE_2D, self.irid);
+            gl.enable(glow::BLEND);
+            gl.blend_equation(glow::FUNC_ADD);
+            gl.blend_func_separate(glow::ONE, glow::ONE, glow::ZERO, glow::ONE);
+            let cam = camera(w as f32 / h as f32);
+            for (pass, prog) in [(1, p.facets.unwrap()), (2, p.halos.unwrap())] {
+                if self.only != 0 && self.only & pass == 0 {
+                    continue;
+                }
+                gl.use_program(Some(prog));
+                spark_uniforms(gl, prog, &cam, pass);
+                gl.draw_arrays(glow::TRIANGLES, 0, (n * 6) as i32);
+            }
+            gl.disable(glow::BLEND);
+        }
         for i in 0..6 {
             gl.active_texture(glow::TEXTURE0 + i);
             gl.bind_texture(glow::TEXTURE_2D, None);
@@ -747,3 +840,443 @@ impl Wave {
     }
 }
 
+// ------------------------------------------------------------------------------------------------ the sparkles
+/// The sparkles' settings (the set shown while music plays).
+struct Spark {
+    vel_min: f32,
+    vel_mul: f32,
+    vel_var: f32,
+    cone: f32,
+    neg_prob: f32,
+    zscale: f32,
+    per_frame: u32,
+    prob: f32,
+    aging: f32,
+    aging_var: f32,
+    friction: f32,
+    spin: f32,
+    dt: f32,
+    gravity: f32,
+    brown: f32,
+    spot: [f32; 3],
+    attn: [f32; 3],
+    spec_pow: f32,
+    spec_coeff: f32,
+    lambert: f32,
+    exposure: f32,
+    fresnel: f32,
+    color_control: f32,
+    irid_exp: f32,
+    alpha: f32,
+    /// middle, near, far
+    size: [f32; 3],
+    /// focus: near (where, how far it takes, its curve, darkening, fuzz) and far (where, how far, curve, darkening)
+    near: [f32; 5],
+    far: [f32; 4],
+    near_align: f32,
+    size_align: f32,
+    /// glare: how much, how big, and its falloff's shape
+    glare: [f32; 4],
+}
+
+const SPARK: Spark = Spark {
+    vel_min: 0.15064,
+    vel_mul: 0.19,
+    vel_var: 0.282567,
+    cone: 51.8695,
+    neg_prob: 0.173899,
+    zscale: 0.0,
+    per_frame: 16,
+    prob: 0.479115,
+    aging: 0.00285223,
+    aging_var: 0.493003,
+    friction: 0.030551,
+    spin: 2.74,
+    dt: 0.0088883,
+    gravity: -6.8e-05,
+    brown: 0.225311,
+    spot: [4.16, 2.63, -7.6],
+    attn: [1.0, 0.0, 0.0],
+    spec_pow: 35.2904,
+    spec_coeff: 74.74,
+    lambert: 8.0,
+    exposure: 0.0390458,
+    fresnel: 1.33319,
+    color_control: 1.0,
+    irid_exp: 1.0,
+    alpha: 1.0,
+    size: [0.0464771, 0.0772033, 0.874062],
+    near: [6.12435, 1.3193, 2.47206, 6.24028, 3.79],
+    far: [12.0064, 3.54129, 1.83324, 13.9],
+    near_align: 0.722,
+    size_align: 13.19,
+    glare: [0.201367, 5.44386, 0.99, 4.44],
+};
+
+const POOL: usize = 2048;
+const DEAD: f32 = -666.0;
+/// Where a sparkle may be (outside it dies).
+const BOX: [[f32; 3]; 2] = [[-10.0, -10.0, -12.0], [10.0, 10.0, 7.0]];
+
+/// The sparkles: a pool of 2048 (position and age, velocity and how fast it ages, the turn of its little facet), born
+/// on the sheet where it moves and drifting off it; the free slots; the points picked last tick (each born this tick,
+/// moving as the sheet did there); now and then a line of them along a strand.
+struct Sparks {
+    p0: Vec<[f32; 4]>,
+    p1: Vec<[f32; 4]>,
+    p2: Vec<[f32; 4]>,
+    free: Vec<u32>,
+    picked: Vec<([f32; 3], usize, usize)>,
+    streak: (i32, usize, usize),
+    seed: u32,
+    tick: u64,
+}
+
+impl Sparks {
+    fn new() -> Sparks {
+        let mut s = Sparks {
+            p0: vec![[0.0, 0.0, 0.0, DEAD]; POOL],
+            p1: vec![[0.0; 4]; POOL],
+            p2: vec![[0.0, 0.0, 0.0, 1.0]; POOL],
+            free: (0..POOL as u32).collect(),
+            picked: Vec::new(),
+            streak: (0, 0, 0),
+            seed: 0x2468ace,
+            tick: 0,
+        };
+        // each slot's facet turned every which way, as after a long run (a slot keeps its turn from one sparkle to the
+        // next, so from all facing the camera it takes half a minute to spread)
+        for i in 0..POOL {
+            let (a, b, c) = (s.u(), s.u() * std::f32::consts::TAU, s.u() * std::f32::consts::TAU);
+            let (r1, r2) = ((1.0 - a).sqrt(), a.sqrt());
+            s.p2[i] = [r1 * b.sin(), r1 * b.cos(), r2 * c.sin(), r2 * c.cos()];
+        }
+        s
+    }
+
+    /// -1..1
+    fn rand(&mut self) -> f32 {
+        self.seed = self.seed.wrapping_add(1);
+        noise(self.seed)
+    }
+
+    /// 0..1
+    fn u(&mut self) -> f32 {
+        (self.rand() + 1.0) * 0.5
+    }
+
+    /// One tick on the sheet whose 19 x 19 net (in the world) is `net`: pick points, give birth at last tick's, move
+    /// them all.
+    fn tick(&mut self, net: &[[f32; 3]], s: &Spark) {
+        self.tick += 1;
+        // this tick's points: a handful now and then anywhere, and every other tick the next along a running line
+        let mut picked = Vec::new();
+        let r = self.rand();
+        if (r + 1.0) * 0.5 < s.prob && s.per_frame > 0 {
+            for _ in 0..s.per_frame {
+                let (iu, iv) = ((self.u() * 127.0) as usize, (self.u() * 127.0) as usize);
+                picked.push((surface(net, iu, iv), iu, iv));
+            }
+        }
+        let (count, su, sv) = self.streak;
+        if count == 0 {
+            if self.u() < 0.06 {
+                let (a, b) = ((self.u() * 127.0) as usize, (self.u() * 127.0) as usize);
+                self.streak = ((self.rand() * 80.0) as i32 + 100, a, b);
+            }
+        } else if self.tick % 2 == 0 {
+            if su < 128 {
+                picked.push((surface(net, su, sv), su, sv));
+                self.streak = (count - 1, su + 1, sv);
+            } else {
+                self.streak = (0, su, sv);
+            }
+        }
+        // last tick's points are born now, moving as the sheet moved there, in a cone round that way
+        for (was, iu, iv) in std::mem::replace(&mut self.picked, picked) {
+            let cur = surface(net, iu, iv);
+            let vs = [0, 1, 2].map(|k| (cur[k] - was[k]) / s.dt);
+            let len = (vs[0] * vs[0] + vs[1] * vs[1] + vs[2] * vs[2]).sqrt();
+            if len < 0.0001 {
+                continue;
+            }
+            let mut d = vs.map(|v| v / len);
+            if self.u() < s.neg_prob {
+                d = d.map(|v| -v);
+            }
+            let cands = [[0.0, d[2], -d[1]], [-d[2], 0.0, d[0]], [d[1], -d[0], 0.0]];
+            let mut a = cands[0];
+            let mut al = 0.0;
+            for c in cands {
+                let l = c[0] * c[0] + c[1] * c[1] + c[2] * c[2];
+                if l >= al {
+                    a = c;
+                    al = l;
+                }
+            }
+            let a = a.map(|v| v / al.sqrt().max(1e-9));
+            let b = [d[1] * a[2] - d[2] * a[1], d[2] * a[0] - d[0] * a[2], d[0] * a[1] - d[1] * a[0]];
+            let th = self.u() * s.cone.to_radians();
+            let ph = self.u() * std::f32::consts::TAU;
+            let mut dir = [0, 1, 2].map(|k| th.cos() * d[k] + th.sin() * (ph.cos() * a[k] + ph.sin() * b[k]));
+            // flattened toward the screen (the camera looks along z)
+            dir[2] *= s.zscale;
+            let speed = (len * s.vel_mul * (1.0 + s.vel_var * self.rand())).max(0.0).sqrt().max(s.vel_min);
+            let rate = (s.aging * (1.0 + s.aging_var * self.rand())).max(0.001);
+            if let Some(i) = self.free.pop() {
+                let i = i as usize;
+                self.p0[i] = [cur[0], cur[1], cur[2], 0.0];
+                self.p1[i] = [dir[0] * speed, dir[1] * speed, dir[2] * speed, rate];
+            }
+        }
+        // each moves: gravity, a random push, friction; ages; its facet tumbles (the pushes come from three streams
+        // started afresh each tick and handed out in slot order, so the ones low in the pool keep theirs)
+        let mut st = [0x98756161u32, 0x21324889, 0x82181158];
+        let spin = s.spin / 60.0;
+        for i in 0..POOL {
+            if self.p0[i][3] == DEAD {
+                continue;
+            }
+            let r = [0, 1, 2].map(|k| {
+                st[k] = st[k].wrapping_mul(16807);
+                f32::from_bits(0x4000_0000 | (st[k] >> 9)) - 3.0
+            });
+            let (p0, p1) = (&mut self.p0[i], &mut self.p1[i]);
+            for k in 0..3 {
+                let acc = if k == 1 { s.gravity } else { 0.0 } + s.brown * r[k];
+                p1[k] += (acc - s.friction * p1[k]) * s.dt;
+                p0[k] += p1[k] * s.dt;
+            }
+            p0[3] += p1[3];
+            let age = p0[3];
+            let tau = std::f32::consts::TAU;
+            let w = [(tau * 0.37 * age).sin(), (tau * 0.17 * age).cos(), (tau * 0.31 * age).cos(), 0.0];
+            let q = self.p2[i];
+            let h = [
+                w[3] * q[0] + w[0] * q[3] + w[1] * q[2] - w[2] * q[1],
+                w[3] * q[1] - w[0] * q[2] + w[1] * q[3] + w[2] * q[0],
+                w[3] * q[2] + w[0] * q[1] - w[1] * q[0] + w[2] * q[3],
+                w[3] * q[3] - w[0] * q[0] - w[1] * q[1] - w[2] * q[2],
+            ];
+            let n = [0, 1, 2, 3].map(|k| q[k] + h[k] * 0.5 * spin);
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2] + n[3] * n[3]).sqrt().max(1e-9);
+            self.p2[i] = n.map(|v| v / l);
+            let out = (0..3).any(|k| p0[k] < BOX[0][k] || p0[k] > BOX[1][k]);
+            if !(age < 0.99999) || out {
+                p0[3] = DEAD;
+                self.free.push(i as u32);
+            }
+        }
+    }
+
+    /// The live ones, in slot order, eight numbers each: position, fade (in over the first 2% of its life, out over
+    /// the last 6%), and its facet's turn.
+    fn live(&self) -> Vec<f32> {
+        let mut out = Vec::with_capacity(POOL * 8);
+        for i in 0..POOL {
+            let p = self.p0[i];
+            if p[3] == DEAD {
+                continue;
+            }
+            let fade = p[3].min(0.02) * 50.0 * (1.0 - 16.6667 * (p[3] - 0.94).max(0.0));
+            out.extend_from_slice(&[p[0], p[1], p[2], fade]);
+            out.extend_from_slice(&self.p2[i]);
+        }
+        out
+    }
+}
+
+/// A point of the smooth sheet through the 19 x 19 `net`, at sample `iu` across (along a strand) and `iv` down.
+fn surface(net: &[[f32; 3]], iu: usize, iv: usize) -> [f32; 3] {
+    let (iu, iv) = (iu.min(127), iv.min(127));
+    let (sr, sc) = ((iv / 8).min(15), (iu / 8).min(15));
+    let (br, bc) = (bsw((iv - sr * 8) as f32 / 8.0), bsw((iu - sc * 8) as f32 / 8.0));
+    let mut p = [0.0; 3];
+    for a in 0..4 {
+        for b in 0..4 {
+            let q = net[(sr + a) * N + sc + b];
+            for k in 0..3 {
+                p[k] += br[a] * bc[b] * q[k];
+            }
+        }
+    }
+    p
+}
+
+/// The colours the sparkles' glints take as they tumble: a cycle of hues round a centre, twisted further the further
+/// out (measured: one cycle of colours and how much it twists).
+const SWIRL: [[f32; 3]; 72] = [
+    [0.7394, 0.7659, 0.4551], [0.7347, 0.7085, 0.3647], [0.7203, 0.6361, 0.2772], [0.6824, 0.5595, 0.2323], [0.6462, 0.4923, 0.2282], [0.6791, 0.4926, 0.3001],
+    [0.7774, 0.5557, 0.4455], [0.8621, 0.6008, 0.5883], [0.9030, 0.5920, 0.6947], [0.9164, 0.5640, 0.7784], [0.8968, 0.5330, 0.8391], [0.8475, 0.4982, 0.8774],
+    [0.7945, 0.4776, 0.9102], [0.7400, 0.4748, 0.9418], [0.6870, 0.4833, 0.9640], [0.6422, 0.5080, 0.9718], [0.6013, 0.5396, 0.9666], [0.5559, 0.5521, 0.9578],
+    [0.5070, 0.5441, 0.9439], [0.4555, 0.5303, 0.9305], [0.3971, 0.5153, 0.9191], [0.3440, 0.4949, 0.9099], [0.3167, 0.4605, 0.9051], [0.3078, 0.4199, 0.9020],
+    [0.2929, 0.4019, 0.9053], [0.2671, 0.4150, 0.9116], [0.2391, 0.4354, 0.9149], [0.2061, 0.4500, 0.9074], [0.1761, 0.4661, 0.8964], [0.1805, 0.4913, 0.9040],
+    [0.2187, 0.5257, 0.9290], [0.2700, 0.5519, 0.9526], [0.3305, 0.5636, 0.9712], [0.3942, 0.5622, 0.9794], [0.4467, 0.5425, 0.9583], [0.4913, 0.5031, 0.9140],
+    [0.5285, 0.4330, 0.8856], [0.5553, 0.3205, 0.8824], [0.5910, 0.2203, 0.8769], [0.6572, 0.1816, 0.8444], [0.7359, 0.1799, 0.8002], [0.7908, 0.1877, 0.7701],
+    [0.8257, 0.2053, 0.7522], [0.8460, 0.2227, 0.7260], [0.8489, 0.2313, 0.6858], [0.8428, 0.2405, 0.6382], [0.8421, 0.2606, 0.5814], [0.8415, 0.2894, 0.5162],
+    [0.8236, 0.3228, 0.4466], [0.7811, 0.3620, 0.3700], [0.7435, 0.3976, 0.3040], [0.7335, 0.4166, 0.2673], [0.7412, 0.4297, 0.2492], [0.7666, 0.4586, 0.2325],
+    [0.8094, 0.5025, 0.2177], [0.8519, 0.5572, 0.2150], [0.8875, 0.6266, 0.2326], [0.9166, 0.6996, 0.2604], [0.9325, 0.7619, 0.2875], [0.9383, 0.8144, 0.3168],
+    [0.9475, 0.8666, 0.3589], [0.9634, 0.9231, 0.4154], [0.9774, 0.9670, 0.4914], [0.9885, 0.9890, 0.6007], [0.9940, 0.9959, 0.7278], [0.9823, 0.9922, 0.8242],
+    [0.9563, 0.9816, 0.8898], [0.8902, 0.9251, 0.8782], [0.7471, 0.7802, 0.7398], [0.6079, 0.6362, 0.5681], [0.5988, 0.6287, 0.4892], [0.6887, 0.7243, 0.4782],
+];
+const TWIST: f32 = -1.55;
+
+/// The swirl as a 128 x 128 picture (rows from the bottom).
+fn swirl() -> Vec<[f32; 3]> {
+    let mut out = Vec::with_capacity(128 * 128);
+    for y in 0..128 {
+        for x in 0..128 {
+            let (dx, dy) = ((x as f32 + 0.5) / 64.0 - 1.0, (y as f32 + 0.5) / 64.0 - 1.0);
+            let r2 = dx * dx + dy * dy;
+            let t = ((dy.atan2(dx) - TWIST * r2) / std::f32::consts::TAU).rem_euclid(1.0) * 72.0 - 0.5;
+            let j = t.floor();
+            let f = t - j;
+            let (a, b) = (SWIRL[(j as i32).rem_euclid(72) as usize], SWIRL[(j as i32 + 1).rem_euclid(72) as usize]);
+            out.push([0, 1, 2].map(|k| a[k] + (b[k] - a[k]) * f));
+        }
+    }
+    out
+}
+
+unsafe fn spark_uniforms(gl: &glow::Context, p: glow::Program, cam: &[f32; 16], pass: i32) {
+    let s = &SPARK;
+    let u = |n: &str| gl.get_uniform_location(p, n);
+    gl.uniform_1_i32(u("parts").as_ref(), 0);
+    gl.uniform_1_i32(u("irid").as_ref(), 1);
+    gl.uniform_1_i32(u("pass").as_ref(), pass);
+    gl.uniform_matrix_4_f32_slice(u("cam").as_ref(), false, cam);
+    gl.uniform_3_f32(u("eye").as_ref(), 0.0, 0.0, 2.0);
+    gl.uniform_3_f32_slice(u("spot").as_ref(), &s.spot);
+    gl.uniform_3_f32_slice(u("attn").as_ref(), &s.attn);
+    gl.uniform_3_f32_slice(u("lbmin").as_ref(), &BOX[0]);
+    gl.uniform_3_f32_slice(u("lbmax").as_ref(), &BOX[1]);
+    gl.uniform_4_f32(u("ps").as_ref(), s.size[0], s.size[1], s.size[2], 0.0);
+    gl.uniform_2_f32(u("tr").as_ref(), s.fresnel, s.alpha);
+    gl.uniform_4_f32(u("fo").as_ref(), s.near[0], s.near[0] + s.near[1], s.far[0], s.far[0] + s.far[1]);
+    gl.uniform_3_f32(u("fc").as_ref(), s.near[2], s.far[2], 53.0f32.to_radians());
+    gl.uniform_3_f32(u("nc").as_ref(), s.size_align, s.near[4], s.near_align);
+    gl.uniform_2_f32(u("dk").as_ref(), s.near[3], s.far[3]);
+    gl.uniform_4_f32(u("glr").as_ref(), s.glare[0], s.glare[1], s.glare[2], s.glare[3]);
+    gl.uniform_4_f32(u("light").as_ref(), s.lambert, s.spec_coeff, s.exposure, s.color_control);
+    gl.uniform_2_f32(u("sp").as_ref(), s.spec_pow, s.irid_exp);
+}
+
+// each sparkle a quad: a little facet tumbling (pass 1, turning partly to face the camera when small and near) or a
+// halo facing the camera that grows when the facet glints toward it (pass 2); focus and distance darken them
+const PARTS_VS: &str = r#"
+uniform sampler2D parts;
+uniform mat4 cam;
+uniform vec3 eye, spot, lbmin, lbmax;
+uniform vec4 ps, fo, glr;
+uniform vec3 fc, nc;
+uniform vec2 tr, dk, sp;
+uniform int pass;
+out vec2 uv;
+out vec2 blur;
+out vec3 nn;
+out vec3 pw;
+out float alpha;
+vec3 qx(vec4 q){ return vec3(1. - 2. * (q.y * q.y + q.z * q.z), 2. * (q.x * q.y + q.w * q.z), 2. * (q.z * q.x - q.w * q.y)); }
+vec3 qy(vec4 q){ return vec3(2. * (q.x * q.y - q.w * q.z), 1. - 2. * (q.x * q.x + q.z * q.z), 2. * (q.y * q.z + q.w * q.x)); }
+vec3 qz(vec4 q){ return vec3(2. * (q.x * q.z + q.w * q.y), 2. * (q.y * q.z - q.w * q.x), 1. - 2. * (q.x * q.x + q.y * q.y)); }
+void main(){
+  int i = gl_VertexID / 6, k = gl_VertexID - (gl_VertexID / 6) * 6;
+  vec2 corner = k == 0 || k == 3 ? vec2(0., 0.) : k == 1 ? vec2(1., 0.) : k == 5 ? vec2(0., 1.) : vec2(1., 1.);
+  vec4 p0 = texelFetch(parts, ivec2(i, 0), 0);
+  vec4 q = normalize(texelFetch(parts, ivec2(i, 1), 0));
+  vec3 p = p0.xyz;
+  vec3 e = min(p - lbmin, lbmax - p);
+  float bx = clamp(min(min(e.x, e.y), e.z) * 5., 0., 1.);
+  float boxfade = bx * bx * (3. - 2. * bx);
+  vec3 N = qz(q);
+  float d = length(eye - p);
+  vec3 V = (eye - p) / d;
+  float nb = (fo.y - clamp(d, fo.x, fo.y)) / (fo.y - fo.x);
+  float fb = (clamp(d, fo.z, fo.w) - fo.z) / (fo.w - fo.z);
+  float nbp = pow(nb, fc.x), fbp = pow(fb, fc.y);
+  float size = mix(mix(ps.x, ps.y, nbp), ps.z, fbp);
+  float band = 1. + clamp((d - (fo.z - .2)) * 5., 0., 1.) - clamp((d - (fo.z - .6)) * 5., 0., 1.);
+  float rampC = clamp((d - (fo.z - .4)) * 5., 0., 1.);
+  float sf = 2. * atan(size / d) / fc.z;
+  float dark = (1. - clamp(fb * sf * dk.y, 0., 1.)) * (1. - clamp(nb * sf * dk.x, 0., 1.));
+  vec2 c = corner - .5;
+  vec3 P;
+  if (pass == 1) {
+    float align = clamp(sf * nc.x + nbp * nc.z + rampC, 0., 1.);
+    vec4 qa = normalize(q + align * (vec4(0., 0., 0., 1.) - q));
+    P = p + size * (c.x * qx(qa) + c.y * qy(qa));
+    float fres = 1. - pow(1. - abs(dot(V, qz(qa))), tr.x);
+    alpha = fres * tr.y * p0.w * band * dark * boxfade;
+  } else {
+    vec3 Hc = normalize(normalize(spot - p) + V);
+    float halo = size * pow(abs(dot(N, Hc)), sp.x) * glr.y;
+    P = p + halo * vec3(c, 0.);
+    float fres = 1. - pow(1. - abs(V.z), tr.x);
+    alpha = p0.w * fres * tr.y * band * dark * boxfade;
+  }
+  gl_Position = cam * vec4(P, 1.);
+  uv = corner;
+  blur = vec2(nbp, fbp);
+  nn = N;
+  pw = P;
+}
+"#;
+
+// the facet lit by the spot: a soft light all over and a glint tinted by the swirl, shaped into a disc that softens
+// out of focus
+const FACET_FS: &str = r#"
+in vec2 uv;
+in vec2 blur;
+in vec3 nn;
+in vec3 pw;
+in float alpha;
+uniform sampler2D irid;
+uniform vec3 eye, spot, attn, nc;
+uniform vec4 light;
+uniform vec2 sp;
+void main(){
+  vec3 t = texture(irid, nn.xy * .5 + .5).rgb;
+  vec3 ir = pow(max(1. + light.w * (t - 1.), 0.), vec3(sp.y));
+  vec3 Lf = normalize(spot - pw), Vf = normalize(eye - pw), H = normalize(Lf + Vf);
+  float spec = pow(abs(dot(nn, H)), sp.x);
+  float dl = length(spot - pw);
+  float att = attn.x + attn.y * dl + attn.z * dl * dl;
+  vec3 col = (abs(dot(nn, Lf)) * light.x + spec * light.y * ir) / att;
+  float bl = clamp(blur.x + blur.y, 0., 1.);
+  float bw = bl * .6345 + .05;
+  float r = length((uv - .5) * 2.);
+  float s = clamp((r - (.5 - bw)) / (2. * bw), 0., 1.);
+  float mask = 1. - s * s * (3. - 2. * s);
+  float fz = mix(.85, nc.y, blur.x);
+  float shape = mask + bl * (1. - mask - exp(-mask * fz));
+  float A = shape * alpha;
+  if (A <= 0.) discard;
+  o = vec4(A * (1. - exp(-light.z * col)), A);
+}
+"#;
+
+// the halo: the glint's light only, falling off from the centre
+const HALO_FS: &str = r#"
+in vec2 uv;
+in vec2 blur;
+in vec3 nn;
+in vec3 pw;
+in float alpha;
+uniform sampler2D irid;
+uniform vec3 eye, spot, attn;
+uniform vec4 light, glr;
+uniform vec2 sp;
+void main(){
+  vec3 t = texture(irid, nn.xy * .5 + .5).rgb;
+  vec3 ir = pow(max(1. + light.w * (t - 1.), 0.), vec3(sp.y));
+  vec3 Lf = normalize(spot - pw), Vf = normalize(eye - pw), H = normalize(Lf + Vf);
+  float spec = pow(abs(dot(nn, H)), sp.x);
+  float dl = length(spot - pw);
+  float att = attn.x + attn.y * dl + attn.z * dl * dl;
+  vec3 e = 1. - exp(-light.z * spec * light.y * ir / att);
+  float r = min(1., length((uv - .5) * 2.));
+  float g = exp(-glr.w * pow(r, glr.z)) * glr.x;
+  if (alpha * e.r <= 0.) discard;
+  o = vec4(alpha * e * g, alpha * e.r);
+}
+"#;
