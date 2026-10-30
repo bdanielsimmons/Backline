@@ -418,16 +418,24 @@ fn theme_of(p: (World, usize)) -> Option<&'static Theme> {
     l.get(p.1.min(l.len().saturating_sub(1)))
 }
 
-/// The phases a song can bring: the one look asked for, the world's looks, or with the plain Terrain every world's
-/// (the measured looks, then the cavern and the canyon as further phases of it).
+/// The phases a song can bring: the one look asked for, or the world's looks.
 fn pool(world: World, theme: Option<usize>) -> Vec<(World, usize)> {
-    let of = |w: World| (0..list(w).len()).map(move |i| (w, i));
-    match (world, theme) {
-        (w, Some(i)) => vec![(w, i.min(list(w).len().saturating_sub(1)))],
-        (World::Terrain, None) => of(World::Terrain).chain(of(World::Cavern)).chain(of(World::Canyon)).collect(),
-        (w, None) => of(w).collect(),
+    match theme {
+        Some(i) => vec![(world, i.min(list(world).len().saturating_sub(1)))],
+        None => (0..list(world).len()).map(|i| (world, i)).collect(),
     }
 }
+
+/// With the plain Terrain, the phases that come in between the song's own look for a while: the cavern's and the
+/// canyon's looks.
+fn trips() -> Vec<(World, usize)> {
+    [World::Cavern, World::Canyon].into_iter().flat_map(|w| (0..list(w).len()).map(move |i| (w, i))).collect()
+}
+
+/// With the plain Terrain, a canyon or a cavern stays about as long as one of the terrain's own phases, then the
+/// song's look comes back for one to two of them; those changes blend faster than a new song's.
+const TRIP: f64 = 32.0;
+const TRIP_BLEND: f64 = 8.0;
 
 /// A ceiling too high to see: a world without one.
 const NO_CEILING: f32 = 1500.0;
@@ -474,13 +482,15 @@ impl Bend {
     }
 }
 
-/// The glow's cap partway from `a` to `b` (uncapped counts as 8: the glow by the front hardly goes past that).
+/// The glow's cap partway from `a` to `b` (uncapped counts as 8: the glow by the front hardly goes past that): a cap
+/// comes on early in a change and goes only at its very end, so tall walls never glow uncapped on their way out.
 fn glowcap(a: Bend, b: Bend, k: f32) -> f32 {
     if k >= 1.0 {
         return b.glowcap;
     }
     let (ca, cb) = (a.glowcap.min(8.0), b.glowcap.min(8.0));
-    ca + (cb - ca) * k
+    let w = if cb < ca { smooth(k / 0.25) } else { smooth((k - 0.75) / 0.25) };
+    ca + (cb - ca) * w
 }
 
 /// A path's sideways offset at `z`, and how it changes along z (first and second): two waves.
@@ -1072,7 +1082,7 @@ pub(crate) struct Terrain {
     /// the landscape now, and a change of it under way: where from, since when, how (1 a blend, 2 and 3 a flood:
     /// swept up or swept down) and which way a front sweeps
     base: [f32; COLS],
-    ground: Option<([f32; COLS], f64, u8, bool)>,
+    ground: Option<([f32; COLS], f64, u8, bool, f32)>,
     /// the response of the look being left
     resp_from: usize,
     t_first: bool,
@@ -1082,6 +1092,12 @@ pub(crate) struct Terrain {
     /// and the look and bends it is blending from (with when)
     phase: (World, usize),
     asked: Option<(World, Option<usize>)>,
+    /// with the plain Terrain: the song's own look and its clock's start, when the next trip into a canyon or a
+    /// cavern (or back) is due; and how long the change under way takes
+    home: (World, usize),
+    home_t0: f64,
+    next_trip: f64,
+    blend: f64,
     t0: f64,
     song: u64,
     from: Option<(Look, f64)>,
@@ -1117,6 +1133,10 @@ impl Default for Terrain {
             look: themes().list.first().map_or([0.0; lk::N], |t| t.at(0.0)),
             phase: (World::Terrain, 0),
             asked: None,
+            home: (World::Terrain, 0),
+            home_t0: 0.0,
+            next_trip: f64::MAX,
+            blend: 20.0,
             bend_from: Bend::FLAT,
             t0: 0.0,
             song: u64::MAX,
@@ -1191,9 +1211,11 @@ impl Terrain {
         if pool.is_empty() {
             return;
         }
-        // a new song (or another choice) brings in another phase, blending over twenty seconds: a look of the terrain,
-        // or the cavern's ceiling coming down, or the ground starting to wind into a canyon
+        // a new song (or another choice) brings in another phase, blending over twenty seconds; with the plain Terrain
+        // a look of the terrain, and now and then a canyon or a cavern comes in for a phase and goes again (the
+        // ground starting to wind, or the cavern's ceiling coming down out of the sky)
         let asked = Some((inp.world, inp.theme));
+        let plain = inp.world == World::Terrain && inp.theme.is_none();
         if inp.song != self.song || asked != self.asked {
             let first = self.song == u64::MAX;
             self.song = inp.song;
@@ -1203,32 +1225,29 @@ impl Terrain {
                 k = (k + 1) % pool.len();
             }
             let next = pool[k];
-            // (a phase asked for that is already showing carries on)
-            if let (true, Some(old), Some(new)) = (first || next != self.phase, theme_of(self.phase), theme_of(next)) {
-                self.resp_from = old.response;
-                if first {
-                    self.base = th.bases[new.base];
-                    self.sheet.fill(&self.base);
-                } else {
-                    let (a, b, k) = self.bend_at(inp.t);
-                    self.bend_from = if k >= 1.0 { b } else { Bend::settle(a, b, k) };
-                    self.from = Some((self.look, inp.t));
-                    // the landscape changes too: a flood when either theme floods, else a slow blend
-                    let flood = old.flood || new.flood;
-                    if flood || old.base != new.base {
-                        let kind = if flood { if self.rnd() < 0.5 { 2 } else { 3 } } else { 1 };
-                        self.ground = Some((self.base, inp.t, kind, self.rnd() < 0.5));
-                    }
-                }
-                self.phase = next;
-                self.t0 = inp.t;
+            self.home = next;
+            self.next_trip = if plain { inp.t + TRIP * (1.0 + self.rnd() as f64) } else { f64::MAX };
+            self.go(next, inp.t, first, 20.0, 12.0, true);
+            self.home_t0 = self.t0;
+        } else if plain && inp.t >= self.next_trip {
+            let trips = trips();
+            if self.phase == self.home && !trips.is_empty() {
+                let next = trips[(self.rnd() * trips.len() as f32) as usize % trips.len()];
+                self.next_trip = inp.t + TRIP;
+                self.go(next, inp.t, false, TRIP_BLEND, TRIP_BLEND as f32, false);
+            } else {
+                // back to the song's look, where its own clock has got to
+                self.next_trip = inp.t + TRIP * (1.0 + self.rnd() as f64);
+                let home = self.home;
+                self.go(home, inp.t, false, TRIP_BLEND, TRIP_BLEND as f32, false);
+                self.t0 = self.home_t0;
             }
         }
         let Some(theme) = theme_of(self.phase) else { return };
         let target = theme.at((inp.t - self.t0) as f32);
         self.look = match self.from {
             Some((from, ts)) => {
-                let a = ((inp.t - ts) / 20.0) as f32;
+                let a = ((inp.t - ts) / self.blend) as f32;
                 if a >= 1.0 {
                     self.from = None;
                     target
@@ -1243,7 +1262,7 @@ impl Terrain {
         let db = self.an.levels(&inp.samples, inp.rate);
         let mut vals = heights(&db, &th.responses[theme.response]);
         if let Some((_, ts)) = self.from {
-            let a = smooth(((inp.t - ts) / 20.0) as f32);
+            let a = smooth(((inp.t - ts) / self.blend) as f32);
             let old = heights(&db, &th.responses[self.resp_from]);
             for k in 0..65 {
                 vals[k] = old[k] + (vals[k] - old[k]) * a;
@@ -1289,9 +1308,9 @@ impl Terrain {
     /// twelve seconds; a flood (when Sepia or Aurora comes or goes) raises the whole sheet to a plateau
     /// and drains it into the new shape, one of the two all at once and the other as a front sweeping across.
     fn ground_at(&mut self, t: f64, to: &[f32; COLS]) -> [f32; COLS] {
-        let Some((from, t0, kind, left)) = self.ground else { return *to };
+        let Some((from, t0, kind, left, secs)) = self.ground else { return *to };
         let tau = (t - t0) as f32;
-        if tau > if kind == 1 { 12.0 } else { 16.0 } {
+        if tau > if kind == 1 { secs } else { 16.0 } {
             self.ground = None;
             return *to;
         }
@@ -1300,7 +1319,7 @@ impl Terrain {
         for c in 0..COLS {
             let x = if left { c as f32 / 128.0 } else { 1.0 - c as f32 / 128.0 };
             out[c] = match kind {
-                1 => from[c] + (to[c] - from[c]) * smooth(tau / 12.0),
+                1 => from[c] + (to[c] - from[c]) * smooth(tau / secs),
                 _ => {
                     let sweep_up = kind == 2;
                     let up = if sweep_up { smooth((tau - 4.0 * x) / 1.5) } else { smooth(tau / 7.0) };
@@ -1313,11 +1332,38 @@ impl Terrain {
         out
     }
 
+    /// Over to phase `next` at `t`: the look and bends blending over `secs`, the landscape over `ground` seconds (or a
+    /// flood, when `flood` and either phase floods); `first` starts afresh on it. A phase already showing carries on.
+    fn go(&mut self, next: (World, usize), t: f64, first: bool, secs: f64, ground: f32, flood: bool) {
+        if !first && next == self.phase {
+            return;
+        }
+        let (Some(old), Some(new)) = (theme_of(self.phase), theme_of(next)) else { return };
+        let th = themes();
+        self.resp_from = old.response;
+        if first {
+            self.base = th.bases[new.base];
+            self.sheet.fill(&self.base);
+        } else {
+            let (a, b, k) = self.bend_at(t);
+            self.bend_from = if k >= 1.0 { b } else { Bend::settle(a, b, k) };
+            self.from = Some((self.look, t));
+            self.blend = secs;
+            let flood = flood && (old.flood || new.flood);
+            if flood || old.base != new.base {
+                let kind = if flood { if self.rnd() < 0.5 { 2 } else { 3 } } else { 1 };
+                self.ground = Some((self.base, t, kind, self.rnd() < 0.5, ground));
+            }
+        }
+        self.phase = next;
+        self.t0 = t;
+    }
+
     /// The bends at `t`: the phase's, or on their way there from the last ones (from, to, how far).
     fn bend_at(&self, t: f64) -> (Bend, Bend, f32) {
         let to = Bend::of(self.phase);
         match self.from {
-            Some((_, ts)) => (self.bend_from, to, smooth(((t - ts) / 20.0) as f32)),
+            Some((_, ts)) => (self.bend_from, to, smooth(((t - ts) / self.blend) as f32)),
             None => (to, to, 1.0),
         }
     }
