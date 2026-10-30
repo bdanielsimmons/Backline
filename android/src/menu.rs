@@ -413,7 +413,7 @@ impl App {
                 let (name, id) = (self.menu_new.trim().to_string(), t.id);
                 self.menu_new.clear();
                 self.own_lists.clear();
-                self.spawn(move |api| Msg::Done(api.playlist_create(&name).and_then(|u| api.playlist_add(&u, id)).map(|_| format!("Made {} on Tidal", name))));
+                self.spawn(move |api| Msg::Done(api.playlist_create(&name, "").and_then(|u| api.playlist_add(&u, id)).map(|_| format!("Made {} on Tidal", name))));
                 close = true;
             }
         }
