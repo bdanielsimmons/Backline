@@ -59,7 +59,8 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | Tidal API, offline switch, liked-songs copy | `data/api.rs` |
 | Song cache (kept songs) | `data/cache.rs` |
 | Packs for a friend: plan, books, atonal lines, chord melodies, loops & playlists in one zip (`.backline`); made in PREFERENCES > SHARE WITH A FRIEND, opened by dropping it on the window (`handle_paths`) or OPEN A PACK; `pack_panel` ticks the pieces, `PackUnlock` puts them in place | `data/pack.rs` |
-| Visuals: MilkDrop / WMP-style presets as GLSL shaders run through egui_glow paint callbacks (feedback ping-pong per slot: 0 full screen, 1 Now Playing, 2 deck, 3 playlist bar), 3D Pipes and Starfield drawn by egui; `PRESETS` / `GROUPS`, `vis_paint`, `vis_full_ui` (G, Esc), `vis_menu`, idle screensaver `vis_idle_check`; deck visualizer mode 3; `BACKLINE_OPEN=visuals` with `BACKLINE_VIS=<preset>` | `ui/visuals.rs` |
+| Visuals: MilkDrop / WMP-style presets as GLSL shaders run through egui_glow paint callbacks (feedback ping-pong per slot: 0 full screen, 1 Now Playing, 2 deck, 3 playlist bar), 3D Pipes and Starfield drawn by egui; `PRESETS` / `GROUPS`, `vis_paint`, `vis_full_ui` (G, Esc), `vis_menu`, idle screensaver `vis_idle_check`; deck visualizer mode 3; `BACKLINE_OPEN=visuals` with `BACKLINE_VIS=<preset>` (BACKLINE_SONG=<file> plays that song) | `ui/visuals.rs` |
+| 3D visuals: the Terrain, a sheet the music builds a row at a time under a gliding camera, with depth of field and a blur that trails; its looks (camera paths, colours, landscapes, speeds) and how loud each frequency lifts the ground are measured data in `assets/terrain_looks.bin`; `Terrain::step` (song changes, look blends, rows), `Terrain::paint` (sheet, then the blur passes); BACKLINE_TERRAIN_FRAME / BACKLINE_TERRAIN_ROWS for checks against reference frames | `ui/terrain.rs` |
 | Note view (the waveform's NOTES chip): the song by pitch, E1 to E6, 50 a second, from the stems switched on when split (`analyse`, `from_stems`); drawn by `notes_strip` in `ui/views.rs`, made by `start_notes` | `audio/notes.rs` |
 | Stems: splitting (HT-Demucs), the split songs (`is_split` for the row mark set by `row_stems`, MY TRACKS > WITH STEMS), the time/size guess before a split (`time_guess`, `size_guess`) | `audio/stems.rs` |
 | Guitar Pro files (.gp: bars, notes with string/fret, key and time, chord names and grids, the recording inside) | `data/gp.rs` |
@@ -109,4 +110,6 @@ Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font on
   `lines`, BACKLINE_LN_TAB=<0-5> opens that LINES tab.
 - CHORD MELODIES only: `BACKLINE_CM_SCROLL=<px>` opens the bars scrolled down; `BACKLINE_CM_PICK=<kind>` opens the
   first move of that kind (its index in `KINDS`) in the panel.
+- Pictures from a test copy: `BACKLINE_SHOT=<file.png>` (after BACKLINE_SHOT_AT seconds; BACKLINE_SHOTS=n with
+  BACKLINE_SHOT_EVERY=<s> for a series), `BACKLINE_SIZE=<w>x<h>` for its window size.
 - Unit tests: `cargo test --release` in `backline/`.

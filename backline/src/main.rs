@@ -142,6 +142,8 @@ mod vicon;
 mod views;
 #[path = "ui/visuals.rs"]
 mod visuals;
+#[path = "ui/terrain.rs"]
+mod terrain;
 #[path = "ui/viz.rs"]
 mod viz;
 #[path = "ui/winamp_ui.rs"]
@@ -4322,11 +4324,13 @@ impl App {
                     app.vis_np = true;
                 }
             }
+            // (BACKLINE_SONG=<file>: that song instead of the tour's)
             Ok("visuals") => {
                 if let Ok(v) = std::env::var("BACKLINE_VIS") {
                     app.vis_preset = visuals::find(&v);
                 }
-                if let Some(p) = tour_song::ready() {
+                let song = std::env::var_os("BACKLINE_SONG").map(std::path::PathBuf::from).or_else(tour_song::ready);
+                if let Some(p) = song {
                     let t = sources::ext_for_file(&p).to_track();
                     app.srcmap.insert(t.id, Src::File(p));
                     app.queue = Arc::new(vec![t]);
@@ -7168,9 +7172,17 @@ fn main() -> eframe::Result<()> {
             .with_position([-1700.0, 40.0])
             .with_active(false)
             .with_taskbar(false);
-    } else if std::env::var_os("BACKLINE_HOME").is_some() && std::env::var_os("BACKLINE_SHOW").is_none() {
+    } else if hidden_test_copy() {
         // a test copy (a test profile): out of sight, never in front of what you are doing or taking the keyboard
+        // (BACKLINE_SIZE=WxH: its size, for pictures of a set size)
         viewport = viewport.with_position([-1700.0, 40.0]).with_active(false).with_taskbar(false);
+        let size = std::env::var("BACKLINE_SIZE").ok().and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some([w.parse::<f32>().ok()?, h.parse::<f32>().ok()?])
+        });
+        if let Some(sz) = size {
+            viewport = viewport.with_inner_size(sz).with_min_inner_size(sz).with_resizable(false);
+        }
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     crate::api::log(&format!("start: build {}", update::build()));
@@ -7331,34 +7343,55 @@ mod tests {
     }
 }
 
+/// A test copy kept out of sight (a test profile without BACKLINE_SHOW): it never goes full screen or takes focus.
+pub(crate) fn hidden_test_copy() -> bool {
+    std::env::var_os("BACKLINE_HOME").is_some() && std::env::var_os("BACKLINE_SHOW").is_none()
+}
+
 /// BACKLINE_SHOT: once, after BACKLINE_SHOT_AT seconds (8 if not set), the app's own frame saved as a PNG there.
+/// With BACKLINE_SHOTS=n, n frames BACKLINE_SHOT_EVERY seconds apart (name_000.png...), at most 960 wide: a test copy
+/// filming itself (its own window only).
 fn test_shot(ctx: &egui::Context) {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    static STATE: AtomicU8 = AtomicU8::new(0);
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    static TAKEN: AtomicU32 = AtomicU32::new(0);
+    static WAITING: AtomicBool = AtomicBool::new(false);
     let Ok(path) = std::env::var("BACKLINE_SHOT") else { return };
     let at: f64 = std::env::var("BACKLINE_SHOT_AT").ok().and_then(|s| s.parse().ok()).unwrap_or(8.0);
-    match STATE.load(Ordering::Relaxed) {
-        0 if ctx.input(|i| i.time) > at => {
+    let n: u32 = std::env::var("BACKLINE_SHOTS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let every: f64 = std::env::var("BACKLINE_SHOT_EVERY").ok().and_then(|s| s.parse().ok()).unwrap_or(0.1);
+    let k = TAKEN.load(Ordering::Relaxed);
+    if k >= n {
+        return;
+    }
+    if !WAITING.load(Ordering::Relaxed) {
+        if ctx.input(|i| i.time) > at + k as f64 * every {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
-            STATE.store(1, Ordering::Relaxed);
+            WAITING.store(true, Ordering::Relaxed);
         }
-        1 => {
-            let shot = ctx.input(|i| {
-                i.raw.events.iter().find_map(|e| match e {
-                    egui::Event::Screenshot { image, .. } => Some(image.clone()),
-                    _ => None,
-                })
-            });
-            if let Some(img) = shot {
+    } else {
+        let shot = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(img) = shot {
+            let out = if n > 1 { path.replace(".png", &format!("_{:03}.png", k)) } else { path.clone() };
+            std::thread::spawn(move || {
                 let [w, h] = img.size;
                 let px: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
                 if let Some(buf) = image::RgbaImage::from_raw(w as u32, h as u32, px) {
-                    let _ = buf.save(&path);
+                    let buf = if n > 1 && w > 960 {
+                        image::imageops::resize(&buf, 960, (960 * h / w) as u32, image::imageops::FilterType::Triangle)
+                    } else {
+                        buf
+                    };
+                    let _ = buf.save(&out);
                 }
-                STATE.store(2, Ordering::Relaxed);
-            }
+            });
+            TAKEN.store(k + 1, Ordering::Relaxed);
+            WAITING.store(false, Ordering::Relaxed);
         }
-        _ => {}
     }
     ctx.request_repaint();
 }

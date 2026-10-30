@@ -27,6 +27,8 @@ pub(crate) enum Kind {
     Random(Option<&'static str>),
     Pipes,
     Stars,
+    /// 3D Terrain (ui/terrain.rs): one of its looks, or (None) a different look for each song.
+    Terrain(Option<usize>),
 }
 
 /// A palette: what the engine's brightness 0..1 becomes, dark to light.
@@ -208,6 +210,15 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset { group: "Milk", name: "Plasma", kind: Kind::Gpu(PLASMA) },
     Preset { group: "Milk", name: "Tornado", kind: Kind::Gpu(TORNADO) },
     Preset { group: "Milk", name: "Smoke Rings", kind: Kind::Gpu(SMOKE) },
+    // ---- 3D (the terrain's looks in assets/terrain_looks.bin, in order)
+    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(None) },
+    Preset { group: "3D", name: "Rose Terrain", kind: Kind::Terrain(Some(0)) },
+    Preset { group: "3D", name: "Blue Terrain", kind: Kind::Terrain(Some(1)) },
+    Preset { group: "3D", name: "Meadow Terrain", kind: Kind::Terrain(Some(2)) },
+    Preset { group: "3D", name: "Night Terrain", kind: Kind::Terrain(Some(3)) },
+    Preset { group: "3D", name: "Sepia Terrain", kind: Kind::Terrain(Some(4)) },
+    Preset { group: "3D", name: "Amber Terrain", kind: Kind::Terrain(Some(5)) },
+    Preset { group: "3D", name: "Aurora Terrain", kind: Kind::Terrain(Some(6)) },
     // ---- screensavers
     Preset { group: "Screensavers", name: "3D Pipes", kind: Kind::Pipes },
     Preset { group: "Screensavers", name: "Starfield", kind: Kind::Stars },
@@ -215,7 +226,15 @@ pub(crate) const PRESETS: &[Preset] = &[
 
 /// The menu, in Windows Media Player's order, then the MilkDrop-style ones and the screensavers.
 pub(crate) const GROUPS: &[&str] =
-    &["Alchemy", "Ambience", "Bars and Waves", "Battery", "Musical Colors", "Particle", "Plenoptic", "Spikes", "Milk", "Screensavers"];
+    &["Alchemy", "Ambience", "Bars and Waves", "Battery", "Musical Colors", "Particle", "Plenoptic", "Spikes", "Milk", "3D", "Screensavers"];
+
+/// A group's name in the menu.
+pub(crate) fn group_title(g: &str) -> &str {
+    match g {
+        "Milk" => "MilkDrop style",
+        _ => g,
+    }
+}
 
 /// A preset by name, as saved ("Group: Name", or an older plain name); Down the Drain when unknown.
 pub(crate) fn find(name: &str) -> usize {
@@ -238,7 +257,8 @@ pub(crate) fn resolve(i: usize, t: f32) -> usize {
     let Kind::Random(g) = PRESETS[i].kind else { return i };
     let pool: Vec<usize> = (0..PRESETS.len())
         .filter(|&j| match PRESETS[j].kind {
-            Kind::Random(_) | Kind::Pipes | Kind::Stars => false,
+            // (the terrain takes a while to build: never a twenty-second stop in a round)
+            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain(_) => false,
             _ => g.map_or(true, |g| PRESETS[j].group == g),
         })
         .collect();
@@ -569,6 +589,7 @@ pub(crate) struct Gl {
     vao: Option<glow::VertexArray>,
     slots: std::collections::HashMap<u8, Slot>,
     failed: bool,
+    terrain: Option<Box<crate::terrain::Terrain>>,
 }
 
 /// A program: the shared vertex shader and `frag`, each after the GL version line (`frag` brings its own header).
@@ -721,11 +742,22 @@ impl Gl {
 }
 
 /// Draw a GPU preset into `rect` (slot: 0 full screen, 1 Now Playing, 2 the deck, 3 the deck's playlist bar).
-pub(crate) fn paint_gpu(p: &egui::Painter, rect: Rect, slot: u8, preset: usize, f: Frame, state: &Arc<Mutex<Gl>>) {
+pub(crate) fn paint_gpu(
+    p: &egui::Painter,
+    rect: Rect,
+    slot: u8,
+    preset: usize,
+    f: Frame,
+    state: &Arc<Mutex<Gl>>,
+    terrain: Option<Arc<crate::terrain::Input>>,
+) {
     let state = state.clone();
     let cb = egui_glow::CallbackFn::new(move |info, painter| {
         if let Ok(mut g) = state.lock() {
-            unsafe { g.draw(painter.gl(), &info, slot, preset, &f) };
+            match &terrain {
+                Some(inp) => unsafe { g.terrain.get_or_insert_with(Default::default).paint(painter.gl(), &info, slot, inp) },
+                None => unsafe { g.draw(painter.gl(), &info, slot, preset, &f) },
+            }
         }
     });
     p.add(egui::PaintCallback { rect, callback: Arc::new(cb) });
@@ -1026,18 +1058,32 @@ impl App {
         let preset = resolve(self.vis_preset.min(PRESETS.len() - 1), f.t);
         let p = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
         match PRESETS[preset].kind {
-            Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(&p, r, slot, preset, f, &self.vis_gl),
+            Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(&p, r, slot, preset, f, &self.vis_gl, None),
+            Kind::Terrain(look) => {
+                let inp = self.terrain_input(ui.ctx(), look);
+                paint_gpu(&p, r, slot, preset, f, &self.vis_gl, Some(Arc::new(inp)))
+            }
             Kind::Pipes => self.vis_pipes.draw(&p, r, dt, f.bass),
             Kind::Stars => self.vis_stars.draw(&p, r, dt, f.bass),
         }
         ui.ctx().request_repaint();
     }
 
+    /// What the terrain hears and sees this frame.
+    fn terrain_input(&self, ctx: &egui::Context, theme: Option<usize>) -> crate::terrain::Input {
+        let (samples, rate) = match self.player.viz.lock() {
+            Ok(v) => (v.samples.clone(), v.rate as f32),
+            Err(_) => (Vec::new(), 44100.0),
+        };
+        let song = self.cur_track().map_or(0, |t| t.id as u64);
+        crate::terrain::Input { t: ctx.input(|i| i.time), samples, rate, song, theme }
+    }
+
     /// Every preset, by group (for right-click menus).
     /// What the visuals are set to, as "Group: Name" (a random one also says what it is showing now).
     pub(crate) fn vis_name(&self) -> String {
         let p = &PRESETS[self.vis_preset];
-        let group = if p.group == "Milk" { "MilkDrop style" } else { p.group };
+        let group = group_title(p.group);
         let mut name = if p.group == p.name { p.name.to_string() } else { format!("{}: {}", group, p.name) };
         let shown = resolve(self.vis_preset, self.vis_cache.map_or(0.0, |c| c.1.t));
         if shown != self.vis_preset {
@@ -1063,7 +1109,7 @@ impl App {
                 }
                 continue;
             }
-            let title = if *g == "Milk" { "MilkDrop style" } else { *g };
+            let title = group_title(g);
             let mark = if PRESETS[self.vis_preset].group == *g { "* " } else { "  " };
             crate::sub_menu(ui, &format!("{}{}", mark, title), |ui| {
                 for (i, p) in PRESETS.iter().enumerate().filter(|(_, p)| p.group == *g) {
@@ -1105,11 +1151,15 @@ impl App {
         }
         self.vis_full = on;
         self.vis_saver = on && saver;
+        // (a hidden test copy fills its own window instead: full screen would bring it out in front of you)
+        let hidden = crate::hidden_test_copy();
         if on {
             self.vis_was_fs = self.ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-            self.ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+            if !hidden {
+                self.ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+            }
             self.vis_shown_at = self.ctx.input(|i| i.time);
-        } else if !self.vis_was_fs {
+        } else if !self.vis_was_fs && !hidden {
             self.ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         }
         self.vis_idle_since = std::time::Instant::now();
