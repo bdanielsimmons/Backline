@@ -14,7 +14,7 @@ use crate::terrain::{fbo, program, tex};
 const N: usize = 19;
 const G: usize = 128;
 
-/// The settings (the daytime set).
+/// The settings (the set shown while music plays, matching the sky and glare below).
 struct Set {
     damping: f32,
     length: f32,
@@ -34,18 +34,18 @@ struct Set {
     bias: f32,
 }
 
-const DAY: Set = Set {
+const MUSIC: Set = Set {
     damping: 0.0001,
     length: 0.306001,
     tension: 0.25,
-    timestep: 2.0,
+    timestep: 3.72102,
     perturb: 0.0998587,
     end: [3.0, 0.4, 0.2],
-    pos: [-8.2, -1.08844, -6.40287],
-    axis: [-0.994157, 0.0867576, 0.065364],
-    turn: 18.1208,
-    scale1: [5.67726, 1.00077, 1.0],
-    scale2: [3.2, 1.27579, 2.88782],
+    pos: [-7.5, 0.0, -5.2],
+    axis: [-0.994157, 0.796751, 0.190364],
+    turn: 13.1208,
+    scale1: [5.13725, 1.00077, 1.0],
+    scale2: [3.2, 0.99579, 3.41782],
     offset: [0.0, -0.469999, 0.0],
     param1: -1.33509,
     fresnel: 0.638971,
@@ -54,7 +54,7 @@ const DAY: Set = Set {
 };
 
 /// The sky: 6 x 5 control colours of a smooth (cubic B-spline) field over the screen, the bottom row first,
-/// measured from an October evening; the tint it is multiplied by from the bottom (black) to the top; and the
+/// measured from a frame while music played; the tint it is multiplied by from the bottom (black) to the top; and the
 /// sheet's tint from the left to the right.
 const SKY: [[f32; 3]; 30] = [
     [-0.332, -0.064, -0.180], [-0.435, -0.175, -0.225], [-0.350, -0.180, -0.138], [-0.172, -0.078, -0.017], [-0.053, 0.000, 0.032], [-0.047, -0.016, -0.018],
@@ -491,10 +491,10 @@ pub(crate) struct Wave {
 
 impl Default for Wave {
     fn default() -> Self {
-        let mut cloth = Cloth::new(&DAY);
+        let mut cloth = Cloth::new(&MUSIC);
         // a minute's motion first, so it opens already moving as it always does
         for _ in 0..3600 {
-            cloth.step(&DAY);
+            cloth.step(&MUSIC);
         }
         cloth.wrapped = false;
         Wave {
@@ -522,7 +522,7 @@ impl Wave {
         let before = c.time;
         c.acc += dt * 60.0;
         while c.acc > 1.0 {
-            c.step(&DAY);
+            c.step(&MUSIC);
             c.acc -= 1.0;
             if c.wrapped {
                 c.wrapped = false;
@@ -545,7 +545,7 @@ impl Wave {
                 return b.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
             }
         }
-        let s = &DAY;
+        let s = &MUSIC;
         let cg = cage(s, self.cloth.time * 10.0);
         let cg = match self.old {
             Some((ot, f)) => {
@@ -664,8 +664,8 @@ impl Wave {
         gl.bind_texture(glow::TEXTURE_2D, self.glow_tex);
         gl.uniform_1_i32(u("net").as_ref(), 0);
         gl.uniform_1_i32(u("glow").as_ref(), 1);
-        gl.uniform_1_f32(u("bias").as_ref(), DAY.bias);
-        gl.uniform_2_f32(u("fb").as_ref(), DAY.fresnel, DAY.bright);
+        gl.uniform_1_f32(u("bias").as_ref(), MUSIC.bias);
+        gl.uniform_2_f32(u("fb").as_ref(), MUSIC.fresnel, MUSIC.bright);
         gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, self.ibuf);
         gl.draw_elements(glow::TRIANGLES, ((G - 1) * (G - 1) * 6) as i32, glow::UNSIGNED_SHORT, 0);
         gl.disable(glow::BLEND);
