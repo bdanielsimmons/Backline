@@ -20,6 +20,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- 3D Terrain visuals: a landscape the music raises as you glide over it
+- New playlists from any song's menu, with a name, description and cover
 - Visuals - Windows Media Player and MilkDrop style, full screen (G) or in Now Playing, plus 3D Pipes
 - Note view - press NOTES on the waveform to see the song by pitch; on a split song it uses only the stems you have on, so a bass line or solo stands out. Point at it for the note's name.
 - LINES > ATONAL > EVERY STRING, EVERY FINGER - pick where a line starts and which finger, and see the fingering on the neck
@@ -28,8 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Albums and other people's playlists have an ADD TO MY ALBUMS / ADD TO MY PLAYLISTS button that keeps them in your Tidal library.
 - Click the artist's name on an album page to go to their page.
 - Right-click a song to copy its name (to search for it elsewhere) or delete it from this computer (your own files go to the Recycle Bin).
-- Right-click a text box for Cut, Copy, Paste and Select All.
-- Every song Backline saves now has its title, artist, album and cover written into the file, so it shows its name in Explorer and other players; songs already saved get theirs in the background.
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
