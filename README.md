@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- 3D Cavern and Canyon: fly between a landscape and its mirror, or down a winding valley that rises with the music
 - 3D Terrain visuals: a landscape the music raises as you glide over it
 - New playlists from any song's menu, with a name, description and cover
 - Visuals - Windows Media Player and MilkDrop style, full screen (G) or in Now Playing, plus 3D Pipes
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Atonal ear training: free intervals out to 10ths, tetrachord and trichord cells, scales sung in intervals (moveable Do, fixed Do or La), scales stacked into chords, and a daily atonal line to sight-sing.
 - Albums and other people's playlists have an ADD TO MY ALBUMS / ADD TO MY PLAYLISTS button that keeps them in your Tidal library.
 - Click the artist's name on an album page to go to their page.
-- Right-click a song to copy its name (to search for it elsewhere) or delete it from this computer (your own files go to the Recycle Bin).
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
