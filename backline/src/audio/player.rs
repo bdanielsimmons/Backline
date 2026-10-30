@@ -46,10 +46,12 @@ pub struct Shared {
     pub dead: Option<String>,
 }
 
-/// Most recent mono samples (-1..1), newest last. Read by the UI for the spectrum.
+/// Most recent samples (-1..1), newest last: the last channel of each frame (the only one in mono), and the first
+/// (the same in mono). Read by the UI for the spectrum and the visuals.
 #[derive(Default)]
 pub struct Viz {
     pub samples: Vec<f32>,
+    pub first: Vec<f32>,
     pub rate: u32,
 }
 
@@ -1067,11 +1069,13 @@ fn out(v: f32) -> f32 {
     }
 }
 
-/// Pass-through source that copies one channel of samples into `Viz`.
+/// Pass-through source that copies the last and the first channel of samples into `Viz`.
 struct Tap<S: Source<Item = i16>> {
     inner: S,
     viz: Arc<Mutex<Viz>>,
     scratch: Vec<f32>,
+    scratch_first: Vec<f32>,
+    first: f32,
     ch: u16,
     phase: u16,
     /// samples kept for a demo recording, handed over in batches
@@ -1081,18 +1085,23 @@ struct Tap<S: Source<Item = i16>> {
 impl<S: Source<Item = i16>> Tap<S> {
     fn new(inner: S, viz: Arc<Mutex<Viz>>) -> Tap<S> {
         let ch = inner.channels().max(1);
-        Tap { inner, viz, scratch: Vec::with_capacity(256), ch, phase: 0, rec: Vec::new() }
+        Tap { inner, viz, scratch: Vec::with_capacity(256), scratch_first: Vec::with_capacity(256), first: 0.0, ch, phase: 0, rec: Vec::new() }
     }
 
     fn flush(&mut self) {
-        if let Ok(mut v) = self.viz.lock() {
+        if let Ok(mut guard) = self.viz.lock() {
+            let v = &mut *guard;
             v.samples.extend(self.scratch.drain(..));
-            let len = v.samples.len();
-            if len > 4096 {
-                v.samples.drain(0..len - 4096);
+            v.first.extend(self.scratch_first.drain(..));
+            for buf in [&mut v.samples, &mut v.first] {
+                let len = buf.len();
+                if len > 4096 {
+                    buf.drain(0..len - 4096);
+                }
             }
         } else {
             self.scratch.clear();
+            self.scratch_first.clear();
         }
     }
 }
@@ -1124,10 +1133,14 @@ impl<S: Source<Item = i16>> Iterator for Tap<S> {
                 self.rec.clear();
             }
         }
+        if self.phase == 0 {
+            self.first = s as f32 / 32768.0;
+        }
         self.phase += 1;
         if self.phase >= self.ch {
             self.phase = 0;
             self.scratch.push(s as f32 / 32768.0);
+            self.scratch_first.push(self.first);
             if self.scratch.len() >= 256 {
                 self.flush();
             }

@@ -1122,8 +1122,9 @@ pub(crate) unsafe fn program(gl: &glow::Context, version: &str, vs: &str, fs: &s
 pub(crate) struct Input {
     /// seconds, steadily rising
     pub t: f64,
-    /// the latest mono samples (-1..1) and their rate
+    /// the latest samples (-1..1): the last channel (the only one in mono) and the first; and their rate
     pub samples: Vec<f32>,
+    pub first: Vec<f32>,
     pub rate: f32,
     /// changes when the song does (a new theme comes in)
     pub song: u64,
@@ -1273,8 +1274,10 @@ impl Terrain {
         self.t_last = inp.t;
         if inp.world == World::Exact {
             let e = self.exact.get_or_insert_with(|| Box::new(exact::Exact::new(inp.t, inp.song, &mut self.sheet)));
-            let (left, right) = exact::spectra(&inp.samples, inp.rate);
-            let spec = exact::columns(&left, &right, e.tilt(inp.t));
+            // the last channel (the right in stereo) on the sheet's left half, which the camera sees on the right
+            let (a, _) = exact::spectra(&inp.samples, inp.rate);
+            let (b, _) = if inp.first.len() == inp.samples.len() { exact::spectra(&inp.first, inp.rate) } else { (a, a) };
+            let spec = exact::columns(&a, &b, e.tilt(inp.t));
             let (look, front, ramp) = e.step(inp.t, dt, inp.song, &spec, &mut self.sheet);
             self.look = look;
             self.front = front;

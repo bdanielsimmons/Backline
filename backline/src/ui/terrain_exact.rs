@@ -230,14 +230,14 @@ fn ramp(v: &[f32; k::N]) -> Vec<f32> {
     out
 }
 
-/// The music as the 128 columns a row is made from: each channel's spectrum (256 values) read at 64 places, the left
-/// low to high across the left half and the right high to low across the right; tilted toward the highs by the
-/// set's TERRAIN WIDTH and brought down to a peak of one when louder.
-pub(super) fn columns(left: &[f32; 256], right: &[f32; 256], tilt: f32) -> [f32; 128] {
+/// The music as the 128 columns a row is made from: two spectra (256 values each) read at 64 places, `a` low to high
+/// across the first half and `b` high to low across the second (so the lows are at both edges); tilted toward the
+/// highs by the set's TERRAIN WIDTH and brought down to a peak of one when louder.
+pub(super) fn columns(a: &[f32; 256], b: &[f32; 256], tilt: f32) -> [f32; 128] {
     let mut s = [0.0f32; 128];
     for i in 0..64 {
-        s[i] = left[i * 255 / 64];
-        s[64 + i] = right[255 - (i * 255 + 63) / 64];
+        s[i] = a[i * 255 / 64];
+        s[64 + i] = b[255 - (i * 255 + 63) / 64];
     }
     let mut peak = 1.0f32;
     for (i, v) in s.iter_mut().enumerate() {
