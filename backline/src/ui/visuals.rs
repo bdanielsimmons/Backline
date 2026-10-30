@@ -1079,7 +1079,6 @@ impl App {
         crate::terrain::Input { t: ctx.input(|i| i.time), samples, rate, song, theme }
     }
 
-    /// Every preset, by group (for right-click menus).
     /// What the visuals are set to, as "Group: Name" (a random one also says what it is showing now).
     pub(crate) fn vis_name(&self) -> String {
         let p = &PRESETS[self.vis_preset];
