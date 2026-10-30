@@ -8,6 +8,7 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use eframe::egui_glow;
 use eframe::glow::{self, HasContext};
+use crate::terrain::World;
 use std::sync::{Arc, Mutex};
 
 /// A preset: its group in the menu, its name, and how it's drawn.
@@ -27,8 +28,9 @@ pub(crate) enum Kind {
     Random(Option<&'static str>),
     Pipes,
     Stars,
-    /// 3D Terrain (ui/terrain.rs): one of its looks, or (None) a different look for each song.
-    Terrain(Option<usize>),
+    /// 3D (ui/terrain.rs): a world (the terrain, a cavern, a canyon) in one of its looks, or (None) a different look
+    /// for each song.
+    Terrain(World, Option<usize>),
 }
 
 /// A palette: what the engine's brightness 0..1 becomes, dark to light.
@@ -211,22 +213,25 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset { group: "Milk", name: "Tornado", kind: Kind::Gpu(TORNADO) },
     Preset { group: "Milk", name: "Smoke Rings", kind: Kind::Gpu(SMOKE) },
     // ---- 3D (the terrain's looks in assets/terrain_looks.bin, in order)
-    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(None) },
-    Preset { group: "3D", name: "Rose Terrain", kind: Kind::Terrain(Some(0)) },
-    Preset { group: "3D", name: "Blue Terrain", kind: Kind::Terrain(Some(1)) },
-    Preset { group: "3D", name: "Meadow Terrain", kind: Kind::Terrain(Some(2)) },
-    Preset { group: "3D", name: "Night Terrain", kind: Kind::Terrain(Some(3)) },
-    Preset { group: "3D", name: "Sepia Terrain", kind: Kind::Terrain(Some(4)) },
-    Preset { group: "3D", name: "Amber Terrain", kind: Kind::Terrain(Some(5)) },
-    Preset { group: "3D", name: "Aurora Terrain", kind: Kind::Terrain(Some(6)) },
+    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(World::Terrain, None) },
+    Preset { group: "3D", name: "Cavern", kind: Kind::Terrain(World::Cavern, None) },
+    Preset { group: "3D", name: "Canyon", kind: Kind::Terrain(World::Canyon, None) },
+    Preset { group: "3D", name: "Rose Terrain", kind: Kind::Terrain(World::Terrain, Some(0)) },
+    Preset { group: "3D", name: "Blue Terrain", kind: Kind::Terrain(World::Terrain, Some(1)) },
+    Preset { group: "3D", name: "Meadow Terrain", kind: Kind::Terrain(World::Terrain, Some(2)) },
+    Preset { group: "3D", name: "Night Terrain", kind: Kind::Terrain(World::Terrain, Some(3)) },
+    Preset { group: "3D", name: "Sepia Terrain", kind: Kind::Terrain(World::Terrain, Some(4)) },
+    Preset { group: "3D", name: "Amber Terrain", kind: Kind::Terrain(World::Terrain, Some(5)) },
+    Preset { group: "3D", name: "Aurora Terrain", kind: Kind::Terrain(World::Terrain, Some(6)) },
     // ---- screensavers
     Preset { group: "Screensavers", name: "3D Pipes", kind: Kind::Pipes },
     Preset { group: "Screensavers", name: "Starfield", kind: Kind::Stars },
 ];
 
-/// The menu, in Windows Media Player's order, then the MilkDrop-style ones and the screensavers.
+/// The menu: the 3D worlds first, then Windows Media Player's in its order, the MilkDrop-style ones, the screensavers,
+/// and Alchemy (a mix of all of them) last.
 pub(crate) const GROUPS: &[&str] =
-    &["Alchemy", "Ambience", "Bars and Waves", "Battery", "Musical Colors", "Particle", "Plenoptic", "Spikes", "Milk", "3D", "Screensavers"];
+    &["3D", "Ambience", "Bars and Waves", "Battery", "Musical Colors", "Particle", "Plenoptic", "Spikes", "Milk", "Screensavers", "Alchemy"];
 
 /// A group's name in the menu.
 pub(crate) fn group_title(g: &str) -> &str {
@@ -258,7 +263,7 @@ pub(crate) fn resolve(i: usize, t: f32) -> usize {
     let pool: Vec<usize> = (0..PRESETS.len())
         .filter(|&j| match PRESETS[j].kind {
             // (the terrain takes a while to build: never a twenty-second stop in a round)
-            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain(_) => false,
+            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain(..) => false,
             _ => g.map_or(true, |g| PRESETS[j].group == g),
         })
         .collect();
@@ -1059,8 +1064,8 @@ impl App {
         let p = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
         match PRESETS[preset].kind {
             Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(&p, r, slot, preset, f, &self.vis_gl, None),
-            Kind::Terrain(look) => {
-                let inp = self.terrain_input(ui.ctx(), look);
+            Kind::Terrain(world, look) => {
+                let inp = self.terrain_input(ui.ctx(), world, look);
                 paint_gpu(&p, r, slot, preset, f, &self.vis_gl, Some(Arc::new(inp)))
             }
             Kind::Pipes => self.vis_pipes.draw(&p, r, dt, f.bass),
@@ -1070,13 +1075,15 @@ impl App {
     }
 
     /// What the terrain hears and sees this frame.
-    fn terrain_input(&self, ctx: &egui::Context, theme: Option<usize>) -> crate::terrain::Input {
+    fn terrain_input(&self, ctx: &egui::Context, world: World, theme: Option<usize>) -> crate::terrain::Input {
         let (samples, rate) = match self.player.viz.lock() {
             Ok(v) => (v.samples.clone(), v.rate as f32),
             Err(_) => (Vec::new(), 44100.0),
         };
         let song = self.cur_track().map_or(0, |t| t.id as u64);
-        crate::terrain::Input { t: ctx.input(|i| i.time), samples, rate, song, theme }
+        // (test switch BACKLINE_3D_LOOK=<n>: that look of the world)
+        let theme = theme.or_else(|| std::env::var("BACKLINE_3D_LOOK").ok().and_then(|v| v.parse().ok()));
+        crate::terrain::Input { t: ctx.input(|i| i.time), samples, rate, song, world, theme }
     }
 
     /// What the visuals are set to, as "Group: Name" (a random one also says what it is showing now).
