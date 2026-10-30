@@ -325,21 +325,21 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             fog,
             glow,
             ramp,
-            xs: 1.6,
+            xs: 1.2,
             hs: 7.0,
             fog_range: 40.0,
             fog_start: 18.0,
-            tile: 5.0,
-            lift: 26.0,
+            tile: 12.0,
+            lift: 31.0,
             clip: 36.0,
             swell: [40.0, 5.0, 0.2, 0.1],
-            bump: 0.14,
-            focus: 45.0,
-            coc: 0.01,
+            bump: 0.2,
+            focus: 30.0,
+            coc: 0.006,
             sky: 0.5,
-            blur: 0.25,
+            blur: 0.08,
             rot: 0.0,
-            lscale: 0.985,
+            lscale: 0.99,
         };
         let cave_path = |ph: f32| {
             move |a: f32| Key {
@@ -347,7 +347,7 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
                 fwd: unit([0.22 * (a + ph + 0.8).sin(), -0.04 + 0.08 * (a * 2.0 + ph).cos(), 1.0]),
                 fov: 82.0 + 8.0 * (a + ph).cos(),
                 speed: 9.0 + 3.0 * (a * 2.0 + ph).sin(),
-                leak: 0.2 + 0.08 * (a + ph).sin(),
+                leak: 0.12 + 0.04 * (a + ph).sin(),
             }
         };
         let amethyst = cave([0.05, 0.02, 0.09], [1.0, 0.55, 1.0], [[1.9, 1.5, 2.3], [1.1, 0.6, 1.5], [0.45, 0.15, 0.6], [0.07, 0.02, 0.12]]);
@@ -362,29 +362,29 @@ fn own_themes() -> &'static [Vec<Theme>; 2] {
             fog,
             glow,
             ramp,
-            xs: 1.2,
+            xs: 0.9,
             hs: 8.0,
             fog_range: 40.0,
             fog_start: 22.0,
-            tile: 6.0,
-            lift: 30.0,
+            tile: 14.0,
+            lift: 35.0,
             clip: 40.0,
             swell: [40.0, 3.0, 0.15, 0.1],
-            bump: 0.15,
-            focus: 50.0,
-            coc: 0.008,
+            bump: 0.2,
+            focus: 32.0,
+            coc: 0.005,
             sky: 0.45,
-            blur: 0.2,
+            blur: 0.06,
             rot: 0.0,
-            lscale: 0.975,
+            lscale: 0.985,
         };
         let canyon_path = |ph: f32| {
             move |a: f32| Key {
                 eye: [6.0 * (a + ph).sin(), 10.0 + 2.0 * (2.0 * a + ph).cos(), 4.0],
                 fwd: unit([0.06 * (a + ph + 0.5).sin(), -0.14 + 0.04 * (2.0 * a + ph).sin(), 1.0]),
                 fov: 86.0 + 8.0 * (a + ph).sin(),
-                speed: 18.0 + 4.0 * (2.0 * a + ph).sin(),
-                leak: 0.18 + 0.06 * (a + ph).cos(),
+                speed: 14.0 + 3.0 * (2.0 * a + ph).sin(),
+                leak: 0.1 + 0.04 * (a + ph).cos(),
             }
         };
         let walled = themes().canyon;
