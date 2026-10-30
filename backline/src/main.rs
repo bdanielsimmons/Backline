@@ -2411,7 +2411,8 @@ struct App {
     liked: HashSet<i64>,
     q_drag: Option<usize>,
     /// how many songs right after the one playing you queued yourself (Play next / Add to queue): they play before
-    /// the rest of the album, playlist or radio, and new ones you add go after them
+    /// the rest of the album, playlist or radio (staying next in line when you start another), and new ones you add
+    /// go after them
     q_manual: usize,
     /// the copies you added (PLAY NEXT / ADD TO QUEUE), by their own number: they leave the queue once playing
     /// moves on past them; the last number given out
@@ -5146,6 +5147,22 @@ impl App {
         });
     }
 
+    /// The songs you queued by hand (PLAY NEXT / ADD TO QUEUE) still ahead of the one playing, in their order, for a
+    /// new list to carry on with (all but `starting`, the song the new list begins with); the rest of your queued
+    /// copies are forgotten with the old list.
+    fn queued_ahead(&mut self, starting: i64) -> Vec<Track> {
+        let from = self.cur.map_or(0, |c| c + 1);
+        let kept: Vec<Track> = self
+            .queue
+            .iter()
+            .skip(from)
+            .filter(|t| t.qid != 0 && self.q_added.contains(&t.qid) && t.id != starting)
+            .cloned()
+            .collect();
+        self.q_added.retain(|q| kept.iter().any(|t| t.qid == *q));
+        kept
+    }
+
     /// On to song `i` because the one playing finished or was skipped (NEXT): a queued copy that was playing leaves
     /// the queue. Any other way of picking a song (clicking around in the playlist) leaves the queue as it is.
     fn advance_to(&mut self, i: usize) {
@@ -5777,21 +5794,26 @@ impl App {
             }
             Action::Forward => self.hist_go(false),
             Action::Play(tracks, i) => {
-                // a new list: the songs you queued by hand go with the old one
-                self.q_manual = 0;
                 if tracks.is_empty() {
                     return;
                 }
+                // a new list: the songs you queued by hand that haven't played yet stay next in line, in their order
+                let i = i.min(tracks.len() - 1);
+                let kept = self.queued_ahead(tracks[i].id);
+                let mut orig = tracks.clone();
+                orig.splice(i + 1..i + 1, kept.iter().cloned());
                 if self.shuffle {
-                    let v = shuffled_from(&tracks, i);
-                    self.orig_queue = Some(tracks);
+                    let mut v = shuffled_from(&tracks, i);
+                    v.splice(1..1, kept.iter().cloned());
+                    self.orig_queue = Some(orig);
                     self.queue = Arc::new(v);
                     self.play_index(0);
                 } else {
                     self.orig_queue = None;
-                    self.queue = Arc::new(tracks);
+                    self.queue = Arc::new(orig);
                     self.play_index(i);
                 }
+                self.q_manual = kept.len();
             }
             Action::PlayShuffled(tracks) => {
                 if tracks.is_empty() {
@@ -5799,10 +5821,17 @@ impl App {
                 }
                 let mut v = tracks.clone();
                 shuffle_vec(&mut v);
+                // the songs you queued by hand stay next in line, after the first song of the new list
+                let kept = self.queued_ahead(v[0].id);
+                v.splice(1..1, kept.iter().cloned());
+                let mut orig = tracks;
+                let at = orig.iter().position(|t| t.id == v[0].id).map_or(0, |p| p + 1);
+                orig.splice(at..at, kept.iter().cloned());
                 self.shuffle = true;
-                self.orig_queue = Some(tracks);
+                self.orig_queue = Some(orig);
                 self.queue = Arc::new(v);
                 self.play_index(0);
+                self.q_manual = kept.len();
             }
             Action::PlayIndex(i) => self.play_index(i),
             Action::PlayNext(mut t) => {
