@@ -1102,10 +1102,12 @@ impl App {
 
     /// What the terrain hears and sees this frame.
     fn terrain_input(&self, ctx: &egui::Context, world: World, theme: Option<usize>) -> crate::terrain::Input {
-        let (samples, first, rate) = match self.player.viz.lock() {
-            Ok(v) => (v.samples.clone(), v.first.clone(), v.rate as f32),
-            Err(_) => (Vec::new(), Vec::new(), 44100.0),
+        let (samples, first, rate, file) = match self.player.viz.lock() {
+            Ok(v) => (v.samples.clone(), v.first.clone(), v.rate as f32, v.song.clone()),
+            Err(_) => (Vec::new(), Vec::new(), 44100.0, None),
         };
+        let ctl = &self.player.ctl;
+        let music = file.map(|file| crate::terrain::Music { file, at: ctl.pos() as f64, speed: ctl.speed(), ab: ctl.ab() });
         let song = self.cur_track().map_or(0, |t| t.id as u64);
         // (test switches BACKLINE_3D_LOOK=<n>: that look of the world; BACKLINE_3D_EVERY=<seconds>: a new phase that
         // often, as if the song changed)
@@ -1114,7 +1116,7 @@ impl App {
             Some(s) if s > 0.0 => song.wrapping_add((ctx.input(|i| i.time) / s) as u64),
             _ => song,
         };
-        crate::terrain::Input { t: ctx.input(|i| i.time), samples, first, rate, song, world, theme }
+        crate::terrain::Input { t: ctx.input(|i| i.time), samples, first, rate, song, world, theme, music }
     }
 
     /// What the visuals are set to, as "Group: Name" (a random one also says what it is showing now).

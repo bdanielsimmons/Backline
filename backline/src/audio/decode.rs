@@ -6,6 +6,7 @@
 use rodio::source::SeekError;
 use rodio::Source;
 use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::sync::Arc;
 use std::time::Duration;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
@@ -16,8 +17,17 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::{Time, TimeBase};
 
+/// The file's bytes, which other decoders of the same song may share.
+struct Bytes(Arc<Vec<u8>>);
+
+impl AsRef<[u8]> for Bytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 struct MemSrc {
-    cur: Cursor<Vec<u8>>,
+    cur: Cursor<Bytes>,
     len: u64,
 }
 
@@ -58,8 +68,13 @@ pub struct SymSource {
 
 impl SymSource {
     pub fn new(bytes: Vec<u8>) -> Result<SymSource, String> {
+        SymSource::shared(Arc::new(bytes))
+    }
+
+    /// A decoder over a file other decoders may be reading too.
+    pub fn shared(bytes: Arc<Vec<u8>>) -> Result<SymSource, String> {
         let len = bytes.len() as u64;
-        let mss = MediaSourceStream::new(Box::new(MemSrc { cur: Cursor::new(bytes), len }), Default::default());
+        let mss = MediaSourceStream::new(Box::new(MemSrc { cur: Cursor::new(Bytes(bytes)), len }), Default::default());
         let hint = Hint::new();
         let probed = symphonia::default::get_probe()
             .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())

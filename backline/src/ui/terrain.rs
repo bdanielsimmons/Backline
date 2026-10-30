@@ -1131,14 +1131,38 @@ pub(crate) struct Input {
     /// the world, and a theme of it to stay on (None: one for each song)
     pub world: World,
     pub theme: Option<usize>,
+    /// the song playing, for reading it ahead of what is heard (None: nothing playing)
+    pub music: Option<Music>,
+}
+
+/// A song playing: its file (with a number that changes with it), where it is (song seconds), how fast it plays and
+/// its A-B loop (seconds) while one is on.
+pub(crate) struct Music {
+    pub file: (u64, std::sync::Arc<Vec<u8>>),
+    pub at: f64,
+    pub speed: f32,
+    pub ab: Option<(f32, f32)>,
+}
+
+impl Music {
+    /// The song's place `secs` seconds from now as heard (around the loop while one is on).
+    fn ahead(&self, secs: f32) -> f64 {
+        let to = self.at + (secs * self.speed) as f64;
+        match self.ab {
+            Some((a, b)) if self.at < b as f64 && to > b as f64 => a as f64 + (to - b as f64) % (b - a).max(0.05) as f64,
+            _ => to,
+        }
+    }
 }
 
 /// The 3D Terrain's state: the sheet, the music, the looks, and the GL objects (one set of pictures per spot).
 pub(crate) struct Terrain {
     sheet: Sheet,
-    /// the reference's own way (World::Exact), and its colour table this frame (512 colours)
+    /// the reference's own way (World::Exact), its colour table this frame (512 colours), and the song as it reads it
+    /// (ahead of what is heard)
     exact: Option<Box<exact::Exact>>,
     exact_ramp: Vec<f32>,
+    ahead: crate::player::Ahead,
     an: Analyzer,
     /// how far the front has moved (rows), the music now, and whether the first frame is still to come
     front: f64,
@@ -1188,6 +1212,7 @@ impl Default for Terrain {
             sheet: Sheet::new(),
             exact: None,
             exact_ramp: Vec::new(),
+            ahead: Default::default(),
             an: Analyzer::default(),
             front: 0.0,
             vals: [0.0; 65],
@@ -1274,9 +1299,15 @@ impl Terrain {
         self.t_last = inp.t;
         if inp.world == World::Exact {
             let e = self.exact.get_or_insert_with(|| Box::new(exact::Exact::new(inp.t, inp.song, &mut self.sheet)));
-            // the last channel (the right in stereo) on the sheet's left half, which the camera sees on the right
-            let (a, _) = exact::spectra(&inp.samples, inp.rate);
-            let (b, _) = if inp.first.len() == inp.samples.len() { exact::spectra(&inp.first, inp.rate) } else { (a, a) };
+            // the music as far ahead of what is heard as the set reads it (else what has just played); the last
+            // channel (the right in stereo) on the sheet's left half, which the camera sees on the right
+            let read = inp.music.as_ref().and_then(|m| self.ahead.read(&m.file, m.ahead(e.ahead()), exact::SPAN));
+            let (last, first, rate) = match &read {
+                Some((l, f, r)) => (l, f, *r as f32),
+                None => (&inp.samples, &inp.first, inp.rate),
+            };
+            let (a, _) = exact::spectra(last, rate);
+            let (b, _) = if first.len() == last.len() { exact::spectra(first, rate) } else { (a, a) };
             let spec = exact::columns(&a, &b, e.tilt(inp.t));
             let (look, front, ramp) = e.step(inp.t, dt, inp.song, &spec, &mut self.sheet);
             self.look = look;

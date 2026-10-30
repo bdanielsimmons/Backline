@@ -53,6 +53,80 @@ pub struct Viz {
     pub samples: Vec<f32>,
     pub first: Vec<f32>,
     pub rate: u32,
+    /// the song being played (a number that changes with it, and its file), for reading it ahead of what is heard
+    pub song: Option<(u64, Arc<Vec<u8>>)>,
+}
+
+/// A song read ahead of what is heard (visuals that react a moment early): its own decoder over the same file, kept
+/// going just past where it was last asked to read.
+#[derive(Default)]
+pub struct Ahead {
+    song: u64,
+    dec: Option<SymSource>,
+    ch: usize,
+    rate: u32,
+    /// decoded frames (interleaved) from frame `start` on
+    buf: Vec<i16>,
+    start: u64,
+}
+
+impl Ahead {
+    /// `secs` seconds of `song` from `at` on (song seconds): its last channel and its first (the same in mono), -1..1,
+    /// zeros past its end; and its rate. None when the file can't be decoded or read there.
+    pub fn read(&mut self, song: &(u64, Arc<Vec<u8>>), at: f64, secs: f64) -> Option<(Vec<f32>, Vec<f32>, u32)> {
+        // (a song that can't be decoded or read ahead is not tried again)
+        if self.song != song.0 {
+            self.song = song.0;
+            self.dec = SymSource::shared(song.1.clone()).ok();
+            self.buf.clear();
+            self.start = 0;
+            let d = self.dec.as_ref()?;
+            self.ch = d.channels().max(1) as usize;
+            self.rate = d.sample_rate().max(1);
+        }
+        let ch = self.ch;
+        let from = (at.max(0.0) * self.rate as f64) as u64;
+        let n = (secs * self.rate as f64).ceil() as usize + 1;
+        let dec = self.dec.as_mut()?;
+        if dec.total_duration().is_some_and(|d| from as f64 >= d.as_secs_f64() * self.rate as f64) {
+            return Some((vec![0.0; n], vec![0.0; n], self.rate));
+        }
+        // a jump back, or more than a second on: read from there
+        let end = self.start + (self.buf.len() / ch) as u64;
+        if from < self.start || from > end + self.rate as u64 {
+            if dec.try_seek(Duration::from_secs_f64(from as f64 / self.rate as f64)).is_err() {
+                self.dec = None;
+                return None;
+            }
+            self.buf.clear();
+            self.start = from;
+        }
+        while self.start + ((self.buf.len() / ch) as u64) < from + n as u64 {
+            match dec.next() {
+                Some(s) => self.buf.push(s),
+                None => break,
+            }
+        }
+        // what is behind the window is not needed again
+        let behind = ((from - self.start) as usize * ch).min(self.buf.len() / ch * ch);
+        self.buf.drain(..behind);
+        self.start += (behind / ch) as u64;
+        let (mut last, mut first) = (Vec::with_capacity(n), Vec::with_capacity(n));
+        for i in 0..n {
+            let at = ((from - self.start) as usize + i) * ch;
+            match self.buf.get(at..at + ch) {
+                Some(f) => {
+                    last.push(f[ch - 1] as f32 / 32768.0);
+                    first.push(f[0] as f32 / 32768.0);
+                }
+                None => {
+                    last.push(0.0);
+                    first.push(0.0);
+                }
+            }
+        }
+        Some((last, first, self.rate))
+    }
 }
 
 pub struct Player {
@@ -167,6 +241,18 @@ impl Ctl {
         self.a_ms.store((a.max(0.0) * 1000.0) as u32, Ordering::Relaxed);
         self.b_ms.store((b.max(0.0) * 1000.0) as u32, Ordering::Relaxed);
         self.loop_on.store(on && b > a + 0.05, Ordering::Relaxed);
+    }
+
+    /// The A-B loop (seconds) while it is on.
+    pub fn ab(&self) -> Option<(f32, f32)> {
+        self.loop_on.load(Ordering::Relaxed).then(|| {
+            (self.a_ms.load(Ordering::Relaxed) as f32 / 1000.0, self.b_ms.load(Ordering::Relaxed) as f32 / 1000.0)
+        })
+    }
+
+    /// Playback speed (1 = as recorded).
+    pub fn speed(&self) -> f32 {
+        self.speed.load(Ordering::Relaxed) as f32 / 100.0
     }
 
     /// Playback speed in percent (pitch is preserved).
@@ -1347,6 +1433,7 @@ impl Player {
             let mut once: Vec<Sink> = Vec::new();
             let mut user_paused = false;
             let mut last_wraps = 0u32;
+            let mut song_no = 0u64;
 
             loop {
                 match rx.recv_timeout(Duration::from_millis(50)) {
@@ -1361,9 +1448,11 @@ impl Player {
                             s.stop();
                         }
                         let sink_res = Sink::try_new(&handle);
+                        let bytes = Arc::new(bytes);
+                        let file = bytes.clone();
                         let (dtx, drx) = channel::<Result<SymSource, String>>();
                         std::thread::spawn(move || {
-                            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| SymSource::new(bytes)));
+                            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| SymSource::shared(file)));
                             let _ = dtx.send(match r {
                                 Ok(x) => x,
                                 Err(_) => Err("decoder panicked".to_string()),
@@ -1381,7 +1470,10 @@ impl Player {
                                 {
                                     let mut v = vz.lock().unwrap();
                                     v.samples.clear();
+                                    v.first.clear();
                                     v.rate = rate;
+                                    song_no += 1;
+                                    v.song = Some((song_no, bytes));
                                 }
                                 let chain =
                                     Resample::new(Stretch::new(Looper::new(dec, ctl_t.clone()), ctl_t.clone()), ctl_t.clone());
@@ -1418,6 +1510,7 @@ impl Player {
                             (_, Err(e)) => {
                                 let m = format!("DECODE: can't decode audio ({})", e);
                                 log(&m);
+                                vz.lock().unwrap().song = None;
                                 sh.lock().unwrap().error = Some(m);
                             }
                             (Err(e), _) => {
@@ -1535,7 +1628,12 @@ impl Player {
                             s.stop();
                         }
                         ctl_t.pos_fr.store(0, Ordering::Relaxed);
-                        vz.lock().unwrap().samples.clear();
+                        {
+                            let mut v = vz.lock().unwrap();
+                            v.samples.clear();
+                            v.first.clear();
+                            v.song = None;
+                        }
                         let mut g = sh.lock().unwrap();
                         g.ended = false;
                         g.pos = 0.0;
@@ -1621,6 +1719,48 @@ pub fn render<S: Source<Item = i16>>(src: S, fx: &Fx) -> (Vec<i16>, u16, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_ahead_at_the_exact_frame() {
+        // a 3 s 44.1 kHz stereo WAV whose left channel counts frames and whose right is the left turned over
+        let n = 44100 * 3;
+        let mut wav = Vec::new();
+        for (tag, v) in [("RIFF", 36 + n as u32 * 4), ("WAVE", 0), ("fmt ", 16)] {
+            wav.extend_from_slice(tag.as_bytes());
+            if v > 0 {
+                wav.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        for v in [1u16, 2] {
+            wav.extend_from_slice(&v.to_le_bytes());
+        }
+        wav.extend_from_slice(&44100u32.to_le_bytes());
+        wav.extend_from_slice(&(44100u32 * 4).to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(n as u32 * 4).to_le_bytes());
+        let at = |i: usize| (i % 30000) as i16;
+        for i in 0..n {
+            wav.extend_from_slice(&at(i).to_le_bytes());
+            wav.extend_from_slice(&(-at(i)).to_le_bytes());
+        }
+        let song = (1, Arc::new(wav));
+        let mut a = Ahead::default();
+        // from the start, far on, a jump back, a little on, far on again; then past the end
+        let len = (0.01f64 * 44100.0).ceil() as usize + 1;
+        for (t, first) in [(0.0, 0), (1.5, 66150), (0.25, 11025), (0.5, 22050), (2.5, 110250)] {
+            let (last, left, rate) = a.read(&song, t, 0.01).unwrap();
+            assert_eq!(rate, 44100);
+            assert_eq!(left.len(), len);
+            for i in [0, 1, len - 1] {
+                assert_eq!(left[i], at(first + i) as f32 / 32768.0, "at {} s, frame {}", t, i);
+                assert_eq!(last[i], -left[i]);
+            }
+        }
+        let (last, _, _) = a.read(&song, 3.5, 0.01).unwrap();
+        assert!(last.iter().all(|v| *v == 0.0));
+    }
 
     #[test]
     fn song_clicks_land_on_their_beats_after_seeks_and_loops() {

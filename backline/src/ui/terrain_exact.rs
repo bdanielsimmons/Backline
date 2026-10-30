@@ -252,13 +252,22 @@ impl Exact {
     pub(super) fn tilt(&self, t: f64) -> f32 {
         self.values(t)[k::TERRAIN_WIDTH]
     }
+
+    /// How far ahead of what is heard the set showing reads the music (seconds).
+    pub(super) fn ahead(&self) -> f32 {
+        SETS[self.set].ahead
+    }
 }
+
+/// How much of the music one spectrum takes (seconds): 512 samples at 48 kHz.
+pub(super) const SPAN: f64 = 512.0 / 48000.0;
 
 /// The system's spectrum of the music, as it works it out: the latest 512 samples at 48 kHz (other rates held
 /// sample by sample), a narrow bell window, a 512-point FFT (magnitudes over 512), blurred across 17 bins, then read at
 /// 256 places spaced by pitch (about 18 Hz apart at the bottom, 64 to an octave above 1 kHz, up to 24 kHz), each as
-/// 3 ln(1 + 512 m) / ln 513 (a full-scale sine reads about 1.8). It reads that far ahead of what is heard on the
-/// original (each set's `ahead`); here only what has played is at hand. One channel, so left and right are the same.
+/// 3 ln(1 + 512 m) / ln 513 (a full-scale sine reads about 1.8). The samples are the song's, each set's `ahead`
+/// seconds past what is heard (`player::Ahead`), or the latest played when there is no file to read. One channel, so
+/// left and right are the same.
 pub(super) fn spectra(samples: &[f32], rate: f32) -> ([f32; 256], [f32; 256]) {
     const N: usize = 512;
     let mut out = [0f32; 256];
