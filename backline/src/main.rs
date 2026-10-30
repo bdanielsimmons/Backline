@@ -144,6 +144,8 @@ mod views;
 mod visuals;
 #[path = "ui/terrain.rs"]
 mod terrain;
+#[path = "ui/wave.rs"]
+mod wave;
 #[path = "ui/viz.rs"]
 mod viz;
 #[path = "ui/winamp_ui.rs"]

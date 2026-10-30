@@ -981,7 +981,7 @@ struct Targets {
     sizes: [(i32, i32); 3],
 }
 
-unsafe fn tex(gl: &glow::Context, w: i32, h: i32, fmt: u32, linear: bool) -> glow::Texture {
+pub(crate) unsafe fn tex(gl: &glow::Context, w: i32, h: i32, fmt: u32, linear: bool) -> glow::Texture {
     let t = gl.create_texture().unwrap();
     gl.bind_texture(glow::TEXTURE_2D, Some(t));
     let (ifmt, ty) = if fmt == glow::RGBA16F { (glow::RGBA16F, glow::HALF_FLOAT) } else if fmt == glow::RGBA32F { (glow::RGBA32F, glow::FLOAT) } else { (glow::RGBA8, glow::UNSIGNED_BYTE) };
@@ -994,7 +994,7 @@ unsafe fn tex(gl: &glow::Context, w: i32, h: i32, fmt: u32, linear: bool) -> glo
     t
 }
 
-unsafe fn fbo(gl: &glow::Context, t: glow::Texture, depth: Option<glow::Renderbuffer>) -> glow::Framebuffer {
+pub(crate) unsafe fn fbo(gl: &glow::Context, t: glow::Texture, depth: Option<glow::Renderbuffer>) -> glow::Framebuffer {
     let f = gl.create_framebuffer().unwrap();
     gl.bind_framebuffer(glow::FRAMEBUFFER, Some(f));
     gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0, glow::TEXTURE_2D, Some(t), 0);
@@ -1069,7 +1069,7 @@ struct Progs {
     copy: Option<glow::Program>,
 }
 
-unsafe fn program(gl: &glow::Context, version: &str, vs: &str, fs: &str) -> Option<glow::Program> {
+pub(crate) unsafe fn program(gl: &glow::Context, version: &str, vs: &str, fs: &str) -> Option<glow::Program> {
     let head = "#ifdef GL_ES\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n#endif\n";
     let p = gl.create_program().ok()?;
     let mut shaders = Vec::new();
@@ -1081,7 +1081,7 @@ unsafe fn program(gl: &glow::Context, version: &str, vs: &str, fs: &str) -> Opti
         gl.shader_source(s, &src);
         gl.compile_shader(s);
         if !gl.get_shader_compile_status(s) {
-            crate::api::log(&format!("terrain: shader didn't compile: {}", gl.get_shader_info_log(s)));
+            crate::api::log(&format!("3D: shader didn't compile: {}", gl.get_shader_info_log(s)));
             return None;
         }
         gl.attach_shader(p, s);
@@ -1093,7 +1093,7 @@ unsafe fn program(gl: &glow::Context, version: &str, vs: &str, fs: &str) -> Opti
         gl.delete_shader(s);
     }
     if !gl.get_program_link_status(p) {
-        crate::api::log(&format!("terrain: shader didn't link: {}", gl.get_program_info_log(p)));
+        crate::api::log(&format!("3D: shader didn't link: {}", gl.get_program_info_log(p)));
         return None;
     }
     Some(p)

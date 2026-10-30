@@ -31,6 +31,8 @@ pub(crate) enum Kind {
     /// 3D (ui/terrain.rs): a world (the terrain, a cavern, a canyon) in one of its looks, or (None) a different look
     /// for each song.
     Terrain(World, Option<usize>),
+    /// 3D (ui/wave.rs): the wave, a sheet of light drifting across.
+    Wave,
 }
 
 /// A palette: what the engine's brightness 0..1 becomes, dark to light.
@@ -213,6 +215,7 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset { group: "Milk", name: "Tornado", kind: Kind::Gpu(TORNADO) },
     Preset { group: "Milk", name: "Smoke Rings", kind: Kind::Gpu(SMOKE) },
     // ---- 3D (the terrain's looks in assets/terrain_looks.bin, in order)
+    Preset { group: "3D", name: "Wave", kind: Kind::Wave },
     Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(World::Terrain, None) },
     Preset { group: "3D", name: "Cavern", kind: Kind::Terrain(World::Cavern, None) },
     Preset { group: "3D", name: "Canyon", kind: Kind::Terrain(World::Canyon, None) },
@@ -263,7 +266,7 @@ pub(crate) fn resolve(i: usize, t: f32) -> usize {
     let pool: Vec<usize> = (0..PRESETS.len())
         .filter(|&j| match PRESETS[j].kind {
             // (the terrain takes a while to build: never a twenty-second stop in a round)
-            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain(..) => false,
+            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain(..) | Kind::Wave => false,
             _ => g.map_or(true, |g| PRESETS[j].group == g),
         })
         .collect();
@@ -595,6 +598,7 @@ pub(crate) struct Gl {
     slots: std::collections::HashMap<u8, Slot>,
     failed: bool,
     terrain: Option<Box<crate::terrain::Terrain>>,
+    wave: Option<Box<crate::wave::Wave>>,
 }
 
 /// A program: the shared vertex shader and `frag`, each after the GL version line (`frag` brings its own header).
@@ -768,6 +772,20 @@ pub(crate) fn paint_gpu(
                     }
                 }
                 None => unsafe { g.draw(painter.gl(), &info, slot, preset, &f) },
+            }
+        }
+    });
+    p.add(egui::PaintCallback { rect, callback: Arc::new(cb) });
+}
+
+/// The wave in `rect` (a plain visual instead if the graphics are too old for it).
+fn paint_wave(p: &egui::Painter, rect: Rect, slot: u8, f: Frame, t: f64, state: &Arc<Mutex<Gl>>) {
+    let state = state.clone();
+    let cb = egui_glow::CallbackFn::new(move |info, painter| {
+        if let Ok(mut g) = state.lock() {
+            let ok = unsafe { g.wave.get_or_insert_with(Default::default).paint(painter.gl(), &info, slot, t) };
+            if !ok {
+                unsafe { g.draw(painter.gl(), &info, slot, find("Down the Drain"), &f) };
             }
         }
     });
@@ -1074,6 +1092,7 @@ impl App {
                 let inp = self.terrain_input(ui.ctx(), world, look);
                 paint_gpu(&p, r, slot, preset, f, &self.vis_gl, Some(Arc::new(inp)))
             }
+            Kind::Wave => paint_wave(&p, r, slot, f, ui.ctx().input(|i| i.time), &self.vis_gl),
             Kind::Pipes => self.vis_pipes.draw(&p, r, dt, f.bass),
             Kind::Stars => self.vis_stars.draw(&p, r, dt, f.bass),
         }
