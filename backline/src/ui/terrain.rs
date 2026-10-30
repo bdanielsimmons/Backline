@@ -8,6 +8,12 @@ use eframe::egui;
 use eframe::egui_glow;
 use eframe::glow::{self, HasContext};
 
+#[path = "terrain_exact.rs"]
+mod exact;
+#[path = "terrain_sets.rs"]
+#[allow(dead_code)]
+mod sets;
+
 /// Columns across the sheet (the last repeats the one before it) and slots in its ring of rows
 /// (one always empty: the next to fill).
 const COLS: usize = 129;
@@ -76,12 +82,14 @@ pub(crate) struct Theme {
 }
 
 /// Which world the sheet makes: the terrain (a ground to glide over), a cavern (the ground and a flatter copy of it
-/// turned over overhead) or a canyon (a valley winding left and right, up and down, the camera flying along it).
+/// turned over overhead), a canyon (a valley winding left and right, up and down, the camera flying along it), or the
+/// terrain as its reference works it out (`exact`: its own sets, rows and camera on the same sheet and passes).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum World {
     Terrain,
     Cavern,
     Canyon,
+    Exact,
 }
 
 /// How a look's sheet answers the music, per column (edge to middle): the loudness (dB of the column's band, full
@@ -434,6 +442,7 @@ fn list(w: World) -> &'static [Theme] {
         World::Terrain => &themes().list,
         World::Cavern => &own_themes()[0],
         World::Canyon => &own_themes()[1],
+        World::Exact => &[],
     }
 }
 
@@ -713,17 +722,27 @@ impl Sheet {
     /// A new row: the landscape `base` (edge to edge) with the music on it (65 values, edge to middle, mirrored),
     /// smoothed over the rows before by `snap` (see `SNAP`).
     fn push(&mut self, base: &[f32; COLS], vals: &[f32; 65], xoff: f32, snap: f32) {
+        let prev = (self.next - 1).rem_euclid(RING as i64) as usize;
+        let mut py = [0f32; COLS];
+        let mut pw = [0f32; COLS];
+        for c in 0..COLS {
+            let d = (c as i32 - 64).unsigned_abs() as usize;
+            pw[c] = base[c] + vals[64 - d.min(64)];
+            // smoothed over the rows before
+            py[c] = self.a[prev * COLS + c][0] + (pw[c] - self.a[prev * COLS + c][0]) * snap;
+        }
+        self.push_row(&py, &pw, xoff);
+    }
+
+    /// A new row of heights `py` as drawn and `pw` (what the swell pulls them toward), shifted `xoff` across.
+    fn push_row(&mut self, py: &[f32; COLS], pw: &[f32; COLS], xoff: f32) {
         let n = self.next;
         let slot = n.rem_euclid(RING as i64) as usize;
         let prev = (n - 1).rem_euclid(RING as i64) as usize;
         let older = (n - 2).rem_euclid(RING as i64) as usize;
         for c in 0..COLS {
-            let d = (c as i32 - 64).unsigned_abs() as usize;
-            let pw = base[c] + vals[64 - d.min(64)];
-            // smoothed over the rows before
-            let py = self.a[prev * COLS + c][0] + (pw - self.a[prev * COLS + c][0]) * snap;
             let tw = (self.rnd() * 2.0 - 1.0) * 500.0;
-            self.a[slot * COLS + c] = [py, pw, tw, n as f32];
+            self.a[slot * COLS + c] = [py[c], pw[c], tw, n as f32];
         }
         // normals: across from the neighbours; along, the step from the row before (the row before gets the full
         // difference now that it has a row on each side)
@@ -1116,6 +1135,9 @@ pub(crate) struct Input {
 /// The 3D Terrain's state: the sheet, the music, the looks, and the GL objects (one set of pictures per spot).
 pub(crate) struct Terrain {
     sheet: Sheet,
+    /// the reference's own way (World::Exact), and its colour table this frame (512 colours)
+    exact: Option<Box<exact::Exact>>,
+    exact_ramp: Vec<f32>,
     an: Analyzer,
     /// how far the front has moved (rows), the music now, and whether the first frame is still to come
     front: f64,
@@ -1163,6 +1185,8 @@ impl Default for Terrain {
     fn default() -> Self {
         Terrain {
             sheet: Sheet::new(),
+            exact: None,
+            exact_ramp: Vec::new(),
             an: Analyzer::default(),
             front: 0.0,
             vals: [0.0; 65],
@@ -1247,6 +1271,24 @@ impl Terrain {
     fn step(&mut self, inp: &Input) {
         let dt = if self.t_last < 0.0 { 0.0 } else { (inp.t - self.t_last).clamp(0.0, 0.25) };
         self.t_last = inp.t;
+        if inp.world == World::Exact {
+            let e = self.exact.get_or_insert_with(|| Box::new(exact::Exact::new(inp.t, inp.song, &mut self.sheet)));
+            let (left, right) = exact::spectra(&inp.samples, inp.rate);
+            let spec = exact::columns(&left, &right, e.tilt(inp.t));
+            let (look, front, ramp) = e.step(inp.t, dt, inp.song, &spec, &mut self.sheet);
+            self.look = look;
+            self.front = front;
+            self.exact_ramp = ramp;
+            self.phase = (World::Exact, 0);
+            return;
+        }
+        if self.exact.take().is_some() {
+            // (from the reference's way back to ours: start the sheet afresh)
+            self.song = u64::MAX;
+            self.asked = None;
+            self.t_first = true;
+            self.from = None;
+        }
         let th = themes();
         let pool = pool(inp.world, inp.theme);
         if pool.is_empty() {
@@ -1510,6 +1552,12 @@ impl Terrain {
         }
         // the look (or the dumped frame's), its ramp, and the rows that changed
         let (look, zfront, oldest, rn) = match &self.dump {
+            None if self.exact.is_some() && self.exact_ramp.len() == 512 * 3 => {
+                gl.bind_texture(glow::TEXTURE_2D, self.ramp);
+                let bytes: Vec<u8> = self.exact_ramp.chunks(3).flat_map(|c| [c[0], c[1], c[2], 1.0]).flat_map(|v| v.to_le_bytes()).collect();
+                gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA16F as i32, 512, 1, 0, glow::RGBA, glow::FLOAT, Some(&bytes));
+                (self.look, self.front, self.sheet.next - ROWS as i64, 0.0)
+            }
             Some((l, ramp, front, oldest)) => {
                 gl.bind_texture(glow::TEXTURE_2D, self.ramp);
                 let bytes: Vec<u8> = ramp.chunks(3).flat_map(|c| [c[0], c[1], c[2], 1.0]).flat_map(|v| v.to_le_bytes()).collect();

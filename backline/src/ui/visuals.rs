@@ -216,7 +216,8 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset { group: "Milk", name: "Smoke Rings", kind: Kind::Gpu(SMOKE) },
     // ---- 3D (the terrain's looks in assets/terrain_looks.bin, in order)
     Preset { group: "3D", name: "Wave", kind: Kind::Wave },
-    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(World::Terrain, None) },
+    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(World::Exact, None) },
+    Preset { group: "3D", name: "Experimental Terrain", kind: Kind::Terrain(World::Terrain, None) },
     Preset { group: "3D", name: "Cavern", kind: Kind::Terrain(World::Cavern, None) },
     Preset { group: "3D", name: "Canyon", kind: Kind::Terrain(World::Canyon, None) },
     Preset { group: "3D", name: "Rose Terrain", kind: Kind::Terrain(World::Terrain, Some(0)) },
