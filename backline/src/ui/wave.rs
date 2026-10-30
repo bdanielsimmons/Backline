@@ -1,8 +1,8 @@
 //! 3D Wave: a cloth of nineteen strands, each a chain of nineteen points, blown along from a pinned edge, bent
 //! through a soft cage that rolls slowly with time, and drawn as a sheet of light (bright where it turns edge-on, added
 //! up where its folds overlap) over a sky gradient, then given a soft glare. The physics, the cage, the camera, the
-//! sheet's shading and the glare follow a reference step by step (each checked against it); the curves it reads from
-//! pictures (the fold glow, the sky) are measured. It doesn't react to the music.
+//! sheet's shading and the glare follow a reference step by step (each checked against it); the curve it reads from a
+//! picture (the fold glow) is measured. It doesn't react to the music.
 
 use eframe::egui;
 use eframe::egui_glow;
@@ -53,16 +53,9 @@ const MUSIC: Set = Set {
     bias: 1.86707,
 };
 
-/// The sky: 6 x 5 control colours of a smooth (cubic B-spline) field over the screen, the bottom row first,
-/// measured from a frame while music played; the tint it is multiplied by from the bottom (black) to the top; and the
-/// sheet's tint from the left to the right.
-const SKY: [[f32; 3]; 30] = [
-    [-0.332, -0.064, -0.180], [-0.435, -0.175, -0.225], [-0.350, -0.180, -0.138], [-0.172, -0.078, -0.017], [-0.053, 0.000, 0.032], [-0.047, -0.016, -0.018],
-    [0.110, 0.030, 0.075], [0.130, 0.059, 0.075], [0.097, 0.055, 0.041], [0.044, 0.023, 0.004], [0.012, 0.001, -0.009], [0.012, 0.006, 0.006],
-    [0.266, 0.185, 0.373], [0.289, 0.175, 0.379], [0.282, 0.159, 0.358], [0.228, 0.131, 0.292], [0.148, 0.092, 0.200], [0.079, 0.055, 0.115],
-    [0.331, 0.287, 0.453], [0.343, 0.320, 0.507], [0.389, 0.364, 0.596], [0.468, 0.413, 0.709], [0.537, 0.447, 0.795], [0.548, 0.441, 0.800],
-    [0.566, 0.271, 0.598], [0.698, 0.300, 0.673], [0.754, 0.329, 0.724], [0.712, 0.351, 0.718], [0.663, 0.386, 0.738], [0.702, 0.468, 0.861],
-];
+/// The sky (worked out by the shader it comes from, at the time of day of the reference frame: the cosine of the day
+/// time), the tint it is multiplied by from the bottom (black) to the top, and the sheet's tint from the left to the right.
+const DAY_COS: f32 = -0.9966;
 const SKY_TINT: [[f32; 3]; 2] = [[0.0, 0.0, 0.0], [0.579, 0.435, 0.472]];
 const SHEET_TINT: [[f32; 3]; 2] = [[1.2, 1.0, 1.1], [0.5, 0.0, 0.5]];
 
@@ -349,19 +342,23 @@ out vec2 v;
 void main(){ vec2 a = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); v = a; gl_Position = vec4(a * 2. - 1., 0., 1.); }
 "#;
 
-// the sky times its tint, plus the sheet's light times its own, through the response
+// the sky (soft glows low on the left and high on the right, fading into a dark band by a smooth step across the
+// screen) times its tint, plus the sheet's light times its own, through the response
 const COMP_FS: &str = r#"
 in vec2 v;
 uniform sampler2D sheet;
-uniform vec3 sky[30];
+uniform float daycos;
 uniform vec3 st0, st1, ht0, ht1;
-vec4 bw(float t) { float t2 = t * t, t3 = t2 * t; return vec4((1. - t) * (1. - t) * (1. - t), 3. * t3 - 6. * t2 + 4., -3. * t3 + 3. * t2 + 3. * t + 1., t3) / 6.; }
+vec3 sky(vec2 p){
+  float a = exp(-.5 * dot(p - 1.5, p - 1.5));
+  float q = (p.x - .4) * (p.x - .4) / 6. + (p.y - .1) * (p.y - .1);
+  vec3 s = vec3(.4 * exp(.4 * p.y - .4) + .6 * exp(-16. * (1. + .5 * daycos) * q) + .375 * a,
+                .3 * a + .25 * exp(-12. * q) + .3 * exp(.2 * p.y - .2),
+                .45 * exp(-8. * q) + .6 * a + .5 * exp(.1 * p.y - .1));
+  return s * (.4 * tanh(clamp(2.5 * (p.y - .2 * p.x - .4), -10., 10.)) + .4);
+}
 void main(){
-  float x = clamp(v.x, 0., 1.) * 3., y = clamp(v.y, 0., 1.) * 2.;
-  int i = min(int(x), 2), j = min(int(y), 1);
-  vec4 wx = bw(x - float(i)), wy = bw(y - float(j));
-  vec3 bg = vec3(0.);
-  for (int b = 0; b < 4; b++) for (int a = 0; a < 4; a++) bg += wy[b] * wx[a] * sky[(j + b) * 6 + i + a];
+  vec3 bg = sky(clamp(v, 0., 1.));
   float l = texture(sheet, v).r;
   vec3 p = 8. * (bg * mix(st0, st1, v.y) + l * mix(ht0, ht1, v.x));
   // and how much of it glares: the brightest channel past a point, in a straight line
@@ -678,8 +675,7 @@ impl Wave {
         gl.active_texture(glow::TEXTURE0);
         gl.bind_texture(glow::TEXTURE_2D, Some(t.sheet.1));
         gl.uniform_1_i32(u("sheet").as_ref(), 0);
-        let sky: Vec<f32> = SKY.iter().flatten().copied().collect();
-        gl.uniform_3_f32_slice(u("sky").as_ref(), &sky);
+        gl.uniform_1_f32(u("daycos").as_ref(), DAY_COS);
         for (name, c) in [("st0", SKY_TINT[0]), ("st1", SKY_TINT[1]), ("ht0", SHEET_TINT[0]), ("ht1", SHEET_TINT[1])] {
             gl.uniform_3_f32(u(name).as_ref(), c[0], c[1], c[2]);
         }
