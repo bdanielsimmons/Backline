@@ -1630,6 +1630,8 @@ pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
     const LYD_DOM: (&str, &[i32]) = ("Lydian Dominant", &[0, 2, 4, 6, 7, 9, 10]);
     const BEBOP: (&str, &[i32]) = ("Dominant Bebop", &[0, 2, 4, 5, 7, 9, 10, 11]);
     const BLUES: (&str, &[i32]) = ("Blues", &[0, 3, 5, 6, 7, 10]);
+    // the blues and the major blues in one; it holds a dominant's notes
+    const HYBRID_BLUES: (&str, &[i32]) = ("Hybrid Blues", &[0, 2, 3, 4, 5, 6, 7, 9, 10]);
     const ALTERED: (&str, &[i32]) = ("Altered", &[0, 1, 3, 4, 6, 8, 10]);
     const HW: (&str, &[i32]) = ("Half-Whole Diminished", &[0, 1, 3, 4, 6, 7, 9, 10]);
     const WH: (&str, &[i32]) = ("Whole-Half Diminished", &[0, 2, 3, 5, 6, 8, 9, 11]);
@@ -1679,7 +1681,7 @@ pub fn scales_for(c: &ChordNotes) -> Vec<(&'static str, &'static [i32])> {
         } else if has(6) {
             vec![LYD_DOM, WHOLE, HW]
         } else {
-            vec![MIXO, LYD_DOM, BEBOP, BLUES]
+            vec![MIXO, LYD_DOM, BEBOP, BLUES, HYBRID_BLUES]
         }
     } else if sus && b7 {
         // 7sus4, 9sus4, 13sus4, 11; Phrygian for a 7b9sus4
@@ -2626,6 +2628,7 @@ mod chord_audit {
         assert_eq!(first("C7b13"), "Mixolydian b6");
         assert_eq!(first("C7#5"), "Whole Tone");
         assert_eq!(first("C7sus4"), "Mixolydian");
+        assert!(all("C7").contains(&"Hybrid Blues") && all("C13").contains(&"Hybrid Blues"));
         assert_eq!(first("C7sus4b9"), "Phrygian");
         assert_eq!(first("Cm6"), "Dorian");
         assert!(!all("Cm6").contains(&"Aeolian (Natural Minor)"));
@@ -2672,6 +2675,7 @@ mod chord_audit {
         assert_eq!(j(scale_names("C", 0, &[0, 1, 3, 4, 6, 8, 10])), "C Db Eb E F# Ab Bb");
         assert_eq!(j(scale_names("C", 0, &[0, 1, 3, 4, 6, 7, 9, 10])), "C Db Eb E F# G A Bb");
         assert_eq!(j(scale_names("C", 0, &[0, 2, 3, 5, 6, 8, 9, 11])), "C D Eb F Gb Ab A B");
+        assert_eq!(j(scale_names("C", 0, &[0, 2, 3, 4, 5, 6, 7, 9, 10])), "C D Eb E F Gb G A Bb");
         assert_eq!(j(scale_names("C", 0, &[0, 2, 4, 6, 8, 10])), "C D E F# G# Bb");
         assert_eq!(j(scale_names("C", 0, &[0, 3, 5, 6, 7, 10])), "C Eb F Gb G Bb");
         assert_eq!(j(scale_names("Bb", 10, &[0, 2, 4, 6, 7, 9, 10])), "Bb C D E F G Ab");

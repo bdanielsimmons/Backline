@@ -12,6 +12,8 @@ pub(crate) type Spot = (usize, u8);
 
 pub(crate) const PENT_MINOR: [i32; 5] = [0, 3, 5, 7, 10];
 pub(crate) const PENT_MAJOR: [i32; 5] = [0, 2, 4, 7, 9];
+/// The hybrid blues: the blues and the major blues in one - both pentatonics and the blue note.
+const HYBRID_BLUES: [i32; 9] = [0, 2, 3, 4, 5, 6, 7, 9, 10];
 /// The scales the pentatonics sit in, for the in-between notes: natural minor, major.
 const PARENT_MINOR: [i32; 7] = [0, 2, 3, 5, 7, 8, 10];
 const PARENT_MAJOR: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
@@ -150,6 +152,9 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
         about,
         triads: None,
     };
+    // the two blues scales: among the hexatonics, and again with the hybrid
+    let blues = || plain("BLUES  (R \u{266D}3 4 \u{266D}5 5 \u{266D}7)", &[0, 3, 5, 6, 7, 10], &[0, 3, 7, 10], format!("THE MINOR PENTATONIC WITH THE BLUE NOTE: OVER {}7 AND {}M7", n(0), n(0)));
+    let major_blues = || plain("MAJOR BLUES  (R 2 \u{266D}3 3 5 6)", &[0, 2, 3, 4, 7, 9], &[0, 4, 7, 9], format!("THE MAJOR PENTATONIC WITH THE BLUE NOTE: OVER {}6 AND {}7. COUNTRY AND GOSPEL.", n(0), n(0)));
     match fam {
         1 => vec![
             pair((0, false), (2, false), &[0, 4, 7, 11, 18], format!("LYDIAN: OVER {}MAJ7#11, ALSO {}M7", n(0), n(9))),
@@ -190,8 +195,8 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
         ],
         // six-note scales beyond the major and minor hexatonics
         5 => vec![
-            plain("BLUES  (R \u{266D}3 4 \u{266D}5 5 \u{266D}7)", &[0, 3, 5, 6, 7, 10], &[0, 3, 7, 10], format!("THE MINOR PENTATONIC WITH THE BLUE NOTE: OVER {}7 AND {}M7", n(0), n(0))),
-            plain("MAJOR BLUES  (R 2 \u{266D}3 3 5 6)", &[0, 2, 3, 4, 7, 9], &[0, 4, 7, 9], format!("THE MAJOR PENTATONIC WITH THE BLUE NOTE: OVER {}6 AND {}7. COUNTRY AND GOSPEL.", n(0), n(0))),
+            blues(),
+            major_blues(),
             plain("PROMETHEUS  (R 2 3 #4 6 \u{266D}7)", &[0, 2, 4, 6, 9, 10], &[0, 4, 10, 18], format!("SCRIABIN'S MYSTIC CHORD: OVER {}7(#11) AND {}13(#11)", n(0), n(0))),
             plain("TRITONE  (R \u{266D}2 3 \u{266D}5 5 \u{266D}7)", &[0, 1, 4, 6, 7, 10], &[0, 4, 7, 10], format!("TWO MAJOR TRIADS A TRITONE APART: OVER {}7(\u{266D}9 #11), THE TRITONE SUB INSIDE", n(0))),
             plain("AUGMENTED  (R #2 3 5 #5 7)", &[0, 3, 4, 7, 8, 11], &[0, 4, 8, 11], format!("TWO AUGMENTED TRIADS: OVER {}MAJ7#5. IT REPEATS EVERY MAJOR 3RD.", n(0))),
@@ -202,6 +207,12 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
             plain("1 \u{266D}3 4 5", &[0, 3, 5, 7], &[0, 3, 7], format!("THE MINOR CELL: OVER {}M7, THE PENTATONIC'S CORE", n(0))),
             plain("1 2 4 5", &[0, 2, 5, 7], &[0, 5, 7], format!("SUSPENDED, NO 3RD: OVER {}SUS AND {}7SUS4", n(0), n(0))),
             plain("1 3 5 \u{266D}7", &[0, 4, 7, 10], &[0, 4, 7, 10], format!("THE DOMINANT ARPEGGIO AS A SCALE: OVER {}7", n(0))),
+        ],
+        // the blues scales, then the hybrid: the two of them in one
+        7 => vec![
+            blues(),
+            major_blues(),
+            plain("HYBRID BLUES  (R 2 \u{266D}3 3 4 \u{266D}5 5 6 \u{266D}7)", &HYBRID_BLUES, &[0, 4, 7, 10], format!("THE BLUES AND THE MAJOR BLUES IN ONE: BOTH PENTATONICS AND THE BLUE NOTE. OVER {}7: SLIDE THE \u{266D}3 UP INTO THE 3RD.", n(0))),
         ],
         _ => vec![
             plain("MINOR  (R \u{266D}3 4 5 \u{266D}7)", &PENT_MINOR, &[0, 3, 7, 10], format!("OVER {}M7, AND OVER A {}7 OR {} BLUES", n(0), n(0), n(0))),
@@ -254,6 +265,7 @@ impl App {
                 "EXOTIC PENTATONICS  (5 NOTES)",
                 "MORE HEXATONICS  (6 NOTES)",
                 "FOUR-NOTE SCALES",
+                "BLUES SCALES",
             ],
             self.pn_fam as usize,
             260.0,
@@ -897,9 +909,11 @@ fn all_scales() -> Vec<(&'static str, &'static str, Vec<i32>)> {
             v.push((fam, name, steps.to_vec()));
         }
     }
-    v.push(("PENTATONIC", "Minor pentatonic", PENT_MINOR.to_vec()));
-    v.push(("PENTATONIC", "Major pentatonic", PENT_MAJOR.to_vec()));
-    v.push(("PENTATONIC", "Blues", vec![0, 3, 5, 6, 7, 10]));
+    v.push(("PENTATONIC & BLUES", "Minor pentatonic", PENT_MINOR.to_vec()));
+    v.push(("PENTATONIC & BLUES", "Major pentatonic", PENT_MAJOR.to_vec()));
+    v.push(("PENTATONIC & BLUES", "Blues", vec![0, 3, 5, 6, 7, 10]));
+    v.push(("PENTATONIC & BLUES", "Major blues", vec![0, 2, 3, 4, 7, 9]));
+    v.push(("PENTATONIC & BLUES", "Hybrid blues", HYBRID_BLUES.to_vec()));
     v
 }
 
@@ -1461,7 +1475,7 @@ mod tests {
 
     #[test]
     fn every_family_lays_out_on_the_neck() {
-        for fam in 0..=6u8 {
+        for fam in 0..=7u8 {
             let list = family_scales(fam, 9, false);
             assert!(!list.is_empty(), "family {}", fam);
             for sc in &list {
@@ -1471,6 +1485,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_hybrid_blues_is_both_blues_scales() {
+        let fam = family_scales(7, 0, false);
+        let mut both: Vec<i32> = fam[0].steps.iter().chain(fam[1].steps.iter()).copied().collect();
+        both.sort();
+        both.dedup();
+        assert_eq!(fam[2].steps, both);
+        assert_eq!(fam[2].steps, vec![0, 2, 3, 4, 5, 6, 7, 9, 10]);
+        assert!(all_scales().iter().any(|s| s.1 == "Hybrid blues" && s.2 == both));
     }
 
     #[test]
