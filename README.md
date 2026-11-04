@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Pop the visuals out into a small window of their own
 - 3D Wave: a sheet of light drifting across the sky, glowing where it folds
 - 3D Cavern and Canyon: fly between a landscape and its mirror, or down a winding valley that rises with the music
 - 3D Terrain visuals: a landscape the music raises as you glide over it
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - LINES > ATONAL > EVERY STRING, EVERY FINGER - pick where a line starts and which finger, and see the fingering on the neck
 - LINES has an ATONAL tab: Sandole-style lines (alternate triads, joined tetrachords, interval cycles) in any key, your own lines kept on this computer with notes you can fix, and an analysis of every line (intervals, cells, tetrachords, scales that hold it, syllables).
 - Atonal ear training: free intervals out to 10ths, tetrachord and trichord cells, scales sung in intervals (moveable Do, fixed Do or La), scales stacked into chords, and a daily atonal line to sight-sing.
-- Albums and other people's playlists have an ADD TO MY ALBUMS / ADD TO MY PLAYLISTS button that keeps them in your Tidal library.
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
