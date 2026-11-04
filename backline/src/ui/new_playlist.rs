@@ -141,7 +141,7 @@ impl App {
                     } else {
                         p.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, pal().edge));
                     }
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Pick a picture from this computer").clicked() {
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Choose a picture").clicked() {
                         if let Some(p) = pick_art() {
                             d.art = p;
                         }
@@ -158,20 +158,20 @@ impl App {
                     ui.add_space(8.0);
                     crate::dim_line(ui, "DESCRIPTION", 1.0, pal().ink2);
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 92.0), Sense::hover());
-                    crate::views::field(ui, &mut self.ed, F_NEW_DESC, &mut d.desc, rect, "What it is for (optional)", true);
+                    crate::views::field(ui, &mut self.ed, F_NEW_DESC, &mut d.desc, rect, "Add an optional description", true);
                     if tidal_ok && d.edit.is_none() {
                         ui.add_space(8.0);
                         ui.horizontal_wrapped(|ui| {
-                            if retro_btn(ui, "IN BACKLINE", !d.tidal).tip("Kept on this computer; can mix every source.").clicked()
+                            if retro_btn(ui, "IN BACKLINE", !d.tidal).tip("Saved on this computer; can mix all sources.").clicked()
                             {
                                 d.tidal = false;
                             }
-                            if retro_btn(ui, "ON TIDAL", d.tidal).tip("Made on your Tidal account.").clicked() {
+                            if retro_btn(ui, "ON TIDAL", d.tidal).tip("Saved to your Tidal account.").clicked() {
                                 d.tidal = true;
                             }
                         });
                         if d.tidal {
-                            crate::dim_line(ui, "Made on your Tidal account, with Tidal's own cover.", 1.0, pal().dim);
+                            crate::dim_line(ui, "Saved to your Tidal account. Tidal sets the cover.", 1.0, pal().dim);
                         }
                     }
                 });
@@ -206,7 +206,7 @@ impl App {
                 });
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    if retro_btn(ui, "YOUR OWN PICTURE...", false).tip("Or drop one on the window").clicked() {
+                    if retro_btn(ui, "CHOOSE PICTURE...", false).tip("Or drop one on the window").clicked() {
                         if let Some(p) = pick_art() {
                             d.art = p;
                         }
@@ -218,7 +218,7 @@ impl App {
             }
             ui.add_space(14.0);
             ui.horizontal(|ui| {
-                if retro_btn_w(ui, if d.edit.is_some() { "SAVE" } else { "MAKE IT" }, 120.0, true).clicked() {
+                if retro_btn_w(ui, if d.edit.is_some() { "SAVE" } else { "CREATE" }, 120.0, true).clicked() {
                     make = true;
                 }
                 if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {

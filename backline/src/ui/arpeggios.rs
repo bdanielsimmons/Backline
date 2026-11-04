@@ -234,7 +234,7 @@ impl App {
         ui.horizontal(|ui| {
             crate::views::form_label(ui, "SHOW");
             let pick = (self.ar_pos as usize).min(np);
-            if retro_btn_w(ui, "<", 34.0, false).tip("The position below").clicked() {
+            if retro_btn_w(ui, "<", 34.0, false).tip("Previous position").clicked() {
                 self.ar_pos = ((pick + np) % (np + 1)) as u8;
             }
             let widest = shown.iter().map(|s| crate::font::text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
@@ -242,7 +242,7 @@ impl App {
             {
                 self.ar_pos = i as u8;
             }
-            if retro_btn_w(ui, ">", 34.0, false).tip("The next position up").clicked() {
+            if retro_btn_w(ui, ">", 34.0, false).tip("Next position").clicked() {
                 self.ar_pos = ((pick + 1) % (np + 1)) as u8;
             }
         });
@@ -419,7 +419,7 @@ impl App {
             return;
         }
         const KINDS: [&str; 3] = [
-            "GUIDE TONES: THE 3RD OR 7TH, ONE A CHORD",
+            "GUIDE TONES: THE 3RD OR 7TH, ONE PER CHORD",
             "ARPEGGIOS: 1 3 5 7 UP, EACH NEAR THE LAST",
             "3 5 7 9 UP, THEN 5 3 1 7 DOWN INTO THE NEXT",
         ];
@@ -429,7 +429,7 @@ impl App {
         let kind = (self.ar_tune as usize).min(2);
         let line = tune_line(&changes, kind);
         if line.is_empty() {
-            dim_line(ui, "NO CHORDS BACKLINE CAN READ IN THESE CHANGES", 1.0, pal().dim);
+            dim_line(ui, "NO READABLE CHORDS IN THESE CHANGES", 1.0, pal().dim);
             return;
         }
         let sharps = theory::chord_notes(&line[0].0).map_or(false, |c| lines::key_sharps(c.root));
@@ -440,8 +440,8 @@ impl App {
             self.seq_button(
                 ui,
                 acts,
-                "PLAY IT",
-                "Plays at the band's tempo, with the chord under each first note.",
+                "PLAY",
+                "Plays at the band's tempo, with each chord under its first note.",
                 "arptune",
                 || {
                     line.iter()

@@ -11,7 +11,7 @@ impl App {
         if !on && self.rec_devs.is_empty() {
             self.rec_devs = record::input_devices();
         }
-        para(ui, "Record yourself over the band, a loop or a song. Each take is kept with its tune. Listen back at the end of the week, the way you would study a record. Monitor yourself through your interface, not through Backline.", pal().ink2);
+        para(ui, "Record yourself over the band, a loop or a song. Each take is saved with its tune. Listen back at the end of the week, the way you would study a record. Monitor yourself through your audio interface, not through Backline.", pal().ink2);
         // ---- the input, the tune it goes with, the band
         crate::views::centered_row(ui, "rec_0", |ui| {
             if self.rec_devs.is_empty() {
@@ -63,7 +63,7 @@ impl App {
             );
             if resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip(if on { "Stop and keep the take." } else { "Start a take." })
+                .tip(if on { "Stop recording." } else { "Start recording." })
                 .clicked()
             {
                 acts.push(Action::RecToggle);
@@ -187,7 +187,7 @@ impl App {
         let playing = self.cur_track().map(|t| t.id);
         crate::credits::panel(ctx, "takes", 640.0, |ui| {
             title_line(ui, "YOUR TAKES", 3.0, pal().ink);
-            para(ui, "Your takes by tune, newest first. Click a take to hear yourself over what played. Click YOU ALONE to hear only you. Type any tag you like, such as solo, comping or keeper.", pal().ink2);
+            para(ui, "Your takes by tune, newest first. Click a take to hear it with the backing. Click YOU ALONE to hear only you. Type any tag you like, such as solo, comping or keeper.", pal().ink2);
             // the order: by tune, newest first inside each
             let mut order: Vec<usize> = (0..self.store.takes.len()).collect();
             order.sort_by(|a, b| {

@@ -81,7 +81,7 @@ pub(crate) fn numbering_line(ui: &mut egui::Ui, id: &str, about: &[String], save
     let def = usual.iter().find_map(|u| about.iter().position(|a| a.starts_with(u))).unwrap_or(0);
     let cur = about.iter().position(|a| !saved.is_empty() && a == saved).unwrap_or(def);
     let labels: Vec<String> =
-        about.iter().enumerate().map(|(i, a)| format!("1 = {}{}", a, if i == def { "  (USUAL)" } else { "" })).collect();
+        about.iter().enumerate().map(|(i, a)| format!("1 = {}{}", a, if i == def { "  (DEFAULT)" } else { "" })).collect();
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
     match crate::choice_line(ui, id, "NUMBERING", &labels, cur, 360.0) {
         Some(i) => {
@@ -111,7 +111,7 @@ const EXERCISES: [(u8, &str, &str); 15] = [
     (7, "CONNECT TWO POSITIONS", "Up this position, down the next one along. It drills the shift on each string."),
     (8, "ALTERNATE THE TRIADS", "One triad, then the other, through their inversions up the position and back down."),
     (9, "COLTRANE CELLS", "Four-note cells (1 2 3 5, or 1 b3 4 5 over minor) from the root, then the 5th, up and back."),
-    (10, "COLTRANE FROM THE 5TH", "The same cells from the 5th and the 9th. A brighter colour over the chord."),
+    (10, "COLTRANE FROM THE 5TH", "The same cells from the 5th and the 9th. A brighter color over the chord."),
     (11, "APPROACH FROM BELOW", "Each note of the position from a half step below. Then from above, coming down."),
     (12, "ENCLOSURES", "Each target note enclosed: the scale note above, the half step below, then the target."),
     (13, "CHROMATIC PASSING", "Every whole step or wider filled in chromatically. A line that never stops moving."),
@@ -168,7 +168,7 @@ pub(crate) fn family_scales(fam: u8, root: i32, sharps: bool) -> Vec<SmallScale>
             plain("WHOLE TONE", &[0, 2, 4, 6, 8, 10], &[0, 4, 8, 10], format!("OVER {}7#5. SYMMETRIC, EVERY NOTE A WHOLE STEP APART. THERE ARE ONLY TWO OF THEM.", n(0))),
         ],
         2 => vec![
-            plain("HALF-WHOLE", &[0, 1, 3, 4, 6, 7, 9, 10], &[0, 4, 7, 10, 13], format!("OVER {}7({}9): HALF STEP, WHOLE STEP, ROUND AND ROUND. IT REPEATS EVERY MINOR 3RD.", n(0), "\u{266D}")),
+            plain("HALF-WHOLE", &[0, 1, 3, 4, 6, 7, 9, 10], &[0, 4, 7, 10, 13], format!("OVER {}7({}9): ALTERNATING HALF AND WHOLE STEPS. IT REPEATS EVERY MINOR 3RD.", n(0), "\u{266D}")),
             plain("WHOLE-HALF", &[0, 2, 3, 5, 6, 8, 9, 11], &[0, 3, 6, 9], format!("OVER {}DIM7: WHOLE STEP, HALF STEP. IT REPEATS EVERY MINOR 3RD.", n(0))),
         ],
         // a scale with one chromatic note added between two of its own, so a line of eighths that starts on a chord
@@ -293,8 +293,8 @@ impl App {
         if let Some(i) = crate::choice_line(
             ui,
             "pn_nps",
-            "NOTES A STRING",
-            &["2 TO A STRING", "3 TO A STRING"],
+            "NOTES PER STRING",
+            &["2 PER STRING", "3 PER STRING"],
             (self.pn_nps as usize).clamp(2, 3) - 2,
             220.0,
         ) {
@@ -340,7 +340,7 @@ impl App {
                 if crate::check_box(ui, blue, self.pn_blue).tip("The blues scale: the pentatonic with the blue note added").clicked() {
                     self.pn_blue = !self.pn_blue;
                 }
-                if crate::check_box(ui, "IN-BETWEEN NOTES", self.pn_between)
+                if crate::check_box(ui, "PASSING TONES", self.pn_between)
                     .tip("Adds a note between the box's two on each string: from the scale if one fits, else chromatic. They are passing tones, so resolve them.")
                     .clicked()
                 {
@@ -656,7 +656,7 @@ impl App {
     /// SUPERIMPOSE: a shape over a chord - the usual choices for it, or any shape you pick - with each note marked
     /// a chord tone, a tension or a note to avoid, on the neck and the piano, and played over the chord.
     pub(crate) fn superimpose(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Play a shape from another root over the chord. It can be a pentatonic, a triad or an arpeggio. Each note shows what it is over the chord: a chord tone, a tension (colour), or a note to avoid landing on.", pal().ink2);
+        para(ui, "Play a shape from another root over the chord. It can be a pentatonic, a triad or an arpeggio. Each note shows what it is over the chord: a chord tone, a tension (color), or a note to avoid landing on.", pal().ink2);
         let sharps = lines::key_sharps(self.si_root);
         if let Some(pc) = Self::note_row(ui, "CHORD ROOT", self.si_root, sharps) {
             self.si_root = pc;
@@ -724,7 +724,7 @@ impl App {
             ui,
             "si_any",
             "CHOOSE FROM",
-            &["THE USUAL CHOICES", "ANY SHAPE, ANYWHERE"],
+            &["SUGGESTIONS", "ANY SHAPE, ANY ROOT"],
             self.si_any as usize,
             260.0,
         ) {
@@ -961,7 +961,7 @@ impl App {
     /// SCALE FINGERINGS: any scale's positions across the neck - five CAGED positions, or 2, 3 or 4 notes a string -
     /// one at a time or all at once, played, or shifted through one after another.
     pub(crate) fn fingerings(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Every position of a scale, in any key. See one at a time with its fingering, or the whole neck with each position in its own colour. Then play it: one position up and down, every position in turn, or in intervals and groups from every note. Keep going until you can move anywhere in it.", pal().ink2);
+        para(ui, "Every position of a scale, in any key. See one at a time with its fingering, or the whole neck with each position in its own color. Then play it: one position up and down, every position in turn, or in intervals and groups from every note. Keep going until you can move anywhere in it.", pal().ink2);
         let sharps = lines::key_sharps(self.pf_root);
         if let Some(pc) = Self::note_row(ui, "KEY", self.pf_root, sharps) {
             self.pf_root = pc;
@@ -1017,9 +1017,9 @@ impl App {
             let starred = self.pf_stars.iter().any(|s| *s == self.pf_scale);
             if crate::ibtn(ui, &crate::IC_STAR, "", starred)
                 .tip(if starred {
-                    "In MY SCALES. Click to take it out."
+                    "Remove from MY SCALES"
                 } else {
-                    "Star it to keep it in MY SCALES, the first family."
+                    "Add to MY SCALES"
                 })
                 .clicked()
             {
@@ -1040,7 +1040,7 @@ impl App {
         let si = order[order.iter().position(|i| scales[*i].1 == self.pf_scale).unwrap_or(0)];
         let steps = scales[si].2.clone();
         let root = self.pf_root;
-        const SYSTEMS: [&str; 4] = ["5 POSITIONS (CAGED)", "2 NOTES A STRING", "3 NOTES A STRING", "4 NOTES A STRING"];
+        const SYSTEMS: [&str; 4] = ["5 POSITIONS (CAGED)", "2 NOTES PER STRING", "3 NOTES PER STRING", "4 NOTES PER STRING"];
         if let Some(i) = crate::choice_line(ui, "pf_sys", "SYSTEM", &SYSTEMS, (self.pf_sys as usize).min(3), 260.0) {
             self.pf_sys = i as u8;
             self.pf_pos = 0;
@@ -1069,7 +1069,7 @@ impl App {
         ui.horizontal(|ui| {
             crate::views::form_label(ui, "SHOW");
             let pick = (self.pf_pos as usize).min(np);
-            if retro_btn_w(ui, "<", 34.0, false).tip("The position below").clicked() {
+            if retro_btn_w(ui, "<", 34.0, false).tip("Previous position").clicked() {
                 self.pf_pos = ((pick + np) % (np + 1)) as u8;
             }
             let widest = shown.iter().map(|s| crate::font::text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
@@ -1077,7 +1077,7 @@ impl App {
             {
                 self.pf_pos = i as u8;
             }
-            if retro_btn_w(ui, ">", 34.0, false).tip("The next position up").clicked() {
+            if retro_btn_w(ui, ">", 34.0, false).tip("Next position").clicked() {
                 self.pf_pos = ((pick + 1) % (np + 1)) as u8;
             }
         });
@@ -1226,7 +1226,7 @@ impl App {
     /// scale and starting near where the last one ended - the way he ran them through Giant Steps and Countdown.
     fn coltrane_tune(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         section_header(ui, "COLTRANE CELLS THROUGH A TUNE");
-        para(ui, "One cell a chord, two beats each, from the chord's own scale. Each cell starts near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
+        para(ui, "One cell per chord, two beats each, from the chord's own scale. Each cell starts near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         if changes.is_empty() {
             return;
@@ -1237,7 +1237,7 @@ impl App {
         crate::views::dim_line(ui, CT_CELLS[(self.ct_cell as usize).min(2)].1, 1.0, pal().ink2);
         let cells = coltrane_cells(&changes, self.ct_cell as usize);
         if cells.is_empty() {
-            dim_line(ui, "NO CHORDS BACKLINE CAN READ IN THESE CHANGES", 1.0, pal().dim);
+            dim_line(ui, "NO READABLE CHORDS IN THESE CHANGES", 1.0, pal().dim);
             return;
         }
         let sharps = changes.first().and_then(|c| theory::chord_notes(c)).map_or(false, |c| lines::key_sharps(c.root));
@@ -1248,7 +1248,7 @@ impl App {
             self.seq_button(
                 ui,
                 acts,
-                "PLAY IT",
+                "PLAY",
                 "Eighth notes at the band's tempo, with the chord under each cell",
                 "coltrane",
                 || {

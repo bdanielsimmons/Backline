@@ -1254,7 +1254,12 @@ fn smooth(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// A column-major perspective times a look-at, leaning `roll` radians (the terrain's camera keeps level).
+/// The shape the looks are made for. A narrower spot (a window made thin or tall) keeps all of this width in view and
+/// sees more above and below, instead of losing the sides and looking zoomed in; a wider one sees more at the sides.
+pub(crate) const WIDE: f32 = 16.0 / 9.0;
+
+/// A column-major perspective times a look-at, leaning `roll` radians (the terrain's camera keeps level). `fov_deg`
+/// is up and down at WIDE or wider.
 fn camera(eye: [f32; 3], fwd: [f32; 3], fov_deg: f32, aspect: f32, roll: f32) -> [f32; 16] {
     let f = fwd;
     let up = [0.0f32, 1.0, 0.0];
@@ -1265,7 +1270,7 @@ fn camera(eye: [f32; 3], fwd: [f32; 3], fov_deg: f32, aspect: f32, roll: f32) ->
     let (sr, cr) = roll.sin_cos();
     let (r, u) = ([0, 1, 2].map(|i| r[i] * cr + u[i] * sr), [0, 1, 2].map(|i| u[i] * cr - r[i] * sr));
     let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let sy = 1.0 / (fov_deg.to_radians() * 0.5).tan();
+    let sy = 1.0 / (fov_deg.to_radians() * 0.5).tan() * (aspect / WIDE).min(1.0);
     let sx = sy / aspect;
     let (near, far) = (0.2f32, 2000.0f32);
     let (za, zb) = ((far + near) / (near - far), 2.0 * far * near / (near - far));

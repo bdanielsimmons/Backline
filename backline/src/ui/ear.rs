@@ -34,12 +34,12 @@ pub(crate) const DRILLS: [Drill; 13] = [
     Drill {
         name: "CHORD QUALITIES",
         key: "quality",
-        about: "A chord plays. Name its quality: listen for the 3rd (major or minor) and the 7th (major, minor or diminished), then the colours on top.",
+        about: "A chord plays. Name its quality: listen for the 3rd (major or minor) and the 7th (major, minor or diminished), then the colors on top.",
     },
     Drill {
         name: "INTERVALS",
         key: "interval",
-        about: "Two notes play. Name the distance between them. Up, down, or both at once.",
+        about: "Two notes play. Name the interval. Up, down, or both at once.",
     },
     Drill {
         name: "PROGRESSIONS",
@@ -75,7 +75,7 @@ pub(crate) const DRILLS: [Drill; 13] = [
     Drill {
         name: "FREE INTERVALS",
         key: "free",
-        about: "Two notes from anywhere, with no key around them. Name the distance, out to a 10th. SING FIRST: see the interval, sing it from the first note, then hear it.",
+        about: "Two notes from anywhere, with no key around them. Name the interval, up to a 10th. SING FIRST: see the interval, sing it from the first note, then hear it.",
     },
     Drill {
         name: "CELLS",
@@ -85,7 +85,7 @@ pub(crate) const DRILLS: [Drill; 13] = [
     Drill {
         name: "SCALE IN INTERVALS",
         key: "sung",
-        about: "Sing the scale in 3rds, then 4ths, out to 10ths. Use the syllables shown, then go on to the next scale, and mark yourself after each run.",
+        about: "Sing the scale in 3rds, then 4ths, up to 10ths. Use the syllables shown, then go on to the next scale, and mark yourself after each run.",
     },
     Drill {
         name: "VERTICALS",
@@ -1777,7 +1777,7 @@ fn wrong_hint(drill: usize, q: &Question, pool: &[usize], given: usize) -> Optio
         TRICHORD => {
             let (pn, pc) = TRICHORDS.get(given)?;
             let (an, ac) = TRICHORDS.get(q.answer)?;
-            Some(format!("You picked {}: {}\n{}: {} (or upside down)", pn, cell_steps(pc), an, cell_steps(ac)))
+            Some(format!("You picked {}: {}\n{}: {} (or inverted)", pn, cell_steps(pc), an, cell_steps(ac)))
         }
         // the scale each chord comes from
         11 => {
@@ -2337,7 +2337,7 @@ impl App {
                 }
                 2 => {
                     let text = format!("CHOOSE CHORDS ({})", o.mine.len());
-                    if retro_btn(ui, &text, self.ear.choose).tip("Tick any chords, from any level").clicked() {
+                    if retro_btn(ui, &text, self.ear.choose).tip("Select any chords, from any level").clicked() {
                         self.ear.choose = !self.ear.choose;
                     }
                 }
@@ -2397,7 +2397,7 @@ impl App {
                 });
             }
             if o.mine.len() < 2 {
-                crate::views::dim_line(ui, "TICK TWO OR MORE", 1.0, pal().dim);
+                crate::views::dim_line(ui, "SELECT TWO OR MORE", 1.0, pal().dim);
             }
         }
         ui.add_space(2.0);
@@ -2920,7 +2920,7 @@ impl App {
                             self.store_dirty = true;
                         }
                     } else {
-                        crate::views::dim_line(ui, "GET 80% IN A SESSION AND MORE ANSWERS COME INTO PLAY", 1.0, pal().dim);
+                        crate::views::dim_line(ui, "SCORE 80% IN A SESSION TO UNLOCK MORE ANSWERS", 1.0, pal().dim);
                     }
                 });
             }
@@ -3113,7 +3113,7 @@ impl App {
             }
         });
         if hint {
-            crate::views::dim_centered(ui, "GET 80% IN A SESSION AND MORE CHORDS COME INTO PLAY");
+            crate::views::dim_centered(ui, "SCORE 80% IN A SESSION TO UNLOCK MORE CHORDS");
         }
         if let Some((l, n)) = set {
             let g = &mut self.store.ear_chords.grown;

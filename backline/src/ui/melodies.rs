@@ -53,7 +53,7 @@ const EXPLAIN: [&str; 10] = [
     "The bass walks under the chords, stepping between the roots.",
     "A grip held while notes inside it move. The fingers that stay are the anchor (the moving notes are lit).",
     "Every voice of one grip moves a step or less into the next chord, the shortest way between them.",
-    "One you kept yourself.",
+    "One you saved yourself.",
     "After the chord stab, the melody stays where the hand is, on notes the grip puts in reach (the melody is lit).",
 ];
 
@@ -998,7 +998,7 @@ impl App {
                 }
             }
             if retro_btn(ui, "LOOP", self.cm_loop)
-                .tip("Play it round and round. Drag across the bars below to pick which.")
+                .tip("Play it on repeat. Drag across the bars below to pick which.")
                 .clicked()
             {
                 self.cm_loop = !self.cm_loop;
@@ -1055,7 +1055,7 @@ impl App {
             }
             crate::views::dim_line(
                 ui,
-                "DRAG ACROSS BARS TO LOOP THEM. CLICK A BEAT TO SEE IT, OR A COLOURED MOVE TO LOOP IT.",
+                "DRAG ACROSS BARS TO LOOP THEM. CLICK A BEAT TO SEE IT, OR A COLORED MOVE TO LOOP IT.",
                 1.0,
                 pal().dim,
             );
@@ -1122,7 +1122,7 @@ impl App {
 
     /// The top of SONGS: bringing tunes in, the tune, what is shown.
     fn cm_top(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, list: &[(std::path::PathBuf, String)]) {
-        para(ui, "Study your transcriptions bar by bar. Each shows the chord names and grips, and the notes on a staff with tab and note names. Play at any speed, loop a few bars and click a beat to see what it is. Keep the moves you like.", pal().ink2);
+        para(ui, "Study your transcriptions bar by bar. Each shows the chord names and grips, and the notes on a staff with tab and note names. Play at any speed, loop a few bars and click a beat to see what it is. Save the moves you like.", pal().ink2);
         // bringing tunes in: one + ADD, its choices under it
         ui.horizontal_wrapped(|ui| {
             let add = retro_btn(ui, "+ ADD", false).tip("Import Guitar Pro files or a transcription, or open their folder.");
@@ -1157,7 +1157,7 @@ impl App {
             }
         });
         if list.is_empty() {
-            para(ui, "No transcriptions yet. Use IMPORT GUITAR PRO... to add your .gp files.", pal().ink2);
+            para(ui, "No transcriptions yet. Use + ADD to import your Guitar Pro (.gp) files.", pal().ink2);
             return;
         }
         let names: Vec<&str> = list.iter().map(|l| l.1.as_str()).collect();
@@ -1179,7 +1179,7 @@ impl App {
                 }
             }
             if crate::check_box(ui, "MOVES SPOTTED", self.cm_marks)
-                .tip("Show a soft colour over the beats where Backline spots a move. Click one to loop it.")
+                .tip("Highlight the beats where Backline spots a move. Click one to loop it.")
                 .clicked()
             {
                 self.cm_marks = !self.cm_marks;
@@ -1197,8 +1197,8 @@ impl App {
             let title = self.cm_loaded.as_ref().map(|l| l.1.title.clone()).unwrap_or_default();
             let gone = self.cm_hidden.iter().filter(|h| h.0 == title).count();
             if gone > 0
-                && retro_btn(ui, &format!("BRING BACK {} REMOVED", gone), false)
-                    .tip("Bring back the moves you removed from this tune.")
+                && retro_btn(ui, &format!("RESTORE {} REMOVED", gone), false)
+                    .tip("Restore the moves you removed from this tune.")
                     .clicked()
             {
                 self.cm_hidden.retain(|h| h.0 != title);
@@ -1271,7 +1271,7 @@ impl App {
                 // a saved move plays its own beats; the song's beats play as the song does (with LOOP)
                 let playing = if saved.is_some() { self.cm_mplay.is_some() } else { self.cm_play.is_some() };
                 if retro_btn(ui, if playing { "STOP" } else { "PLAY" }, playing)
-                    .tip("Play it. Turn on LOOP to go round and round.")
+                    .tip("Play it. Turn on LOOP to repeat it.")
                     .clicked()
                 {
                     if playing {
@@ -1299,20 +1299,20 @@ impl App {
                         self.cm_start(tune);
                     }
                 }
-                if retro_btn_w(ui, "<", 30.0, false).tip("Step back a beat.").clicked() {
+                if retro_btn_w(ui, "<", 30.0, false).tip("Previous beat.").clicked() {
                     step = Some(-1);
                 }
                 if retro_btn_w(ui, ">", 30.0, false)
-                    .tip("Step on a beat. Hear it and see it lit on the staff and the neck.")
+                    .tip("Next beat. Hear it and see it lit on the staff and the neck.")
                     .clicked()
                 {
                     step = Some(1);
                 }
-                if retro_btn(ui, "LOOP", self.cm_loop).tip("Play it round and round.").clicked() {
+                if retro_btn(ui, "LOOP", self.cm_loop).tip("Play it on repeat.").clicked() {
                     self.cm_loop = !self.cm_loop;
                 }
                 if saved.is_none()
-                    && retro_btn(ui, "SAVE AS A MOVE", false).tip("Keep it in MOVES. It stays marked on the song too.").clicked()
+                    && retro_btn(ui, "SAVE AS A MOVE", false).tip("Save it to MOVES. It stays marked on the song too.").clicked()
                 {
                     let kind = picked_mark.map_or(MY_OWN, |m| m.0);
                     let name = match picked_mark {
@@ -1331,10 +1331,10 @@ impl App {
                     });
                     transcription::save_moves(&self.cm_moves);
                     self.cm_mark = None;
-                    self.set_note("KEPT IN MOVES, AND MARKED ON THE SONG");
+                    self.set_note("SAVED TO MOVES AND MARKED ON THE SONG");
                 }
                 if let Some(i) = saved {
-                    if retro_btn(ui, "FORGET THIS MOVE", false).tip("Take it out of your moves.").clicked() {
+                    if retro_btn(ui, "DELETE THIS MOVE", false).tip("Remove it from your moves.").clicked() {
                         if i < self.cm_moves.len() {
                             self.cm_moves.remove(i);
                             transcription::save_moves(&self.cm_moves);
@@ -1343,7 +1343,7 @@ impl App {
                     }
                 } else if let Some(m) = picked_mark {
                     if retro_btn(ui, "REMOVE THIS MOVE", false)
-                        .tip("Stop marking this move on this tune. BRING BACK under MOVES returns it.")
+                        .tip("Stop marking this move on this tune. RESTORE under MOVES brings it back.")
                         .clicked()
                     {
                         // one you kept: forgotten; one Backline spotted: hidden
@@ -2225,7 +2225,7 @@ impl App {
     // ------------------------------------------------------------------ MOVES
 
     fn cm_moves_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Here are the moves you kept from your transcriptions. Click one to see it, play it or hear it in another key. Star the ones to work on. In SONGS, the coloured strips over the bars are moves Backline spots. Click one to keep it.", pal().ink2);
+        para(ui, "Here are the moves you saved from your transcriptions. Click one to see it, play it or hear it in another key. Star the ones to work on. In SONGS, the colored strips over the bars are moves Backline spots. Click one to save it.", pal().ink2);
         let _ = acts;
         // the moves kept
         ui.add_space(8.0);
@@ -2282,7 +2282,7 @@ impl App {
                         open = Some(i);
                     }
                     r.context_menu(|ui| {
-                        if menu_item(ui, "Forget this move") {
+                        if menu_item(ui, "Delete this move") {
                             drop = Some(i);
                             ui.close_menu();
                         }

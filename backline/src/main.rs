@@ -106,12 +106,16 @@ mod macmenu;
 mod melodies;
 #[path = "ui/music_data.rs"]
 mod music_data;
+#[path = "ui/onscreen.rs"]
+mod onscreen;
 #[path = "ui/palette.rs"]
 mod palette;
 #[path = "ui/plan.rs"]
 mod plan;
 #[path = "ui/player_win.rs"]
 mod player_win;
+#[path = "ui/popout.rs"]
+mod popout;
 #[path = "ui/prefs.rs"]
 mod prefs;
 #[path = "ui/reading.rs"]
@@ -716,7 +720,7 @@ fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, S
                 let on = museum.is_some() && worn.map_or(false, |w| &w.0 == md5);
                 ui.horizontal(|ui| {
                     // X takes it off the list
-                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list.").clicked() {
+                    if retro_btn_w(ui, "X", 24.0, false).tip("Remove from this list").clicked() {
                         acts.push(Action::WaForget(md5.clone()));
                     }
                     if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {
@@ -930,7 +934,7 @@ fn loop_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: f32, both: bool, loop
     }
 }
 
-fn app_icon() -> egui::IconData {
+pub(crate) fn app_icon() -> egui::IconData {
     let n = 32usize;
     let mut rgba = vec![0u8; n * n * 4];
     for y in 0..n {
@@ -1355,7 +1359,7 @@ fn heart_clicked() -> bool {
 /// A heart in `r`, clickable (like / unlike).
 pub(crate) fn draw_heart(ui: &egui::Ui, r: Rect, liked: bool, row_hot: bool, id: egui::Id) -> bool {
     let resp = ui.interact(r, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let resp = resp.tip(if liked { "In MY TRACKS. Click to remove it." } else { "Add to MY TRACKS." });
+    let resp = resp.tip(if liked { "Remove from My Tracks" } else { "Add to My Tracks" });
     let col = if liked {
         Color32::from_rgb(235, 70, 90)
     } else if resp.hovered() {
@@ -1664,7 +1668,7 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
         if retro_btn(ui, "ADD TO QUEUE", false).tip("Adds all of these to the end of the queue.").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
-        if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again.").clicked() {
+        if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Reload your library from Tidal.").clicked() {
             acts.push(Action::RefreshLibrary);
         }
     });
@@ -2206,6 +2210,20 @@ fn bio_view(ui: &mut egui::Ui, bits: &[api::BioBit], id: &str, acts: &mut Vec<Ac
     ui.add_space(4.0);
 }
 
+/// The fonts the app's window took last (a window of its own, drawn on another thread, reads in the same ones).
+static FONTS: Mutex<Option<egui::FontDefinitions>> = Mutex::new(None);
+
+/// `fonts` for the app's window (kept for its other windows).
+pub(crate) fn set_fonts(ctx: &egui::Context, fonts: egui::FontDefinitions) {
+    *FONTS.lock().unwrap_or_else(|e| e.into_inner()) = Some(fonts.clone());
+    ctx.set_fonts(fonts);
+}
+
+/// The fonts the app's window took last.
+pub(crate) fn fonts_now() -> egui::FontDefinitions {
+    FONTS.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(|| smooth_fonts(None))
+}
+
 /// The smooth fonts: Chakra Petch (or `main`, e.g. Lexend, in front of it), then the system's fonts for any
 /// character they lack.
 pub(crate) fn smooth_fonts(main: Option<&'static [u8]>) -> egui::FontDefinitions {
@@ -2355,6 +2373,12 @@ struct App {
     vis_cache: Option<(u64, visuals::Frame, f32)>,
     vis_pipes: visuals::Pipes,
     vis_stars: visuals::Stars,
+    /// The visuals in a window of their own (ui/popout.rs), while it is open: what it shares with the app
+    pop: Option<Arc<Mutex<popout::Pop>>>,
+    /// where that window was last (screen pixels: left, top, width, height), and whether it stays on top of other
+    /// windows
+    pop_px: Option<[i32; 4]>,
+    pop_pin: bool,
     spec_op: f32,
     spec_h: f32,
     spec_w: f32,
@@ -3191,7 +3215,7 @@ impl App {
         std::thread::spawn(winamp_ui::warm_fonts);
         // smooth text (the sleek skins, tooltips) in Chakra Petch: retro and techy without being pixel text
         // (SIL Open Font License, see assets/ChakraPetch-OFL.txt)
-        cc.egui_ctx.set_fonts(smooth_fonts(None));
+        set_fonts(&cc.egui_ctx, smooth_fonts(None));
         setup_style(&cc.egui_ctx);
         let api = Api::new();
         let (tx, rx) = channel();
@@ -3271,6 +3295,9 @@ impl App {
             vis_cache: None,
             vis_pipes: Default::default(),
             vis_stars: Default::default(),
+            pop: None,
+            pop_px: None,
+            pop_pin: true,
             spec_op: 0.2,
             spec_h: 0.42,
             spec_w: 0.6,
@@ -3834,6 +3861,11 @@ impl App {
         if let Some(m) = st["vis_idle"].as_u64() {
             app.vis_idle = m as u32;
         }
+        if let Some(a) = st["vis_pop_px"].as_array().filter(|a| a.len() == 4) {
+            let v: Vec<i32> = a.iter().map(|x| x.as_i64().unwrap_or(0) as i32).collect();
+            app.pop_px = Some([v[0], v[1], v[2], v[3]]);
+        }
+        app.pop_pin = st["vis_pop_pin"].as_bool().unwrap_or(true);
         if let Some(b) = st["spec"].as_bool() {
             app.show_spec = b;
         }
@@ -4189,6 +4221,9 @@ impl App {
                 media::spawn(app.tx.clone(), app.ctx.clone());
             }
         }
+        // a song's end is seen at once, even while the window is out of sight and drawn only now and then
+        let wake = app.ctx.clone();
+        player::on_end(move || wake.request_repaint());
         // the queue from last time, ready to play (CONTINUE picks up the song where it was)
         if let Some(l) = app.store.last.clone().filter(|l| !l.queue.is_empty()) {
             for v in &l.queue {
@@ -4324,6 +4359,10 @@ impl App {
                 if let Ok(v) = std::env::var("BACKLINE_VIS") {
                     app.vis_preset = visuals::find(&v);
                     app.vis_np = true;
+                }
+                // (BACKLINE_POP=1: the visuals in their own window too)
+                if std::env::var_os("BACKLINE_POP").is_some() {
+                    app.pop_toggle();
                 }
             }
             // (BACKLINE_SONG=<file>: that song instead of the tour's)
@@ -4513,6 +4552,8 @@ impl App {
             "vis_preset": visuals::save_name(self.vis_preset),
             "vis_np": self.vis_np,
             "vis_idle": self.vis_idle,
+            "vis_pop_px": self.pop_px,
+            "vis_pop_pin": self.pop_pin,
             "tour_seen": self.tour_seen,
             "icon_words": self.icon_names,
             "icon_build": update::build(),
@@ -5400,56 +5441,10 @@ impl App {
         } else {
             (Vec::new(), 44100.0)
         };
-        let n = samples.len();
         // analysed once at the finer of the two bar counts and the higher sensitivity; each view reshapes it
         let nb = self.viz[0].n.max(self.viz[1].n).clamp(8, 96);
         let gain = self.viz[0].gain.max(self.viz[1].gain);
-        if self.bands.len() != nb {
-            self.bands = vec![0.0; nb];
-            self.peaks = vec![0.0; nb];
-        }
-        let mut target = vec![0.0f32; nb];
-        if n >= 512 && rate > 0.0 {
-            let denom = (n - 1) as f32;
-            let xs: Vec<f32> = samples
-                .iter()
-                .enumerate()
-                .map(|(i, v)| v * (0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / denom).cos()))
-                .collect();
-            for i in 0..nb {
-                let f = 50.0 * (12000.0f32 / 50.0).powf(i as f32 / (nb - 1) as f32);
-                if f >= rate / 2.0 {
-                    continue;
-                }
-                let amp = goertzel(&xs, f, rate) * 2.0;
-                let db = 20.0 * (amp + 1e-6).log10();
-                target[i] = ((db + 64.0 + 23.0 * i as f32 / nb as f32) / 54.0 * gain).clamp(0.0, 1.0);
-            }
-        }
-        // waveform: the loudest swing in each slice of the latest samples
-        if self.viz_wave.len() != WAVE_N {
-            self.viz_wave = vec![0.0; WAVE_N];
-        }
-        for k in 0..WAVE_N {
-            let tv = if n >= WAVE_N {
-                let (a, b) = (k * n / WAVE_N, ((k + 1) * n / WAVE_N).max(k * n / WAVE_N + 1));
-                let mut best = 0.0f32;
-                for v in &samples[a..b.min(n)] {
-                    if v.abs() > best.abs() {
-                        best = *v;
-                    }
-                }
-                (best * 1.6 * gain).clamp(-1.0, 1.0)
-            } else {
-                0.0
-            };
-            self.viz_wave[k] = self.viz_wave[k] * 0.45 + tv * 0.55;
-        }
-        for i in 0..nb {
-            let old = self.bands[i];
-            self.bands[i] = if target[i] > old { target[i] } else { (old - 0.06).max(target[i]) };
-            self.peaks[i] = self.bands[i].max(self.peaks[i] - 0.012);
-        }
+        analyse(&mut self.bands, &mut self.peaks, &mut self.viz_wave, &samples, rate, nb, gain);
     }
 
     /// A line's sound: the notes, `gap` seconds apart, over its backing - nothing, the root held, the chord
@@ -5729,10 +5724,10 @@ impl App {
             Action::WaFav(md5, name) => {
                 if self.wa_favs.iter().any(|f| f.0 == md5) {
                     self.wa_favs.retain(|f| f.0 != md5);
-                    self.set_note(&format!("REMOVED FROM FAVOURITES: {}", name.to_uppercase()));
+                    self.set_note(&format!("REMOVED FROM FAVORITES: {}", name.to_uppercase()));
                 } else {
                     self.wa_favs.push((md5, name.clone()));
-                    self.set_note(&format!("FAVOURITE: {}", name.to_uppercase()));
+                    self.set_note(&format!("FAVORITE: {}", name.to_uppercase()));
                 }
                 self.dirty = true;
             }
@@ -6394,10 +6389,27 @@ fn panel_frame() -> egui::Frame {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // a test copy can picture itself (BACKLINE_SHOT=file.png, after BACKLINE_SHOT_AT seconds): for checking layouts
         // when no one is at the screen
         test_shot(ctx);
+        // can anyone see the window? (minimized or covered: the visuals and the redraws while playing stop)
+        onscreen::check(ctx, frame);
+        // (a test copy says how often its main window draws, every few seconds)
+        if hidden_test_copy() {
+            static DRAWN: std::sync::Mutex<(u32, f64)> = std::sync::Mutex::new((0, 0.0));
+            let now = ctx.input(|i| i.time);
+            let mut d = DRAWN.lock().unwrap_or_else(|e| e.into_inner());
+            d.0 += 1;
+            // (BACKLINE_POP_LOG=<seconds>: how often; 5 if not set)
+            let every = std::env::var("BACKLINE_POP_LOG").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(5.0);
+            if now - d.1 >= every {
+                if d.1 > 0.0 {
+                    crate::api::log(&format!("main window: {:.0} frames a second", d.0 as f64 / (now - d.1)));
+                }
+                *d = (0, now);
+            }
+        }
         TOUR_ON.store(self.tour.is_some(), std::sync::atomic::Ordering::Relaxed);
         // ctrl + / - / 0 size the whole app - except over the library, where they zoom the library (done there)
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
@@ -6460,6 +6472,8 @@ impl eframe::App for App {
             }
         }
         self.drain(ctx);
+        // the visuals' own window, while it is open (it draws on a thread of its own)
+        self.pop_frame(ctx);
         let mut acts: Vec<Action> = Vec::new();
 
         // files / folders dropped onto the window
@@ -6557,9 +6571,9 @@ impl eframe::App for App {
         }
         if let (true, Some(end)) = (self.pomo > 0, self.pomo_end) {
             let left = end.saturating_duration_since(Instant::now()).as_secs();
-            title = format!("{}:{:02} {}  |  {}", left / 60, left % 60, if self.pomo == 1 { "FOCUS" } else { "REST" }, title);
+            title = format!("{}:{:02} {}  |  {}", left / 60, left % 60, if self.pomo == 1 { "FOCUS" } else { "BREAK" }, title);
         } else if self.pomo == 3 {
-            title = format!("REST OVER, NEXT FOCUS  |  {}", title);
+            title = format!("BREAK OVER, NEXT FOCUS  |  {}", title);
         }
         if self.pomo_end.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
@@ -7085,14 +7099,22 @@ impl eframe::App for App {
                 }
             }
         }
-        let busy = self.cur.is_some() && !self.stopped && !self.paused;
-        ctx.request_repaint_after(Duration::from_millis(if self.art_view {
+        // (out of sight, a playing song needs no clock or spectrum drawn: the player says when it ends)
+        let seen = onscreen::seen();
+        let busy = self.cur.is_some() && !self.stopped && !self.paused && seen;
+        let wait = Duration::from_millis(if self.art_view && seen {
             16
         } else if busy || self.search_focus || self.band_on || self.mt.on {
             33
         } else {
             250
-        }));
+        });
+        ctx.request_repaint_after(wait);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // the visuals' own window closes first, its thread letting go of its graphics
+        self.pop_shut();
     }
 }
 
@@ -7176,8 +7198,9 @@ fn main() -> eframe::Result<()> {
             .with_taskbar(false);
     } else if hidden_test_copy() {
         // a test copy (a test profile): out of sight, never in front of what you are doing or taking the keyboard
+        // (far to the left of every screen: just to the left of one can be on a second screen there)
         // (BACKLINE_SIZE=WxH: its size, for pictures of a set size)
-        viewport = viewport.with_position([-1700.0, 40.0]).with_active(false).with_taskbar(false);
+        viewport = viewport.with_position([-12000.0, 40.0]).with_active(false).with_taskbar(false);
         let size = std::env::var("BACKLINE_SIZE").ok().and_then(|v| {
             let (w, h) = v.split_once('x')?;
             Some([w.parse::<f32>().ok()?, h.parse::<f32>().ok()?])
@@ -7350,25 +7373,96 @@ pub(crate) fn hidden_test_copy() -> bool {
     std::env::var_os("BACKLINE_HOME").is_some() && std::env::var_os("BACKLINE_SHOW").is_none()
 }
 
+/// The latest samples (`rate` a second) as the visualizers see them: `bands` from 50 Hz to 12 kHz (`nb` of them,
+/// 0..1, up at once and down slowly), their falling `peaks`, and `wave`, the loudest swing in each slice; `gain` is the
+/// sensitivity. No samples (nothing playing): everything settles down.
+pub(crate) fn analyse(
+    bands: &mut Vec<f32>,
+    peaks: &mut Vec<f32>,
+    wave: &mut Vec<f32>,
+    samples: &[f32],
+    rate: f32,
+    nb: usize,
+    gain: f32,
+) {
+    let n = samples.len();
+    if bands.len() != nb {
+        *bands = vec![0.0; nb];
+        *peaks = vec![0.0; nb];
+    }
+    let mut target = vec![0.0f32; nb];
+    if n >= 512 && rate > 0.0 {
+        let denom = (n - 1) as f32;
+        let xs: Vec<f32> = samples
+            .iter()
+            .enumerate()
+            .map(|(i, v)| v * (0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / denom).cos()))
+            .collect();
+        for i in 0..nb {
+            let f = 50.0 * (12000.0f32 / 50.0).powf(i as f32 / (nb - 1) as f32);
+            if f >= rate / 2.0 {
+                continue;
+            }
+            let amp = goertzel(&xs, f, rate) * 2.0;
+            let db = 20.0 * (amp + 1e-6).log10();
+            target[i] = ((db + 64.0 + 23.0 * i as f32 / nb as f32) / 54.0 * gain).clamp(0.0, 1.0);
+        }
+    }
+    // waveform: the loudest swing in each slice of the latest samples
+    if wave.len() != WAVE_N {
+        *wave = vec![0.0; WAVE_N];
+    }
+    for k in 0..WAVE_N {
+        let tv = if n >= WAVE_N {
+            let (a, b) = (k * n / WAVE_N, ((k + 1) * n / WAVE_N).max(k * n / WAVE_N + 1));
+            let mut best = 0.0f32;
+            for v in &samples[a..b.min(n)] {
+                if v.abs() > best.abs() {
+                    best = *v;
+                }
+            }
+            (best * 1.6 * gain).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        wave[k] = wave[k] * 0.45 + tv * 0.55;
+    }
+    for i in 0..nb {
+        let old = bands[i];
+        bands[i] = if target[i] > old { target[i] } else { (old - 0.06).max(target[i]) };
+        peaks[i] = bands[i].max(peaks[i] - 0.012);
+    }
+}
+
 /// BACKLINE_SHOT: once, after BACKLINE_SHOT_AT seconds (8 if not set), the app's own frame saved as a PNG there.
 /// With BACKLINE_SHOTS=n, n frames BACKLINE_SHOT_EVERY seconds apart (name_000.png...), at most 960 wide: a test copy
 /// filming itself (its own window only).
 fn test_shot(ctx: &egui::Context) {
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     static TAKEN: AtomicU32 = AtomicU32::new(0);
     static WAITING: AtomicBool = AtomicBool::new(false);
-    let Ok(path) = std::env::var("BACKLINE_SHOT") else { return };
+    shot(ctx, "BACKLINE_SHOT", &TAKEN, &WAITING);
+}
+
+/// A test copy's pictures of the window `ctx` is drawing, to the file the variable `var` names (as BACKLINE_SHOT),
+/// counted in `taken`.
+pub(crate) fn shot(
+    ctx: &egui::Context,
+    var: &str,
+    taken: &AtomicU32,
+    waiting: &AtomicBool,
+) {
+    let Ok(path) = std::env::var(var) else { return };
     let at: f64 = std::env::var("BACKLINE_SHOT_AT").ok().and_then(|s| s.parse().ok()).unwrap_or(8.0);
     let n: u32 = std::env::var("BACKLINE_SHOTS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
     let every: f64 = std::env::var("BACKLINE_SHOT_EVERY").ok().and_then(|s| s.parse().ok()).unwrap_or(0.1);
-    let k = TAKEN.load(Ordering::Relaxed);
+    let k = taken.load(Ordering::Relaxed);
     if k >= n {
         return;
     }
-    if !WAITING.load(Ordering::Relaxed) {
+    if !waiting.load(Ordering::Relaxed) {
         if ctx.input(|i| i.time) > at + k as f64 * every {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
-            WAITING.store(true, Ordering::Relaxed);
+            waiting.store(true, Ordering::Relaxed);
         }
     } else {
         let shot = ctx.input(|i| {
@@ -7391,8 +7485,8 @@ fn test_shot(ctx: &egui::Context) {
                     let _ = buf.save(&out);
                 }
             });
-            TAKEN.store(k + 1, Ordering::Relaxed);
-            WAITING.store(false, Ordering::Relaxed);
+            taken.store(k + 1, Ordering::Relaxed);
+            waiting.store(false, Ordering::Relaxed);
         }
     }
     ctx.request_repaint();

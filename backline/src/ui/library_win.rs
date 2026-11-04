@@ -147,7 +147,7 @@ impl App {
                         }
                         if let Some(i) = k.checked_sub(EQ_PRESETS.len()) {
                             r.context_menu(|ui| {
-                                if menu_item(ui, "Delete this curve") {
+                                if menu_item(ui, "Delete preset") {
                                     drop = Some(i);
                                     ui.close_menu();
                                 }
@@ -156,7 +156,7 @@ impl App {
                     }
                     // + : save the curve you have
                     let (card, r) = ui.allocate_exact_size(Vec2::new(card_h, card_h), Sense::click());
-                    let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Save this curve as a preset of your own.");
+                    let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Save as preset");
                     inset(ui.painter(), card, if r.hovered() || self.eq_naming { pal().sel } else { pal().lcd });
                     let c = card.center();
                     let st = Stroke::new(2.0_f32, pal().ink);
@@ -168,7 +168,7 @@ impl App {
         });
         if let Some(i) = drop {
             let name = self.eq_mine.remove(i).0;
-            self.set_note(&format!("EQUALIZER CURVE {} DELETED", name));
+            self.set_note(&format!("EQUALIZER PRESET {} DELETED", name));
             self.dirty = true;
         }
         let Some(plus) = plus else { return changed };
@@ -197,7 +197,7 @@ impl App {
             egui::PopupCloseBehavior::CloseOnClickOutside,
             |ui| {
                 ui.set_min_width(260.0);
-                crate::para(ui, "NAME THIS CURVE", pal().ink2);
+                crate::para(ui, "PRESET NAME", pal().ink2);
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(170.0, bh()), Sense::hover());
                     let o = crate::views::field(
@@ -206,7 +206,7 @@ impl App {
                         crate::tools::F_EQ_NAME,
                         &mut self.eq_name,
                         rect,
-                        "My curve",
+                        "My preset",
                         false,
                     );
                     save = o.enter || retro_btn_w(ui, "SAVE", 70.0, false).clicked();
@@ -229,7 +229,7 @@ impl App {
             self.ed.id = 0;
             ui.memory_mut(|m| m.close_popup());
             self.dirty = true;
-            self.set_note(&format!("EQUALIZER CURVE {} SAVED", name));
+            self.set_note(&format!("EQUALIZER PRESET {} SAVED", name));
         }
         changed
     }
@@ -314,7 +314,7 @@ impl App {
                 changed = true;
             }
             if retro_btn_w(ui, "AUTO", 64.0, self.eq_auto)
-                .tip("Remembers the EQ for each song and brings it back when it plays.")
+                .tip("Remembers the EQ for each song and restores it when it plays.")
                 .clicked()
             {
                 self.eq_auto = !self.eq_auto;
@@ -486,7 +486,7 @@ impl App {
                     recent.push(r.clone());
                 }
             }
-            for (g, (title, list, fav)) in [("FAVOURITES", favs, true), ("WORN LATELY", recent, false)].into_iter().enumerate() {
+            for (g, (title, list, fav)) in [("FAVORITES", favs, true), ("RECENT", recent, false)].into_iter().enumerate() {
                 if list.is_empty() {
                     continue;
                 }
@@ -501,7 +501,7 @@ impl App {
                     let on = museum.as_ref().is_some_and(|w| w.0 == md5);
                     ui.horizontal(|ui| {
                         ui.add_space(24.0);
-                        let tip = if fav { "Take it out of your favourites." } else { "Take it off this list." };
+                        let tip = if fav { "Remove from favorites" } else { "Remove from this list" };
                         if retro_btn_w(ui, "X", 24.0, false).tip(tip).clicked() {
                             acts.push(if fav { Action::WaFav(md5.clone(), name.clone()) } else { Action::WaForget(md5.clone()) });
                         }
@@ -530,13 +530,13 @@ impl App {
             title_line(ui, "BACKLINE", 3.0, pal().ink);
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "PREFERENCES", false).tip("Updates, sound output, the opening sound, size and keys.").clicked() {
+                if retro_btn(ui, "PREFERENCES", false).tip("Updates, sound output, startup sound, zoom and shortcuts.").clicked() {
                     acts.push(Action::TogglePrefs);
                 }
-                if retro_btn(ui, "WHAT'S NEW", false).tip("What changed in this version and the few before it.").clicked() {
+                if retro_btn(ui, "WHAT'S NEW", false).tip("Changes in this version and recent ones.").clicked() {
                     acts.push(Action::News);
                 }
-                if retro_btn(ui, "HELP AND TOURS", false).tip("Every key and tip, and the guided tours  (F1)").clicked() {
+                if retro_btn(ui, "HELP AND TOURS", false).tip("Help and tours  (F1)").clicked() {
                     acts.push(Action::ToggleHelp);
                 }
             });
@@ -569,7 +569,7 @@ impl App {
         ui.add_space(6.0);
         title_line(ui, "RECENT", 3.0, pal().ink);
         // played here, by day
-        section_header(ui, "PLAYED IN BACKLINE");
+        section_header(ui, "RECENTLY PLAYED");
         if self.store.recent.is_empty() {
             dim_line(ui, "NOTHING YET. SONGS SHOW UP HERE AS YOU PLAY THEM", 1.0, pal().dim);
         }
@@ -615,7 +615,7 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     // your favourites: kept for good, until you take them off
                     if !favs.is_empty() {
-                        let fd = retro_btn(ui, "FAVOURITES  v", true).tip("Your favourite skins.");
+                        let fd = retro_btn(ui, "FAVORITES  v", true).tip("Your favorite skins.");
                         let fmenu = ui.id().with("wa_favs");
                         if fd.clicked() {
                             ui.memory_mut(|m| m.toggle_popup(fmenu));
@@ -625,7 +625,7 @@ impl App {
                             ui.set_min_width(260.0);
                             for (md5, name) in favs.clone() {
                                 ui.horizontal(|ui| {
-                                    if retro_btn_w(ui, "X", 24.0, false).tip("Take it out of your favourites.").clicked() {
+                                    if retro_btn_w(ui, "X", 24.0, false).tip("Remove from favorites").clicked() {
                                         acts.push(Action::WaFav(md5.clone(), name.clone()));
                                     }
                                     let on = worn_now.as_deref() == Some(md5.as_str());
@@ -645,7 +645,7 @@ impl App {
                     if self.wa_recent.is_empty() {
                         return;
                     }
-                    let dd = retro_btn(ui, "WORN LATELY  v", true).tip("Skins you wore lately.");
+                    let dd = retro_btn(ui, "RECENT  v", true).tip("Recently used skins.");
                     let menu = ui.id().with("worn_lately");
                     if dd.clicked() {
                         ui.memory_mut(|m| m.toggle_popup(menu));
@@ -655,7 +655,7 @@ impl App {
                         ui.set_min_width(260.0);
                         for (md5, name) in self.wa_recent.clone() {
                             ui.horizontal(|ui| {
-                                if retro_btn_w(ui, "X", 24.0, false).tip("Take it off this list.").clicked() {
+                                if retro_btn_w(ui, "X", 24.0, false).tip("Remove from this list").clicked() {
                                     acts.push(Action::WaForget(md5.clone()));
                                 }
                                 let on = worn_now.as_deref() == Some(md5.as_str());
@@ -674,20 +674,20 @@ impl App {
                 });
             }
         }
-        para(ui, "From the Winamp Skin Museum. Click one to wear it. The back arrow takes you back.", pal().ink2);
+        para(ui, "From the Winamp Skin Museum. Click a skin to apply it. Use the back arrow to go back.", pal().ink2);
         if let Some((md5, name)) = self.wa_worn.clone().filter(|w| !w.0.starts_with("gen:")) {
             ui.horizontal(|ui| {
-                para(ui, &format!("WEARING: {}", name.to_uppercase()), pal().ink);
+                para(ui, &format!("CURRENT: {}", name.to_uppercase()), pal().ink);
                 let fav = self.wa_favs.iter().any(|f| f.0 == md5);
-                if retro_btn(ui, if fav { "* FAVOURITE" } else { "+ FAVOURITE" }, fav)
-                    .tip(if fav { "In your favourites. Click to take it out." } else { "Keep this skin in your favourites." })
+                if retro_btn(ui, if fav { "* FAVORITE" } else { "+ FAVORITE" }, fav)
+                    .tip(if fav { "In your favorites. Click to remove." } else { "Add to favorites" })
                     .clicked()
                 {
                     acts.push(Action::WaFav(md5.clone(), name.clone()));
                 }
             });
         } else if let Some((_, name)) = &self.wa_worn {
-            para(ui, &format!("WEARING: {}", name.to_uppercase()), pal().ink);
+            para(ui, &format!("CURRENT: {}", name.to_uppercase()), pal().ink);
         }
         ui.horizontal_wrapped(|ui| {
             let go_w = 54.0;
@@ -707,7 +707,7 @@ impl App {
             if o.enter || retro_btn_w(ui, "GO", go_w, false).clicked() {
                 acts.push(Action::WaSearch);
             }
-            if retro_btn_w(ui, "BEST", 70.0, false).tip("The museum's favourites.").clicked() {
+            if retro_btn_w(ui, "BEST", 70.0, false).tip("The museum's favorites.").clicked() {
                 self.wa_q.clear();
                 acts.push(Action::WaSearch);
             }
@@ -728,10 +728,10 @@ impl App {
                         let (cell, r) = ui.allocate_exact_size(Vec2::new(cw, ch + 22.0), Sense::click());
                         let r = r
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .tip(format!("{}. Click to wear it, right-click to make it a favourite.", s.name));
+                            .tip(format!("{}. Click to apply, right-click to add to favorites.", s.name));
                         let fav = self.wa_favs.iter().any(|f| f.0 == s.md5);
                         r.context_menu(|ui| {
-                            if menu_item(ui, if fav { "Remove from favourites" } else { "Add to favourites" }) {
+                            if menu_item(ui, if fav { "Remove from favorites" } else { "Add to favorites" }) {
                                 acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
                                 ui.close_menu();
                             }
@@ -838,11 +838,11 @@ impl App {
         }
         // what the player's chips do, for a skin's deck (it has none)
         if self.wa_art.is_some() && !self.mini {
-            if menu_item(ui, "Now Playing (the song big)") {
+            if menu_item(ui, "Now Playing") {
                 acts.push(Action::ToggleArt);
             }
             if PRACTICE
-                && menu_item(ui, if self.practice { "Just listen (practice tools off)" } else { "Practice (loop, slow down)" })
+                && menu_item(ui, if self.practice { "Listen (practice tools off)" } else { "Practice (loop, slow down)" })
             {
                 acts.push(Action::TogglePractice);
             }
@@ -859,13 +859,13 @@ impl App {
         if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline (only what's on this computer)" }) {
             acts.push(Action::GoOffline(!self.go_offline));
         }
-        if menu_item(ui, if self.pinned { "Keep on top  (on)" } else { "Keep on top" }) {
+        if menu_item(ui, if self.pinned { "Always on top  (on)" } else { "Always on top" }) {
             acts.push(Action::TogglePin);
         }
-        if menu_item(ui, if self.mini { "Back to the full window" } else { "Mini player" }) {
+        if menu_item(ui, if self.mini { "Exit mini player" } else { "Mini player" }) {
             acts.push(Action::ToggleMini);
         }
-        if menu_item(ui, if self.fullscreen { "Leave full screen  (F11)" } else { "Full screen  (F11)" }) {
+        if menu_item(ui, if self.fullscreen { "Exit full screen  (F11)" } else { "Full screen  (F11)" }) {
             acts.push(Action::ToggleFullscreen);
         }
         if menu_item(ui, "Preferences") {
@@ -874,7 +874,7 @@ impl App {
         if menu_item(ui, "Help and tours  (F1)") {
             acts.push(Action::ToggleHelp);
         }
-        if menu_item(ui, if self.show_cache { "Where tracks are stored  (close)" } else { "Where tracks are stored" }) {
+        if menu_item(ui, if self.show_cache { "Storage  (close)" } else { "Storage" }) {
             acts.push(Action::ToggleCacheView);
         }
         if menu_item(ui, if self.show_log { "Log  (close)" } else { "Log" }) {
@@ -907,7 +907,7 @@ impl App {
         let resp = ui
             .interact(bar, id, Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Now Playing: the song big  (A)");
+            .tip("Now Playing  (A)");
         let p = ui.painter().clone();
         inset(&p, bar, pal().lcd);
         if resp.hovered() {
@@ -931,7 +931,7 @@ impl App {
         let rep = match self.repeat {
             crate::Repeat::Off => "Repeat: off",
             crate::Repeat::All => "Repeat: all",
-            crate::Repeat::One => "Repeat: this song",
+            crate::Repeat::One => "Repeat: one",
         };
         let rep_on = !matches!(self.repeat, crate::Repeat::Off);
         let rep_one = matches!(self.repeat, crate::Repeat::One);
@@ -1185,7 +1185,7 @@ impl App {
                 .interact(cell, ui.id().with(("mode", k)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .tip(if k == 0 {
-                    "Just listening: no loop, no slowing down."
+                    "Listen: no loop, no slow-down."
                 } else {
                     "Practice: loop, slow down, the band and your tools.  (P)"
                 });
@@ -1238,8 +1238,8 @@ impl App {
             items.push(("focus", self.focus_mode, "Focus: just the player, your tools and the chart.".into(), 2));
         }
         items.push(("mini", false, "Mini player.".into(), 4));
-        items.push(("pin", self.pinned, "Keep this window on top.".into(), 5));
-        items.push(("guide", self.wa_guide, "Outline and name each of this skin's buttons.".into(), 6));
+        items.push(("pin", self.pinned, "Always on top".into(), 5));
+        items.push(("guide", self.wa_guide, "Label this skin's buttons.".into(), 6));
         let d = 26.0 * font::ui_scale();
         let names = self.icon_names;
         // the icons spread evenly across the list's width (with names: a word under each)
@@ -1465,7 +1465,7 @@ impl App {
                         Sec::Tidal if self.offline => {
                             ui.add_space(10.0);
                             title_line(ui, "TIDAL", 3.0, pal().ink);
-                            para(ui, "You are using Backline without Tidal. Your files, YouTube, SoundCloud and every practice tool still work. Log in to search and play Tidal's catalogue, with your liked songs, playlists and artists.", pal().ink2);
+                            para(ui, "You are using Backline without Tidal. Your files, YouTube, SoundCloud and every practice tool still work. Log in to search and play Tidal's catalog, with your liked songs, playlists and artists.", pal().ink2);
                             if retro_btn(ui, "LOG IN WITH TIDAL", false).clicked() {
                                 acts.push(Action::Offline(false));
                                 acts.push(Action::StartLogin);
@@ -1503,7 +1503,7 @@ impl App {
                                         );
                                         if o.enter
                                             || retro_btn(ui, "+ NEW PLAYLIST", false)
-                                                .tip("Makes it on your Tidal account: name it, give it a picture.")
+                                                .tip("Create a playlist on Tidal")
                                                 .clicked()
                                         {
                                             let name = std::mem::take(&mut self.tidal_new_name).trim().to_string();

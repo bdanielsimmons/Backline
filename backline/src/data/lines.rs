@@ -87,7 +87,7 @@ pub fn add_book(from: &std::path::Path) -> Result<usize, String> {
     let text: &'static str = Box::leak(text.into_boxed_str());
     let lines = parse_book(text);
     if lines.is_empty() {
-        return Err("that file has no patterns in it".into());
+        return Err("no patterns found".into());
     }
     let _ = std::fs::create_dir_all(crate::api::config_dir());
     std::fs::write(book_path(), text).map_err(|e| e.to_string())?;
@@ -292,7 +292,7 @@ pub const SCALE_PATTERNS: [(&str, &str); 11] = [
     ("GROUPS OF 3", "Three notes up from each degree: 1 2 3, 2 3 4, 3 4 5..."),
     ("GROUPS OF 4", "Four notes up from each degree: 1 2 3 4, 2 3 4 5..."),
     ("TRIADS", "The triad on each degree, arpeggiated: 1 3 5, 2 4 6..."),
-    ("COLTRANE 1 2 3 5", "Coltrane's cell from each degree of the scale: 1 2 3 5, 2 3 4 6... - over a minor scale it comes out 1 2 b3 5. Then run it through a tune, one cell a chord"),
+    ("COLTRANE 1 2 3 5", "Coltrane's cell from each degree of the scale: 1 2 3 5, 2 3 4 6... - over a minor scale it comes out 1 2 b3 5. Then run it through a tune, one cell per chord"),
     ("COLTRANE 5 3 2 1", "The same cell turned around, from the top: 5 3 2 1, 6 4 3 2..."),
     ("COLTRANE 1 3 4 5", "The cell players use on minor chords (1 b3 4 5 over minor), from each degree: 1 3 4 5, 2 4 5 6..."),
 ];

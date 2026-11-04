@@ -915,7 +915,7 @@ impl Api {
         let v: Value = r.json().map_err(e2s)?;
         match v["uuid"].as_str() {
             Some(u) if st.is_success() => Ok(u.to_string()),
-            _ => Err(format!("{}: could not make the playlist", st.as_u16())),
+            _ => Err(format!("{}: could not create the playlist", st.as_u16())),
         }
     }
 

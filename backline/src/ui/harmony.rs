@@ -430,7 +430,7 @@ impl App {
         }
         neck_view(ui, &dots, lit);
         ui.horizontal_wrapped(|ui| {
-            for (name, col) in [("CHORD NOTE", pal().ink), ("COLOUR NOTE", blue), ("REST OF THE SCALE", pal().dim)] {
+            for (name, col) in [("CHORD NOTE", pal().ink), ("COLOR NOTE", blue), ("REST OF THE SCALE", pal().dim)] {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::hover());
                 ui.painter().rect_filled(r, 1.0, col);
                 crate::views::label(ui, name, 0.0);
@@ -459,7 +459,7 @@ impl App {
             let mut drop: Option<usize> = None;
             for (i, d) in self.hm_vamp.iter().enumerate() {
                 let d = (*d as usize).min(6);
-                if retro_btn(ui, &format!("{}  X", chords[d].3), false).tip("Take it out").clicked() {
+                if retro_btn(ui, &format!("{}  X", chords[d].3), false).tip("Remove").clicked() {
                     drop = Some(i);
                 }
             }

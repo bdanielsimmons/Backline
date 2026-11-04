@@ -296,7 +296,8 @@ impl App {
             ui.set_width(cw);
             ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
             let (nr, _) = ui.allocate_exact_size(Vec2::new(cw, 24.0), Sense::hover());
-            ptext(ui.painter(), nr.center(), Align::Center, &font::fit(name, 2.0, cw - 12.0), 2.0, pal().ink);
+            // (a long name gets smaller before it is cut short)
+            ptext_fit(ui.painter(), nr.center(), Align::Center, name, 2.0, cw - 12.0, pal().ink);
             let (br, b) = ui.allocate_exact_size(Vec2::new(cw, 144.0), Sense::click());
             let box_r = Rect::from_center_size(br.center(), Vec2::new(122.0_f32.min(cw - 16.0), 140.0));
             chord_box_coloured(ui.painter(), box_r, grip, &|m| {
@@ -317,14 +318,14 @@ impl App {
                 if retro_btn_w(ui, "HEAR", bw, false).clicked() {
                     acts.push(Action::PlayNotes(notes.clone()));
                 }
-                let tip = if saved.is_some() { "In MY CHORDS. Click to take it out." } else { "Keep it in MY CHORDS" };
+                let tip = if saved.is_some() { "Saved to MY CHORDS. Click to remove." } else { "Save to MY CHORDS" };
                 if !remove
                     && retro_btn_w(ui, if saved.is_some() { "SAVED" } else { "SAVE" }, bw, saved.is_some()).tip(tip).clicked()
                 {
                     match saved {
                         Some(i) => {
                             self.store.my_chords.remove(i);
-                            self.set_note("TAKEN OUT OF MY CHORDS");
+                            self.set_note("REMOVED FROM MY CHORDS");
                         }
                         None => {
                             self.store.my_chords.push(crate::store::MyChord { name: name.to_string(), grip: *grip });
@@ -333,10 +334,10 @@ impl App {
                     }
                     self.store_dirty = true;
                 }
-                if edit && retro_btn_w(ui, "EDIT", bw, false).tip("Put it on the neck in BUILD to change it").clicked() {
+                if edit && retro_btn_w(ui, "EDIT", bw, false).tip("Edit it on the neck in BUILD").clicked() {
                     out = CardAct::Edit;
                 }
-                if remove && retro_btn_w(ui, "X", bw, false).tip("Take it out of MY CHORDS").clicked() {
+                if remove && retro_btn_w(ui, "X", bw, false).tip("Remove from MY CHORDS").clicked() {
                     out = CardAct::Remove;
                 }
             });
@@ -512,7 +513,7 @@ impl App {
             para(
                 ui,
                 &format!(
-                    "No scale holds {} and {} over {}. As the {} and {} of a chord on {}, they rub against it rather than colour it. You can still play it as a passing sound, but no chord name fits.",
+                    "No scale holds {} and {} over {}. As the {} and {} of a chord on {}, they rub against it rather than color it. You can still play it as a passing sound, but no chord name fits.",
                     n(pair[0]),
                     n(pair[1]),
                     n(bass),
@@ -530,7 +531,7 @@ impl App {
 
     /// SCALES: a parent scale written out with its clusters named, then one mode at a time with its grips.
     fn cl_scales(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Every scale has notes a step apart: those pairs are its clusters. All seven modes share the same pairs, so the same two notes colour seven different chords, one on each mode's root. Pick a scale, then a mode.", pal().ink2);
+        para(ui, "Every scale has notes a step apart: those pairs are its clusters. All seven modes share the same pairs, so the same two notes color seven different chords, one on each mode's root. Pick a scale, then a mode.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
         let parents: Vec<String> = theory::PARENT_MODES.iter().map(|p| p.0.to_uppercase()).collect();
@@ -810,7 +811,7 @@ impl App {
     /// BUILD: lay a voicing down on the neck. It is named, its clusters coloured, written out, and can be kept.
     /// Below, a start: pick a cluster shape (semitone and tone steps) and a bass, and take one of its grips to the neck.
     fn cl_build(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Build your own cluster voicing on the neck. Click a fret to place a note; left of the nut is the open string, and a second click lifts it. Notes a step apart light up: red for a semitone, blue for a tone. Save the ones you like to MY CHORDS.", pal().ink2);
+        para(ui, "Build your own cluster voicing on the neck. Click a fret to place a note; left of the nut is the open string, and a second click removes it. Notes a step apart light up: red for a semitone, blue for a tone. Save the ones you like to MY CHORDS.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         let notes = grip_notes(&self.cb_frets);
         let pcs: Vec<i32> = notes.iter().map(|m| m.rem_euclid(12)).collect();
@@ -844,7 +845,7 @@ impl App {
             ui.add_space(12.0);
             crate::views::label(ui, "NAME", 50.0);
             let (r, _) = ui.allocate_exact_size(Vec2::new(200.0, bh()), Sense::hover());
-            let hint = if name.is_empty() { "your name for it" } else { name.as_str() };
+            let hint = if name.is_empty() { "chord name" } else { name.as_str() };
             let _ = field(ui, &mut self.ed, crate::tools::F_CB_NAME, &mut self.cb_name, r, hint, false);
             let saved = self.store.my_chords.iter().any(|c| c.grip == self.cb_frets);
             if retro_btn(ui, if saved { "SAVED" } else { "SAVE TO MY CHORDS" }, saved).clicked() && notes.len() >= 2 && !saved {
@@ -881,7 +882,7 @@ impl App {
                     crate::views::label(
                         ui,
                         &if pairs.is_empty() {
-                            "NO CLUSTER YET: PUT TWO NOTES A STEP APART ON NEIGHBOURING STRINGS".to_string()
+                            "NO CLUSTER YET: PUT TWO NOTES A STEP APART ON NEIGHBORING STRINGS".to_string()
                         } else {
                             format!("CLUSTERS: {}", pairs.join("   "))
                         },
@@ -914,8 +915,8 @@ impl App {
         }
 
         // ---- a start: a cluster shape over a bass, and its grips
-        section_header(ui, "NEED A START? PICK A SHAPE");
-        para(ui, "A cluster is notes stacked a step apart. H is a semitone (bite), W a tone (air). Pick how many notes, the steps, the starting note and the bass. Then take a grip to the neck with EDIT.", pal().ink2);
+        section_header(ui, "START FROM A SHAPE");
+        para(ui, "A cluster is notes stacked a step apart. H is a semitone (bite), W a tone (air). Pick how many notes, the steps, the starting note and the bass. Then press EDIT on a grip to place it on the neck.", pal().ink2);
         let size = self.cb_size.clamp(2, 5) as usize;
         ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, "NOTES", 150.0);
@@ -1008,7 +1009,7 @@ impl App {
         }
         let seq: Vec<Vec<i32>> = self.store.my_chords.iter().map(|c| grip_notes(&c.grip)).collect();
         ui.horizontal_wrapped(|ui| {
-            self.seq_button(ui, acts, "PLAY THEM ALL", "Each one in turn", "mine", || seq.clone(), 0.9);
+            self.seq_button(ui, acts, "PLAY ALL", "Each one in turn", "mine", || seq.clone(), 0.9);
             ui.add_space(10.0);
             crate::views::label(ui, &format!("{} SAVED", self.store.my_chords.len()), 100.0);
         });

@@ -101,7 +101,7 @@ impl App {
             ("LIBRARY", 82.0, Cmd::ModeLibrary, "Library, player and queue side by side"),
             ("PLAYER", 74.0, Cmd::ModePlayer, "The player and the queue"),
             ("ALBUM", 68.0, Cmd::ModeAlbum, "Big cover, lyrics and the visualizer"),
-            ("MINI", 56.0, Cmd::ModeMini, "A small player window that stays handy"),
+            ("MINI", 56.0, Cmd::ModeMini, "A small player window"),
         ];
         ui.horizontal_wrapped(|ui| {
             for (i, (name, w, cmd, tip)) in tips.iter().enumerate() {
@@ -294,7 +294,7 @@ impl App {
                     crate::inset(ui.painter(), r, pal().lcd);
                     let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
                     let shown = if self.palette_q.is_empty() {
-                        "TYPE WHAT YOU WANT TO DO...".to_string()
+                        "TYPE A COMMAND...".to_string()
                     } else {
                         format!("{}{}", self.palette_q.to_uppercase(), if blink { "_" } else { "" })
                     };
@@ -362,7 +362,7 @@ impl App {
                         }
                     }
                     ui.add_space(4.0);
-                    crate::para(ui, "ENTER runs it, UP and DOWN choose, ESC closes.", pal().ink2);
+                    crate::para(ui, "ENTER to run, UP and DOWN to choose, ESC to close.", pal().ink2);
                 });
             });
         if let Some(id) = run.or(clicked) {

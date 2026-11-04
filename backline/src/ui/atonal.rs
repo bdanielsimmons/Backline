@@ -200,7 +200,7 @@ fn fact(ui: &mut egui::Ui, name: &str, text: &str, col: Color32) {
 
 impl App {
     pub(crate) fn atonal(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Lines that belong to no key, the way Dennis Sandole taught them. YOUR LINES are the ones copied from your own lesson pages; GENERATED LINES are made fresh from his rules: alternate triads from a scale, two tetrachords joined into a synthetic scale, interval cycles. Under every line: its intervals, the cells it is made of, the scales that hold it and its syllables.", pal().ink2);
+        para(ui, "Atonal lines, as Dennis Sandole taught them. YOUR LINES are copied from your own lesson pages; GENERATED LINES are built from his rules: alternate triads from a scale, two tetrachords joined into a synthetic scale, interval cycles. Under each line: its intervals, its cells, the scales that contain it and its syllables.", pal().ink2);
         if let Some(i) =
             crate::choice_line(ui, "at_view", "LINES", &["YOUR LINES", "GENERATED LINES"], self.at.view as usize, 220.0)
         {
@@ -241,7 +241,7 @@ impl App {
         {
             self.at.msg = match save(&f) {
                 Ok(()) => String::new(),
-                Err(e) => format!("Couldn't keep the lines: {}", e),
+                Err(e) => format!("Couldn't save the lines: {}", e),
             };
             self.at.file = Some(f);
             self.at.line = 0;
@@ -366,14 +366,14 @@ impl App {
             }
             ui.add_space(6.0);
             if note.unsure
-                && retro_btn(ui, "IT'S RIGHT", false).tip("Keep the note as it is and take off its unsure mark.").clicked()
+                && retro_btn(ui, "CONFIRM", false).tip("Keep the note and clear its unsure mark.").clicked()
             {
                 sure = true;
             }
-            if retro_btn(ui, "DELETE", false).tip("Take this note out of the line.").clicked() {
+            if retro_btn(ui, "DELETE", false).tip("Remove this note from the line.").clicked() {
                 delete = true;
             }
-            if retro_btn(ui, "ADD A NOTE", false).tip("Put a copy of this note after it, to move where it belongs.").clicked() {
+            if retro_btn(ui, "ADD A NOTE", false).tip("Insert a copy of this note after it, then move it into place.").clicked() {
                 add = true;
             }
             if retro_btn(ui, "DONE", false).clicked() {
@@ -492,7 +492,7 @@ impl App {
                 let ci = (self.at.cycle as usize).min(CYCLES.len() - 1);
                 (
                     interval_cycle(root, CYCLES[ci].1),
-                    format!("ROUND THE CYCLE OF {} TILL IT COMES HOME, THEN AGAIN A HALF STEP UP, THE OTHER WAY", CYCLES[ci].0),
+                    format!("AROUND THE CYCLE OF {} BACK TO THE START, THEN AGAIN A HALF STEP UP, REVERSED", CYCLES[ci].0),
                     format!("atonal:cycle:{}:{}", root, ci),
                 )
             }
@@ -546,7 +546,7 @@ impl App {
         let n_moved = moved.iter().filter(|m| **m).count();
         let mut about = format!("POSITION {}: FINGER 1 ON FRET {}", pos, pos);
         if n_moved > 0 {
-            about.push_str(&format!("  -  {} NOTE{} AN OCTAVE OVER (RINGED)", n_moved, if n_moved == 1 { "" } else { "S" }));
+            about.push_str(&format!("  -  {} NOTE{} MOVED AN OCTAVE (CIRCLED)", n_moved, if n_moved == 1 { "" } else { "S" }));
         }
         crate::views::dim_line(ui, &about, 1.0, pal().ink2);
         let mut dots: Vec<crate::improv::NeckDot> = Vec::new();
@@ -602,7 +602,7 @@ impl App {
             .collect();
         let more = holding.len().saturating_sub(12);
         let held_text = if held.is_empty() {
-            "None of the app's scales holds every note.".to_string()
+            "No scale in the app contains every note.".to_string()
         } else if more > 0 {
             format!("{},  AND {} MORE", held.join(",  "), more)
         } else {

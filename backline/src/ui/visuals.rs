@@ -1,6 +1,6 @@
 //! Visuals: MilkDrop / Windows Media Player style pictures that move to the music, drawn on the graphics card, and
 //! two old Windows screensavers (3D Pipes, Starfield) drawn by egui. Shown full screen, behind Now Playing, in the
-//! deck's little visualizer, and as a screensaver when you step away.
+//! deck's little visualizer, in a window of their own (ui/popout.rs), and as a screensaver when you step away.
 //!
 //! The feedback trick (most presets): every frame takes the last one, warps it a little (zoom, spin, swirl), fades
 //! it, and draws the music on top. Each spot that shows visuals has its own pair of pictures to do that with.
@@ -751,7 +751,8 @@ impl Gl {
     }
 }
 
-/// Draw a GPU preset into `rect` (slot: 0 full screen, 1 Now Playing, 2 the deck, 3 the deck's playlist bar).
+/// Draw a GPU preset into `rect` (slot: 0 full screen, 1 Now Playing, 2 the deck, 3 the deck's playlist bar, 4 the
+/// visuals' own window).
 pub(crate) fn paint_gpu(
     p: &egui::Painter,
     rect: Rect,
@@ -791,6 +792,68 @@ fn paint_wave(p: &egui::Painter, rect: Rect, slot: u8, f: Frame, t: f64, state: 
         }
     });
     p.add(egui::PaintCallback { rect, callback: Arc::new(cb) });
+}
+
+/// `preset` in `r`, into the slot's own pictures (as `paint_gpu`); `hear` says what the 3D worlds hear, asked only by
+/// them.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_preset(
+    p: &egui::Painter,
+    r: Rect,
+    slot: u8,
+    preset: usize,
+    f: Frame,
+    dt: f32,
+    t: f64,
+    gl: &Arc<Mutex<Gl>>,
+    pipes: &mut Pipes,
+    stars: &mut Stars,
+    hear: impl FnOnce(World, Option<usize>) -> crate::terrain::Input,
+) {
+    match PRESETS[preset].kind {
+        Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(p, r, slot, preset, f, gl, None),
+        Kind::Terrain(world, look) => paint_gpu(p, r, slot, preset, f, gl, Some(Arc::new(hear(world, look)))),
+        Kind::Wave => paint_wave(p, r, slot, f, t, gl),
+        Kind::Pipes => pipes.draw(p, r, dt, f.bass),
+        Kind::Stars => stars.draw(p, r, dt, f.bass),
+    }
+}
+
+/// What the 3D worlds hear and see at time `t`: the player's latest samples, the song as it plays (for reading it
+/// ahead of what is heard), and `song`, a number that changes with it.
+pub(crate) fn hear(
+    viz: &Mutex<crate::player::Viz>,
+    ctl: &crate::player::Ctl,
+    song: u64,
+    t: f64,
+    world: World,
+    theme: Option<usize>,
+) -> crate::terrain::Input {
+    let (samples, first, rate, file) = match viz.lock() {
+        Ok(v) => (v.samples.clone(), v.first.clone(), v.rate as f32, v.song.clone()),
+        Err(_) => (Vec::new(), Vec::new(), 44100.0, None),
+    };
+    let music = file.map(|file| crate::terrain::Music { file, at: ctl.pos() as f64, speed: ctl.speed(), ab: ctl.ab() });
+    // (test switches BACKLINE_3D_LOOK=<n>: that look of the world; BACKLINE_3D_EVERY=<seconds>: a new phase that
+    // often, as if the song changed)
+    let theme = theme.or_else(|| std::env::var("BACKLINE_3D_LOOK").ok().and_then(|v| v.parse().ok()));
+    let song = match std::env::var("BACKLINE_3D_EVERY").ok().and_then(|v| v.parse::<f64>().ok()) {
+        Some(s) if s > 0.0 => song.wrapping_add((t / s) as u64),
+        _ => song,
+    };
+    crate::terrain::Input { t, samples, first, rate, song, world, theme, music }
+}
+
+/// A preset as "Group: Name" (a random one also says what it is showing at time `t`).
+pub(crate) fn name_of(i: usize, t: f32) -> String {
+    let p = &PRESETS[i];
+    let group = group_title(p.group);
+    let mut name = if p.group == p.name { p.name.to_string() } else { format!("{}: {}", group, p.name) };
+    let shown = resolve(i, t);
+    if shown != i {
+        name = format!("{}  (now {})", name, PRESETS[shown].name);
+    }
+    name
 }
 
 // ------------------------------------------------------------------------------------------------ the screensavers
@@ -1084,51 +1147,24 @@ impl App {
 
     /// The chosen visuals in `r` (slot: 0 full screen, 1 Now Playing, 2 the deck, 3 the playlist bar's).
     pub(crate) fn vis_paint(&mut self, ui: &egui::Ui, r: Rect, slot: u8) {
+        // (no one can see the window: nothing is worked out or drawn, and nothing asks to be drawn again)
+        if !crate::onscreen::seen() {
+            return;
+        }
         let (f, dt) = self.vis_frame(ui.ctx());
         let preset = resolve(self.vis_preset.min(PRESETS.len() - 1), f.t);
         let p = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
-        match PRESETS[preset].kind {
-            Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(&p, r, slot, preset, f, &self.vis_gl, None),
-            Kind::Terrain(world, look) => {
-                let inp = self.terrain_input(ui.ctx(), world, look);
-                paint_gpu(&p, r, slot, preset, f, &self.vis_gl, Some(Arc::new(inp)))
-            }
-            Kind::Wave => paint_wave(&p, r, slot, f, ui.ctx().input(|i| i.time), &self.vis_gl),
-            Kind::Pipes => self.vis_pipes.draw(&p, r, dt, f.bass),
-            Kind::Stars => self.vis_stars.draw(&p, r, dt, f.bass),
-        }
-        ui.ctx().request_repaint();
-    }
-
-    /// What the terrain hears and sees this frame.
-    fn terrain_input(&self, ctx: &egui::Context, world: World, theme: Option<usize>) -> crate::terrain::Input {
-        let (samples, first, rate, file) = match self.player.viz.lock() {
-            Ok(v) => (v.samples.clone(), v.first.clone(), v.rate as f32, v.song.clone()),
-            Err(_) => (Vec::new(), Vec::new(), 44100.0, None),
-        };
-        let ctl = &self.player.ctl;
-        let music = file.map(|file| crate::terrain::Music { file, at: ctl.pos() as f64, speed: ctl.speed(), ab: ctl.ab() });
+        let t = ui.ctx().input(|i| i.time);
         let song = self.cur_track().map_or(0, |t| t.id as u64);
-        // (test switches BACKLINE_3D_LOOK=<n>: that look of the world; BACKLINE_3D_EVERY=<seconds>: a new phase that
-        // often, as if the song changed)
-        let theme = theme.or_else(|| std::env::var("BACKLINE_3D_LOOK").ok().and_then(|v| v.parse().ok()));
-        let song = match std::env::var("BACKLINE_3D_EVERY").ok().and_then(|v| v.parse::<f64>().ok()) {
-            Some(s) if s > 0.0 => song.wrapping_add((ctx.input(|i| i.time) / s) as u64),
-            _ => song,
-        };
-        crate::terrain::Input { t: ctx.input(|i| i.time), samples, first, rate, song, world, theme, music }
+        let (viz, ctl) = (&self.player.viz, &self.player.ctl);
+        let (pipes, stars) = (&mut self.vis_pipes, &mut self.vis_stars);
+        paint_preset(&p, r, slot, preset, f, dt, t, &self.vis_gl, pipes, stars, |world, look| hear(viz, ctl, song, t, world, look));
+        ui.ctx().request_repaint();
     }
 
     /// What the visuals are set to, as "Group: Name" (a random one also says what it is showing now).
     pub(crate) fn vis_name(&self) -> String {
-        let p = &PRESETS[self.vis_preset];
-        let group = group_title(p.group);
-        let mut name = if p.group == p.name { p.name.to_string() } else { format!("{}: {}", group, p.name) };
-        let shown = resolve(self.vis_preset, self.vis_cache.map_or(0.0, |c| c.1.t));
-        if shown != self.vis_preset {
-            name = format!("{}  (now {})", name, PRESETS[shown].name);
-        }
-        name
+        name_of(self.vis_preset, self.vis_cache.map_or(0.0, |c| c.1.t))
     }
 
     pub(crate) fn vis_menu(&mut self, ui: &mut egui::Ui) {
@@ -1166,7 +1202,12 @@ impl App {
             self.vis_set_full(!self.vis_full, false);
             ui.close_menu();
         }
-        crate::views::dim_line(ui, "SCREENSAVER (NOT WHILE PRACTISING)", 1.0, crate::pal().ink2);
+        let mark = if self.pop.is_some() { "* " } else { "  " };
+        if crate::popout::CAN && crate::menu_item(ui, &format!("{}Pop out", mark)) {
+            self.pop_toggle();
+            ui.close_menu();
+        }
+        crate::views::dim_line(ui, "SCREENSAVER (NOT WHILE PRACTICING)", 1.0, crate::pal().ink2);
         let idle = [
             (0u32, "Off"),
             (2, "After 2 minutes"),
@@ -1206,6 +1247,15 @@ impl App {
 
     /// Going idle while music plays starts the screensaver; any key, click or mouse move counts as not idle.
     pub(crate) fn vis_idle_check(&mut self, ctx: &egui::Context) {
+        // only while you are in Backline: in another window you aren't idle, and going to one ends it (it would
+        // otherwise start out of sight and run on behind what you are doing)
+        if !ctx.input(|i| i.focused) || !crate::onscreen::seen() {
+            self.vis_idle_since = std::time::Instant::now();
+            if self.vis_full && self.vis_saver {
+                self.vis_set_full(false, false);
+            }
+            return;
+        }
         let busy = ctx.input(|i| {
             i.pointer.delta() != Vec2::ZERO || i.pointer.any_down() || !i.keys_down.is_empty() || i.raw_scroll_delta != Vec2::ZERO
         });
@@ -1217,8 +1267,10 @@ impl App {
             }
             return;
         }
-        // (never while practising: playing along with a loop for minutes isn't stepping away)
-        let playing = self.cur.is_some() && !self.paused && !self.stopped && !(crate::PRACTICE && self.practice);
+        // (never while practising: playing along with a loop for minutes isn't stepping away; nor while the visuals
+        // are in their own window, already showing)
+        let playing =
+            self.cur.is_some() && !self.paused && !self.stopped && !(crate::PRACTICE && self.practice) && self.pop.is_none();
         if self.vis_idle > 0 && playing && !self.vis_full && self.vis_idle_since.elapsed().as_secs() >= self.vis_idle as u64 * 60
         {
             self.vis_set_full(true, true);
@@ -1293,7 +1345,7 @@ impl App {
             p,
             Pos2::new(r.center().x, r.max.y - 14.0),
             egui::Align::Center,
-            "Arrows change it  ·  right-click for all  ·  Esc or double-click to leave",
+            "Arrows: previous / next  ·  right-click for all  ·  Esc or double-click to close",
             0.9,
             Color32::from_white_alpha(140),
         );

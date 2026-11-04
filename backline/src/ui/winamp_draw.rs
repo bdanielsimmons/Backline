@@ -200,9 +200,13 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// Whether a skin's frames are on, for every thread (a window drawn on a thread of its own reads it too).
+static CHROME_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Use this skin's frames for every window (None: Backline's own again).
 pub(crate) fn set_chrome(t: Option<&WaTex>) {
     let v = t.and_then(|t| Some((t.sheets.get("pledit")?.clone(), t.sheets.get("text").cloned())));
+    CHROME_ON.store(v.is_some(), std::sync::atomic::Ordering::Relaxed);
     CHROME.with(|c| *c.borrow_mut() = v);
 }
 
@@ -448,7 +452,7 @@ pub(crate) enum FontSrc {
 }
 
 pub(crate) const PL_FONTS: [(&str, FontSrc); 14] = [
-    ("THE SKIN'S OWN", FontSrc::Skin),
+    ("SKIN DEFAULT", FontSrc::Skin),
     ("TAHOMA", FontSrc::Sys("tahoma")),
     ("MS SANS SERIF", FontSrc::Sys("microsoft sans serif")),
     ("VERDANA", FontSrc::Sys("verdana")),
@@ -781,7 +785,7 @@ pub(crate) fn set_playlist_font(_ctx: &egui::Context, bytes: Option<Vec<u8>>, ch
 
 /// Whether a skin's frames are on (lists then use the playlist font and colours).
 pub(crate) fn chrome_on() -> bool {
-    CHROME.with(|c| c.borrow().is_some())
+    CHROME_ON.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Whether text should take the skin's playlist font (a skin is worn and its font is ready).

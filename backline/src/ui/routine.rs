@@ -9,7 +9,7 @@ use crate::canon;
 pub(crate) const SUGGESTIONS: [(&str, &str); 7] = [
     ("LISTEN BEFORE YOU PLAY", "Play a recording of a tune from your set, twice, guitar down. Click the tune, then a recording in TUNES. Loop the head with A and B in the PRACTICE panel."),
     ("LEARN THE MELODY BY EAR", "Slow the loop down until you can play along without the sheet. Use SPEED in the PRACTICE panel, and the pitch stays the same. Then move it up a 4th in PITCH and find it again."),
-    ("PLAY THE CHANGES WITH THE BAND", "Comp shells with the band, then run arpeggios through the tune. Click a tune in your set to put its chart on the right. Press PLAY BAND on the lead sheet. For arpeggios, go to LINES > ARPEGGIOS."),
+    ("PLAY THE CHANGES WITH THE BAND", "Comp shells with the band, then run arpeggios through the tune. Click a tune in your set to show its chart on the right. Press PLAY BAND on the lead sheet. For arpeggios, go to LINES > ARPEGGIOS."),
     ("ONE LICK THROUGH 12 KEYS", "Loop 4 to 8 bars you love from a record and take them through every key. In TRAINER, set THEN to UP A 4TH to move the loop every few passes. Play it back in each key by ear."),
     ("RECORD A SOLO", "Record three choruses with the band. Go to PRACTICE > RECORD and turn on WITH THE BAND. Don't listen back today."),
     ("LISTEN BACK (ONCE A WEEK)", "Hear the week's takes with ALL TAKES in the RECORD tab. Write down one thing to fix with LOG PRACTICE in the DIARY."),
@@ -80,7 +80,7 @@ impl App {
         section_header(ui, "A SESSION");
         para(
             ui,
-            "Ideas for today, from how the masters practiced. Do what you have time for, and tick what you did.",
+            "Ideas for today, from how the masters practiced. Do what you have time for, and check off what you did.",
             pal().ink2,
         );
         let date = store::today_str();
@@ -114,7 +114,7 @@ impl App {
                         Stroke::new(2.0_f32, pal().ink),
                     );
                 }
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Did it today.").clicked() {
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Mark as done.").clicked() {
                     acts.push(Action::RoutineDone(k as u8));
                 }
             });

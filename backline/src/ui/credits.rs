@@ -43,7 +43,7 @@ impl App {
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         let mut picked: Option<Card> = None;
         panel(ctx, "artist_pick", 360.0, |ui| {
-            title_line(ui, "GO TO WHICH ARTIST?", 3.0, pal().ink);
+            title_line(ui, "CHOOSE AN ARTIST", 3.0, pal().ink);
             ui.add_space(4.0);
             let bw = ui.available_width();
             for (id, name) in list {
@@ -80,12 +80,12 @@ impl App {
             title_line(ui, "CREDITS", 3.0, pal().ink);
             para(ui, label, pal().ink2);
             match credits {
-                None => para(ui, "Asking Tidal...", pal().ink2),
+                None => para(ui, "Loading credits...", pal().ink2),
                 Some(Err(e)) if e == crate::api::OFFLINE_MSG || crate::api::no_internet(e) => {
                     para(ui, "Credits aren't available offline.", pal().ink2)
                 }
                 Some(Err(e)) => para(ui, &format!("Couldn't load the credits. {}", e), pal().red),
-                Some(Ok(list)) if list.is_empty() => para(ui, "Tidal has nothing on this track.", pal().ink2),
+                Some(Ok(list)) if list.is_empty() => para(ui, "No credits for this track.", pal().ink2),
                 Some(Ok(list)) => {
                     egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
                         for (role, names) in list {
@@ -195,9 +195,9 @@ impl App {
             // with a skin on, the player screen keeps Winamp's own: its colours, 19 bars
             let skin_screen = which == 0 && self.wa_art.is_some();
             if skin_screen {
-                crate::views::dim_line(ui, "THE SKIN'S OWN VISUALIZER: ITS COLOURS, 19 BARS, AS IN WINAMP", 1.0, pal().dim);
+                crate::views::dim_line(ui, "THE SKIN'S OWN VISUALIZER: ITS COLORS, 19 BARS, AS IN WINAMP", 1.0, pal().dim);
             } else {
-                if let Some(m) = choice(ui, "COLOURS", &["SKIN", "FROM COVER", "GREEN + RED"], self.viz[which].color) {
+                if let Some(m) = choice(ui, "COLORS", &["SKIN", "FROM COVER", "GREEN + RED"], self.viz[which].color) {
                     self.viz[which].color = m;
                     dirty = true;
                 }
@@ -314,7 +314,7 @@ impl App {
                     .inner_margin(12.0)
                     .show(ui, |ui| {
                         ui.set_width(320.0);
-                        title_line(ui, "PUTTING ON THE SKIN", 2.0, egui::Color32::from_rgb(240, 240, 236));
+                        title_line(ui, "LOADING SKIN", 2.0, egui::Color32::from_rgb(240, 240, 236));
                         crate::views::dim_line(ui, &crate::font::as_label(&name), 1.0, egui::Color32::from_gray(190));
                         ui.add_space(6.0);
                         // a bar that sweeps back and forth
@@ -374,7 +374,7 @@ impl App {
             para(
                 ui,
                 if tidal {
-                    "This stays on this computer and Tidal's own info is not changed. Empty both boxes to go back to Tidal's."
+                    "Saved on this computer only; Tidal's info is not changed. Clear both boxes to use Tidal's again."
                 } else if is_file {
                     "The new names show everywhere in Backline. They are also written into the file, so other players see them. A new file name renames the file on disk. Key and BPM stay in Backline."
                 } else {

@@ -134,7 +134,7 @@ impl App {
             let gh = ui
                 .interact(grip, ui.id().with("deck_grip"), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-                .tip("Drag to size the player, or use ctrl + mouse wheel. Double-click to make it as large as fits.");
+                .tip("Drag to resize the player, or use Ctrl + mouse wheel. Double-click to fit the window.");
             if gh.double_clicked() {
                 self.deck_zoom = None;
                 self.dirty = true;
@@ -181,7 +181,7 @@ impl App {
                 && ui
                     .interact(at(254.0), tid.with("size"), Sense::click())
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .tip("Back to the full window.")
+                    .tip("Exit mini player")
                     .clicked()
             {
                 acts.push(Action::ToggleMini);
@@ -277,7 +277,7 @@ impl App {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
         if !self.mini
-            && tb(ui, "shade", 254.0, (0.0, 18.0), if self.fullscreen { "Leave fullscreen" } else { "Fullscreen" }).clicked()
+            && tb(ui, "shade", 254.0, (0.0, 18.0), if self.fullscreen { "Exit fullscreen" } else { "Fullscreen" }).clicked()
         {
             acts.push(Action::ToggleFullscreen);
         }
@@ -371,8 +371,11 @@ impl App {
         wa_text(&t, &clip, pl, 111.0 - shift, 24.0, &title);
         if w > 154.0 && shift > 0.0 {
             wa_text(&t, &clip, pl, 111.0 - shift + w + 25.0, 24.0, &title);
-            // it moves one skin pixel at a time (22 a second): redrawn that often, not every frame
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(45));
+            // it moves one skin pixel at a time (22 a second): redrawn that often, not every frame (and not at all
+            // when no one can see it)
+            if crate::onscreen::seen() {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(45));
+            }
         }
         // kbps, kHz, mono / stereo
         if active {
@@ -397,8 +400,11 @@ impl App {
             self.vis_paint(ui, pl.r(24.0, 43.0, 76.0, 16.0), 2);
         } else if active {
             skin_viz(&p, pl.o + Vec2::new(24.0, 43.0) * pl.s, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
-            // Winamp's own visualizer ran at about 30 frames a second; so does this one (half the work of every frame)
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+            // Winamp's own visualizer ran at about 30 frames a second; so does this one (half the work of every frame),
+            // while it can be seen
+            if crate::onscreen::seen() {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+            }
         }
         // volume: the strip picture follows the level; right-click it for the sound output
         let vr = pl.r(107.0, 57.0, 68.0, 13.0);
@@ -448,9 +454,9 @@ impl App {
             t.spr_flip(&p, bal, (9.0, bframe * 15.0, 38.0, 13.0), br, self.balance < 0);
         }
         let bh = hit(ui, "balance", br, true).tip(match self.balance {
-            0 => "Balance: centre. Drag to change it, double-click to centre.".to_string(),
-            b if b < 0 => format!("Balance: {}% left. Double-click to centre.", -b),
-            b => format!("Balance: {}% right. Double-click to centre.", b),
+            0 => "Balance: center. Drag to change it, double-click to center.".to_string(),
+            b if b < 0 => format!("Balance: {}% left. Double-click to center.", -b),
+            b => format!("Balance: {}% right. Double-click to center.", b),
         });
         if t.size(bal).map_or(false, |s| s.y >= 433.0) {
             let src = if bh.dragged() { (0.0, 422.0, 14.0, 11.0) } else { (15.0, 422.0, 14.0, 11.0) };
@@ -510,7 +516,7 @@ impl App {
         // the seek bar
         let pr = pl.r(16.0, 72.0, 248.0, 10.0);
         t.spr(&p, "posbar", (0.0, 0.0, 248.0, 10.0), pr);
-        let ph = hit(ui, "seek", pr, true).tip("Drag or click to move in the song.");
+        let ph = hit(ui, "seek", pr, true).tip("Drag or click to seek.");
         if active && dur > 0.0 {
             let f = (pos / dur).clamp(0.0, 1.0);
             let src = if ph.dragged() { (278.0, 0.0, 29.0, 10.0) } else { (248.0, 0.0, 29.0, 10.0) };
@@ -584,8 +590,8 @@ impl App {
         let rp = pl.r(210.0, 89.0, 28.0, 15.0);
         let rph = hit(ui, "repeat", rp, false).tip(match self.repeat {
             Repeat::Off => "Repeat: off. Click to repeat all.",
-            Repeat::All => "Repeat: all. Click to repeat this song.",
-            _ => "Repeat: this song. Click to turn it off.",
+            Repeat::All => "Repeat: all. Click for repeat one.",
+            _ => "Repeat: one. Click to turn it off.",
         });
         let ry = if self.repeat != Repeat::Off { 30.0 } else { 0.0 } + if rph.is_pointer_button_down_on() { 15.0 } else { 0.0 };
         if !t.spr(&p, "shufrep", (0.0, ry, 28.0, 15.0), rp) {
@@ -719,7 +725,7 @@ impl App {
         let au = ui
             .interact(au_r, id.with("auto"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("AUTO remembers the EQ for each song and brings it back when it plays.");
+            .tip("AUTO remembers the EQ for each song and restores it when it plays.");
         if !t.spr(&p, "eqmain", (if self.eq_auto { 95.0 } else { 36.0 }, 119.0, 32.0, 12.0), au_r) {
             plate(&p, au_r.shrink(pl.s), "AUTO", self.eq_auto);
         }
@@ -907,7 +913,7 @@ pub(crate) fn sized_place(
     let gh = ui
         .interact(grip, id, Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-        .tip(format!("Drag to size {}, or use ctrl + mouse wheel. Double-click to make it as large as fits.", what));
+        .tip(format!("Drag to resize {}, or use Ctrl + mouse wheel. Double-click to fit the window.", what));
     if gh.double_clicked() {
         out = Some(None);
     } else if gh.dragged() {
@@ -959,12 +965,12 @@ impl App {
             Some(b) => {
                 // the same font, smooth, for everything outside the stack (kept for the run: a skin is chosen rarely)
                 let leaked: &'static [u8] = Box::leak(b.clone().into_boxed_slice());
-                self.ctx.set_fonts(crate::smooth_fonts(Some(leaked)));
+                crate::set_fonts(&self.ctx, crate::smooth_fonts(Some(leaked)));
                 set_playlist_font(&self.ctx, Some(b), choice)
             }
             None if matches!(PL_FONTS.get(choice).map(|f| &f.1), Some(FontSrc::Web(..))) => {
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                self.set_note("FETCHING THE FONT...");
+                self.set_note("DOWNLOADING FONT...");
                 std::thread::spawn(move || {
                     let _ = tx.send(Msg::FontReady(choice, fetch_font(choice)));
                     ctx.request_repaint();

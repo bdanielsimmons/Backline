@@ -63,7 +63,7 @@ pub fn start(device: Option<String>) -> Arc<Mutex<InBuf>> {
         }
         .or_else(|| host.default_input_device());
         let Some(dev) = dev else {
-            lock(&b).err = "NO INPUT FOUND - PLUG IN THE INTERFACE OR A MIC".to_string();
+            lock(&b).err = "NO INPUT FOUND - CONNECT A MIC OR AUDIO INTERFACE".to_string();
             return;
         };
         let cfg = match dev.default_input_config() {

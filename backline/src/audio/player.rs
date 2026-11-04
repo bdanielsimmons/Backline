@@ -129,6 +129,14 @@ impl Ahead {
     }
 }
 
+/// Run when a song ends (or gives no sound), so the app moves on at once even while it is drawing only now and then.
+static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+
+/// What to run when a song ends: the app's "draw again now".
+pub fn on_end(f: impl Fn() + Send + Sync + 'static) {
+    let _ = WAKE.set(Box::new(f));
+}
+
 pub struct Player {
     tx: Sender<Cmd>,
     pub shared: Arc<Mutex<Shared>>,
@@ -1678,6 +1686,10 @@ impl Player {
                         g.error = Some("DECODE: decoder produced no audio".to_string());
                     } else {
                         g.ended = true;
+                    }
+                    drop(g);
+                    if let Some(wake) = WAKE.get() {
+                        wake();
                     }
                 }
             }

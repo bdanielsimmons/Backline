@@ -251,9 +251,10 @@ fn model(s: &Set) -> [f32; 16] {
     m
 }
 
-/// The camera (by columns): perspective, 53 degrees up and down, 0.1 to 1000, from two units back.
+/// The camera (by columns): perspective, 53 degrees up and down (at 16:9 or wider: a narrower spot keeps that width in
+/// view, as the terrain's does), 0.1 to 1000, from two units back.
 fn camera(aspect: f32) -> [f32; 16] {
-    let fy = 1.0 / (53.0f32.to_radians() * 0.5).tan();
+    let fy = 1.0 / (53.0f32.to_radians() * 0.5).tan() * (aspect / crate::terrain::WIDE).min(1.0);
     let (near, far) = (0.1f32, 1000.0f32);
     let mut m = [0f32; 16];
     m[0] = fy / aspect;

@@ -238,7 +238,7 @@ impl App {
             .anchor(egui::Align2::CENTER_TOP, [0.0, 4.0])
             .show(ctx, |ui| {
                 if retro_btn(ui, &format!("UPDATE {} READY - CLICK TO RESTART", info.tag.to_uppercase()), true)
-                    .tip("Saves everything and reopens Backline on the new version. If you don't click, it installs the next time you open the app. You can make it restart by itself in Preferences.")
+                    .tip("Saves everything and restarts Backline on the new version. Otherwise it installs the next time you open the app. You can turn on automatic restart in Preferences.")
                     .clicked()
                 {
                     acts.push(Action::ApplyUpdate);

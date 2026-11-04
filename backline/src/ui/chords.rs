@@ -89,7 +89,7 @@ impl App {
             }
             kinds.extend(theory::FINDER_FAMILIES.iter().map(|(n, _)| *n));
             let off = usize::from(self.cf_fam.is_none());
-            if let Some(i) = crate::choice_line(ui, "cf_fam", "2  KIND", &kinds, self.cf_fam.map_or(0, |f| f + off), 300.0) {
+            if let Some(i) = crate::choice_line(ui, "cf_fam", "2  TYPE", &kinds, self.cf_fam.map_or(0, |f| f + off), 300.0) {
                 if i >= off && self.cf_fam != Some(i - off) {
                     self.cf_fam = Some(i - off);
                     self.chord_q.clear();
@@ -133,7 +133,7 @@ impl App {
         });
         let Some(c) = theory::chord_notes(self.chord_q.trim()) else {
             ui.add_space(8.0);
-            para(ui, "Pick a root, a kind and a chord, or type one. You see it on the neck and the piano, with its shapes and the scales that fit.", pal().ink2);
+            para(ui, "Pick a root, a type and a chord, or enter one. It shows on the neck and the piano, with its shapes and the scales that fit.", pal().ink2);
             return;
         };
         // (a test copy can open scrolled down: BACKLINE_SCROLL=points)
@@ -192,7 +192,7 @@ impl App {
                 && sec.moveable.is_empty()
                 && !self.store.custom_grips.contains_key(&grip_key(&q))
             {
-                para(ui, "No comfortable shape in reach for this one.", pal().ink2);
+                para(ui, "No playable shape for this chord.", pal().ink2);
             }
             // as a chord book lays them out: the grips to know first, open position, then every movable shape
             let key = grip_key(&q);
@@ -208,7 +208,7 @@ impl App {
             // the movable grips by the string the root is on, as Oolimo sorts them
             let by_string = sec.moveable_by_string();
             if !by_string.is_empty() || (first && self.store.custom_grips.contains_key(&key)) {
-                crate::views::dim_line(ui, "Moveable", 1.0, pal().ink2);
+                crate::views::dim_line(ui, "Movable", 1.0, pal().ink2);
                 if by_string.is_empty() {
                     self.chord_grips(ui, acts, &key, &c, &[], false, first);
                 }
@@ -248,7 +248,7 @@ impl App {
             }
             // the voicing groups: every inversion of the chord's four notes, string set by string set
             self.voicing_browser(ui, acts, &c);
-            if retro_btn(ui, "+ ADD MY OWN GRIP", false).tip("Lay it on the neck in CHORD ANALYZER, then save it here.").clicked()
+            if retro_btn(ui, "+ ADD MY OWN GRIP", false).tip("Place it on the neck in CHORD ANALYZER, then save it here.").clicked()
             {
                 self.grip_for = Some((grip_key(&q), q.clone()));
                 self.an_frets = [None; 6];
@@ -270,7 +270,7 @@ impl App {
     }
 
     fn chord_analyze(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Click notes on the neck and the chord is named as you go. Use one note per string; left of the nut is the open string. Click a note again to lift it. Each note sounds as you place it.", pal().ink2);
+        para(ui, "Click notes on the neck and the chord is named as you go. Use one note per string; left of the nut is the open string. Click a note again to remove it. Each note plays as you place it.", pal().ink2);
         // laying down a grip for a chord from the finder
         if let Some((key, name)) = self.grip_for.clone() {
             ui.horizontal_wrapped(|ui| {
@@ -420,27 +420,27 @@ impl App {
                 "- \u{0394} \u{00b0} +",
                 "Jazz symbols: - minor, \u{0394} major 7, \u{00b0} diminished, + augmented. Off: m, maj, dim, aug.",
             );
-            toggle(ui, &mut sp.sharps, "#", "Write roots with sharps. Off: flats.");
-            toggle(ui, &mut sp.slash, "SLASH", "Write a bass that isn't the root as a slash chord, like C/E.");
-            toggle(ui, &mut sp.detailed, "DETAILED", "Name the notes left out, like C7(no5).");
+            toggle(ui, &mut sp.sharps, "#", "Use sharps for roots. Off: flats.");
+            toggle(ui, &mut sp.slash, "SLASH", "Show a non-root bass as a slash chord, like C/E.");
+            toggle(ui, &mut sp.detailed, "DETAILED", "Show omitted notes, like C7(no5).");
             toggle(
                 ui,
                 &mut self.chord_details,
                 "DETAILS",
-                "Break down each chord: its notes, which ones you play, and why some carry a warning.",
+                "Show each chord's notes, which ones you play, and any warnings.",
             );
         });
         let sp = self.chord_sp;
         if let Some(s) = &shown {
             crate::views::dim_line(
                 ui,
-                &format!("SHOWING {}.  HOVER ONE TO SEE IT, CLICK TO KEEP IT", s.name(sp)),
+                &format!("SHOWING {}.  HOVER TO PREVIEW, CLICK TO SELECT", s.name(sp)),
                 1.0,
                 pal().dim,
             );
         }
         if found.is_empty() {
-            para(ui, if pcs.len() < 2 { "Lay down two or more notes." } else { "No chord has all of these notes." }, pal().ink2);
+            para(ui, if pcs.len() < 2 { "Place two or more notes." } else { "No chord has all of these notes." }, pal().ink2);
         }
         let mut hovered: Option<String> = None;
         ui.horizontal_wrapped(|ui| {
@@ -481,7 +481,7 @@ impl App {
             section_header(ui, &format!("GRIPS FOR {}", s.name(sp)));
             let key = grip_key(&s.key());
             if shapes.is_empty() && !self.store.custom_grips.contains_key(&key) {
-                para(ui, "No comfortable grip in reach for this one.", pal().ink2);
+                para(ui, "No playable grip for this chord.", pal().ink2);
             }
             self.chord_grips(ui, acts, &key, &c, &shapes, true, true);
             let mine = self.store.custom_grips.get(&key).is_some_and(|v| v.contains(&self.an_frets));
@@ -524,7 +524,7 @@ impl App {
                     });
                 }
             }
-            crate::views::dim_line(ui, "+ YOU PLAY IT   - IT IS NOT PLAYED", 1.0, pal().dim);
+            crate::views::dim_line(ui, "+ PLAYED   - NOT PLAYED", 1.0, pal().dim);
         }
         // the colour key
         ui.add_space(6.0);
@@ -616,11 +616,11 @@ impl App {
     ) -> (usize, &'static [usize], &'static [usize], u8) {
         const FAMILIES: [&str; 8] = ["TRIADS", "SPREAD TRIADS", "SHELLS", "CLOSE", "DROP 2", "DROP 3", "DROP 2&4", "3RDS & 7THS"];
         const ABOUT: [&str; 8] = [
-            "Three notes on three neighbouring strings. Learn all three inversions (root, 3rd or 5th in the bass) on every string set. Then you can find any major or minor chord anywhere on the neck.",
+            "Three notes on three neighboring strings. Learn all three inversions (root, 3rd or 5th in the bass) on every string set. Then you can find any major or minor chord anywhere on the neck.",
             "A triad with its middle note dropped an octave, so it skips a string. Wide and open, like a pianist's two hands.",
             "Root, 3rd and 7th: the notes that say what a chord is. The bread and butter of comping, with the root on the 6th or 5th string.",
             "All four notes as close as they go. Lovely on piano, a stretch on guitar. That is why drop voicings exist.",
-            "A close voicing with its second highest note dropped an octave. Four neighbouring strings, easy to grip. These are the most used jazz chord shapes there are.",
+            "A close voicing with its second highest note dropped an octave. Four neighboring strings, easy to grip. These are the most used jazz chord shapes there are.",
             "A close voicing with its third highest note dropped an octave. The bass sits on the 6th or 5th string, with a string skipped. A big, full sound for chord melody and comping.",
             "The second and fourth highest notes dropped an octave. Wide and open across two string groups.",
             "Just the 3rd and 7th: the notes that say major, minor or dominant. Through a ii-V-I, the 7th falls a half step to the next 3rd and the 3rd stays put as the next 7th. The hand hardly moves. Use it for light comping; it is the bones of every line.",
@@ -773,7 +773,7 @@ impl App {
             self.seq_button(
                 ui,
                 acts,
-                "PLAY THEM IN TURN",
+                "PLAY ALL",
                 "Each inversion, up the neck",
                 "inv",
                 || up.iter().map(grip_notes).collect(),
@@ -912,11 +912,11 @@ impl App {
         // or one chord at a time: step through, each one played as you land on it
         self.vc_step = self.vc_step.min(walk.len() - 1);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "< BACK", false).tip("The chord before").clicked() && self.vc_step > 0 {
+            if retro_btn(ui, "< BACK", false).tip("Previous chord").clicked() && self.vc_step > 0 {
                 self.vc_step -= 1;
                 acts.push(Action::PlayNotes(grip_notes(&walk[self.vc_step].1)));
             }
-            if retro_btn(ui, "NEXT >", false).tip("The next chord").clicked() {
+            if retro_btn(ui, "NEXT >", false).tip("Next chord").clicked() {
                 self.vc_step = (self.vc_step + 1) % walk.len();
                 acts.push(Action::PlayNotes(grip_notes(&walk[self.vc_step].1)));
             }
@@ -950,7 +950,7 @@ impl App {
         crate::views::dim_line(
             ui,
             &match next {
-                Some(n) => format!("NOW: {}      NEXT (RINGED): {}", walk[now].0, walk[n].0),
+                Some(n) => format!("NOW: {}      NEXT (CIRCLED): {}", walk[now].0, walk[n].0),
                 None => format!("NOW: {}", walk[now].0),
             },
             1.0,
@@ -963,7 +963,7 @@ impl App {
     /// PASSING CHORDS: the ways into each chord of a tune - its V7, its ii-V, the tritone sub, a diminished chord, a
     /// half step either side, the backdoor - each played from the chord before, in the voicing and strings you pick.
     fn passing(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "A passing chord leads into the next chord of the tune. Pick two chords in a row, then try each way in. Use the voicing and strings you want to work on.", pal().ink2);
+        para(ui, "A passing chord leads into the next chord of the tune. Pick two chords in a row, then try each approach. Use the voicing and strings you want to work on.", pal().ink2);
         let (fam, strings, drop, reach) = self.voicing_picker(ui, false);
         let (title, changes) = self.practice_changes(ui);
         let mut pairs: Vec<(String, String)> = Vec::new();
@@ -998,7 +998,7 @@ impl App {
                     ui,
                     acts,
                     "HEAR IT",
-                    "From the chord before, through the passing chord, into the next",
+                    "From the previous chord, through the passing chord, into the next",
                     &tag,
                     || grips.iter().map(|g| grip_notes(&g.1)).collect(),
                     gap,
@@ -1064,7 +1064,7 @@ impl App {
         if let Some((k, i)) = self.grip_ask.clone().filter(|(k, _)| k == key) {
             ui.horizontal_wrapped(|ui| {
                 crate::views::label(ui, "DELETE YOUR GRIP?", 170.0);
-                if retro_btn(ui, "YES, DELETE IT", false).clicked() {
+                if retro_btn(ui, "DELETE", false).clicked() {
                     if let Some(v) = self.store.custom_grips.get_mut(&k) {
                         if i < v.len() {
                             v.remove(i);
@@ -1076,7 +1076,7 @@ impl App {
                     self.store_dirty = true;
                     self.grip_ask = None;
                 }
-                if retro_btn(ui, "KEEP IT", false).clicked() {
+                if retro_btn(ui, "CANCEL", false).clicked() {
                     self.grip_ask = None;
                 }
             });
@@ -1099,7 +1099,7 @@ impl App {
                 let tip = if own.is_some() {
                     "Your grip. Click to hear it, right-click to delete it."
                 } else if to_neck {
-                    "Click to hear it. Double-click to lay it on the neck."
+                    "Click to hear it. Double-click to place it on the neck."
                 } else {
                     "Hear this shape"
                 };
@@ -1146,7 +1146,7 @@ impl App {
         }
         let list = &groups[cur].1;
         if list.is_empty() {
-            crate::views::dim_line(ui, "None of these fit under the hand for this chord.", 1.0, pal().ink2);
+            crate::views::dim_line(ui, "None of these are playable for this chord.", 1.0, pal().ink2);
             return;
         }
         let (root, pcs) = (c.root, c.pcs.clone());
@@ -1242,12 +1242,12 @@ impl App {
             if !name.is_empty() && !known {
                 crate::views::dim_line(
                     ui,
-                    "BACKLINE CAN'T READ THIS CHORD NAME. THE GRIP SHOWS ONLY UNDER THIS EXACT NAME.",
+                    "UNRECOGNIZED CHORD NAME. THE GRIP SHOWS ONLY UNDER THIS EXACT NAME.",
                     1.0,
                     pal().dim,
                 );
             } else if !ready {
-                crate::views::dim_line(ui, "LAY THE GRIP ON THE NECK FIRST", 1.0, pal().dim);
+                crate::views::dim_line(ui, "PLACE THE GRIP ON THE NECK FIRST", 1.0, pal().dim);
             }
         });
         ui.add_space(4.0);

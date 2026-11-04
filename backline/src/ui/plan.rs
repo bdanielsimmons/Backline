@@ -736,7 +736,7 @@ impl App {
         let mv = self.plan.mv();
         let tiles = [
             ("IN A ROW", { let s = streak(&mins, today); format!("{} DAY{}", s, if s == 1 { "" } else { "S" }) }),
-            ("DAYS PRACTISED", mins.len().to_string()),
+            ("DAYS PRACTICED", mins.len().to_string()),
             ("PLAN TIME", format!("{}H {}M", total / 60, total % 60)),
             ("KEEPERS SOLID", format!("{} OF {}", solid, ks.len())),
             ("RUNG", rung_now(plan, week, &mv).to_string()),
@@ -909,7 +909,7 @@ impl App {
         crate::improv::neck_view(ui, &dots, None);
         crate::views::dim_line(
             ui,
-            if arp { "THE ROOT IS THE SQUARE" } else { "THE DIM SQUARES ARE THE ROOT, TO FIND THEM BY" },
+            if arp { "THE ROOT IS THE SQUARE" } else { "THE DIM SQUARES ARE THE ROOT, FOR REFERENCE" },
             1.0,
             pal().dim,
         );
@@ -1041,7 +1041,7 @@ impl App {
         };
         ui.horizontal_wrapped(|ui| {
             crate::views::dim_line(ui, &status, 1.0, pal().ink2);
-            if retro_btn(ui, "RELOAD", false).tip("Reads the plan file again. It does this on its own when the file changes, too.").clicked() {
+            if retro_btn(ui, "RELOAD", false).tip("Reload the plan file. It also reloads automatically when the file changes.").clicked() {
                 self.plan.seen = None;
             }
         });
@@ -1066,13 +1066,13 @@ impl App {
             self.plan.look = w - now_w.clamp(1, n);
         }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "<", false).tip("The week before.").clicked() && shown > 1 {
+            if retro_btn(ui, "<", false).tip("Previous week.").clicked() && shown > 1 {
                 self.plan.look -= 1;
             }
             if retro_btn(ui, "THIS WEEK", self.plan.look == 0).clicked() {
                 self.plan.look = 0;
             }
-            if retro_btn(ui, ">", false).tip("The week after.").clicked() && shown < n {
+            if retro_btn(ui, ">", false).tip("Next week.").clicked() && shown < n {
                 self.plan.look += 1;
             }
         });
@@ -1125,7 +1125,7 @@ impl App {
                 format!("COLD {} DAY{}", k.played.len(), if k.played.len() == 1 { "" } else { "S" })
             };
             ui.horizontal(|ui| {
-                if retro_btn(ui, "X", false).tip("Let it go.").clicked() {
+                if retro_btn(ui, "X", false).tip("Remove.").clicked() {
                     gone = Some(i);
                 }
                 let (r, _) = ui.allocate_exact_size(Vec2::new(text_w("COLD 9 DAYS", 1.4) + 14.0, 22.0), Sense::hover());
@@ -1247,25 +1247,25 @@ impl App {
         ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &mmss(secs), 6.0, if running { pal().ink } else { pal().ink2 });
         let mut act: Option<u8> = None;
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, if running { "PAUSE" } else { "START" }, running).tip("Space works too, while this tab is open.").clicked() {
+            if retro_btn(ui, if running { "PAUSE" } else { "START" }, running).tip("Start or pause the timer  (Space)").clicked() {
                 act = Some(0);
             }
-            if retro_btn(ui, "BACK", false).tip("The block before.").clicked() {
+            if retro_btn(ui, "BACK", false).tip("Previous block.").clicked() {
                 act = Some(1);
             }
-            if retro_btn(ui, "SKIP", false).tip("On to the next block (this one isn't ticked).").clicked() {
+            if retro_btn(ui, "SKIP", false).tip("Next block, without marking this one done.").clicked() {
                 act = Some(2);
             }
-            if retro_btn(ui, "DONE", done.contains(&(cur as u8))).tip("Tick this block and go on to the next.").clicked() {
+            if retro_btn(ui, "DONE", done.contains(&(cur as u8))).tip("Mark this block done and go to the next.").clicked() {
                 act = Some(3);
             }
             if retro_btn(ui, "+1 MIN", false).clicked() {
                 act = Some(4);
             }
-            if retro_btn(ui, "RESTART", false).tip("This block from the start.").clicked() {
+            if retro_btn(ui, "RESTART", false).tip("Start this block over.").clicked() {
                 act = Some(5);
             }
-            if retro_btn(ui, "AUTO NEXT", self.plan.auto).tip("When a block is up, start the next one on its own.").clicked() {
+            if retro_btn(ui, "AUTO NEXT", self.plan.auto).tip("When a block ends, start the next one automatically.").clicked() {
                 act = Some(6);
             }
         });

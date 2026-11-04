@@ -69,7 +69,7 @@ pub const CMDS: &[CmdDef] = &[
     CmdDef { cmd: Cmd::ToA, id: "to_a", label: "Jump to loop start", def: Key::Period, group: 2 },
     CmdDef { cmd: Cmd::SpeedUp, id: "speed_up", label: "Speed up 5 percent", def: Key::ArrowUp, group: 0 },
     CmdDef { cmd: Cmd::SpeedDown, id: "speed_down", label: "Slow down 5 percent", def: Key::ArrowDown, group: 0 },
-    CmdDef { cmd: Cmd::Bookmark, id: "bookmark", label: "Bookmark where the song is", def: Key::K, group: 2 },
+    CmdDef { cmd: Cmd::Bookmark, id: "bookmark", label: "Add bookmark", def: Key::K, group: 2 },
     CmdDef { cmd: Cmd::Visuals, id: "visuals", label: "Visuals full screen", def: Key::G, group: 0 },
 ];
 
@@ -218,13 +218,13 @@ impl App {
                 if k == Key::Escape {
                     self.bind_note = String::new();
                 } else if reserved(k) {
-                    self.bind_note = format!("{} is kept for the app (ESC, F1, F11, TAB, ENTER).", key_label(k));
+                    self.bind_note = format!("{} is reserved (ESC, F1, F11, TAB, ENTER).", key_label(k));
                 } else {
                     let mut note = String::new();
                     for j in 0..self.binds.len() {
                         if j != slot && self.binds[j] == Some(k) {
                             self.binds[j] = None;
-                            note = format!("{} was on \"{}\", so that one now has no key.", key_label(k), CMDS[j].label);
+                            note = format!("{} was used by \"{}\", which now has no key.", key_label(k), CMDS[j].label);
                         }
                     }
                     self.binds[slot] = Some(k);
@@ -261,7 +261,7 @@ impl App {
                             self.cache_at = std::time::Instant::now();
                         }
                         let (n, bytes) = self.cache_stats;
-                        para(ui, "Songs stream without being kept. Turn SAVING on to keep each song you play on this computer. Saved songs start at once and play with no internet.", pal().ink2);
+                        para(ui, "Songs stream without being saved. Turn SAVING on to save each song you play on this computer. Saved songs start instantly and play offline.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             if retro_btn(ui, if self.keep_cache { "SAVING: ON" } else { "SAVING: OFF" }, self.keep_cache).clicked() {
                                 acts.push(Action::ToggleKeep);
@@ -290,7 +290,7 @@ impl App {
                         para(ui, &format!("Settings and library: {}", crate::api::config_dir().display()), pal().dim);
 
                         section_header(ui, "SHARE WITH A FRIEND");
-                        para(ui, "Put your plan, books, lines, chord melodies and loops in one file. Your friend drops it on Backline and each part switches on. Your progress (the plan's log, keepers, diary) never goes in.", pal().ink2);
+                        para(ui, "Put your plan, books, lines, chord melodies and loops in one file. Your friend drops it on Backline and each part switches on. Your progress (the plan's log, keepers, diary) is never included.", pal().ink2);
                         let have = crate::pack::available();
                         if have.is_empty() {
                             para(ui, "Nothing to share yet besides loops and playlists.", pal().dim);
@@ -311,14 +311,14 @@ impl App {
                             }
                         });
                         ui.horizontal_wrapped(|ui| {
-                            if retro_btn(ui, "MAKE A PACK...", false).tip("Saves the ticked parts to one file to send.").clicked() {
+                            if retro_btn(ui, "MAKE A PACK...", false).tip("Saves the checked parts to one file to send.").clicked() {
                                 acts.push(Action::PackMake);
                             }
                             if retro_btn(ui, "OPEN A PACK...", false).tip("Or drop a pack on Backline's window.").clicked() {
                                 acts.push(Action::PackOpen(false));
                             }
                             if retro_btn(ui, "OPEN A FOLDER...", false)
-                                .tip("A pack that was unzipped (a Mac can do that by itself), or a folder with the pieces in it.")
+                                .tip("An unzipped pack (a Mac may unzip it automatically), or a folder with the pack's files.")
                                 .clicked()
                             {
                                 acts.push(Action::PackOpen(true));
@@ -339,8 +339,8 @@ impl App {
                         if !self.upd_note.is_empty() {
                             para(ui, &self.upd_note.clone(), pal().ink2);
                         }
-                        if check_box(ui, "RESTART BY ITSELF WHEN I'M AWAY", self.auto_restart)
-                            .tip("Off by default. When on, Backline restarts for a downloaded update after 5 quiet minutes with nothing playing. When off, it only restarts when you click.")
+                        if check_box(ui, "RESTART TO UPDATE WHEN IDLE", self.auto_restart)
+                            .tip("Off by default. When on, Backline restarts to install a downloaded update after 5 idle minutes with nothing playing. When off, it only restarts when you click.")
                             .clicked()
                         {
                             self.auto_restart = !self.auto_restart;
@@ -374,16 +374,16 @@ impl App {
                         });
 
                         section_header(ui, "QUEUE");
-                        if check_box(ui, "A QUEUED SONG LEAVES THE QUEUE ONCE IT HAS PLAYED", self.q_drop)
-                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE drop out once they play or you skip past them. The playlist's own songs always stay. When off, every song stays.")
+                        if check_box(ui, "REMOVE QUEUED SONGS AFTER THEY PLAY", self.q_drop)
+                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE are removed once they play or you skip them. The playlist's own songs always stay. When off, every song stays.")
                             .clicked()
                         {
                             self.q_drop = !self.q_drop;
                             self.dirty = true;
                         }
 
-                        section_header(ui, "OPENING SOUND");
-                        para(ui, "Click a sound to hear it; the one picked plays when Backline opens. You can also use a sound file of your own.", pal().ink2);
+                        section_header(ui, "STARTUP SOUND");
+                        para(ui, "Click a sound to preview it. The selected one plays when Backline starts. You can also use your own sound file.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for (m, name) in [(0u8, "OFF"), (1, "BACKLINE'S"), (2, "MY FILE")] {
                                 let ok = m != 2 || self.intro_file.is_some();
@@ -394,7 +394,7 @@ impl App {
                             if retro_btn(ui, "CHOOSE FILE...", false).clicked() {
                                 acts.push(Action::Intro(3));
                             }
-                            if retro_btn(ui, "PLAY", false).tip("Hear it now.").clicked() {
+                            if retro_btn(ui, "PLAY", false).tip("Preview").clicked() {
                                 acts.push(Action::Intro(4));
                             }
                         });
@@ -403,7 +403,7 @@ impl App {
                             ui.horizontal_wrapped(|ui| {
                                 for (i, name) in crate::intro::SOUNDS.iter().enumerate() {
                                     if retro_btn(ui, &name.to_uppercase(), self.intro_sound as usize == i)
-                                        .tip("Choose this one and hear it.")
+                                        .tip("Select and preview")
                                         .clicked()
                                     {
                                         self.intro_sound = i as u8;
@@ -420,15 +420,15 @@ impl App {
 
                         section_header(ui, "ACCESSIBILITY");
                         let safe = crate::skin::LOOP_SAFE.load(std::sync::atomic::Ordering::Relaxed);
-                        if check_box(ui, "COLOUR-BLIND SAFE LOOPS", safe)
+                        if check_box(ui, "COLOR-BLIND SAFE LOOPS", safe)
                             .tip("Draws loops and their A and B markers in orange. Nearly everyone can tell orange from red and green.")
                             .clicked()
                         {
                             crate::skin::LOOP_SAFE.store(!safe, std::sync::atomic::Ordering::Relaxed);
                             self.dirty = true;
                         }
-                        if check_box(ui, "NAMES UNDER THE WINDOW ICONS", self.icon_names)
-                            .tip("Shows a word under each small icon at the top of the side list (Online, Focus, Mini...).")
+                        if check_box(ui, "SHOW ICON LABELS", self.icon_names)
+                            .tip("Shows a label under each icon at the top of the sidebar (Online, Focus, Mini...).")
                             .clicked()
                         {
                             self.icon_names = !self.icon_names;
@@ -444,7 +444,7 @@ impl App {
                         }
                         para(
                             ui,
-                            "The HIGH CONTRAST skins in the BACKLINE tab help too, and so does SIZE OF EVERYTHING below.",
+                            "The HIGH CONTRAST skins in the BACKLINE tab help too, and so does ZOOM below.",
                             pal().ink2,
                         );
 
@@ -459,7 +459,7 @@ impl App {
                             }
                         });
 
-                        section_header(ui, "SIZE OF EVERYTHING");
+                        section_header(ui, "ZOOM");
                         para(ui, "Make buttons and text bigger or smaller. CTRL and + or - does the same (CMD on a Mac).", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             let now = (ctx.zoom_factor() * 100.0).round() as i32;
@@ -473,7 +473,7 @@ impl App {
 
                         section_header(ui, "KEYBOARD SHORTCUTS");
                         para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette. Type any action and press ENTER.", pal().ink2);
-                        para(ui, "Click a key, then press the new one. ESC cancels. Each key does one job, so a new job clears the old one.", pal().ink2);
+                        para(ui, "Click a key, then press the new one. ESC cancels. A key can do only one thing, so reusing it clears the old shortcut.", pal().ink2);
                         if !self.bind_note.is_empty() {
                             para(ui, &self.bind_note.clone(), pal().ink);
                         }
@@ -511,7 +511,7 @@ impl App {
                             self.bind_note.clear();
                             self.dirty = true;
                         }
-                        para(ui, "ESC, F1 (help) and F11 (fullscreen) always keep their jobs.", pal().ink2);
+                        para(ui, "ESC, F1 (help) and F11 (fullscreen) can't be changed.", pal().ink2);
                     });
                     ui.add_space(6.0);
                     if retro_btn(ui, "CLOSE  (ESC)", false).clicked() {

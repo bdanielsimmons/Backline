@@ -344,12 +344,12 @@ impl App {
                 ui,
                 acts,
                 "PLAY",
-                "Play the line. Click a note in the music to hear just that note.",
+                "Play the line. Click a note in the score to hear it.",
                 "line",
                 || notes.iter().map(|m| vec![*m]).collect(),
                 gap,
             );
-            if retro_btn(ui, "LOOP", self.ln_loop).tip("Play it round and round until you stop it.").clicked() {
+            if retro_btn(ui, "LOOP", self.ln_loop).tip("Repeat until you stop it.").clicked() {
                 self.ln_loop = !self.ln_loop;
             }
             ui.add_space(10.0);
@@ -394,7 +394,7 @@ impl App {
                         }
                     }
                 }
-                crate::views::label(ui, "A BEAT", 60.0);
+                crate::views::label(ui, "PER BEAT", 60.0);
             }
             // what it is played over (the page says which chord)
             if let Some(b) = self.ln_backing.as_mut() {
@@ -408,7 +408,7 @@ impl App {
             ui.add_space(10.0);
             let starred = self.store.lines_stars.iter().any(|s| s == key);
             if retro_btn(ui, if starred { "* FAVORITE" } else { "+ FAVORITE" }, starred)
-                .tip("Keep this one in your favorites.")
+                .tip(if starred { "Remove from favorites" } else { "Add to favorites" })
                 .clicked()
             {
                 if starred {
@@ -634,12 +634,12 @@ impl App {
         }
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "SHOW FILE", false)
-                .tip("Open the folder with the pattern book file selected, to copy it or send it to a friend.")
+                .tip("Show the pattern book file in its folder, to copy or share it.")
                 .clicked()
             {
                 lines::show_book_file();
             }
-            if retro_btn(ui, "ADD ANOTHER PATTERN BOOK...", false)
+            if retro_btn(ui, "REPLACE PATTERN BOOK...", false)
                 .tip("Replace this book with another pattern book file.")
                 .clicked()
             {
@@ -669,7 +669,7 @@ impl App {
                 self.ln_at = 0;
                 self.set_note(&format!("PATTERN BOOK ADDED: {} PATTERNS", n));
             }
-            Err(e) => self.set_err(format!("THAT IS NOT A PATTERN BOOK ({})", e)),
+            Err(e) => self.set_err(format!("NOT A VALID PATTERN BOOK ({})", e)),
         }
     }
 
@@ -679,7 +679,7 @@ impl App {
         // the choices on two centred rows; adding a pattern book under "..."
         crate::views::centered_row(ui, "sl_row", |ui| {
             let dn: Vec<&str> = lines::DIVISIONS.iter().map(|d| d.0).collect();
-            if let Some(i) = dropdown(ui, "sl_div", "OCTAVE CUT BY", &dn, self.sl_div.min(dn.len() - 1), 160.0) {
+            if let Some(i) = dropdown(ui, "sl_div", "OCTAVE DIVISION", &dn, self.sl_div.min(dn.len() - 1), 160.0) {
                 self.sl_div = i;
                 self.sl_pat = 0;
             }
@@ -782,7 +782,7 @@ impl App {
             if let Some(k) = dropdown(ui, "prog_key", "KEY", &KEYS, self.prog_key as usize, 0.0) {
                 self.prog_key = k as i32;
             }
-            if let Some(c) = dropdown(ui, "prog_7", &crate::font::as_label("Size"), &["Triads", "7ths"], self.prog_7 as usize, 0.0) {
+            if let Some(c) = dropdown(ui, "prog_7", &crate::font::as_label("Chords"), &["Triads", "7ths"], self.prog_7 as usize, 0.0) {
                 self.prog_7 = c == 1;
             }
             if let Some(m) = dropdown(ui, "prog_minor", &crate::font::as_label("Tonic"), &["Major", "Minor"], self.prog_minor as usize, 0.0) {
@@ -866,7 +866,7 @@ impl App {
                         self.set_note("ADDED TO MY PROGRESSIONS");
                         ui.close_menu();
                     }
-                    if crate::menu_item(ui, "Make it a tune (with its lead sheet)") {
+                    if crate::menu_item(ui, "Save as a tune") {
                         let mut name = title.clone();
                         let mut k = 2;
                         while self.store.tunes.iter().any(|t| t.name.eq_ignore_ascii_case(&name)) {
@@ -905,7 +905,7 @@ impl App {
                     ptext(ui.painter(), Pos2::new(x + w / 2.0, r.center().y), Align::Center, c, 2.0, col);
                     x += w;
                 }
-                if mine && retro_btn_w(ui, "X", 28.0, false).tip("Remove it.").clicked() {
+                if mine && retro_btn_w(ui, "X", 28.0, false).tip("Remove").clicked() {
                     remove = Some(i);
                 }
             });
@@ -1065,20 +1065,20 @@ fn pattern_about(line: &lines::BookLine, shift: i32) -> Vec<String> {
             [0, 3, 6, 9].iter().map(|x| format!("{}7", name(*x))).collect::<Vec<_>>().join(", ")
         ),
         "Major Second" | "Minor Third" | "Major Third" | "Fourth" => {
-            "All twelve notes: a chromatic line. It colours anything, so aim its strong beats at the chord's tones.".to_string()
+            "All twelve notes: a chromatic line. It colors anything, so aim its strong beats at the chord's tones.".to_string()
         }
         "Major Triad" | "Minor Triad" | "Major Seventh" | "Minor Seventh" | "Half Diminished Arpeggio" => format!(
             "Its base is the {} on {r}, so the line keeps coming back to that chord's tones. Play it over that chord and let the other notes pass through.",
             line.chap_name.to_lowercase()
         ),
         "Common Pentatonic" | "Major Scale" => {
-            format!("Its base walks the {} from {r}, so it outlines that sound with colour around it.", line.chap_name.to_lowercase())
+            format!("Its base walks the {} from {r}, so it outlines that sound with color around it.", line.chap_name.to_lowercase())
         }
         other => format!("The chapter groups patterns by the notes they use: the {}.", other.to_lowercase()),
     };
     out.push(format!("THE NOTES it uses: {} ({}). {}", used.join(" "), lines::formula(&content), fit));
     out.push(
-        "TO PRACTISE: play it slowly and evenly with LOOP on until the shape is automatic. Then try BACKWARDS, then START ON other notes. The shape never changes, only where it starts."
+        "TO PRACTICE: play it slowly and evenly with LOOP on until the shape is automatic. Then try BACKWARDS, then START ON other notes. The shape never changes, only where it starts."
             .to_string(),
     );
     out

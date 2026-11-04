@@ -115,7 +115,7 @@ pub(crate) fn si_suggestions(quality: usize) -> Vec<(usize, i32, &'static str)> 
         ],
         // 7
         1 => vec![
-            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11, A SUS FLAVOUR"),
+            (0, 7, "MINOR PENTATONIC FROM THE 5TH: 5 \u{266D}7 R 9 11, A SUS FLAVOR"),
             (1, 0, "MAJOR PENTATONIC ON THE ROOT: R 9 3 5 13, SWEET"),
             (0, 9, "MINOR PENTATONIC FROM THE 6TH: 13 R 9 3 5, THE SAME NOTES LAID OUT AGAIN"),
             (9, 7, "M(MAJ7) FROM THE 5TH: 5 \u{266D}7 9 #11, FROM ITS MELODIC MINOR (LYDIAN DOMINANT)"),
@@ -130,7 +130,7 @@ pub(crate) fn si_suggestions(quality: usize) -> Vec<(usize, i32, &'static str)> 
             (2, 8, "MAJOR TRIAD ON THE \u{266D}6: \u{266D}13 R #9"),
             (2, 6, "MAJOR TRIAD ON THE \u{266D}5: #11 \u{266D}7 \u{266D}9"),
             (9, 1, "M(MAJ7) A HALF STEP UP: THE ALTERED SCALE IS ITS MELODIC MINOR"),
-            (4, 0, "AUGMENTED TRIAD ON THE ROOT: R 3 #5, THE WHOLE-TONE COLOUR"),
+            (4, 0, "AUGMENTED TRIAD ON THE ROOT: R 3 #5, THE WHOLE-TONE COLOR"),
         ],
         // 7#11
         3 => vec![

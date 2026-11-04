@@ -85,7 +85,7 @@ const BASE: Step = Step { key: "", scene: Scene::Normal, title: "", text: "", sp
 const BASIC: &[Step] = &[
     Step {
         title: "WELCOME",
-        text: "A quick look around, with a song playing so you hear each part work. NEXT and BACK (or the arrow keys) move along, and ESC stops. Your queue and song come back at the end.",
+        text: "A quick tour, with a song playing so you hear each part work. NEXT and BACK (or the arrow keys) move between steps, and ESC exits. Your queue and song are restored at the end.",
         ..BASE
     },
     Step {
@@ -97,7 +97,7 @@ const BASIC: &[Step] = &[
     Step {
         key: "SPEEDBTN",
         title: "SPEED",
-        text: "The song now plays at 70%, and the pitch has not moved. Click for the next speed, or right-click to pick any.",
+        text: "The song now plays at 70%, with the pitch unchanged. Click for the next speed, or right-click to choose any.",
         speed: 70,
         ..BASE
     },
@@ -124,13 +124,13 @@ const BASIC: &[Step] = &[
         key: "ARTBTNS",
         scene: Scene::Album,
         title: "NOW PLAYING",
-        text: "Press A, or click the song at the foot of the library, to see it big. Shuffle and repeat light up when on. Click a lyric line to jump there; ESC takes you back.",
+        text: "Press A, or click the song at the bottom of the library, to open Now Playing. Shuffle and repeat light up when on. Click a lyric line to jump there; ESC closes it.",
         ..BASE
     },
     Step {
         key: "APPMENU",
         title: "GETTING AROUND",
-        text: "The list down the side: MUSIC has your songs, PRACTICE your tunes and tools, SETTINGS your skins and preferences. LISTEN and PRACTICE under the name switch modes. CTRL+K finds anything by typing.",
+        text: "The sidebar: MUSIC has your songs, PRACTICE your tunes and tools, SETTINGS your skins and preferences. LISTEN and PRACTICE under the name switch modes. CTRL+K opens the command palette.",
         ..BASE
     },
     Step {
@@ -168,7 +168,7 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "MOREBOX",
         scene: Scene::PracticeMore(0),
-        title: "3. LET IT SPEED YOU UP",
+        title: "3. SPEED TRAINER",
         text: "The TRAINER plays your loop a few times, then speeds it up a little. It keeps doing that.",
         ab: true,
         speed: 85,
@@ -184,14 +184,14 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "MOREBOX",
         scene: Scene::PracticeMore(2),
-        title: "5. PULL IT APART",
-        text: "STEMS splits a song into drums, bass, vocals and the rest. Play one part alone, or everything but it.",
+        title: "5. STEMS",
+        text: "STEMS splits a song into drums, bass, vocals and the rest. Solo one part, or mute it.",
         ..BASE
     },
     Step {
         key: "MOREBOX",
         scene: Scene::PracticeMore(3),
-        title: "6. MARK YOUR PLACES",
+        title: "6. BOOKMARKS",
         text: "BOOKMARKS mark the spots you come back to: the solo, the bridge, the bar you keep missing. Alt-click the waveform to add one, then name it.",
         ..BASE
     },
@@ -199,14 +199,14 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "TIMEBTNS",
         scene: Scene::Practice,
         title: "7. KEEP TIME",
-        text: "The two pills at the top: a focus timer with rests, and a metronome for any meter that can lock to the song's beat. Click the dot to start, the words to open it.",
+        text: "The two buttons at the top: a focus timer with breaks, and a metronome for any meter that can lock to the song's beat. Click the dot to start, the label to open it.",
         ..BASE
     },
     Step {
         key: "ARTPRACTICE",
         scene: Scene::AlbumPractice,
         title: "8. PRACTICE IN NOW PLAYING",
-        text: "The loop and speed come with you to the big cover.",
+        text: "The loop and speed carry over to Now Playing.",
         ab: true,
         ..BASE
     },
@@ -261,7 +261,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "TABS",
         scene: Scene::Practice,
         title: "15. KEEP TRACK",
-        text: "PRACTICE in the side list holds your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
+        text: "PRACTICE in the sidebar holds your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
         ..BASE
     },
 ];

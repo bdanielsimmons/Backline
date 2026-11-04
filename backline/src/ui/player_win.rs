@@ -41,7 +41,7 @@ impl App {
             let w = text_w("FULL", 1.0) + 14.0;
             let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - w, inner.min.y - 22.0), Vec2::new(w, 16.0));
             let r = Rect::from_min_size(Pos2::new(inner.max.x - 8.0 - 26.0, r.min.y), Vec2::new(26.0, 16.0));
-            let fc = chip(ui, r, "", false, "c_mini").tip("Back to the full window.");
+            let fc = chip(ui, r, "", false, "c_mini").tip("Exit mini player");
             size_icon(ui.painter(), r, false);
             if fc.clicked() {
                 acts.push(Action::ToggleMini);
@@ -102,7 +102,7 @@ impl App {
         let spr = ui
             .interact(sp, ui.id().with("spectrum"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to switch between bars, waveform, both or visuals. Right-click for all its settings, with a preview.");
+            .tip("Click to switch between bars, waveform, both or visuals. Right-click for settings.");
         if spr.clicked() {
             self.viz[0].mode = (self.viz[0].mode + 1) % 4;
             self.dirty = true;
@@ -153,7 +153,7 @@ impl App {
 
         // ---- tempo and key (the stream's kbps and kHz show on hover)
         let info = track.as_ref().and_then(|t| meta::get(t.id)).filter(|_| active).unwrap_or_default();
-        let from = if info.tidal { "from Tidal" } else { "an estimate from listening to the track" };
+        let from = if info.tidal { "from Tidal" } else { "estimated from the audio" };
         let stream = |s: String| if active && !s.is_empty() { format!("\nStream: {}", s) } else { String::new() };
         // (stream quality lives on the title bar now, so tempo and key share the row)
         let kb = rc(112.0, 34.0, 66.0, 12.0);
@@ -162,7 +162,7 @@ impl App {
         ptext_fit(p, kb.center(), Align::Center, &kb_txt, px_sm, kb.width() - 6.0, pal().ink);
         let kb_tip = match info.bpm {
             Some(b) => format!("Tempo: {} BPM, {}", b, from),
-            None => "Tempo: found the first time a track plays".to_string(),
+            None => "Tempo: detected on first play".to_string(),
         };
         ui.interact(kb, ui.id().with("bpm"), Sense::hover())
             .tip(kb_tip + &stream(if self.kbps > 0 { format!("{} kbps", self.kbps) } else { String::new() }));
@@ -172,7 +172,7 @@ impl App {
         ptext_fit(p, kh.center(), Align::Center, &kh_txt, px_sm, kh.width() - 6.0, pal().ink);
         let kh_tip = match info.key {
             Some(k) => format!("Key: {}, {}\nThe number is its Camelot code, used for mixing.", meta::key_long(k), from),
-            None => "Key: found the first time a track plays".to_string(),
+            None => "Key: detected on first play".to_string(),
         };
         ui.interact(kh, ui.id().with("key"), Sense::hover())
             .tip(kh_tip + &stream(if rate > 0 { format!("{} kHz", rate / 1000) } else { String::new() }));
@@ -267,7 +267,7 @@ impl App {
         let spr = ui
             .interact(spd, ui.id().with("speed"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Speed, with the pitch kept. Click for the next one, or right-click to pick or type any  (UP and DOWN keys)");
+            .tip("Speed (pitch unchanged). Click for the next speed, or right-click to choose or type one  (UP and DOWN keys)");
         raised_h(p, spd, self.speed != 100 || spr.is_pointer_button_down_on(), spr.hovered());
         ptext_fit(p, spd.center(), Align::Center, &crate::tools::speed_label(self.speed), px_sm, spd.width() - 4.0, pal().ink);
         if spr.clicked() {
@@ -387,7 +387,7 @@ impl App {
         let rep_tip = match self.repeat {
             Repeat::Off => "Repeat is off",
             Repeat::All => "Repeat all",
-            Repeat::One => "Repeat this track",
+            Repeat::One => "Repeat one",
         };
         let rpr =
             ui.interact(rp, ui.id().with("rep"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(rep_tip);
@@ -408,7 +408,7 @@ impl App {
             let fbr = ui.interact(fb, ui.id().with("full"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(
                 format!(
                     "{}  ({} / F11)",
-                    if fs { "Leave fullscreen" } else { "Fullscreen" },
+                    if fs { "Exit fullscreen" } else { "Fullscreen" },
                     self.key_text(prefs::Cmd::Fullscreen)
                 ),
             );
@@ -667,7 +667,7 @@ impl App {
                 if retro_btn(ui, "CLEAR QUEUE", false).clicked() {
                     acts.push(Action::ClearQueue);
                 }
-                if retro_btn(ui, "SAVE AS PLAYLIST", false).tip("Keep what is queued as a playlist in LISTS.").clicked() {
+                if retro_btn(ui, "SAVE AS PLAYLIST", false).tip("Save the queue as a playlist in LISTS.").clicked() {
                     acts.push(Action::PlaylistFromQueue);
                 }
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(340.0), bh()), Sense::hover());
@@ -691,17 +691,17 @@ impl App {
 /// nor ones already played).
 pub(crate) fn queue_moves(ui: &mut egui::Ui, acts: &mut Vec<Action>, i: usize, cur: Option<usize>) {
     if cur.is_some_and(|c| i > c) {
-        if menu_item(ui, "Move: play it next") {
+        if menu_item(ui, "Move: play next") {
             acts.push(Action::QueueNext(i));
             ui.close_menu();
         }
-        if menu_item(ui, "Move: after the songs you queued") {
+        if menu_item(ui, "Move: after queued songs") {
             acts.push(Action::QueueLater(i));
             ui.close_menu();
         }
     }
     if let Some(c) = cur.filter(|c| i != *c) {
-        if menu_item(ui, "Move: above the song playing") {
+        if menu_item(ui, "Move: above current song") {
             acts.push(Action::MoveQueue(i, c));
             ui.close_menu();
         }
@@ -768,7 +768,7 @@ impl App {
         for (name, r) in at.iter().copied() {
             match name {
                 "PIN" => {
-                    if chip(ui, r, "PIN", self.pinned, "c_pin").tip("Keep this window on top.").clicked() {
+                    if chip(ui, r, "PIN", self.pinned, "c_pin").tip("Always on top").clicked() {
                         acts.push(Action::TogglePin);
                     }
                 }
@@ -788,7 +788,7 @@ impl App {
                     }
                 }
                 "LISTEN" => {
-                    if chip(ui, r, "LISTEN", !self.practice, "c_lis").tip("Just listening, with no loop and no pitch change.").clicked()
+                    if chip(ui, r, "LISTEN", !self.practice, "c_lis").tip("Listen: no loop, no pitch change.").clicked()
                         && self.practice
                     {
                         acts.push(Action::TogglePractice);
@@ -807,7 +807,7 @@ impl App {
                         .tip(if self.go_offline {
                             "Offline mode. Nothing goes out to the internet, and only what's on this computer plays. Click to go online."
                         } else if self.net_down {
-                            "No internet right now, so only what's on this computer plays. Click to stay offline until you go online again."
+                            "No internet right now, so only what's on this computer plays. Click to switch to offline mode."
                         } else {
                             "Online. Click to go offline, so only what's on this computer plays and nothing goes out."
                         })
@@ -818,9 +818,9 @@ impl App {
                 }
                 "GUIDE" => {
                     let gc = chip(ui, r, "", self.wa_guide, "c_map").tip(if self.wa_guide {
-                        "The guide is on, so each button is outlined and named. Click to hide it."
+                        "Button guide is on. Click to hide it."
                     } else {
-                        "Show a guide that outlines and names each of this skin's buttons."
+                        "Show labels on this skin's buttons."
                     });
                     guide_icon(ui.painter(), r, if self.wa_guide { pal().lcd } else { pal().ink });
                     if gc.clicked() {
@@ -830,7 +830,7 @@ impl App {
                 }
                 _ => {
                     if chip(ui, r, "NOW PLAYING", false, "c_art")
-                        .tip("See the song big: cover, lyrics and visualizer  (A)")
+                        .tip("Now Playing: cover, lyrics and visualizer  (A)")
                         .clicked()
                     {
                         acts.push(Action::ToggleArt);
@@ -841,7 +841,7 @@ impl App {
         // the rest, in a menu
         if !hidden.is_empty() {
             let r = crate::title_slot(inner, right, more_w, chip_h);
-            let mr = chip(ui, r, "...", false, "c_more").tip("More buttons that don't fit here.");
+            let mr = chip(ui, r, "...", false, "c_more").tip("More");
             let id = ui.id().with("title_more");
             if mr.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(id));
@@ -852,7 +852,7 @@ impl App {
                     let on = |b: bool| if b { "  (on)" } else { "" };
                     match *name {
                         "PIN" => {
-                            if menu_item(ui, &format!("Keep on top{}", on(self.pinned))) {
+                            if menu_item(ui, &format!("Always on top{}", on(self.pinned))) {
                                 acts.push(Action::TogglePin);
                             }
                         }

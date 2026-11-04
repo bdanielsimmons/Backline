@@ -320,7 +320,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "TRIAD PAIR OVER THE ROOT: IV/I - V/I",
-            "Two triads a step apart, back and forth over the same bass. Lots of colour from two easy shapes.",
+            "Two triads a step apart, back and forth over the same bass. Lots of color from two easy shapes.",
             vec![
                 (5, MA, Some(0), Strum, 1.0),
                 (7, MA, Some(0), Strum, 1.0),
@@ -439,14 +439,14 @@ impl App {
             self.seq_button(
                 ui,
                 acts,
-                "HEAR THEM UP THE NECK",
+                "PLAY ALL",
                 "Every shape in turn, up the neck",
                 "triads",
                 || grips.iter().map(grip_notes).collect(),
                 0.9,
             );
             if retro_btn(ui, "WHOLE NECK", self.tr_whole)
-                .tip("Light every root, 3rd and 5th to see how the shapes sit on the whole neck.")
+                .tip("Highlight every root, 3rd and 5th to see how the shapes sit on the whole neck.")
                 .clicked()
             {
                 self.tr_whole = !self.tr_whole;
@@ -463,9 +463,9 @@ impl App {
                 let inv = if bass == 0 {
                     "ROOT POSITION"
                 } else if bass == q[1] {
-                    "3RD ON THE BOTTOM"
+                    "1ST INVERSION"
                 } else {
-                    "5TH ON THE BOTTOM"
+                    "2ND INVERSION"
                 };
                 let fr = g.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
                 let name = format!("{}, FRET {}", inv, fr);
@@ -560,7 +560,7 @@ impl App {
 
     /// OVER A BASS: a triad over each of the twelve bass notes, and what chord it makes.
     fn tr_bass(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Over a new bass note, a triad becomes the colours of a bigger chord. D over C is a C Lydian sound, Bb over C a C9sus, and F over G the gospel IV over V. Pick a triad, then walk the bass under it.", pal().ink2);
+        para(ui, "Over a new bass note, a triad becomes the colors of a bigger chord. D over C is a C Lydian sound, Bb over C a C9sus, and F over G the gospel IV over V. Pick a triad, then walk the bass under it.", pal().ink2);
         self.key_and_set(ui, false);
         self.quality_row(ui);
         let root = self.tr_root;

@@ -15,7 +15,45 @@ pub fn set_modern(on: bool) {
 }
 
 fn modern() -> bool {
-    MODERN.load(Ordering::Relaxed) && CTX.get().is_some()
+    MODERN.load(Ordering::Relaxed) && has_ctx()
+}
+
+// ------------------------------------------------------------ a window on a thread of its own
+thread_local! {
+    /// A window drawn on a thread of its own (the visuals' window): its context and its copy of the glyphs, used on
+    /// that thread in place of the main window's; and its pixels a point (0: the main window's).
+    static OWN: std::cell::RefCell<Option<(egui::Context, egui::TextureId)>> = const { std::cell::RefCell::new(None) };
+    static OWN_PPP: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Text on this thread is for `ctx`, a window drawn on a thread of its own: its own copy of the glyphs (keep the
+/// handle while the window is open).
+pub fn own(ctx: &egui::Context) -> egui::TextureHandle {
+    let h = ctx.load_texture("backline-font", atlas(), egui::TextureOptions::NEAREST);
+    OWN.with(|o| *o.borrow_mut() = Some((ctx.clone(), h.id())));
+    h
+}
+
+/// That window's pixels a point, as it draws a frame.
+pub fn set_own_ppp(v: f32) {
+    OWN_PPP.with(|p| p.set(v.max(0.5)));
+}
+
+fn has_ctx() -> bool {
+    OWN.with(|o| o.borrow().is_some()) || CTX.get().is_some()
+}
+
+/// `f` with the context text is measured in: this thread's own window's, else the main window's.
+fn with_ctx<R>(f: impl FnOnce(&egui::Context) -> R) -> Option<R> {
+    OWN.with(|o| match &*o.borrow() {
+        Some((c, _)) => Some(f(c)),
+        None => CTX.get().map(f),
+    })
+}
+
+/// The glyphs' texture: this thread's own window's, else the main window's.
+fn tex() -> Option<egui::TextureId> {
+    OWN.with(|o| o.borrow().as_ref().map(|(_, t)| *t)).or_else(|| TEX.get().copied())
 }
 
 fn mfont(px: f32) -> egui::FontId {
@@ -66,22 +104,18 @@ fn pixel_ok(text: &str) -> bool {
 
 /// Draw this in the smooth font: the modern looks, or text the pixel font has no letters for.
 fn smooth(text: &str) -> bool {
-    modern() || (CTX.get().is_some() && !pixel_ok(text))
+    modern() || (has_ctx() && !pixel_ok(text))
 }
 
 /// Width of text in the smooth font at `size` points (for text a skin's own font can't draw).
 pub fn smooth_w(text: &str, size: f32) -> f32 {
-    match CTX.get() {
-        Some(c) => c.fonts(|f| f.layout_no_wrap(text.to_string(), egui::FontId::proportional(size), Color32::WHITE).size().x),
-        None => text.chars().count() as f32 * size * 0.5,
-    }
+    with_ctx(|c| c.fonts(|f| f.layout_no_wrap(text.to_string(), egui::FontId::proportional(size), Color32::WHITE).size().x))
+        .unwrap_or(text.chars().count() as f32 * size * 0.5)
 }
 
 fn mw(text: &str, px: f32) -> f32 {
-    match CTX.get() {
-        Some(c) => c.fonts(|f| f.layout_no_wrap(text.to_string(), mfont(px), Color32::WHITE).size().x),
-        None => text.chars().count() as f32 * px * 4.0,
-    }
+    with_ctx(|c| c.fonts(|f| f.layout_no_wrap(text.to_string(), mfont(px), Color32::WHITE).size().x))
+        .unwrap_or(text.chars().count() as f32 * px * 4.0)
 }
 
 // ------------------------------------------------------------ screen scale
@@ -92,7 +126,10 @@ pub fn set_ppp(v: f32) {
 }
 
 pub fn ppp() -> f32 {
-    f32::from_bits(PPP_BITS.load(Ordering::Relaxed))
+    match OWN_PPP.with(|p| p.get()) {
+        v if v > 0.0 => v,
+        _ => f32::from_bits(PPP_BITS.load(Ordering::Relaxed)),
+    }
 }
 
 /// Snap a coordinate to a whole physical pixel.
@@ -418,6 +455,14 @@ static TEX: OnceLock<egui::TextureId> = OnceLock::new();
 
 /// Build the glyph atlas. Keep the returned handle alive for as long as the app runs.
 pub fn init(ctx: &egui::Context) -> egui::TextureHandle {
+    let h = ctx.load_texture("backline-font", atlas(), egui::TextureOptions::NEAREST);
+    let _ = TEX.set(h.id());
+    let _ = CTX.set(ctx.clone());
+    h
+}
+
+/// The glyphs, packed into one picture.
+fn atlas() -> egui::ColorImage {
     let mut img = egui::ColorImage::new([TW, TH], Color32::TRANSPARENT);
     for i in 0..COUNT {
         let c = char::from_u32(FIRST + i as u32).unwrap_or('?');
@@ -431,10 +476,7 @@ pub fn init(ctx: &egui::Context) -> egui::TextureHandle {
             }
         }
     }
-    let h = ctx.load_texture("backline-font", img, egui::TextureOptions::NEAREST);
-    let _ = TEX.set(h.id());
-    let _ = CTX.set(ctx.clone());
-    h
+    img
 }
 
 // ------------------------------------------------------------------ drawing
@@ -489,7 +531,7 @@ pub fn ptext(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, col
 /// Pixel-font text whose dots are already `px` wide.
 fn draw_dots(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, color: Color32) -> f32 {
     let w = pw(text, px);
-    let Some(tex) = TEX.get().copied() else { return w };
+    let Some(tex) = tex() else { return w };
     let mut x = snap(match h {
         Align::Min => anchor.x,
         Align::Center => anchor.x - w / 2.0,

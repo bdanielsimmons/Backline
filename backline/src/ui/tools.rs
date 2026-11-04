@@ -293,7 +293,7 @@ impl App {
                         let mins = if long { self.tm.long_mins } else { self.pomo_break } as u64;
                         if long {
                             self.pomo_end = Some(Instant::now() + Duration::from_secs(mins * 60));
-                            self.set_note(&format!("LONG REST FOR {} MIN. GET UP AND MOVE ABOUT", mins));
+                            self.set_note(&format!("LONG BREAK: {} MIN. GET UP AND MOVE AROUND", mins));
                         }
                         self.tm.total = mins * 60;
                     }
@@ -365,14 +365,14 @@ impl App {
         let go_tip = match self.pomo {
             0 => "Start a focus block.",
             3 => "Start the next focus block.",
-            4 => "Carry on.",
+            4 => "Resume.",
             _ => "Pause the timer.",
         };
         let lr = ui.interact(left, id.with("go"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(go_tip);
         let rr = ui
             .interact(right, id.with("open"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Focus timer: work in blocks with short rests between. Click to open it.");
+            .tip("Focus timer: work in blocks with short breaks between. Click to open it.");
         let p = ui.painter().clone();
         pill_face(&p, r, self.timer_open, lr.hovered() || rr.hovered());
         let t = ui.input(|i| i.time);
@@ -393,8 +393,8 @@ impl App {
         let clock = format!("{}:{:02}", left_s / 60, left_s % 60);
         let (main, tail) = match self.pomo {
             1 => (format!("FOCUS {}", clock), format!("{}/{}", self.pomo_n, self.pomo_cycles)),
-            2 => (format!("REST {}", clock), String::new()),
-            3 => ("REST OVER".to_string(), String::new()),
+            2 => (format!("BREAK {}", clock), String::new()),
+            3 => ("BREAK OVER".to_string(), String::new()),
             4 => (format!("PAUSED {}", clock), format!("{}/{}", self.pomo_n, self.pomo_cycles)),
             _ => ("TIMER".to_string(), String::new()),
         };
@@ -443,12 +443,12 @@ impl App {
                 1 | 2 | 4 => {
                     let ph = match (self.pomo, self.pomo_was) {
                         (1, _) | (4, 1) => "FOCUS",
-                        _ => "REST",
+                        _ => "BREAK",
                     };
                     let ph = if self.pomo == 4 { format!("{} - PAUSED", ph) } else { ph.to_string() };
                     ((left as f32 / total.max(1) as f32).clamp(0.0, 1.0), format!("{}:{:02}", left / 60, left % 60), ph)
                 }
-                3 => (0.0, "0:00".to_string(), "REST OVER".to_string()),
+                3 => (0.0, "0:00".to_string(), "BREAK OVER".to_string()),
                 _ => (1.0, format!("{}:00", self.pomo_focus), "READY".to_string()),
             };
             let (rr, _) = ui.allocate_exact_size(Vec2::new(w, 150.0), Sense::hover());
@@ -503,14 +503,14 @@ impl App {
                         ui.add_space((w - 4.0 * bh() - 3.0 * 14.0) / 2.0);
                         ui.spacing_mut().item_spacing.x = 14.0;
                         let held = self.pomo == 4;
-                        let (ic, tip) = if held { ("play", "Carry on") } else { ("pause", "Pause the timer") };
+                        let (ic, tip) = if held { ("play", "Resume") } else { ("pause", "Pause the timer") };
                         if ibutton(ui, ic, tip, held).clicked() {
                             acts.push(Action::PomoHold);
                         }
-                        if ibutton(ui, "plus5", "Five more minutes", false).clicked() {
+                        if ibutton(ui, "plus5", "Add 5 minutes", false).clicked() {
                             self.pomo_add5();
                         }
-                        let skip = if self.pomo == 2 || held && self.pomo_was == 2 { "Skip the rest" } else { "End this block now" };
+                        let skip = if self.pomo == 2 || held && self.pomo_was == 2 { "Skip break" } else { "End this block now" };
                         if ibutton(ui, "skip", skip, false).clicked() {
                             self.pomo_skip();
                         }
@@ -530,7 +530,7 @@ impl App {
                 for (f, r) in [(25u32, 5u32), (50, 10)] {
                     let on = self.pomo_focus == f && self.pomo_break == r;
                     if retro_btn_w(ui, &format!("{} / {}", f, r), 76.0, on)
-                        .tip(format!("{} minutes of focus, {} of rest.", f, r))
+                        .tip(format!("{} min focus, {} min break.", f, r))
                         .clicked()
                     {
                         acts.push(Action::SetKnob(Knob::Focus, f.to_string()));
@@ -545,27 +545,27 @@ impl App {
                 label(ui, "MIN", 30.0);
             });
             ui.horizontal(|ui| {
-                label(ui, "REST", 70.0);
+                label(ui, "BREAK", 70.0);
                 let s = self.pomo_break.to_string();
-                self.num_step(ui, acts, F_REST, 44.0, Knob::Rest, s, "Minutes of rest.");
+                self.num_step(ui, acts, F_REST, 44.0, Knob::Rest, s, "Minutes per break.");
                 label(ui, "MIN", 30.0);
             });
             ui.horizontal(|ui| {
                 label(ui, "BLOCKS", 70.0);
                 let s = self.pomo_cycles.to_string();
-                self.num_step(ui, acts, F_BLOCKS, 44.0, Knob::Blocks, s, "How many focus blocks to do.");
+                self.num_step(ui, acts, F_BLOCKS, 44.0, Knob::Blocks, s, "Number of focus blocks.");
             });
             ui.horizontal(|ui| {
-                label(ui, "LONG REST", 70.0);
+                label(ui, "LONG BREAK", 70.0);
                 let v = self.tm.long_every;
                 let shown = if v == 0 { "OFF".to_string() } else { v.to_string() };
-                if let Some(n) = self.step_u32(ui, F_LONG_EVERY, v, 0, 16, 44.0, shown, "A longer rest after every this many blocks (0 is off).") {
+                if let Some(n) = self.step_u32(ui, F_LONG_EVERY, v, 0, 16, 44.0, shown, "Long break every N blocks (0 = off)") {
                     self.tm.long_every = n;
                     self.dirty = true;
                 }
                 if self.tm.long_every > 0 {
                     let v = self.tm.long_mins;
-                    if let Some(n) = self.step_u32(ui, F_LONG_MINS, v, 1, 90, 40.0, v.to_string(), "Minutes of the long rest.") {
+                    if let Some(n) = self.step_u32(ui, F_LONG_MINS, v, 1, 90, 40.0, v.to_string(), "Minutes per long break.") {
                         self.tm.long_mins = n;
                         self.dirty = true;
                     }
@@ -574,14 +574,14 @@ impl App {
             });
             ui.add_space(2.0);
             if check_box(ui, "SOUND", self.pomo_sound)
-                .tip("Play a soft chime when a block ends. Off, the timer just flashes.")
+                .tip("Play a soft chime when a block ends. When off, the timer only flashes.")
                 .clicked()
             {
                 acts.push(Action::Opt(Opt::PomoSound));
             }
             let flags: [(&str, &str, u8); 3] = [
-                ("START NEXT BLOCK BY ITSELF", "When a rest ends, the next focus block starts without waiting for you.", 0),
-                ("PAUSE THE MUSIC IN RESTS", "The song pauses when a block ends and plays on when the next one starts.", 1),
+                ("AUTO-START NEXT BLOCK", "When a break ends, the next focus block starts automatically.", 0),
+                ("PAUSE MUSIC DURING BREAKS", "The music pauses when a block ends and resumes when the next one starts.", 1),
                 ("ADD FOCUS TIME TO THE DIARY", "A finished block counts as practice in today's diary (time already counted from playing isn't counted twice).", 2),
             ];
             for (name, tip, k) in flags {
@@ -697,7 +697,7 @@ impl App {
                     52.0,
                     Knob::MetroBpm,
                     s,
-                    "The metronome's own tempo. The song's tempo is set apart.",
+                    "Metronome tempo, separate from the song's tempo.",
                 );
                 if retro_btn_w(ui, "TAP", 52.0, false).tip("Tap along with the music to find the tempo.").clicked() {
                     acts.push(Action::TapTempo);
@@ -744,14 +744,14 @@ impl App {
                     });
                     ui.vertical(|ui| {
                         group_box(ui, "SOUND", col_w, |ui| self.metro_sound(ui, acts));
-                        group_box(ui, "WITH THE TRACK", col_w, |ui| self.metro_track(ui, acts));
+                        group_box(ui, "TRACK SYNC", col_w, |ui| self.metro_track(ui, acts));
                     });
                 });
             } else {
                 meter_box(self, ui, acts);
                 group_box(ui, "SOUND", col_w, |ui| self.metro_sound(ui, acts));
                 group_box(ui, "TRAINER", col_w, |ui| self.metro_trainer(ui, acts));
-                group_box(ui, "WITH THE TRACK", col_w, |ui| self.metro_track(ui, acts));
+                group_box(ui, "TRACK SYNC", col_w, |ui| self.metro_track(ui, acts));
             }
         });
     }
@@ -778,7 +778,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for n in [4u8, 8, 16] {
                 if retro_btn_w(ui, &n.to_string(), 38.0, self.mt.unit == n)
-                    .tip("What one beat is: 4 means quarter notes, 8 means eighths. You can type any number (11/17 works).")
+                    .tip("Beat unit: 4 means quarter notes, 8 means eighths. You can type any number (11/17 works).")
                     .clicked()
                 {
                     acts.push(Action::Opt(Opt::UnitSet(n)));
@@ -830,7 +830,7 @@ impl App {
             ui.painter().rect_filled(fill, if crate::winamp_ui::chrome_on() { 3.0 } else { 0.0 }, pal().ink2);
             let resp = resp
                 .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
-                .tip("The metronome's own volume. The main volume doesn't change it.");
+                .tip("Metronome volume, separate from the main volume.");
             if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
                 self.mt_vol = ((p.x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
                 self.player.send(crate::player::Cmd::MetroVolume(self.mt_vol * self.mt_vol));
@@ -854,7 +854,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             label(ui, "FASTER", 80.0);
             let r = if self.mt.ramp_bars == 0 { "OFF".to_string() } else { self.mt.ramp_bars.to_string() };
-            self.num_step(ui, acts, F_RAMP_BARS, 44.0, Knob::RampBars, r, "The tempo goes up every this many bars (0 is off).");
+            self.num_step(ui, acts, F_RAMP_BARS, 44.0, Knob::RampBars, r, "Raise the tempo every N bars (0 = off).");
             label(ui, "BARS", 40.0);
         });
         ui.horizontal_wrapped(|ui| {
@@ -887,13 +887,13 @@ impl App {
         if self.mt.sync {
             let tid = self.cur_track().map(|x| x.id);
             let (msg, red) = if self.beat_busy {
-                ("LISTENING FOR THE BEAT...", false)
+                ("FINDING THE BEAT...", false)
             } else if tid.map_or(false, |i| self.beat_failed.contains(&i)) {
-                ("NO STEADY BEAT FOUND, SO YOUR OWN TEMPO IS USED", true)
+                ("NO STEADY BEAT FOUND. USING YOUR OWN TEMPO", true)
             } else if self.beat.map(|b| b.0) == tid && self.beat.is_some() {
                 ("LOCKED TO THE TRACK", false)
             } else {
-                ("WAITING. PLAY THE TRACK ONCE TO STORE IT, THEN THE BEAT IS FOUND.", false)
+                ("WAITING. PLAY THE TRACK ONCE, THEN THE BEAT IS FOUND.", false)
             };
             dim_line(ui, msg, 1.0, if red { pal().red } else { pal().ink2 });
         }
@@ -902,15 +902,15 @@ impl App {
                 label(ui, "TRACK BEAT", 90.0);
                 let bpm = self.beat.map_or(0.0, |b| 60.0 / b.1);
                 lcd_box(ui, &format!("{:.0} BPM", bpm), 80.0, pal().ink);
-                if retro_btn_w(ui, "x2", 40.0, false).tip("Found half the tempo? Double it.").clicked() {
+                if retro_btn_w(ui, "x2", 40.0, false).tip("Double the tempo").clicked() {
                     acts.push(Action::Opt(Opt::Double));
                 }
-                if retro_btn_w(ui, "/2", 40.0, false).tip("Found double the tempo? Halve it.").clicked() {
+                if retro_btn_w(ui, "/2", 40.0, false).tip("Halve the tempo").clicked() {
                     acts.push(Action::Opt(Opt::Half));
                 }
             });
             ui.horizontal_wrapped(|ui| {
-                label(ui, "SHIFT", 90.0);
+                label(ui, "OFFSET", 90.0);
                 let s = format!("{}", self.mt.shift_ms);
                 self.num_step(ui, acts, F_SHIFT, 52.0, Knob::Shift, s, "Nudge the click earlier or later, in milliseconds.");
                 label(ui, "MS", 30.0);
@@ -1095,7 +1095,7 @@ impl App {
                 });
                 ui.add_space(8.0);
                 para(ui, "Play a song or open a tune in TUNES to see its changes here. They are looked up for you.", pal().ink2);
-                para(ui, "Paste an iReal Pro link to bring in the changes and the composer.", pal().ink2);
+                para(ui, "Paste an iReal Pro link to import the changes and the composer.", pal().ink2);
                 ui.horizontal(|ui| {
                     let w = (ui.available_width() - 90.0).max(80.0);
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
@@ -1130,20 +1130,20 @@ impl App {
                         self.chart_edit = !self.chart_edit;
                         self.ed.id = 0;
                     }
-                    if ibutton(ui, "refresh", if busy { "Looking..." } else { "Look the chart up again" }, busy).clicked() {
+                    if ibutton(ui, "refresh", if busy { "Searching..." } else { "Search for the chart again" }, busy).clicked() {
                         acts.push(Action::FindChart(i, None));
                     }
                 } else if self.prac_chart.is_some() {
-                    if ibutton(ui, "close", "Close: back to the tune or the song playing", false).clicked() {
+                    if ibutton(ui, "close", "Close", false).clicked() {
                         self.prac_chart = None;
                     }
                 } else {
-                    if ibutton(ui, "refresh", if busy { "Looking..." } else { "Look the chart up again" }, busy).clicked() {
+                    if ibutton(ui, "refresh", if busy { "Searching..." } else { "Search for the chart again" }, busy).clicked() {
                         self.live_q.clear();
                     }
                     if has
                         && retro_btn(ui, "SAVE TO TUNES", false)
-                            .tip("Keep this song as a tune, with its chart. Then you can edit it.")
+                            .tip("Save this song and its chart as a tune, so you can edit it.")
                             .clicked()
                     {
                         acts.push(Action::SaveLive);
@@ -1168,7 +1168,7 @@ impl App {
                     None => format!("+{}", self.chart_tr),
                 };
                 let kr = retro_btn(ui, &chip, self.chart_tr != 0)
-                    .tip("The key it is shown in. Click for every key and the horn parts.");
+                    .tip("Shown in this key. Click for any key or the horn parts.");
                 let mut keys: Vec<(String, i32)> =
                     vec![("CONCERT (C)".into(), 0), ("Bb HORNS".into(), 2), ("Eb HORNS".into(), 9), ("F HORN".into(), 7)];
                 let t0 = tonic.unwrap_or(0);
@@ -1257,9 +1257,9 @@ impl App {
     /// Follow the player (the default) or keep this lead sheet: a lock that lights when it keeps it.
     fn sheet_lock(&mut self, ui: &mut egui::Ui, playing: Option<i64>) {
         let tip = if self.chart_lock {
-            "Kept: this lead sheet stays, whatever plays. Click to follow the player again."
+            "Locked: this lead sheet stays, whatever plays. Click to follow the player again."
         } else {
-            "Following the player: the lead sheet changes with the song playing. Click to keep this one."
+            "Following the player: the lead sheet changes with the song. Click to lock this one."
         };
         // an open or shut padlock and its word: clear at a glance which it is
         let (icon, word) = if self.chart_lock { ("lock", "LOCKED") } else { ("unlock", "FOLLOWING") };
@@ -1362,9 +1362,9 @@ impl App {
         if !has {
             ui.add_space(6.0);
             if busy {
-                para(ui, "Looking for the changes...", pal().ink2);
+                para(ui, "Searching for the changes...", pal().ink2);
             } else {
-                para(ui, "No chart found for this name yet. The free chart list covers jazz standards. Know it by another name or a line of the lyric? Try that here.", pal().ink2);
+                para(ui, "No chart found. The free chart list covers jazz standards. Try another title or a line of the lyrics here.", pal().ink2);
             }
             ui.horizontal(|ui| {
                 let w = (ui.available_width() - 90.0).max(80.0);
@@ -1391,7 +1391,7 @@ impl App {
             }
             para(ui, "Or click the pencil to type in the changes or paste an iReal Pro link.", pal().ink2);
             if live {
-                para(ui, "Save the song with SAVE TO TUNES first, then the pencil works on it.", pal().dim);
+                para(ui, "To edit the chart, use SAVE TO TUNES first.", pal().dim);
             }
             return;
         }
@@ -1411,14 +1411,14 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 6.0);
             let on = self.band_on;
             if icon_pill(ui, if on { "stop" } else { "play" }, if on { "STOP BAND" } else { "PLAY BAND" }, 130.0, on)
-                .tip("A little band plays the changes: bass, chords and drums.")
+                .tip("A backing band plays the changes: bass, chords and drums.")
                 .clicked()
             {
                 acts.push(Action::Opt(Opt::Band));
             }
             if let Some((a, b)) = self.chart_sel {
                 if retro_btn(ui, &format!("BARS {}-{}  X", a + 1, b + 1), true)
-                    .tip("Drag across bars to loop part of the tune. To play the whole tune again, click here, right-click a bar, double-click the sheet or press Esc over it.")
+                    .tip("Drag across bars to loop part of the tune. To clear the loop, click here, right-click a bar, double-click the sheet or press Esc over it.")
                     .clicked()
                 {
                     self.chart_sel = None;
@@ -1482,7 +1482,7 @@ impl App {
             let xr = ibutton(ui, "more", "More", false);
             popup(ui, "band_more", &xr, 220.0, true, |ui| {
                 let hit = retro_btn_w(ui, "EXPORT WAV", 190.0, false)
-                    .tip("Save the band as a WAV file. It has the count-in, the chart as many times as LOOPS says (once when endless) and an ending.")
+                    .tip("Save the band as a WAV file: count-in, the chart LOOPS times (once if endless), then an ending.")
                     .clicked();
                 if hit {
                     acts.push(Action::Opt(Opt::BandExport));
@@ -1606,7 +1606,7 @@ impl App {
                     let looping = self.chart_sel.is_some();
                     if ti.is_none() && looping {
                         drag.context_menu(|ui| {
-                            if crate::menu_item(ui, "Clear the loop (play the whole tune)") {
+                            if crate::menu_item(ui, "Clear loop") {
                                 self.chart_sel = None;
                                 ui.close_menu();
                             }
@@ -1621,15 +1621,15 @@ impl App {
                             self.ed.cur = bar.chords.join(" ").chars().count();
                         }
                         rsp.context_menu(|ui| {
-                            if looping && crate::menu_item(ui, "Clear the loop (play the whole tune)") {
+                            if looping && crate::menu_item(ui, "Clear loop") {
                                 self.chart_sel = None;
                                 ui.close_menu();
                             }
                             for (lab, op) in [
-                                ("Insert a bar after (copy)", "ins"),
+                                ("Duplicate bar", "ins"),
                                 ("Delete this bar", "del"),
-                                ("Repeat starts here  { ", "{"),
-                                ("Repeat ends here  } ", "}"),
+                                ("Start repeat  { ", "{"),
+                                ("End repeat  } ", "}"),
                                 ("1st ending", "[1"),
                                 ("2nd ending", "[2"),
                                 ("Section A", "*A"),
@@ -1786,7 +1786,7 @@ impl App {
                             }
                             crate::views::dim_line(
                                 ui,
-                                "TYPE THE CHORDS WITH A SPACE BETWEEN THEM. PRESS ENTER TO KEEP THEM.",
+                                "TYPE THE CHORDS WITH A SPACE BETWEEN THEM. PRESS ENTER TO SAVE.",
                                 1.0,
                                 pal().dim,
                             );
@@ -1796,7 +1796,7 @@ impl App {
                                     ("JOIN NEXT", "join", "Move the next bar's chords into this one, for two chords in a bar."),
                                     ("SPLIT", "split", "With two or more chords, move the second half to a bar of its own."),
                                     ("+ BAR", "ins", "Hold this chord one more bar, as a copy after it."),
-                                    ("DELETE", "del", "Take this bar out."),
+                                    ("DELETE", "del", "Delete this bar."),
                                 ] {
                                     if retro_btn(ui, lab, false).tip(tip).clicked() {
                                         op = Some(o.to_string());

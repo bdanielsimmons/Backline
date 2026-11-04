@@ -193,7 +193,7 @@ pub fn open(path: &Path) -> Result<Opened, String> {
         } else if let Some((_, data)) = got.iter().find(|(n, _)| n == file) {
             if key == "plan" {
                 if let Err(e) = crate::plan::parse(&String::from_utf8_lossy(data)) {
-                    return Err(format!("its plan doesn't read ({})", e));
+                    return Err(format!("can't read its plan ({})", e));
                 }
             }
             let mine = std::fs::read(dir.join(file)).ok();

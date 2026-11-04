@@ -113,7 +113,7 @@ impl App {
         }
 
         // ---- visuals, in place of the cover (with or without one), under the words and the controls
-        if self.vis_np {
+        if self.vis_in_np() {
             self.vis_paint(ui, full, 1);
             let now = ui.input(|i| i.time);
             let name = self.vis_name();
@@ -138,7 +138,7 @@ impl App {
         }
 
         // ---- visualizer, soft and behind everything (only under the cover when lyrics split the view; not with visuals)
-        if self.show_spec && !self.vis_np {
+        if self.show_spec && !self.vis_in_np() {
             let zone = if lyrics_on && self.spec_lyr == 0 {
                 Rect::from_min_max(full.min, Pos2::new(art_zone.max.x + 14.0, full.max.y))
             } else {
@@ -158,13 +158,13 @@ impl App {
             crate::viz::set_edge_fade(soft);
             viz_draw(&p, r, &vb, &vp, &vw, self.viz[1].mode, self.viz[1].w, true, self.spec_op, self.viz_tint(self.viz[1].color));
             crate::viz::set_edge_fade(false);
-            if self.cur.is_some() && !self.paused && !self.stopped {
+            if self.cur.is_some() && !self.paused && !self.stopped && crate::onscreen::seen() {
                 ui.ctx().request_repaint();
             }
         }
 
         // ---- the cover (the visuals take its place when on)
-        if !self.vis_np {
+        if !self.vis_in_np() {
         // ---- a slight tilt, only while the mouse is on the cover itself (no zoom)
         let reach = a / 2.0;
         let calm = crate::skin::calm();
@@ -201,7 +201,7 @@ impl App {
             }
             // right-click: the cover's border
             cover_hit.context_menu(|ui| {
-                for (i, name) in ["NONE", "SUBTLE", "SKIN COLOUR"].iter().enumerate() {
+                for (i, name) in ["NONE", "SUBTLE", "SKIN COLOR"].iter().enumerate() {
                     let mark = if self.art_border as usize == i { "> " } else { "   " };
                     if menu_item(ui, &format!("{}BORDER: {}", mark, name)) {
                         self.art_border = i as u8;
@@ -319,7 +319,7 @@ impl App {
                 }
                 for (dark, name) in [(false, "SOFT WHITE"), (true, "SOFT BLACK")] {
                     let mark = if self.cap_dark == dark { "> " } else { "   " };
-                    if menu_item(ui, &format!("{}COLOUR: {}", mark, name)) {
+                    if menu_item(ui, &format!("{}COLOR: {}", mark, name)) {
                         self.cap_dark = dark;
                         self.dirty = true;
                         ui.close_menu();
@@ -609,10 +609,10 @@ impl App {
             );
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(strip.shrink2(Vec2::new(10.0, 7.0))), |ui| {
                 ui.horizontal(|ui| {
-                    if retro_btn_w(ui, "SET A", 64.0, false).tip("Loop start here  ([ key)").clicked() && active {
+                    if retro_btn_w(ui, "SET A", 64.0, false).tip("Set loop start  ([ key)").clicked() && active {
                         acts.push(Action::SetAAt(pos));
                     }
-                    if retro_btn_w(ui, "SET B", 64.0, false).tip("Loop end here  (] key)").clicked() && active {
+                    if retro_btn_w(ui, "SET B", 64.0, false).tip("Set loop end  (] key)").clicked() && active {
                         acts.push(Action::SetBAt(pos));
                     }
                     if icon_btn(ui, &IC_REP, self.loop_on && both, pal().ink).tip("Loop on / off  (\\ key)").clicked() {
@@ -630,7 +630,7 @@ impl App {
                             64.0,
                             Knob::Speed,
                             format!("{}%", self.speed),
-                            "Slower or faster (DOWN and UP keys). You can also type a percent.",
+                            "Playback speed (DOWN and UP keys). You can also type a percent.",
                         );
                         for pct in [125u32, 100, 85, 70, 50] {
                             if retro_btn_w(ui, &format!("{}", pct), 44.0, self.speed == pct).clicked() {
@@ -660,7 +660,7 @@ impl App {
                     acts.push(Action::ToggleLyrics);
                 }
                 let sp = icon_btn(ui, &IC_SPEC, self.show_spec, ink)
-                    .tip("Visualizer behind the cover. Right-click for its settings, with a preview.");
+                    .tip("Visualizer behind the cover. Right-click for settings and a preview.");
                 if sp.clicked() {
                     acts.push(Action::ToggleSpec);
                 }
@@ -668,14 +668,17 @@ impl App {
                     self.viz_panel = Some(1);
                 }
                 let vb = icon_btn(ui, &IC_VIS, self.vis_np, ink)
-                    .tip("Visuals in place of the cover, the controls still here. Right-click to pick one. G: full screen.");
+                    .tip("Visuals instead of the cover. Right-click to pick one. G: full screen.");
                 if vb.clicked() {
                     self.vis_np = !self.vis_np;
                     self.dirty = true;
                 }
                 vb.context_menu(|ui| self.vis_menu(ui));
+                if crate::popout::CAN && crate::popout::button(ui, ink).tip("Pop out visuals").clicked() {
+                    self.pop_toggle();
+                }
                 if icon_btn(ui, if fs { &IC_WIN } else { &IC_FULL }, false, ink)
-                    .tip(if fs { "Leave fullscreen  (F)" } else { "Fullscreen  (F)" })
+                    .tip(if fs { "Exit full screen  (F)" } else { "Full screen  (F)" })
                     .clicked()
                 {
                     acts.push(Action::ToggleFullscreen);
@@ -745,8 +748,8 @@ impl App {
             }
             let rep_tip = match self.repeat {
                 Repeat::Off => "Repeat: off  (click for all)",
-                Repeat::All => "Repeat: all  (click for this song)",
-                Repeat::One => "Repeat: this song  (click for off)",
+                Repeat::All => "Repeat: all  (click for one)",
+                Repeat::One => "Repeat: one  (click for off)",
             };
             if bare("loop", self.repeat != Repeat::Off, false, rep_tip, x0 + 1.5 * gap) {
                 acts.push(Action::Repeat);
@@ -771,7 +774,7 @@ impl App {
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(mid), |ui| {
                 ui.horizontal(|ui| {
                     if icon_btn(ui, &IC_SHUF, self.shuffle, ink)
-                        .tip(if self.shuffle { "Shuffle is on. Click to turn it off." } else { "Shuffle the queue" })
+                        .tip(if self.shuffle { "Shuffle: on" } else { "Shuffle: off" })
                         .clicked()
                     {
                         acts.push(Action::Shuffle);
@@ -789,9 +792,9 @@ impl App {
                         acts.push(Action::Next);
                     }
                     let (rep_icon, rep_tip) = match self.repeat {
-                        Repeat::Off => (&IC_REP, "Repeat is off  (click for all)"),
-                        Repeat::All => (&IC_REP, "Repeat all  (click for one track)"),
-                        Repeat::One => (&IC_REP1, "Repeat this track  (click to turn off)"),
+                        Repeat::Off => (&IC_REP, "Repeat: off  (click for all)"),
+                        Repeat::All => (&IC_REP, "Repeat: all  (click for one)"),
+                        Repeat::One => (&IC_REP1, "Repeat: one  (click for off)"),
                     };
                     if icon_btn(ui, rep_icon, self.repeat != Repeat::Off, ink).tip(rep_tip).clicked() {
                         acts.push(Action::Repeat);
@@ -821,7 +824,7 @@ impl App {
                     let (sr, vr) = ui.allocate_exact_size(Vec2::new(100.0, bh()), Sense::click_and_drag());
                     let vr = vr
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip(format!("Volume {}%  (drag or scroll over it)", (self.volume * 100.0).round()));
+                        .tip(format!("Volume {}%  (drag or scroll)", (self.volume * 100.0).round()));
                     let g = Rect::from_center_size(sr.center(), Vec2::new(sr.width(), 8.0));
                     let knob_w = 10.0;
                     let kx = g.min.x + (g.width() - knob_w) * self.volume;
@@ -861,16 +864,16 @@ impl App {
                     icon_btn(ui, &IC_OUT, self.out_device.is_some(), ink).tip("Sound output: speakers, headphones or Bluetooth");
                 self.output_popup(ui, &ob, acts);
                 ui.add_space(14.0);
-                if icon_btn(ui, &IC_MENU, self.art_queue, ink).tip("The queue: what plays next").clicked() {
+                if icon_btn(ui, &IC_MENU, self.art_queue, ink).tip("Queue").clicked() {
                     self.art_queue = !self.art_queue;
                 }
                 if PRACTICE
-                    && retro_btn(ui, "PRACTICE", self.practice).tip("The loop and speed tools along the top  (P)").clicked()
+                    && retro_btn(ui, "PRACTICE", self.practice).tip("Practice mode: loop and speed tools  (P)").clicked()
                 {
                     acts.push(Action::TogglePractice);
                 }
                 let sb = retro_btn(ui, &crate::tools::speed_label(self.speed), self.speed != 100).tip(
-                    "Speed, with the pitch kept. Click for the next one, or right-click to pick or type any  (UP and DOWN keys)",
+                    "Playback speed (pitch unchanged). Click to cycle, right-click to pick or type one  (UP and DOWN keys)",
                 );
                 if sb.clicked() {
                     acts.push(Action::Speed(crate::tools::next_speed(self.speed)));
@@ -884,7 +887,7 @@ impl App {
                 &p,
                 Pos2::new(full.max.x - 30.0, full.max.y - 14.0),
                 Align::Max,
-                "Click the cover: record    Right-click it: border    ESC close    F fullscreen    L lyrics    H like    SPACE play/pause",
+                "Click the cover: vinyl    Right-click it: border    ESC close    F full screen    L lyrics    H like    SPACE play/pause",
                 1.0,
                 pal().dim,
             );

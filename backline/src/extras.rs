@@ -931,7 +931,7 @@ impl App {
             cache::remove(t.id);
             self.set_note(&format!("SAVED COPY DELETED: {} (IT DOWNLOADS AGAIN WHEN PLAYED)", name));
         } else {
-            self.set_note("NOTHING OF THIS SONG IS SAVED ON THIS COMPUTER");
+            self.set_note("THIS SONG ISN'T SAVED ON THIS COMPUTER");
         }
     }
 
@@ -970,8 +970,8 @@ impl App {
         };
         let Some(path) = path.as_ref().filter(|p| p.exists()).cloned() else {
             self.set_err(match (path, self.srcmap.get(&id)) {
-                (Some(p), Some(Src::File(_))) => format!("CAN'T SHOW IT: THE FILE ISN'T THERE ANY MORE ({})", p.display()),
-                _ => "CAN'T SHOW IT: THIS SONG ISN'T SAVED ON THIS COMPUTER, IT STREAMS. TURN SAVING ON IN SETTINGS TO KEEP COPIES".to_string(),
+                (Some(p), Some(Src::File(_))) => format!("FILE NOT FOUND ({})", p.display()),
+                _ => "CAN'T SHOW THE FILE: THIS SONG STREAMS AND ISN'T SAVED. TURN ON SAVING IN SETTINGS".to_string(),
             });
             return;
         };
@@ -1443,13 +1443,13 @@ impl App {
             note += &format!(". {} FILES MATCHED TO YOURS", t.relinked);
         }
         if t.missing > 0 {
-            note += &format!(". {} FILES AREN'T ON THIS COMPUTER. ADD THEM IN MY FILES, THEN IMPORT AGAIN", t.missing);
+            note += &format!(". {} FILES NOT FOUND. ADD THEM IN MY FILES, THEN IMPORT AGAIN", t.missing);
         }
         if t.tidal > 0 && !self.api.has_token() {
             note += &format!(". {} TIDAL SONGS NEED A TIDAL LOGIN TO PLAY", t.tidal);
         }
         if newer {
-            note += ". IT WAS MADE BY A NEWER BACKLINE, SO UPDATE TO BRING IN EVERYTHING";
+            note += ". MADE WITH A NEWER VERSION OF BACKLINE. UPDATE TO IMPORT EVERYTHING";
         }
         self.set_note(&note);
     }
@@ -1460,7 +1460,7 @@ impl App {
                 Ok(names) => {
                     self.cm_list = None;
                     self.set_note(&format!(
-                        "{} TRANSCRIPTION{} BROUGHT IN",
+                        "{} TRANSCRIPTION{} IMPORTED",
                         names.len(),
                         if names.len() == 1 { "" } else { "S" }
                     ));
@@ -1547,7 +1547,7 @@ impl App {
             }
             Msg::TidalListMade(r) => match r {
                 Ok(name) => {
-                    self.set_note(&format!("MADE {} ON TIDAL", name.to_uppercase()));
+                    self.set_note(&format!("CREATED {} ON TIDAL", name.to_uppercase()));
                     self.tidal_lists = None;
                     self.apply(Action::RefreshLibrary);
                 }
@@ -1754,7 +1754,7 @@ impl App {
                     self.notes_busy = false;
                     match m {
                         Some(m) => self.notes.2 = Some(Arc::new(m)),
-                        None => self.set_err("COULDN'T READ THIS SONG FOR THE NOTE VIEW".to_string()),
+                        None => self.set_err("COULDN'T ANALYZE THIS SONG'S NOTES".to_string()),
                     }
                 }
             }
@@ -1781,7 +1781,7 @@ impl App {
                         }
                         self.set_note("STEMS READY. USE THEM IN THE STEMS TAB")
                     }
-                    Err(e) if e == "cancelled" => self.set_note("SPLIT CANCELLED"),
+                    Err(e) if e == "cancelled" => self.set_note("SPLIT CANCELED"),
                     Err(e) => self.set_err(format!("STEMS FAILED: {}", e)),
                 }
             }
@@ -1876,9 +1876,9 @@ impl App {
                 }
                 Ok(None) => {
                     self.upd_note = if crate::update::build() == 0 {
-                        "Updates are off. This copy has no build number, so it wasn't made by the release workflow.".to_string()
+                        "Updates are off: this is a development build (no build number).".to_string()
                     } else {
-                        "Checked just now. You have the newest build.".to_string()
+                        "Checked just now. You're up to date.".to_string()
                     };
                 }
                 Err(e) => {
@@ -1909,8 +1909,8 @@ impl App {
             }
             Msg::WaSkin(r) => self.wear_skin(r, true),
             Msg::TagsSaved(r) => match r {
-                Ok(name) => self.set_note(&format!("SAVED IN THE FILE TOO: {}", name)),
-                Err(e) => self.set_err(format!("RENAMED IN BACKLINE, BUT THE FILE ITSELF COULD NOT BE CHANGED: {}", e)),
+                Ok(name) => self.set_note(&format!("FILE TAGS UPDATED: {}", name)),
+                Err(e) => self.set_err(format!("RENAMED IN BACKLINE, BUT COULDN'T UPDATE THE FILE: {}", e)),
             },
             Msg::BandSaved(r) => match r {
                 Ok(p) => self.set_note(&format!("SAVED: {}", p)),
@@ -1952,7 +1952,7 @@ impl App {
             Msg::Tuning(id, r) => {
                 self.tuning_busy = false;
                 match r {
-                    Err(e) => self.set_err(format!("COULDN'T GET THE TRACK TO CHECK ITS TUNING: {}", e)),
+                    Err(e) => self.set_err(format!("TUNING CHECK FAILED: {}", e)),
                     Ok(Some((c, conf))) if conf >= 0.04 => {
                         self.tuning = Some((id, c, conf));
                         let mut how = if c.abs() <= 4 {
@@ -1967,7 +1967,7 @@ impl App {
                     }
                     _ => {
                         self.tuning = Some((id, 0, -1.0));
-                        self.set_note("COULDN'T TELL. THERE IS TOO LITTLE PITCHED MUSIC TO MEASURE");
+                        self.set_note("COULDN'T DETECT THE TUNING: TOO LITTLE PITCHED MUSIC");
                     }
                 }
             }
@@ -2010,12 +2010,12 @@ impl App {
                         self.beat = Some((id, period, phase));
                         self.beat_grid = Some((id, grid, period));
                         self.mt_gen += 1;
-                        self.set_note(&format!("FOUND THE BEAT: {:.0} BPM. NOW TURN ON LOCK", 60.0 / period));
+                        self.set_note(&format!("BEAT FOUND: {:.0} BPM. NOW TURN ON LOCK TO TRACK", 60.0 / period));
                     }
                     None => {
                         self.beat_failed.insert(id);
                         self.mt_gen += 1;
-                        self.set_note("NO STEADY BEAT FOUND, SO YOUR OWN TEMPO IS USED");
+                        self.set_note("NO STEADY BEAT FOUND. USING YOUR OWN TEMPO");
                     }
                 }
             }
@@ -2099,7 +2099,7 @@ impl App {
         };
         api::log(&format!("take stopped: {:.1} s, {} samples in at {} Hz", secs, samples.len(), rate));
         if samples.len() < rate as usize / 2 {
-            self.set_note("NOTHING CAME IN. CHECK THE INPUT");
+            self.set_note("NOTHING RECORDED. CHECK THE INPUT");
             return;
         }
         let you = crate::record::resample(&samples, rate, 44100);
@@ -2137,7 +2137,7 @@ impl App {
         self.store_dirty = true;
         self.rec_last = Some((id, false));
         api::log(&format!("take kept: {}", p_mix.display()));
-        self.set_note(&format!("TAKE KEPT WITH {}", tune_name.to_uppercase()));
+        self.set_note(&format!("TAKE SAVED: {}", tune_name.to_uppercase()));
     }
 
     /// The last take, kept or deleted, then the new take starts.
@@ -2314,7 +2314,7 @@ impl App {
             Action::AddFolder => self.pick_files(true),
             Action::Rescan => {
                 self.rescan();
-                self.set_note("LOOKING FOR NEW FILES...");
+                self.set_note("SCANNING FOR NEW FILES...");
             }
             Action::ForgetFolder(i) => {
                 if i < self.store.folders.len() {
@@ -2463,12 +2463,12 @@ impl App {
                     crate::pack::available().into_iter().map(|(k, _)| k).filter(|k| !self.pack_off.iter().any(|o| o == k)).collect();
                 let share = if self.pack_loops { serde_json::to_string_pretty(&self.store.share()).ok() } else { None };
                 if keys.is_empty() && share.is_none() {
-                    return self.set_note("TICK SOMETHING TO PUT IN THE PACK");
+                    return self.set_note("SELECT AT LEAST ONE ITEM FOR THE PACK");
                 }
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
                     let Some(path) = rfd::FileDialog::new()
-                        .set_title("Save a pack for a friend")
+                        .set_title("Save pack")
                         .set_file_name("Backline pack.backline")
                         .add_filter("Backline pack", &["backline"])
                         .save_file()
@@ -2510,7 +2510,7 @@ impl App {
                         }
                         if !done.is_empty() && !crate::PRACTICE {
                             // kept in Backline's folder: the practice version, opened later, finds them there
-                            self.set_note(&format!("KEPT: {}. THEY SHOW IN THE PRACTICE VERSION", done.join(", ")));
+                            self.set_note(&format!("SAVED: {}. THEY SHOW UP IN THE PRACTICE VERSION", done.join(", ")));
                         } else if !done.is_empty() {
                             self.set_note(&format!("UNLOCKED: {}", done.join(", ")));
                         }
@@ -2553,7 +2553,7 @@ impl App {
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
                     let Some(path) = rfd::FileDialog::new()
-                        .set_title("Save your loops and playlists")
+                        .set_title("Export loops and playlists")
                         .set_file_name(&file)
                         .add_filter("Backline loops and playlists", &["backline"])
                         .save_file()
@@ -2569,7 +2569,7 @@ impl App {
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 std::thread::spawn(move || {
                     let Some(path) = rfd::FileDialog::new()
-                        .set_title("Bring in loops and playlists")
+                        .set_title("Import loops and playlists")
                         .add_filter("Backline loops and playlists", &["backline", "json"])
                         .pick_file()
                     else {
@@ -2754,7 +2754,7 @@ impl App {
                 let src = self.srcmap.get(&t.id).cloned();
                 let (lossless, api) = (self.prefer_lossless, self.api.clone());
                 self.tuning_busy = true;
-                self.set_note("LISTENING FOR THE TUNING...");
+                self.set_note("CHECKING THE TUNING...");
                 let (tx, ctx, id) = (self.tx.clone(), self.ctx.clone(), t.id);
                 std::thread::spawn(move || {
                     let r = crate::fetch_audio(&api, id, lossless, false, src).map(crate::tuning::detect);
@@ -2810,7 +2810,7 @@ impl App {
                         self.store.yt.insert(0, e);
                         self.store_dirty = true;
                     }
-                    self.set_note("KEPT IN MY CLIPS");
+                    self.set_note("SAVED TO MY CLIPS");
                 }
             }
             Action::ScKeep(id) => {
@@ -2819,7 +2819,7 @@ impl App {
                         self.store.sc.insert(0, e);
                         self.store_dirty = true;
                     }
-                    self.set_note("KEPT IN MY SOUNDCLOUD");
+                    self.set_note("SAVED TO MY SOUNDCLOUD");
                 }
             }
             Action::GoOffline(on) => {
@@ -2833,7 +2833,7 @@ impl App {
                 if on {
                     // as if there were no internet: your library as kept here, only what is on this computer
                     let _ = self.tx.send(crate::Msg::NoInternet);
-                    self.set_note("OFFLINE MODE: ONLY WHAT'S ON THIS COMPUTER. GO ONLINE TO BRING TIDAL BACK");
+                    self.set_note("OFFLINE MODE: ONLY MUSIC ON THIS COMPUTER. GO ONLINE TO USE TIDAL");
                 } else {
                     self.set_note("GOING ONLINE...");
                     let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
@@ -3288,7 +3288,7 @@ impl App {
                     let has_chart = self.chart_tune().map(|i| !self.store.tunes[i].chart.is_empty()).unwrap_or(false);
                     self.rtab = if has_chart { 1 } else { 0 };
                 }
-                self.set_note(if self.focus_mode { "FOCUS: JUST THE PLAYER AND TOOLS" } else { "FULL LAYOUT" });
+                self.set_note(if self.focus_mode { "FOCUS MODE: PLAYER AND TOOLS ONLY" } else { "FULL LAYOUT" });
             }
             Action::Continue => {
                 let Some(l) = self.store.last.clone() else { return };
@@ -3485,7 +3485,7 @@ impl App {
                 self.show_form = false;
                 self.ed.id = 0;
                 self.store_dirty = true;
-                self.set_note("LOGGED IN THE DIARY");
+                self.set_note("ADDED TO THE DIARY");
             }
             Action::RightTab(n) => self.rtab = n,
             Action::StemGet => {
@@ -3603,11 +3603,11 @@ impl App {
                     self.pomo_was = self.pomo;
                     self.pomo = 4;
                     self.pomo_end = None;
-                    self.set_note("FOCUS TIMER PAUSED. CONTINUE WHEN READY");
+                    self.set_note("FOCUS TIMER PAUSED. RESUME WHEN READY");
                 } else if self.pomo == 4 {
                     self.pomo = self.pomo_was.clamp(1, 2);
                     self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_left.max(1)));
-                    self.set_note("FOCUS TIMER CONTINUES");
+                    self.set_note("FOCUS TIMER RESUMED");
                 }
                 self.dirty = true;
             }
@@ -3707,12 +3707,12 @@ impl App {
             } else {
                 self.pomo = 2;
                 self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_break as u64 * 60));
-                self.set_note(&format!("REST FOR {} MIN. STRETCH AND HAVE SOME WATER", self.pomo_break));
+                self.set_note(&format!("BREAK: {} MIN. STRETCH AND HAVE SOME WATER", self.pomo_break));
             }
         } else {
             self.pomo = 3;
             self.pomo_end = None;
-            self.set_note(&format!("REST OVER. START FOCUS {} OF {} WHEN READY", self.pomo_n + 1, self.pomo_cycles));
+            self.set_note(&format!("BREAK OVER. START FOCUS {} OF {} WHEN READY", self.pomo_n + 1, self.pomo_cycles));
         }
     }
 
@@ -3876,7 +3876,7 @@ impl App {
                 if self.cur.is_some() && !self.stopped {
                     self.beat_wait = Some(t.id);
                     self.beat_busy = true;
-                    self.set_note("LISTENING FOR THE BEAT...");
+                    self.set_note("FINDING THE BEAT...");
                     return;
                 }
                 let bytes = match self.srcmap.get(&t.id) {
@@ -3884,11 +3884,11 @@ impl App {
                     _ => cache::get(t.id),
                 };
                 let Some(bytes) = bytes else {
-                    self.set_note("PLAY IT ONCE FIRST SO IT IS STORED, THEN FIND THE BEAT");
+                    self.set_note("PLAY THE TRACK ONCE FIRST, THEN FIND THE BEAT");
                     return;
                 };
                 self.beat_busy = true;
-                self.set_note("LISTENING FOR THE BEAT...");
+                self.set_note("FINDING THE BEAT...");
                 let (tx, ctx, id) = (self.tx.clone(), self.ctx.clone(), t.id);
                 std::thread::spawn(move || {
                     let _ = tx.send(Msg::Beats(id, band::detect_beats(bytes)));

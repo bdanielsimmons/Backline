@@ -1374,7 +1374,7 @@ impl App {
             self.rd_made_up(ui);
         }
         ui.add_space(10.0);
-        section_header(ui, "HOW TO WORK");
+        section_header(ui, "PRACTICE TIPS");
         // (a dropdown: six tabs wrapped onto two rows)
         if let Some(v) = dropdown(
             ui,
@@ -1415,7 +1415,7 @@ impl App {
                 "On chord pages, say each chord's name out loud as you place it. Shapes stick when they have names.",
             ],
             5 => &[
-                "Every day, read something you don't know: a lead sheet from a fake book, a Real Book head, a horn part. Read it once through at a slow tempo without stopping, before you practise it.",
+                "Every day, read something you don't know: a lead sheet from a fake book, a Real Book head, a horn part. Read it once through at a slow tempo without stopping, before you practice it.",
                 "Read ahead. While you play one bar, your eyes should already be on the next. If your eyes keep falling back, cover the bar you're playing with a card.",
                 "Read in other positions. Take a book exercise you know and read it in position V or VII. Same notes, a new map.",
                 "Read rhythms on their own. Clap a line of eighths, triplets and rests from any page before you play it.",
@@ -1500,7 +1500,7 @@ impl App {
                 self.rd_retempo();
             }
             ui.add_space(10.0);
-            if retro_btn(ui, "HEAR IT", false).tip("Hear a bar to count you in, then this part.").clicked() {
+            if retro_btn(ui, "HEAR IT", false).tip("A one-bar count-in, then this part.").clicked() {
                 self.rd_start(mine, None, false);
             }
             if let Some(o) = other {
@@ -1543,7 +1543,7 @@ impl App {
             if retro_btn_w(ui, "-", 28.0, false).clicked() {
                 self.rd_zoom = (self.rd_zoom - 0.25).max(0.75);
             }
-            if retro_btn_w(ui, &format!("{}%", (self.rd_zoom * 100.0).round()), 56.0, false).tip("Back to 100%.").clicked() {
+            if retro_btn_w(ui, &format!("{}%", (self.rd_zoom * 100.0).round()), 56.0, false).tip("Reset to 100%.").clicked() {
                 self.rd_zoom = 1.0;
             }
             if retro_btn_w(ui, "+", 28.0, false).clicked() {
@@ -1570,7 +1570,7 @@ impl App {
             self.rd_add_book(&path);
         }
         if self.rd_book.is_empty() {
-            para(ui, "Work through your copy of Leavitt's Modern Method, Volume 1, lesson by lesson. Every exercise, solo and duet is written out bar for bar, played, and ticked off as you go. The book stays on this computer only, in a file called reading_book.txt in Backline's folder. It is never part of Backline. No book? MADE-UP LINES works the same way with fresh lines.", pal().ink2);
+            para(ui, "Work through your copy of Leavitt's Modern Method, Volume 1, lesson by lesson. Every exercise, solo and duet is written out bar for bar, played, and checked off as you go. The book stays on this computer only, in a file called reading_book.txt in Backline's folder. It is never part of Backline. No book? MADE-UP LINES works the same way with fresh lines.", pal().ink2);
             ui.horizontal_wrapped(|ui| {
                 if retro_btn(ui, "ADD THE BOOK FILE...", false)
                     .tip("Pick your reading_book.txt, or drop it on the window. It is copied into Backline's folder.")
@@ -1580,7 +1580,7 @@ impl App {
                         self.rd_add_book(&path);
                     }
                 }
-                if retro_btn(ui, "LOOK AGAIN", false).tip("Read the book file again.").clicked() {
+                if retro_btn(ui, "RELOAD", false).tip("Reload the book file.").clicked() {
                     self.rd_reload();
                 }
             });
@@ -1628,7 +1628,7 @@ impl App {
             let room = ui.available_width() - 2.0 * 30.0 - 4.0 * ui.spacing().item_spacing.x;
             let ch_w = if chapters.len() > 1 { (room * 0.45).clamp(140.0, 380.0) } else { 0.0 };
             let ls_w = (room - ch_w).clamp(160.0, 520.0);
-            if retro_btn_w(ui, "<", 30.0, false).tip("Go to the page before.").clicked() && self.rd_lesson > 0 {
+            if retro_btn_w(ui, "<", 30.0, false).tip("Previous page.").clicked() && self.rd_lesson > 0 {
                 self.rd_lesson -= 1;
                 self.rd_piece = 0;
                 self.rd_part = 0;
@@ -1649,7 +1649,7 @@ impl App {
                 self.rd_piece = 0;
                 self.rd_part = 0;
             }
-            if retro_btn_w(ui, ">", 30.0, false).tip("Go to the next page.").clicked() && self.rd_lesson + 1 < self.rd_book.len()
+            if retro_btn_w(ui, ">", 30.0, false).tip("Next page.").clicked() && self.rd_lesson + 1 < self.rd_book.len()
             {
                 self.rd_lesson += 1;
                 self.rd_piece = 0;
@@ -1658,7 +1658,7 @@ impl App {
         });
         ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, &format!("{} OF {} DONE", done_n, total), 120.0);
-            if retro_btn(ui, "PICK UP WHERE I LEFT OFF", false).tip("Go to the first exercise not done yet.").clicked() {
+            if retro_btn(ui, "RESUME", false).tip("Go to the first exercise not done yet.").clicked() {
                 'find: for (li, l) in self.rd_book.iter().enumerate() {
                     for (pi, p) in l.pieces.iter().enumerate() {
                         if !self.store.reading_done.contains_key(&id(l, p)) {
@@ -1670,7 +1670,7 @@ impl App {
                     }
                 }
             }
-            if retro_btn(ui, "RELOAD", false).tip("Read the book file again after pages are added.").clicked() {
+            if retro_btn(ui, "RELOAD", false).tip("Reload the book file after adding pages.").clicked() {
                 self.rd_reload();
             }
             if retro_btn(ui, "REPLACE BOOK...", false).tip("Use another reading book file, such as a newer copy.").clicked() {
@@ -1758,7 +1758,7 @@ impl App {
             let done = self.store.reading_done.get(&key).cloned();
             match &done {
                 Some(d) => {
-                    if retro_btn(ui, &format!("DONE {}", d), true).tip("Click to take the mark off.").clicked() {
+                    if retro_btn(ui, &format!("DONE {}", d), true).tip("Click to mark as not done.").clicked() {
                         self.store.reading_done.remove(&key);
                         self.store_dirty = true;
                     }
@@ -1834,7 +1834,7 @@ impl App {
         self.rd_controls(ui, &line, None);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "FINGERING", self.rd_fingering)
-                .tip("Show over each note the finger in this position (0 = open string) and the string, in a circle.")
+                .tip("Show each note's finger in this position (0 = open string) and its string, in a circle.")
                 .clicked()
             {
                 self.rd_fingering = !self.rd_fingering;
