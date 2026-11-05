@@ -9,9 +9,10 @@
 //! files), and library.json part by part (each top-level key on its own, so a diary day on one computer and an ear
 //! drill on the other both keep). Each computer keeps its own song files, folders, takes and what it played (`LOCAL`),
 //! and the app keeps a song that came over in the sync only when it's played there. An item changed on one side since
-//! the two last agreed: that side's goes across. Changed on both (or the first time): lists, logs and maps are put
-//! together (`merge`), and the plan and the books go to the newer change (the first time, to the computer whose code
-//! was typed: it had the data). What gets replaced that way is kept in sync_backups first.
+//! the two last agreed: that side's goes across. Changed on both: lists, logs and maps are put together (`merge`), and
+//! the plan and the books go to the newer change. The first time, the computer where the code was typed takes the
+//! other's things as they are (`fresh`: nothing of its own goes across). What gets replaced is kept in sync_backups
+//! first.
 //!
 //! Changes are looked for once a second (`Engine::poll`). A file that comes in is written whole (tmp, then renamed)
 //! and the app is told to read it again (`Incoming::Files`); library parts go to the app, which puts them in its
@@ -750,6 +751,7 @@ impl Engine {
         let _one = lock(&self.round);
         self.poll();
         let peer = self.peer().ok_or_else(|| Fail::Said("Not linked".to_string()))?;
+        let fresh = fresh(&peer);
         let mut c = Conn::new(s, 0);
         let mine = random();
         c.send(&Wire::Hello { id: self.id(), nonce: mine })?;
@@ -771,7 +773,10 @@ impl Engine {
                 if skipped(&sn.skip, n) {
                     continue;
                 }
-                let (h, text) = sn.items.get(n).map_or((0, None), |(h, t)| (*h, Some(t)));
+                let (h, text) = match sn.items.get(n) {
+                    Some((h, t)) if !fresh => (*h, Some(t)),
+                    _ => (0, None),
+                };
                 let b = peer.base.get(n).copied().unwrap_or(0);
                 let send = h != 0 && (h != b || b == 0 || want.contains(n));
                 let at = peer.changed.get(n).copied().unwrap_or(0);
@@ -788,7 +793,7 @@ impl Engine {
             Wire::No { why } => return Err(Fail::Said(why)),
             _ => return Err(Fail::Net("an unexpected answer".to_string())),
         };
-        let took: Vec<(String, String, bool)> = put.into_iter().map(|p| (p.name, p.text, p.keep)).collect();
+        let took: Vec<(String, String, bool)> = put.into_iter().map(|p| (p.name, p.text, p.keep || fresh)).collect();
         self.take(&took);
         c.send(&Wire::Ack)?;
         self.agree(&agreed);
@@ -820,6 +825,7 @@ impl Engine {
         };
         self.poll();
         let peer = self.peer().unwrap_or(peer);
+        let fresh = fresh(&peer);
         let host = !peer.host;
         let lower = self.id() < id;
         let lib_off = self.lib_off.load(Ordering::Relaxed);
@@ -833,7 +839,7 @@ impl Engine {
                 if skipped(&sn.skip, n) || skipped(&their_skip, n) || (lib_off && n.starts_with(LIB)) || !item_ok(n) {
                     continue;
                 }
-                let mine_x = sn.items.get(n);
+                let mine_x = sn.items.get(n).filter(|_| !fresh);
                 let m = mine_x.map_or(0, |x| x.0);
                 let th = their.get(n);
                 let t = th.map_or(0, |h| h.hash);
@@ -855,7 +861,7 @@ impl Engine {
                     }
                     Pick::Theirs { keep } => match their_text {
                         Some(text) => {
-                            took.push((n.to_string(), text, keep));
+                            took.push((n.to_string(), text, keep || fresh));
                             agreed.push((n.to_string(), t));
                         }
                         None => want.push(n.to_string()),
@@ -1045,6 +1051,12 @@ impl Engine {
             }
         }
     }
+}
+
+/// The first round on the computer where the code was typed: what's here doesn't count, the other computer's things
+/// come over as they are (what was here is kept in sync_backups first).
+fn fresh(p: &Peer) -> bool {
+    p.host && p.base.is_empty()
 }
 
 /// What to do with one item, from the side that decides: Same, this side's goes across (`keep`: the other side keeps
@@ -1503,6 +1515,18 @@ mod tests {
         SocketAddr::from((Ipv4Addr::LOCALHOST, e.port.load(Ordering::Relaxed)))
     }
 
+    /// The other computer, once this one has kept it (the side that called may be linked a moment before the
+    /// other side has saved its half).
+    fn linked_to(e: &Engine) -> Peer {
+        for _ in 0..300 {
+            if let Some(p) = e.peer() {
+                return p;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("not linked");
+    }
+
     fn type_code(e: &Engine, code: &str) {
         *lock(&e.joining) = Some((digits(code), Instant::now() + LINK_WAIT, random()));
     }
@@ -1613,27 +1637,28 @@ mod tests {
         // the right one does, whichever side calls (here the PC calls the laptop, where the code was typed)
         type_code(&b, &code);
         assert_eq!(a.call_join(at(&b), true).unwrap(), "LAPTOP");
-        let (pa, pb) = (a.peer().unwrap(), b.peer().unwrap());
+        let (pa, pb) = (linked_to(&a), linked_to(&b));
         assert_eq!((pa.id, pb.id), (20, 10));
         assert_eq!(pa.key, pb.key);
         assert!(pb.host && !pa.host);
         assert_ne!(lock(&a.saved).code, code, "a code works once");
 
-        // the first round (the laptop calls): the plan comes over whole, the ticks and lists are put together, the
-        // songs on each disk stay where they are
+        // the first round (the laptop calls): the laptop takes the PC's things as they are, its own kept in
+        // sync_backups; nothing of the laptop's goes to the PC; the songs on each disk stay where they are
+        let plan_log_pc = rd(&da, "plan_log.json");
         assert!(b.round(at(&a)).is_ok());
         assert_eq!(rd(&db, "plan.json"), rd(&da, "plan.json"));
-        assert_eq!(json_of(&db, "plan_log.json"), json!({"2026-11-01": [0, 1], "2026-11-02": [3]}));
-        assert_eq!(rd(&da, "plan_log.json"), rd(&db, "plan_log.json"));
+        assert_eq!(rd(&db, "plan_log.json"), plan_log_pc);
+        assert_eq!(rd(&da, "plan_log.json"), plan_log_pc);
         let (la, lb) = (json_of(&da, "library.json"), json_of(&db, "library.json"));
         assert_eq!(la["files"], json!([{"id": 5}]));
         assert_eq!(lb["files"], json!([{"id": 9}]));
-        assert_eq!(lb["yt"], json!([{"id": 1, "title": "a"}, {"id": 2, "title": "b"}]));
-        assert_eq!(la["yt"], lb["yt"]);
-        assert_eq!(lb["routine_tune"], "Blue Monk", "the first time, the PC's (its code was typed)");
+        assert_eq!(la["yt"], json!([{"id": 1, "title": "a"}]));
+        assert_eq!(lb["yt"], la["yt"]);
+        assert_eq!(lb["routine_tune"], "Blue Monk");
         assert_eq!(lb["days"], la["days"]);
-        // what was replaced on the laptop is kept
-        assert!(std::fs::read_dir(db.join("sync_backups")).unwrap().count() > 0);
+        assert_eq!(std::fs::read_dir(db.join("sync_backups")).unwrap().count(), 4);
+        assert!(!da.join("sync_backups").exists(), "nothing on the PC was replaced");
         assert!(!a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed));
 
         // a tick on the PC goes across as it is (the PC calls this time)

@@ -313,7 +313,7 @@ impl App {
                                 para(ui, &sv.linked_line(), pal().ink);
                             } else {
                                 para(ui, &format!("This computer's code: {}", sv.code_shown()), pal().ink);
-                                para(ui, "On your other computer, turn SYNC on and type this code there. Or type that computer's code here:", pal().ink2);
+                                para(ui, "Type this code on your other computer: the first time, it takes this computer's plan, progress and lists (what it had is backed up). Or type that computer's code here to take its things:", pal().ink2);
                                 ui.horizontal(|ui| {
                                     let (rect, _) = ui.allocate_exact_size(egui::vec2(120.0, crate::bh()), egui::Sense::hover());
                                     let o = crate::views::field(ui, &mut self.ed, crate::tools::F_SYNC_CODE, &mut self.sync_in, rect, "Code", false);
