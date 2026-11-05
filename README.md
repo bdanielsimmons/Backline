@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Gospel progressions (church, shout and quartet) and scale fingerings by the root's finger
 - Sync between your computers on the same network, with no account or cloud
 - Pop the visuals out into a small window of their own
 - 3D Wave: a sheet of light drifting across the sky, glowing where it folds
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Visuals - Windows Media Player and MilkDrop style, full screen (G) or in Now Playing, plus 3D Pipes
 - Note view - press NOTES on the waveform to see the song by pitch; on a split song it uses only the stems you have on, so a bass line or solo stands out. Point at it for the note's name.
 - LINES > ATONAL > EVERY STRING, EVERY FINGER - pick where a line starts and which finger, and see the fingering on the neck
-- LINES has an ATONAL tab: Sandole-style lines (alternate triads, joined tetrachords, interval cycles) in any key, your own lines kept on this computer with notes you can fix, and an analysis of every line (intervals, cells, tetrachords, scales that hold it, syllables).
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
