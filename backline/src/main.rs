@@ -3181,7 +3181,9 @@ pub(crate) fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: O
                 return Ok(b);
             }
             crate::api::guard()?;
+            let t0 = Instant::now();
             let b = sources::yt_fetch(&vid)?;
+            crate::api::log(&format!("youtube {}: {} bytes in {:.1} s", vid, b.len(), t0.elapsed().as_secs_f32()));
             if keep {
                 if let Some(p) = cache::put(id, &b) {
                     crate::api::log(&format!("youtube {}: saved to {}", vid, p.display()));
@@ -5316,6 +5318,10 @@ impl App {
         let lossless = self.prefer_lossless;
         let keep = self.keep_cache || self.practised(t.id);
         let src = self.srcmap.get(&t.id).cloned();
+        // (a YouTube song not saved here comes down whole before it plays)
+        if matches!(src, Some(Src::Yt(_))) && !cache::has(t.id) {
+            self.set_note("GETTING THE SONG FROM YOUTUBE...");
+        }
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
             let r = fetch_audio(&api, t.id, lossless, keep, src);

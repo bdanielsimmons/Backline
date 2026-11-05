@@ -5,8 +5,9 @@ use crate::decode::SymSource;
 use crate::store::{hash_id, Ext};
 use rodio::Source;
 use std::path::{Path, PathBuf};
+use std::io::{BufRead, Read};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use symphonia::core::codecs::CODEC_TYPE_NULL;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -188,7 +189,8 @@ fn command(p: &Path) -> Command {
     c
 }
 
-/// yt-dlp next to the app, in the Backline folder, or anywhere on PATH. (On the Mac, its folder build first.)
+/// yt-dlp next to the app, in the Backline folder, or anywhere on PATH. (On the Mac, its folder build first; a Mac
+/// that only has the one-file build gets the folder build in the background: `mac_folder_soon`.)
 pub fn ytdlp_path() -> Option<PathBuf> {
     let mut cands = vec![ytdlp_dir().join(exe_name())];
     if cfg!(target_os = "macos") {
@@ -200,7 +202,9 @@ pub fn ytdlp_path() -> Option<PathBuf> {
         }
     }
     for c in cands {
-        if c.exists() {
+        if c.is_file() {
+            #[cfg(target_os = "macos")]
+            mac_folder_soon(&c);
             return Some(c);
         }
     }
@@ -211,14 +215,35 @@ pub fn ytdlp_path() -> Option<PathBuf> {
     None
 }
 
-/// The Mac's folder build of yt-dlp, unpacked under bin/yt-dlp_macos/ and checked to run (None: use the one-file
-/// build instead).
+/// yt-dlp's one-file build unpacks itself every time it runs, and a Mac checks what was unpacked each time: many
+/// seconds before every song. A Mac that still has it (from before Backline used the folder build) gets the folder
+/// build in the background, once a run; the one-file build is used till then.
+#[cfg(target_os = "macos")]
+fn mac_folder_soon(found: &Path) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static ASKED: AtomicBool = AtomicBool::new(false);
+    if found != ytdlp_dir().join(exe_name()) || ASKED.swap(true, Ordering::Relaxed) || crate::api::guard().is_err() {
+        return;
+    }
+    std::thread::spawn(|| {
+        let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(300)).build();
+        match client.ok().and_then(|c| ytdlp_mac_folder(&c)) {
+            Some(p) => crate::api::log(&format!("youtube: yt-dlp's faster Mac build is in place ({})", p.display())),
+            None => crate::api::log("youtube: couldn't get yt-dlp's faster Mac build; the one-file build stays"),
+        }
+    });
+}
+
+/// The Mac's folder build of yt-dlp under bin/yt-dlp_macos/: unpacked beside it first and checked to run, then put
+/// in place (so one half unpacked is never used), and run once more there (the Mac checks it the first time). None:
+/// use the one-file build instead.
 #[cfg(target_os = "macos")]
 fn ytdlp_mac_folder(client: &reqwest::blocking::Client) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip";
     let bytes = client.get(url).send().ok()?.error_for_status().ok()?.bytes().ok()?;
-    let dir = ytdlp_dir().join("yt-dlp_macos");
+    let fin = ytdlp_dir().join("yt-dlp_macos");
+    let dir = ytdlp_dir().join("yt-dlp_macos.new");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).ok()?;
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
@@ -245,13 +270,16 @@ fn ytdlp_mac_folder(client: &reqwest::blocking::Client) -> Option<PathBuf> {
         let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(f.unix_mode().unwrap_or(0o755) | 0o500));
     }
     // the zip may hold the folder itself
-    let exe = [dir.join("yt-dlp_macos"), dir.join("yt-dlp_macos").join("yt-dlp_macos")].into_iter().find(|p| p.is_file())?;
-    let ok = command(&exe).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-    if !ok {
+    let exe_in = |d: &Path| [d.join("yt-dlp_macos"), d.join("yt-dlp_macos").join("yt-dlp_macos")].into_iter().find(|p| p.is_file());
+    let runs = |p: &Path| command(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    if !exe_in(&dir).is_some_and(|e| runs(&e)) {
         let _ = std::fs::remove_dir_all(&dir);
         return None;
     }
-    Some(exe)
+    let _ = std::fs::remove_dir_all(&fin);
+    std::fs::rename(&dir, &fin).ok()?;
+    let exe = exe_in(&fin)?;
+    runs(&exe).then_some(exe)
 }
 
 /// Download (or update) yt-dlp from its official GitHub release into the Backline folder.
@@ -316,6 +344,37 @@ pub fn yt_video_id(input: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// A yt-dlp run to the end, with how long it took in the log (on an older Mac, starting yt-dlp is most of it).
+trait Timed {
+    fn timed(&mut self, what: &str) -> std::io::Result<std::process::Output>;
+}
+
+impl Timed for Command {
+    fn timed(&mut self, what: &str) -> std::io::Result<std::process::Output> {
+        let t0 = Instant::now();
+        let r = self.output();
+        let how = match &r {
+            Ok(o) if !o.status.success() => format!(", failed: {}", last_line(&o.stderr)),
+            Ok(_) => String::new(),
+            Err(e) => format!(", couldn't run: {}", e),
+        };
+        crate::api::log(&format!("yt-dlp {}: {:.1} s{}", what, t0.elapsed().as_secs_f32(), how));
+        r
+    }
+}
+
+/// Which yt-dlp it is, for the log: the Mac's folder build, the one in Backline's folder (on a Mac, the one-file
+/// build), or where it is.
+fn build_name(exe: &Path) -> String {
+    if exe.parent().is_some_and(|d| d.ends_with("yt-dlp_macos")) {
+        "the folder build".to_string()
+    } else if exe == ytdlp_dir().join(exe_name()) {
+        if cfg!(target_os = "macos") { "the one-file build".to_string() } else { format!("{} in Backline's folder", exe_name()) }
+    } else {
+        exe.display().to_string()
+    }
 }
 
 fn last_line(bytes: &[u8]) -> String {
@@ -422,7 +481,7 @@ pub fn sc_search(query: &str) -> Result<Vec<Ext>, String> {
         .args(["--no-warnings", "--flat-playlist", "--dump-json"])
         .args(cookie_args())
         .arg(format!("scsearch15:{}", query))
-        .output()
+        .timed("SoundCloud search")
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
     let list = parse_entries(&out.stdout);
     if list.is_empty() {
@@ -437,7 +496,7 @@ pub fn yt_search(query: &str) -> Result<Vec<Ext>, String> {
     let out = command(&exe)
         .args(["--no-warnings", "--flat-playlist", "--dump-json"])
         .arg(format!("ytsearch12:{}", query))
-        .output()
+        .timed("YouTube search")
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
     let mut list: Vec<Ext> = Vec::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -470,7 +529,7 @@ pub fn sc_list(url: &str) -> Result<Vec<Ext>, String> {
         .args(["--no-warnings", "--flat-playlist", "--dump-json", "--playlist-end", "100"])
         .args(cookie_args())
         .arg(url.trim())
-        .output()
+        .timed("SoundCloud list")
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
     let mut list = parse_entries(&out.stdout);
     if list.is_empty() && out.status.success() {
@@ -639,7 +698,7 @@ pub fn sc_sets(user: &str) -> Result<Vec<(String, String)>, String> {
         .args(["--no-warnings", "--flat-playlist", "--dump-json", "--playlist-end", "60"])
         .args(cookie_args())
         .arg(&url)
-        .output()
+        .timed("SoundCloud playlists")
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
     let mut list = Vec::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -669,7 +728,7 @@ pub fn yt_info(vid: &str) -> Result<Ext, String> {
         .args(["--no-playlist", "--no-warnings", "--dump-single-json"])
         .args(if url.contains("soundcloud.com") { cookie_args() } else { Vec::new() })
         .arg(&url)
-        .output()
+        .timed("reading a YouTube video")
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
     if !out.status.success() {
         return Err(last_line(&out.stderr));
@@ -713,22 +772,56 @@ pub fn yt_fetch(src: &str) -> Result<Vec<u8>, String> {
         }
     }
     let url = media_url(src);
-    let out = command(&exe)
-        .args([
-            "--no-playlist",
-            "--no-warnings",
-            "--no-progress",
-            "-f",
-            "140/http_mp3_1_0/http_mp3_0_0/bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio",
-        ])
+    let t0 = Instant::now();
+    let mut child = command(&exe)
+        .args(["--no-playlist", "--no-progress", "-f", "140/http_mp3_1_0/http_mp3_0_0/bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio"])
         .args(if url.contains("soundcloud.com") { cookie_args() } else { Vec::new() })
         .arg("-o")
         .arg(tmp.join(format!("{}.%(ext)s", vid)))
         .arg(&url)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("could not run yt-dlp: {}", e))?;
-    if !out.status.success() {
-        return Err(last_line(&out.stderr));
+    // (what it says on stderr, read alongside, so a lot of it never holds yt-dlp up)
+    let errs = child.stderr.take().map(|mut e| {
+        std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = e.read_to_end(&mut b);
+            b
+        })
+    });
+    // when yt-dlp first says something (it has started) and when the download begins (it has found the audio)
+    let (mut spoke, mut found) = (None, None);
+    if let Some(out) = child.stdout.take() {
+        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            spoke.get_or_insert(t0.elapsed());
+            if found.is_none() && line.starts_with("[download]") {
+                found = Some(t0.elapsed());
+            }
+        }
+    }
+    let status = child.wait().map_err(|e| format!("yt-dlp: {}", e))?;
+    let stderr = errs.and_then(|h| h.join().ok()).unwrap_or_default();
+    let at = |d: Option<Duration>| d.map_or("-".to_string(), |d| format!("{:.1} s", d.as_secs_f32()));
+    let said: Vec<String> = String::from_utf8_lossy(&stderr)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .take(3)
+        .map(|l| l.chars().take(160).collect())
+        .collect();
+    crate::api::log(&format!(
+        "youtube {}: {} started after {}, found the audio after {}, done after {:.1} s{}",
+        vid,
+        build_name(&exe),
+        at(spoke),
+        at(found),
+        t0.elapsed().as_secs_f32(),
+        if said.is_empty() { String::new() } else { format!(" (it said: {})", said.join(" | ")) }
+    ));
+    if !status.success() {
+        return Err(last_line(&stderr));
     }
     let mut found: Option<PathBuf> = None;
     if let Ok(rd) = std::fs::read_dir(&tmp) {
@@ -1018,6 +1111,18 @@ pub fn find_chart(name: &str) -> Result<(String, String, String), (String, Vec<S
 
 #[cfg(test)]
 mod tests {
+    /// Fetching a YouTube song logs how long each part took (run by hand: BACKLINE_HOME with yt-dlp in its bin folder).
+    #[test]
+    #[ignore]
+    fn yt_fetch_logs_how_long_each_part_took() {
+        let b = yt_fetch("aqz-KE-bpKQ").expect("fetched");
+        assert!(b.len() > 1_000_000);
+        let log = std::fs::read_to_string(crate::api::config_dir().join("log.txt")).unwrap();
+        let line = log.lines().rev().find(|l| l.contains("youtube aqz-KE-bpKQ")).unwrap().to_string();
+        println!("LOGGED {}", line);
+        assert!(line.contains("found the audio after") && line.contains("done after"));
+    }
+
     use super::*;
 
     #[test]
