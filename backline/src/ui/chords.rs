@@ -18,7 +18,7 @@ impl App {
         const GROUPS: [(&str, &[(u8, &str)]); 3] = [
             ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
             ("SHAPES", &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")]),
-            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "MOVES (EXPERIMENTAL)")]),
+            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "MOVES")]),
         ];
         let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
         let names: Vec<&str> = GROUPS.iter().map(|g| g.0).collect();

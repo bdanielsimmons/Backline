@@ -4356,6 +4356,14 @@ impl App {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
             }
+            Ok("moves") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 7;
+                // BACKLINE_MV_MOVE=<n>: that move
+                if let Some(m) = std::env::var("BACKLINE_MV_MOVE").ok().and_then(|s| s.parse::<usize>().ok()) {
+                    app.mv_move = m;
+                }
+            }
             Ok("prog") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 8;

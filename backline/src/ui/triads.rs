@@ -339,7 +339,109 @@ fn gospel_moves() -> Vec<MoveDef> {
             "The bII stands in for the V (a tritone away), so the top slides down by half steps into the I.",
             vec![(2, MI, None, Strum, 2.0), (1, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
+        (
+            "4 OVER 5 HOME: IV/V - I",
+            "The IV triad over the V in the bass, then home. The church's V: softer than a V7, and it pulls just as hard.",
+            vec![(5, MA, Some(7), Strum, 2.0), (0, MA, None, Strum, 2.0), (5, MA, Some(7), Strum, 2.0), (0, MA, None, Strum, 2.0)],
+        ),
+        (
+            "WALK-UP: I - I/3 - IV - #IV\u{00b0} - I/5",
+            "The bass walks up 1, 3, 4, #4, 5 under the chords, then home through the V. The church's way into a chorus.",
+            vec![
+                (0, MA, None, Strum, 1.0),
+                (0, MA, Some(4), Strum, 1.0),
+                (5, MA, None, Strum, 1.0),
+                (6, DI, None, Strum, 1.0),
+                (0, MA, Some(7), Strum, 2.0),
+                (7, MA, None, Strum, 2.0),
+                (0, MA, None, Strum, 4.0),
+            ],
+        ),
+        (
+            "THE 7-3-6: vii\u{00b0} - III - vi - II - V - I",
+            "The 7, the 3 and the 6: a diminished on the 7th, the III as a major chord pulling into the vi, then round through II and V to home.",
+            vec![
+                (11, DI, None, Strum, 2.0),
+                (4, MA, None, Strum, 2.0),
+                (9, MI, None, Strum, 2.0),
+                (2, MA, None, Strum, 2.0),
+                (7, MA, None, Strum, 2.0),
+                (0, MA, None, Strum, 4.0),
+            ],
+        ),
+        (
+            "CHURCH ENDING: bVI - bVII - I",
+            "Two major chords a whole step apart, from below, then home. The big ending.",
+            vec![(8, MA, None, Strum, 2.0), (10, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
+        ),
+        (
+            "SHOUT VAMP (MINOR): i - iv - i - V",
+            "The praise break in a minor key: short, fast, and round and round. Keep it tight and let the drums drive it.",
+            vec![
+                (0, MI, None, Strum, 1.0),
+                (5, MI, None, Strum, 1.0),
+                (0, MI, None, Strum, 1.0),
+                (7, MA, None, Strum, 1.0),
+                (0, MI, None, Strum, 1.0),
+                (5, MI, None, Strum, 1.0),
+                (0, MI, None, Strum, 1.0),
+                (7, MA, None, Strum, 1.0),
+            ],
+        ),
+        (
+            "QUARTET TURNAROUND: I - I/b7 - IV - iv - I/5 - V - I",
+            "Quartet style: the I over its b7 sounds as a I7 going into the IV. The IV turns minor, then home through the V.",
+            vec![
+                (0, MA, None, Strum, 2.0),
+                (0, MA, Some(10), Strum, 2.0),
+                (5, MA, None, Strum, 2.0),
+                (5, MI, None, Strum, 2.0),
+                (0, MA, Some(7), Strum, 2.0),
+                (7, MA, None, Strum, 2.0),
+                (0, MA, None, Strum, 4.0),
+            ],
+        ),
+        (
+            "BACK DOOR: iv - bVII - I",
+            "The minor iv, then the bVII, then home: the I comes in by the back door.",
+            vec![(5, MI, None, Strum, 2.0), (10, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
+        ),
     ]
+}
+
+/// A move's grips as chord boxes in a row (wrapping onto more rows), each with its name, a hammer-on or a slide
+/// marked under it, the one sounding outlined. The one clicked, to hear it.
+fn steps_boxes(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usize>) -> Option<usize> {
+    let cw = 104.0_f32;
+    let mut hit = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+        for (i, st) in steps.iter().enumerate() {
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(cw, 176.0), Sense::click());
+            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Click to hear it");
+            let p = ui.painter();
+            p.rect_filled(r, 3.0, pal().beige_lt);
+            if lit == Some(i) {
+                p.rect_stroke(r, 3.0, egui::Stroke::new(2.0_f32, pal().red));
+            }
+            ptext_fit(p, Pos2::new(r.center().x, r.min.y + 13.0), Align::Center, &st.name, 1.6, cw - 10.0, pal().ink);
+            let box_r = Rect::from_center_size(Pos2::new(r.center().x, r.min.y + 92.0), Vec2::new(cw - 20.0, 124.0));
+            crate::fretboard::chord_box_labelled(p, box_r, &st.grip, &|m| theory::note_name(m.rem_euclid(12), sharps).to_string());
+            let how = match st.art {
+                Art::Hammer => "HAMMER ON",
+                Art::Slide => "SLIDE IN",
+                Art::Dip => "DIP",
+                _ => "",
+            };
+            if !how.is_empty() {
+                ptext(p, Pos2::new(r.center().x, r.max.y - 9.0), Align::Center, how, 1.0, pal().ink2);
+            }
+            if resp.clicked() {
+                hit = Some(i);
+            }
+        }
+    });
+    hit
 }
 
 impl App {
@@ -634,12 +736,7 @@ impl App {
             self.mv_page = v as u8;
         }
         ui.add_space(4.0);
-        crate::views::dim_line(
-            ui,
-            "EXPERIMENTAL. HAMMER-ONS, SLIDES AND DIPS ARE ROUGH MARKS, SO PLAY THEM YOUR WAY.",
-            1.0,
-            pal().dim,
-        );
+        crate::views::dim_line(ui, "HAMMER-ONS, SLIDES AND DIPS ARE ROUGH MARKS: PLAY THEM YOUR WAY.", 1.0, pal().dim);
         ui.add_space(4.0);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             match self.mv_page {
@@ -661,6 +758,11 @@ impl App {
         });
         ui.add_space(4.0);
         if let Some(i) = steps_score(ui, steps, self.chord_sp.sharps, lit) {
+            self.player.send(Cmd::Once(crate::band::chord_sound(&grip_notes(&steps[i].grip)), 0.9));
+        }
+        // the grips as chord boxes
+        ui.add_space(6.0);
+        if let Some(i) = steps_boxes(ui, steps, self.chord_sp.sharps, lit) {
             self.player.send(Cmd::Once(crate::band::chord_sound(&grip_notes(&steps[i].grip)), 0.9));
         }
     }
