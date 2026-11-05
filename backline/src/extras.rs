@@ -1624,6 +1624,26 @@ impl App {
                 Ok(note) => self.set_note(&note),
                 Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
             },
+            Msg::TidalListRemoved(uuid, id, nth, r) => match r {
+                Ok(()) => {
+                    // out of the page, and of the same page kept for going back and forward
+                    for p in self.page.iter_mut().chain(self.back.iter_mut()).chain(self.fwd.iter_mut()) {
+                        if !p.card.as_ref().is_some_and(|c| c.id == uuid) {
+                            continue;
+                        }
+                        let pg = Arc::make_mut(p);
+                        let at: Vec<usize> = pg.tracks.iter().enumerate().filter(|(_, t)| t.id == id).map(|(k, _)| k).collect();
+                        if let Some(&k) = at.get(nth).or(at.last()) {
+                            pg.tracks.remove(k);
+                        }
+                        if let Some(n) = pg.subtitle.strip_suffix(" tracks").and_then(|n| n.parse::<usize>().ok()) {
+                            pg.subtitle = format!("{} tracks", n.saturating_sub(1));
+                        }
+                    }
+                    self.set_note("REMOVED FROM THIS PLAYLIST");
+                }
+                Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
+            },
             Msg::Added(files, folders, lists) => {
                 self.files_busy = false;
                 let (found, picked_folder) = (files.len(), !folders.is_empty());
@@ -2534,6 +2554,14 @@ impl App {
                 self.pl_pick = None;
                 self.pl_loop = None;
                 self.new_pl.clear();
+            }
+            Action::TidalListRemove(uuid, id, nth) => {
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = api.playlist_remove(&uuid, id, nth);
+                    let _ = tx.send(Msg::TidalListRemoved(uuid, id, nth, r));
+                    ctx.request_repaint();
+                });
             }
             Action::ShareExport => self.share_view = Some((false, self.store.share())),
             Action::PackMake => {

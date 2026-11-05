@@ -239,6 +239,8 @@ enum Msg {
     TidalLists(Result<Vec<(String, String)>, String>),
     /// a song put in a Tidal playlist: what to say
     TidalListDone(Result<String, String>),
+    /// a song taken out of one of your Tidal playlists: (the playlist, the song, its nth time there), or why not
+    TidalListRemoved(String, i64, usize, Result<(), String>),
     /// a new playlist made on your Tidal account (its name), shown once the library is loaded again
     TidalListMade(Result<String, String>),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
@@ -545,6 +547,8 @@ enum Action {
     /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
     /// playlist with that name
     TidalListAdd(String, String, i64),
+    /// take a song out of one of your own Tidal playlists: (playlist id, the song, its nth time in the list)
+    TidalListRemove(String, i64, usize),
     /// put a loop of a song in a playlist: (the song, from, to, the loop's name)
     PlaylistPickLoop(Track, f32, f32, String),
     PlaylistAdd(usize, Track),
@@ -1521,7 +1525,15 @@ fn track_cells(id: i64, title: &str, artist: &str, album: &str) -> String {
 }
 
 // ------------------------------------------------------------------ page view
-fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, liked: &HashSet<i64>, acts: &mut Vec<Action>) {
+/// `own`: the id of your own Tidal playlist these songs are, for taking one out of it.
+fn tracks_list(
+    ui: &mut egui::Ui,
+    tracks: &[Track],
+    playing_id: Option<i64>,
+    liked: &HashSet<i64>,
+    own: Option<&str>,
+    acts: &mut Vec<Action>,
+) {
     col_header(ui, true);
     for (i, t) in tracks.iter().enumerate() {
         let state = if playing_id == Some(t.id) { RowState::Playing } else { RowState::Normal };
@@ -1547,6 +1559,14 @@ fn tracks_list(ui: &mut egui::Ui, tracks: &[Track], playing_id: Option<i64>, lik
             r.context_menu(|ui| {
                 song_items(ui, acts, t, liked.contains(&t.id), true);
                 link_item(ui, acts, track_link(t, None));
+                if let Some(uuid) = own {
+                    if menu_item(ui, "Remove from this playlist") {
+                        // (which time it is there: a song can be in a playlist twice)
+                        let nth = tracks[..i].iter().filter(|x| x.id == t.id).count();
+                        acts.push(Action::TidalListRemove(uuid.to_string(), t.id, nth));
+                        ui.close_menu();
+                    }
+                }
             });
         }
     }
@@ -2006,7 +2026,7 @@ fn page_view(
                 } else if tracks.is_empty() {
                     title_line(ui, "No songs match.", 2.0, pal().ink2);
                 }
-                tracks_list(ui, tracks, playing_id, liked, acts);
+                tracks_list(ui, tracks, playing_id, liked, None, acts);
             }
             t => {
                 let (key, name) = match t {
@@ -2151,7 +2171,9 @@ fn page_view(
         if !page.rows.is_empty() {
             section_header(ui, "SONGS");
         }
-        tracks_list(ui, &page.tracks, playing_id, liked, acts);
+        // one of your own playlists (nothing to save): its songs can be taken out of it
+        let own = page.card.as_ref().filter(|c| c.kind == Kind::Playlist && page.saved.is_none()).map(|c| c.id.as_str());
+        tracks_list(ui, &page.tracks, playing_id, liked, own, acts);
     }
     for (title, cards) in &page.rows {
         section_header(ui, title);

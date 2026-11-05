@@ -447,6 +447,18 @@ fn tracks_from(items: &[Value]) -> Vec<Track> {
     items.iter().filter_map(parse_track).collect()
 }
 
+/// Where a track sits in a playlist's items (everything in it counts, videos too): its `nth` time there, or its
+/// last when it is there fewer times now.
+fn item_at(items: &[Value], id: i64, nth: usize) -> Option<usize> {
+    let at: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v["type"].as_str() != Some("video") && unwrap(v)["id"].as_i64() == Some(id))
+        .map(|(i, _)| i)
+        .collect();
+    at.get(nth).or(at.last()).copied()
+}
+
 fn parse_card(v: &Value) -> Option<Card> {
     let v = unwrap(v);
     let s = |k: &str| v[k].as_str().unwrap_or("").to_string();
@@ -891,6 +903,38 @@ impl Api {
             .map_err(e2s)?;
         let st = r.status();
         log(&format!("POST playlist {} item {} -> {}", uuid, id, st.as_u16()));
+        if st.is_success() {
+            Ok(())
+        } else {
+            Err(format!("{}: {}", st.as_u16(), r.text().unwrap_or_default().chars().take(120).collect::<String>()))
+        }
+    }
+
+    /// Take a track out of one of your Tidal playlists: its `nth` time there (a song can be in it twice).
+    pub fn playlist_remove(&self, uuid: &str, id: i64, nth: usize) -> Res<()> {
+        guard()?;
+        let (tok, country, _) = self.auth();
+        // the playlist's current version, as for adding; then where the song is in it now
+        let head = self
+            .http
+            .get(format!("{}/playlists/{}", API, uuid))
+            .bearer_auth(&tok)
+            .query(&[("countryCode", country.as_str())])
+            .send()
+            .map_err(e2s)?;
+        let etag = head.headers().get("etag").and_then(|e| e.to_str().ok()).unwrap_or("*").to_string();
+        let items = self.paged(&format!("/playlists/{}/items", uuid), &[], 10_000)?;
+        let at = item_at(&items, id, nth).ok_or_else(|| "that song is not in the playlist any more".to_string())?;
+        let r = self
+            .http
+            .delete(format!("{}/playlists/{}/items/{}", API, uuid, at))
+            .bearer_auth(&tok)
+            .header("If-None-Match", etag)
+            .query(&[("countryCode", country.as_str())])
+            .send()
+            .map_err(e2s)?;
+        let st = r.status();
+        log(&format!("DELETE playlist {} item {} (at {}) -> {}", uuid, id, at, st.as_u16()));
         if st.is_success() {
             Ok(())
         } else {
@@ -1654,6 +1698,20 @@ mod tests {
         let list =
             [json!({"id": 5, "title": "a", "album": {}}), json!({"type": "video"}), json!({"id": 6, "title": "b", "album": {}})];
         assert_eq!(tracks_from(&list).iter().map(|t| t.id).collect::<Vec<_>>(), vec![5, 6]);
+    }
+
+    #[test]
+    fn where_a_song_is_in_a_playlist() {
+        let t = |id: i64| json!({"type": "track", "item": {"id": id, "title": "t", "album": {}}});
+        let items = [t(1), json!({"type": "video", "item": {"id": 2}}), t(2), t(1)];
+        // everything in it counts toward the place, a video too (a video's number is not a song's)
+        assert_eq!(item_at(&items, 2, 0), Some(2));
+        // a song in it twice: the one picked
+        assert_eq!(item_at(&items, 1, 0), Some(0));
+        assert_eq!(item_at(&items, 1, 1), Some(3));
+        // there fewer times now: its last place; not there at all: nowhere
+        assert_eq!(item_at(&items, 2, 1), Some(2));
+        assert_eq!(item_at(&items, 9, 0), None);
     }
 
     #[test]

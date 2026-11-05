@@ -876,15 +876,27 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
             let c = w.trim_matches(|c: char| !c.is_alphanumeric());
             c.len() == 1 && matches!(c, "A" | "B" | "C" | "D" | "E" | "F" | "G")
         };
+        // (but before a word it is the word "a": "ADD IT TO A PLAYLIST", "OR A FOLDER"; a scale's name still follows
+        // a note: "OR A BLUES")
+        let word = |w: &str| {
+            let c = w.trim_matches(|c: char| !c.is_alphanumeric());
+            const MUSIC: [&str; 18] = [
+                "BLUES", "MINOR", "MAJOR", "FLAT", "SHARP", "NATURAL", "DORIAN", "PHRYGIAN", "LYDIAN", "MIXOLYDIAN", "AEOLIAN",
+                "LOCRIAN", "IONIAN", "ALTERED", "PENTATONIC", "BEBOP", "STRING", "MIN",
+            ];
+            c.chars().count() >= 2 && c.chars().all(char::is_alphabetic) && !MUSIC.contains(&c)
+        };
         let letter_name = core.chars().count() == 1
             && (matches!(core, "B" | "C" | "D" | "E" | "F" | "G")
+                // a flat or sharp makes it a note ("A♭ BLUES")
+                || w.contains(['♭', '♯', '#'])
                 || note(next)
                 || (i > 0 && note(prev))
                 || next.is_empty()
                 || next.starts_with('(')
                 || prev.ends_with(':')
                 || matches!(next, "AND" | "OR" | "-" | "&" | "=")
-                || matches!(prev, "AND" | "OR" | "TO" | "&" | "-" | "="));
+                || (matches!(prev, "AND" | "OR" | "TO" | "&" | "-" | "=") && !word(next)));
         // names spelled their own way
         const NAMES: [(&str, &str); 5] =
             [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal"), ("YT-DLP", "yt-dlp")];
@@ -1194,6 +1206,15 @@ mod tests {
         assert_eq!(caps_words("Then PLAY A TRACK now"), "Then Play a Track now");
         assert_eq!(display_case("PLAY A TRACK TO START"), "Play a track to start");
         assert_eq!(display_case("SET A AND B"), "Set A and B");
+        assert_eq!(display_case("FROM B TO A"), "From B to A");
+        assert_eq!(
+            display_case("RIGHT-CLICK A SONG TO SAVE IT, QUEUE IT OR ADD IT TO A PLAYLIST"),
+            "Right-click a song to save it, queue it or add it to a playlist"
+        );
+        assert_eq!(display_case("CHOOSE FILES OR A FOLDER IN THE DIALOG..."), "Choose files or a folder in the dialog...");
+        assert_eq!(display_case("LISTEN TO A RECORD"), "Listen to a Record");
+        assert_eq!(display_case("OVER A7 OR A BLUES"), "Over A7 or A blues");
+        assert_eq!(display_case("OR A♭ BLUES OVER THE A♭ SCALE"), "Or A♭ blues over the A♭ scale");
         assert_eq!(display_case("SOUNDCLOUD"), "SoundCloud");
     }
 }

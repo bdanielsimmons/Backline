@@ -597,7 +597,7 @@ impl App {
             let n = recent[i..].iter().take_while(|r| day(r.1) == label).count();
             dim_line(ui, label, 1.0, pal().ink2);
             let tracks: Vec<Track> = recent[i..i + n].iter().map(|r| r.0.to_track()).collect();
-            crate::tracks_list(ui, &tracks, playing, &self.liked, acts);
+            crate::tracks_list(ui, &tracks, playing, &self.liked, None, acts);
             ui.add_space(6.0);
             i += n;
         }

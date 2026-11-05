@@ -886,7 +886,7 @@ impl App {
         crate::play_buttons(ui, &tracks, acts, false);
         ui.add_space(4.0);
         let playing = self.cur_track().map(|t| t.id);
-        crate::tracks_list(ui, &tracks, playing, &self.liked, acts);
+        crate::tracks_list(ui, &tracks, playing, &self.liked, None, acts);
         ui.add_space(20.0);
     }
 
@@ -1060,7 +1060,7 @@ impl App {
                     // (Edit info... comes with the song's own items)
                     crate::song_items(ui, acts, &e.to_track(), liked, false);
                     crate::link_item(ui, acts, crate::track_link(&e.to_track(), Some(e)));
-                    if which >= 4 {
+                    if (4..=6).contains(&which) {
                         // (taking it out of LIKED is Remove from My Tracks, above)
                     } else if which == 3 || which == 7 {
                         // a saved playlist's page: take a song out of it (kept out when it's read again)
