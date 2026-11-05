@@ -14,6 +14,11 @@
 //! other's things as they are (`fresh`: nothing of its own goes across). What gets replaced is kept in sync_backups
 //! first.
 //!
+//! Two versions of Backline may write a part a little differently (one knows a field the other doesn't): each side
+//! keeps what the two agreed on in its own form (`Peer::base`), so a part neither changed is left alone, a part that
+//! came in counts as this side saved it (`took_lib`), and fields only this side knows are kept in what comes in
+//! (`keep_ours`: a newer Backline's diary notes survive an older one's changes to the day).
+//!
 //! Changes are looked for once a second (`Engine::poll`). A file that comes in is written whole (tmp, then renamed)
 //! and the app is told to read it again (`Incoming::Files`); library parts go to the app, which puts them in its
 //! library and saves it (`Incoming::Library`, then `library_saved`; library.json isn't read till then). sync.json (on
@@ -83,7 +88,7 @@ struct Peer {
     host: bool,
     /// where it syncs ("ip:port"), as last heard
     addr: String,
-    /// each item's hash when the two last agreed
+    /// each item's hash when the two last agreed, as this side has it (its own form of it)
     base: BTreeMap<String, u64>,
     /// when each item last changed here since then (ms since 1970)
     changed: BTreeMap<String, u64>,
@@ -328,9 +333,11 @@ struct Engine {
     dirty: AtomicBool,
     /// the linked computer heard since start
     met: AtomicBool,
-    /// library parts handed to the app and not saved by it yet; the app couldn't take them (no library sync)
+    /// library parts handed to the app and not saved by it yet; the app couldn't take them (no library sync); the
+    /// parts taken, to read again as the app saved them
     lib_wait: Mutex<Option<Instant>>,
     lib_off: AtomicBool,
+    took_lib: Mutex<BTreeSet<String>>,
     /// items the other side wants the text of next time
     want: Mutex<BTreeSet<String>>,
     /// the last round that went through, either way
@@ -359,6 +366,7 @@ impl Engine {
             met: AtomicBool::new(false),
             lib_wait: Mutex::new(None),
             lib_off: AtomicBool::new(false),
+            took_lib: Mutex::new(BTreeSet::new()),
             want: Mutex::new(BTreeSet::new()),
             ok_at: Mutex::new(None),
             note: Mutex::new(String::new()),
@@ -844,8 +852,9 @@ impl Engine {
                 let their_text = th.and_then(|h| h.text.clone()).filter(|x| hash(x) == t);
                 match decide(n, m, t, mb, tb, my_at, th.map_or(0, |h| h.at), host, lower) {
                     Pick::Same => {
+                        // (the calling side's own form: a Backline from before own forms takes this as its base)
                         if m != 0 {
-                            agreed.push((n.to_string(), m));
+                            agreed.push((n.to_string(), if t != 0 { t } else { m }));
                         }
                     }
                     Pick::Mine { keep } => {
@@ -926,6 +935,15 @@ impl Engine {
         sn.read = true;
         let mut s = lock(&self.saved);
         let Some(p) = s.peer.as_mut() else { return false };
+        // (library parts that came in, as the app saved them here: what the two agreed on, in this side's form)
+        if !hold {
+            for n in std::mem::take(&mut *lock(&self.took_lib)) {
+                if let Some(h) = sn.items.get(&n).map(|x| x.0) {
+                    p.base.insert(n.clone(), h);
+                    sn.seen.insert(n, h);
+                }
+            }
+        }
         let names: BTreeSet<String> = sn.items.keys().chain(sn.seen.keys()).chain(p.base.keys()).cloned().collect();
         let now = now_ms();
         let mut changed = false;
@@ -981,7 +999,13 @@ impl Engine {
                 }
             }
             if let Some(key) = name.strip_prefix(LIB) {
-                lib.push((key.to_string(), v.unwrap_or(Value::Null)));
+                let mut v = v.unwrap_or(Value::Null);
+                // (fields only this side knows, kept)
+                if let Some(ours) = sn.items.get(name).and_then(|(_, t)| serde_json::from_str::<Value>(t).ok()) {
+                    keep_ours(&mut v, &ours);
+                }
+                lock(&self.took_lib).insert(name.clone());
+                lib.push((key.to_string(), v));
             } else if let Some(f) = FILES.iter().copied().find(|f| *f == name.as_str()) {
                 let path = self.dir.join(f);
                 if let Err(e) = write_whole(&path, text) {
@@ -1011,8 +1035,9 @@ impl Engine {
             let sn = lock(&self.snap);
             let mut s = lock(&self.saved);
             if let Some(p) = s.peer.as_mut() {
-                for (n, h) in agreed {
-                    p.base.insert(n.clone(), *h);
+                for (n, _) in agreed {
+                    // (what's here now, in this side's own form)
+                    p.base.insert(n.clone(), sn.items.get(n).map_or(0, |x| x.0));
                     p.changed.remove(n);
                 }
                 p.last = now_s();
@@ -1079,6 +1104,10 @@ fn decide(name: &str, m: u64, t: u64, mb: u64, tb: u64, my_at: u64, their_at: u6
         return Pick::Theirs { keep: false };
     }
     let first = mb == 0 || tb == 0;
+    // (neither changed since the two agreed, each in its own form)
+    if !first && m == mb && t == tb {
+        return Pick::Same;
+    }
     if !first && m == mb {
         return Pick::Theirs { keep: false };
     }
@@ -1130,6 +1159,38 @@ fn merge(a: &Value, b: &Value, depth: u32) -> Value {
             Value::Array(out)
         }
         _ => a.clone(),
+    }
+}
+
+/// Fields of ours the other side's version doesn't have, put into what came from it (a newer Backline's: a diary
+/// day's notes), so an older Backline never erases them. Only a record's fields (its keys plain words: `note`,
+/// `loop_time`), in the part itself or in the same entry of a list of records (the same id, name, date...), never a
+/// map's own keys (a song's bookmarks taken out stay out).
+fn keep_ours(theirs: &mut Value, ours: &Value) {
+    fn field(k: &str) -> bool {
+        k.starts_with(|c: char| c.is_ascii_lowercase()) && k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+    fn record(t: &mut serde_json::Map<String, Value>, o: &serde_json::Map<String, Value>) {
+        if !t.keys().chain(o.keys()).all(|k| field(k)) {
+            return;
+        }
+        for (k, v) in o {
+            if !t.contains_key(k) {
+                t.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    match (theirs, ours) {
+        (Value::Object(t), Value::Object(o)) => record(t, o),
+        (Value::Array(t), Value::Array(o)) => {
+            for x in t.iter_mut() {
+                let id = ident(x);
+                if let (Value::Object(xm), Some(Value::Object(om))) = (x, o.iter().find(|v| ident(v) == id)) {
+                    record(xm, om);
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1475,6 +1536,11 @@ mod tests {
     /// A computer in a test: its own folder, the app standing in as one that puts library parts into library.json
     /// and saves it, and only its listening thread running (the rounds are called by hand).
     fn computer(dir: &Path, id: u64, name: &str) -> Arc<Engine> {
+        computer_as(dir, id, name, false)
+    }
+
+    /// The same, as an older Backline: one that doesn't know a diary day's notes (they're gone when it saves).
+    fn computer_as(dir: &Path, id: u64, name: &str, old: bool) -> Arc<Engine> {
         let slot: Arc<Mutex<Option<Arc<Engine>>>> = Arc::new(Mutex::new(None));
         let (d, s2) = (dir.to_path_buf(), slot.clone());
         let sink: Sink = Box::new(move |inc| {
@@ -1484,6 +1550,13 @@ mod tests {
                 if let Value::Object(m) = &mut v {
                     for (k, x) in parts {
                         m.insert(k, x);
+                    }
+                }
+                if old {
+                    if let Some(Value::Array(days)) = v.get_mut("days") {
+                        for d in days.iter_mut().filter_map(|d| d.as_object_mut()) {
+                            d.remove("note");
+                        }
                     }
                 }
                 std::fs::write(&p, v.to_string()).unwrap();
@@ -1504,6 +1577,39 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         e
+    }
+
+    #[test]
+    fn an_older_backline_neither_loops_nor_erases_notes() {
+        let (dn, dold) = (temp("newer"), temp("older"));
+        std::fs::write(dn.join("library.json"), json!({"days": [{"date": "2026-11-04", "secs": {"Ear": 60}, "note": "good day"}]}).to_string()).unwrap();
+        let n = computer(&dn, 10, "NEWER");
+        let o = computer_as(&dold, 20, "OLDER", true);
+        type_code(&o, &lock(&n.saved).code.clone());
+        n.call_join(at(&o), true).unwrap();
+        linked_to(&o);
+        // the first round: the older one takes the day, and saves it without the notes
+        assert!(o.round(at(&n)).is_ok());
+        let days = |d: &Path| json_of(d, "library.json")["days"].clone();
+        assert_eq!(days(&dold), json!([{"date": "2026-11-04", "secs": {"Ear": 60}}]));
+        // rounds after it move nothing, either way (each side's own form of the day)
+        let mtime = |d: &Path| std::fs::metadata(d.join("library.json")).unwrap().modified().unwrap();
+        o.poll();
+        n.poll();
+        let (tn, to) = (mtime(&dn), mtime(&dold));
+        for _ in 0..3 {
+            std::thread::sleep(Duration::from_millis(20));
+            assert!(o.round(at(&n)).is_ok());
+            assert!(n.round(at(&o)).is_ok());
+        }
+        assert_eq!((mtime(&dn), mtime(&dold)), (tn, to), "a round moved something");
+        // practice on the older one comes over, and the notes stay
+        std::fs::write(dold.join("library.json"), json!({"days": [{"date": "2026-11-04", "secs": {"Ear": 90}}]}).to_string()).unwrap();
+        assert!(o.round(at(&n)).is_ok());
+        assert_eq!(days(&dn), json!([{"date": "2026-11-04", "secs": {"Ear": 90}, "note": "good day"}]));
+        for e in [&n, &o] {
+            e.gen.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     fn at(e: &Engine) -> SocketAddr {
@@ -1544,6 +1650,8 @@ mod tests {
         assert_eq!(decide("plan.json", 7, 8, 0, 0, 0, 99, true, false), Pick::Mine { keep: true });
         assert_eq!(decide("plan.json", 7, 8, 7, 0, 99, 0, false, true), Pick::Theirs { keep: true });
         assert_eq!(decide("library/yt", 7, 8, 0, 0, 0, 0, false, false), Pick::Merge { mine_first: false });
+        // neither changed since they agreed, each in its own form: left alone
+        assert_eq!(decide("library/days", 7, 8, 7, 8, 0, 0, false, false), Pick::Same);
     }
 
     #[test]
@@ -1566,6 +1674,23 @@ mod tests {
         assert_eq!(merge(&a, &b, 0), json!([{"text": "lick", "played": ["2026-11-01", "2026-11-02"], "seen": "2026-11-01"}]));
         // something that isn't a list or a map: the first one's
         assert_eq!(merge(&json!("Solar"), &json!("Blue Monk"), 0), json!("Solar"));
+    }
+
+    #[test]
+    fn fields_only_this_side_knows_are_kept() {
+        // a day from an older Backline (no notes) keeps this side's notes; its own changes come through
+        let mut theirs = json!([{"date": "2026-11-04", "secs": {"Ear": 120}}, {"date": "2026-11-05", "secs": {}}]);
+        let ours = json!([{"date": "2026-11-04", "secs": {"Ear": 60}, "note": "good day"}]);
+        keep_ours(&mut theirs, &ours);
+        assert_eq!(theirs, json!([{"date": "2026-11-04", "secs": {"Ear": 120}, "note": "good day"}, {"date": "2026-11-05", "secs": {}}]));
+        // a map's own keys (songs by id) taken out on the other side stay out
+        let mut theirs = json!({"5": [1]});
+        keep_ours(&mut theirs, &json!({"5": [1], "9": [2]}));
+        assert_eq!(theirs, json!({"5": [1]}));
+        // a record's new field is kept
+        let mut theirs = json!({"mode": 1, "levels": [0]});
+        keep_ours(&mut theirs, &json!({"mode": 0, "levels": [0], "top": true}));
+        assert_eq!(theirs, json!({"mode": 1, "levels": [0], "top": true}));
     }
 
     #[test]
