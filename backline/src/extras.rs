@@ -229,6 +229,14 @@ impl App {
         if self.store.takes.len() != n {
             self.store_dirty = true;
         }
+        self.register_all();
+        if !self.store.folders.is_empty() {
+            self.rescan();
+        }
+    }
+
+    /// Every song the lists know, known to the player (where each one plays from).
+    pub(crate) fn register_all(&mut self) {
         let mut vs: Vec<Version> = Vec::new();
         vs.extend(self.store.files.iter().map(|e| e.to_version()));
         vs.extend(self.store.yt.iter().map(|e| e.to_version()));
@@ -241,9 +249,6 @@ impl App {
         }
         for v in &vs {
             self.register(v);
-        }
-        if !self.store.folders.is_empty() {
-            self.rescan();
         }
     }
 
@@ -1330,7 +1335,62 @@ impl App {
         }
         let mut seen = HashSet::new();
         ids.retain(|id| matches!(self.srcmap.get(id), Some(Src::Yt(_))) && seen.insert(*id));
+        // linked to another computer: only songs brought in here are kept on their own (ones that came in the sync
+        // download when they're played)
+        if crate::sync::linked() {
+            ids.retain(|id| self.here.contains(id));
+        }
         self.keep_all(ids)
+    }
+
+    /// SYNC: files that came from your other computer, read again (the plan's log at once: a tick before the next
+    /// look would start from nothing and write that over it).
+    pub(crate) fn sync_files(&mut self, names: Vec<String>) {
+        for n in names {
+            match n.as_str() {
+                "plan.json" | "plan_log.json" | "plan_moves.json" | "plan_keepers.json" => self.plan.reread(),
+                "atonal_lines.json" => self.at.seen = None,
+                "reading_book.txt" if self.rd_book_loaded => self.rd_reload(),
+                "pattern_book.txt" => crate::lines::reload_book(),
+                _ => {}
+            }
+        }
+    }
+
+    /// SYNC: library parts that came from your other computer, put in place of these ones and saved at once (the
+    /// sync reads library.json again only then). Lists may have changed under what's open.
+    pub(crate) fn sync_library(&mut self, parts: Vec<(String, serde_json::Value)>) {
+        let fresh = match serde_json::to_value(&self.store) {
+            Ok(serde_json::Value::Object(mut m)) => {
+                for (k, v) in parts {
+                    m.insert(k, v);
+                }
+                serde_json::from_value::<store::Store>(serde_json::Value::Object(m))
+                    .map_err(|e| api::log(&format!("sync: the library parts didn't fit: {}", e)))
+                    .ok()
+            }
+            _ => None,
+        };
+        let ok = fresh.is_some();
+        if let Some(s) = fresh {
+            self.store = s;
+            if self.pl_open.is_some_and(|i| i >= self.store.playlists.len()) {
+                self.pl_open = None;
+            }
+            if self.tune_open.is_some_and(|i| i >= self.store.tunes.len()) {
+                self.tune_open = None;
+            }
+            if self.entry_edit.is_some_and(|i| i >= self.store.entries.len()) {
+                self.entry_edit = None;
+            }
+            self.register_all();
+            self.liked.extend(self.store.hearts.iter().map(|e| e.id));
+            self.serial += 1;
+            self.store.save();
+            self.store_dirty = false;
+            self.store_saved = Instant::now();
+        }
+        crate::sync::library_saved(ok);
     }
 
     pub(crate) fn handle_paths(&mut self, mut paths: Vec<PathBuf>) {
@@ -1521,6 +1581,8 @@ impl App {
                 Err(e) => self.set_err(format!("EXPORT: {}", e)),
             },
             Msg::ShareIn(Ok(s)) => self.share_view = Some((true, s)),
+            Msg::SyncFiles(names) => self.sync_files(names),
+            Msg::SyncLibrary(parts) => self.sync_library(parts),
             Msg::PackIn(Ok(p)) => {
                 if p.parts.is_empty() && p.share.is_none() {
                     self.set_note("NOTHING NEW IN THAT PACK: YOU HAVE IT ALL ALREADY");
@@ -1613,6 +1675,7 @@ impl App {
                         self.yt_in.clear();
                         self.register(&e.to_version());
                         if !self.store.yt.iter().any(|x| x.id == e.id) {
+                            self.here.insert(e.id);
                             self.store.yt.insert(0, e);
                             self.store_dirty = true;
                         }
@@ -2807,6 +2870,7 @@ impl App {
                 if let Some(e) = self.yt_results.iter().find(|e| e.id == id).cloned() {
                     if !self.store.yt.iter().any(|x| x.id == id) {
                         self.register(&e.to_version());
+                        self.here.insert(id);
                         self.store.yt.insert(0, e);
                         self.store_dirty = true;
                     }
@@ -2816,6 +2880,7 @@ impl App {
             Action::ScKeep(id) => {
                 if let Some(e) = self.sc_results.iter().find(|e| e.id == id).cloned() {
                     if !self.store.sc.iter().any(|x| x.id == id) {
+                        self.here.insert(id);
                         self.store.sc.insert(0, e);
                         self.store_dirty = true;
                     }

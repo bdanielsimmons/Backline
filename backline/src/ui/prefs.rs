@@ -289,6 +289,48 @@ impl App {
                         para(ui, &format!("Saved songs: {}", crate::cache::dir().display()), pal().dim);
                         para(ui, &format!("Settings and library: {}", crate::api::config_dir().display()), pal().dim);
 
+                        section_header(ui, "SYNC");
+                        let sv = crate::sync::view();
+                        para(ui, "Keep your plan, progress, loops, lists and practice the same on your computers on this network. Only what you made goes across, never songs: a song downloads on a computer only when you play it there.", pal().ink2);
+                        ui.horizontal_wrapped(|ui| {
+                            if retro_btn(ui, if sv.on { "SYNC: ON" } else { "SYNC: OFF" }, sv.on)
+                                .tip("Windows may ask to let Backline use your network: choose Allow.")
+                                .clicked()
+                            {
+                                crate::sync::set_on(!sv.on);
+                            }
+                            if sv.on && sv.peer.is_some() {
+                                if retro_btn(ui, "SYNC NOW", false).clicked() {
+                                    crate::sync::sync_now();
+                                }
+                                if retro_btn(ui, "UNLINK", false).tip("Stop syncing with that computer. Link again with a code.").clicked() {
+                                    crate::sync::unlink();
+                                }
+                            }
+                        });
+                        if sv.on {
+                            if sv.peer.is_some() {
+                                para(ui, &sv.linked_line(), pal().ink);
+                            } else {
+                                para(ui, &format!("This computer's code: {}", sv.code_shown()), pal().ink);
+                                para(ui, "On your other computer, turn SYNC on and type this code there. Or type that computer's code here:", pal().ink2);
+                                ui.horizontal(|ui| {
+                                    let (rect, _) = ui.allocate_exact_size(egui::vec2(120.0, crate::bh()), egui::Sense::hover());
+                                    let o = crate::views::field(ui, &mut self.ed, crate::tools::F_SYNC_CODE, &mut self.sync_in, rect, "Code", false);
+                                    let ready = self.sync_in.chars().filter(|c| c.is_ascii_digit()).count() == 6;
+                                    if (retro_btn(ui, if sv.joining { "LINKING..." } else { "LINK" }, sv.joining).clicked() || o.enter) && ready {
+                                        crate::sync::link(&self.sync_in);
+                                        self.sync_in.clear();
+                                    }
+                                });
+                            }
+                            if !sv.note.is_empty() {
+                                para(ui, &sv.note, pal().dim);
+                            }
+                            // (what it says changes on its own)
+                            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+                        }
+
                         section_header(ui, "SHARE WITH A FRIEND");
                         para(ui, "Put your plan, books, lines, chord melodies and loops in one file. Your friend drops it on Backline and each part switches on. Your progress (the plan's log, keepers, diary) is never included.", pal().ink2);
                         let have = crate::pack::available();

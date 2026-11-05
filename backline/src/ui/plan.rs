@@ -511,6 +511,24 @@ impl PlanState {
         }
     }
 
+    /// The plan's files changed on disk (synced from your other computer): read again now. What's kept in memory is
+    /// replaced only by a file that reads, so a tick or a move never starts from nothing.
+    pub(crate) fn reread(&mut self) {
+        self.seen = None;
+        fn read<T: serde::de::DeserializeOwned>(p: std::path::PathBuf) -> Option<T> {
+            serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()
+        }
+        if let Some(l) = read(log_path()) {
+            self.log = Some(l);
+        }
+        if let Some(m) = read(moves_path()) {
+            self.moves = Some(m);
+        }
+        if let Some(k) = read(keepers_path()) {
+            self.keepers = Some(k);
+        }
+    }
+
     fn mv(&mut self) -> Moves {
         self.moves
             .get_or_insert_with(|| {

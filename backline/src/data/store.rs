@@ -545,7 +545,8 @@ pub struct Store {
     pub yt: Vec<Ext>,
     /// SoundCloud tracks you kept (same kind of entry as a YouTube clip, with a link instead of a video id)
     pub sc: Vec<Ext>,
-    /// Hearted tracks that are not on Tidal (files, YouTube, SoundCloud); kept on this computer only
+    /// Hearted tracks that are not on Tidal (files, YouTube, SoundCloud); synced with your other computer like the
+    /// other lists (SYNC), never downloaded there on their own
     pub hearts: Vec<Ext>,
     /// SoundCloud / YouTube playlists you saved by link
     pub lists: Vec<SavedList>,

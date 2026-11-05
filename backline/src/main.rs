@@ -47,6 +47,8 @@ mod pack;
 mod sources;
 #[path = "data/store.rs"]
 mod store;
+#[path = "data/sync.rs"]
+mod sync;
 #[path = "data/theory.rs"]
 mod theory;
 #[path = "data/update.rs"]
@@ -230,6 +232,9 @@ enum Msg {
     /// a pack read (to tick what to bring in), and one saved (where)
     PackIn(Result<pack::Opened, String>),
     PackSaved(Result<String, String>),
+    /// SYNC: files that came from your other computer (read them again), and library parts (put them in)
+    SyncFiles(Vec<String>),
+    SyncLibrary(Vec<(String, serde_json::Value)>),
     /// your own Tidal playlists, for adding to: (id, name)
     TidalLists(Result<Vec<(String, String)>, String>),
     /// a song put in a Tidal playlist: what to say
@@ -2499,6 +2504,10 @@ struct App {
     store: store::Store,
     store_dirty: bool,
     store_saved: Instant,
+    /// SYNC: the code typed to link with another computer; songs brought in here this run (while linked, only these
+    /// are kept on their own: ones that came in the sync download when they're played)
+    sync_in: String,
+    here: HashSet<i64>,
     srcmap: HashMap<i64, Src>,
     sec: Sec,
     /// the list last open in each group (MUSIC / PRACTICE), to come back to it
@@ -3378,6 +3387,8 @@ impl App {
             store: store::Store::load(),
             store_dirty: false,
             store_saved: Instant::now(),
+            sync_in: String::new(),
+            here: HashSet::new(),
             srcmap: HashMap::new(),
             sec: Sec::Tidal,
             last_music: Sec::Tidal,
@@ -3848,6 +3859,17 @@ impl App {
         meta::load(&app.store.meta);
         app.init_store();
         app.liked.extend(app.store.hearts.iter().map(|e| e.id));
+        // SYNC with your other computer, when it's on: what comes in arrives as messages
+        {
+            let (tx, ctx) = (app.tx.clone(), app.ctx.clone());
+            sync::start(Box::new(move |inc| {
+                let _ = tx.send(match inc {
+                    sync::Incoming::Files(v) => Msg::SyncFiles(v),
+                    sync::Incoming::Library(v) => Msg::SyncLibrary(v),
+                });
+                ctx.request_repaint();
+            }));
+        }
         // ---- restore saved settings
         if let Some(v) = st["volume"].as_f64() {
             app.volume = (v as f32).clamp(0.0, 1.0);
@@ -5237,6 +5259,11 @@ impl App {
         if let Some(Src::File(p)) = self.srcmap.get(&t.id) {
             if !p.exists() {
                 let name = format!("{} - {}", t.artist, t.title);
+                // a song on your other computer's disk (it came in the sync): not gone, just not on this one
+                if sync::linked() && !self.store.files.iter().any(|e| e.id == t.id) {
+                    self.set_note(&format!("NOT ON THIS COMPUTER: {}", name.to_uppercase()));
+                    return;
+                }
                 self.apply(Action::FileGone(t.id));
                 self.set_note(&format!("GONE FROM DISK, REMOVED: {}", name.to_uppercase()));
                 if i < self.queue.len() {
@@ -6047,6 +6074,7 @@ impl App {
                         if let Some(e) = found {
                             self.store.hearts.push(e);
                             self.liked.insert(t.id);
+                            self.here.insert(t.id);
                             self.set_note("ADDED TO LIKED (ON THIS PC)");
                         }
                     }
