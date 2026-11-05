@@ -888,10 +888,11 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         // names spelled their own way
         const NAMES: [(&str, &str); 5] =
             [("SOUNDCLOUD", "SoundCloud"), ("YOUTUBE", "YouTube"), ("IREAL", "iReal"), ("TIDAL", "Tidal"), ("YT-DLP", "yt-dlp")];
-        // roman numerals of a progression ("I-IV-V", "II-V-I") stay as they are
+        // roman numerals of a progression ("I-IV-V", "II-V-I") or a chord over a bass ("IV/V") stay as they are
+        let joint = |c: char| c == '-' || c == '/';
         let roman = !core.is_empty()
-            && core.split('-').all(|p| !p.is_empty() && p.chars().all(|c| matches!(c, 'I' | 'V' | 'X')))
-            && core.contains('-');
+            && core.split(joint).all(|p| !p.is_empty() && p.chars().all(|c| matches!(c, 'I' | 'V' | 'X')))
+            && core.contains(joint);
         // an ordinal ("4TH", "2ND") reads 4th
         let ordinal = {
             // (and plural: "7THS" reads 7ths, "3RDS" 3rds)
@@ -1171,6 +1172,8 @@ mod tests {
         assert_eq!(display_case("I'M HERE"), "I'm Here");
         assert_eq!(display_case("GET YT-DLP"), "Get yt-dlp");
         assert_eq!(display_case("I-IV-V"), "I-IV-V");
+        assert_eq!(display_case("IV/V I"), "IV/V I");
+        assert_eq!(display_case("I I/3 IV"), "I I/3 IV");
         assert_eq!(display_case("7THS"), "7ths");
         assert_eq!(display_case("D E F G A B C"), "D E F G A B C");
         assert_eq!(display_case("PLAY A SONG TO START"), "Play a song to start");

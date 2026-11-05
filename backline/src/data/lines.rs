@@ -459,13 +459,50 @@ pub fn progression_sets() -> Vec<(&'static str, &'static str, Vec<String>)> {
                 "I bIII bVI bII I",
             ]),
         ),
+        (
+            "GOSPEL",
+            "Black church harmony: the church's moves (walk-ups and walk-downs, 4 over 5, the 7-3-6, the minor 4 amen, the bVI bVII ending), the shout's vamps for the praise break, and quartet blues. After a slash comes the bass: a note of the key (I/3 is C over E in C), or a chord's root (IV/V is F over G).",
+            list(&[
+                "Walk-up: I I/3 IV #IV° I/5",
+                "4 over 5: IV/V I",
+                "Amen, minor 4: IV IVm6 I",
+                "The 7-3-6: VII°5 III7 VIm7 II9 V13 I69",
+                "Church ending: bVI9 bVII9 I69",
+                "Walk-down: I I/7 VIm I/5 IV I/3 IIm7 V9sus I",
+                "3-6-2-5: IIIm7 VI7#9 IIm9 V13 I69",
+                "Sus to home: IIm9 V9sus V7b9 I69",
+                "Turnaround: I/3 IV #IV° I/5 VI7 II7 V7 I",
+                "Back door: IVm7 bVII9 I",
+                "Shout, minor: Im IVm Im V7",
+                "Shout, major: I IV I V7",
+                "Shout run: I VI7 II7 V7",
+                "Quartet blues: I7 IV7 I7 V7 IV7 I7",
+                "Quartet turnaround: I I7 IV IVm I/5 V7 I",
+            ]),
+        ),
     ]
+}
+
+/// A progression's own name, when it has one in front ("Walk-up: I I/3 IV").
+pub fn prog_name(prog: &str) -> Option<&str> {
+    prog.split_once(':').map(|(n, _)| n.trim())
+}
+
+/// A progression's numerals, without its name.
+pub fn numerals(prog: &str) -> &str {
+    prog.split_once(':').map_or(prog, |(_, n)| n).trim()
 }
 
 /// A Roman numeral as a chord in a key: "II" in C is Dm7 (D with `sevenths` off), "bVII7" is Bb7, "#IV°5" is
 /// F#m7b5, "IVm" is Fm7, "I+" is Caug, "VI7" is A7. In a minor key the I chords are minor. Accidentals go before
 /// or after the numeral (bII or IIb); lower case numerals are minor. None when it cannot be read.
 pub fn roman_chord(tok: &str, key: i32, minor: bool, sevenths: bool) -> Option<String> {
+    // a bass under the chord: a degree of the key after the slash (I/3 is C/E in C; b and # allowed), or a numeral
+    // (IV/V is F/G)
+    if let Some((chord, bass)) = tok.trim().split_once('/') {
+        let c = roman_chord(chord, key, minor, sevenths)?;
+        return Some(format!("{}/{}", c, bass_note(bass, key)?));
+    }
     let t = tok.trim().replace('ø', "°5").replace("o5", "°5");
     let mut rest: &str = &t;
     let mut acc = 0;
@@ -544,6 +581,29 @@ pub fn roman_chord(tok: &str, key: i32, minor: bool, sevenths: bool) -> Option<S
     Some(format!("{}{}", note_name(root, sharp), quality))
 }
 
+/// The bass after a slash: a degree of the key ("3", "b7", "#4") or a numeral's root ("V", "bVII").
+fn bass_note(t: &str, key: i32) -> Option<String> {
+    const MAJOR: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+    const NUMS: [&str; 7] = ["I", "II", "III", "IV", "V", "VI", "VII"];
+    let t = t.trim();
+    let (acc, rest) = if let Some(r) = t.strip_prefix('b').or_else(|| t.strip_prefix('♭')) {
+        (-1, r)
+    } else if let Some(r) = t.strip_prefix('#') {
+        (1, r)
+    } else {
+        (0, t)
+    };
+    let deg = match rest.parse::<usize>() {
+        Ok(d) => d,
+        Err(_) => NUMS.iter().position(|n| rest.eq_ignore_ascii_case(n))? + 1,
+    };
+    if !(1..=7).contains(&deg) {
+        return None;
+    }
+    let sharp = if acc != 0 { acc > 0 } else { key_sharps(key) };
+    Some(note_name((key + MAJOR[deg - 1] + acc).rem_euclid(12), sharp).to_string())
+}
+
 /// Keys written with sharps (G D A E B F#); the rest with flats.
 pub fn key_sharps(key: i32) -> bool {
     matches!(key.rem_euclid(12), 7 | 2 | 9 | 4 | 11 | 6)
@@ -552,6 +612,7 @@ pub fn key_sharps(key: i32) -> bool {
 /// A progression as a lead sheet, one chord a bar: in one key, or through all twelve (round the cycle of 4ths, each
 /// key's first bar marked with its name).
 pub fn progression_chart(prog: &str, key: i32, minor: bool, sevenths: bool, all_keys: bool) -> String {
+    let prog = numerals(prog);
     let keys: Vec<i32> = if all_keys { (0..12).map(|k| (key + 5 * k).rem_euclid(12)).collect() } else { vec![key] };
     let mut s = String::from("T44 ");
     for k in keys {
@@ -711,13 +772,34 @@ mod tests {
         assert_eq!(roman_chord("I", 9, true, true).as_deref(), Some("Am7"));
         assert_eq!(roman_chord("IV#°5", 0, false, true).as_deref(), Some("F#m7b5"));
         assert!(roman_chord("X", 0, false, true).is_none());
+        // a bass under the chord, and the chord's own colours (gospel)
+        assert_eq!(roman_chord("IV/V", 0, false, false).as_deref(), Some("F/G"));
+        assert_eq!(roman_chord("I/3", 0, false, false).as_deref(), Some("C/E"));
+        assert_eq!(roman_chord("I/7", 0, false, false).as_deref(), Some("C/B"));
+        assert_eq!(roman_chord("I/b7", 0, false, false).as_deref(), Some("C/Bb"));
+        assert_eq!(roman_chord("IV/V", 3, false, false).as_deref(), Some("Ab/Bb"));
+        assert_eq!(roman_chord("I/5", 0, false, true).as_deref(), Some("Cmaj7/G"));
+        assert_eq!(roman_chord("VI7#9", 0, false, true).as_deref(), Some("A7#9"));
+        assert_eq!(roman_chord("IVm6", 0, false, true).as_deref(), Some("Fm6"));
+        assert_eq!(roman_chord("V9sus", 0, false, true).as_deref(), Some("G9sus"));
+        assert_eq!(roman_chord("bVII9", 0, false, true).as_deref(), Some("Bb9"));
+        assert_eq!(roman_chord("I69", 0, false, true).as_deref(), Some("C69"));
+        assert!(roman_chord("I/9", 0, false, true).is_none());
+        assert_eq!(numerals("Walk-up: I I/3 IV"), "I I/3 IV");
+        assert_eq!(prog_name("Walk-up: I I/3 IV"), Some("Walk-up"));
+        assert_eq!(numerals("II V I"), "II V I");
         let c = progression_chart("II V I", 0, false, true, true);
         assert!(c.starts_with("T44 | *C Dm7 | G7 | Cmaj7 | *F Gm7 |"), "{}", c);
-        // every built-in progression reads
+        // every built-in progression reads, in every key, and the band can play every chord of it
         for (_, _, progs) in progression_sets() {
             for p in progs {
-                for t in p.split_whitespace() {
-                    assert!(roman_chord(t, 0, false, true).is_some(), "{} in {}", t, p);
+                for t in numerals(&p).split_whitespace() {
+                    for key in 0..12 {
+                        for sev in [false, true] {
+                            let c = roman_chord(t, key, false, sev);
+                            assert!(c.as_deref().is_some_and(|c| crate::band::parse_chord(c).is_some()), "{} in {}: {:?}", t, p, c);
+                        }
+                    }
                 }
             }
         }

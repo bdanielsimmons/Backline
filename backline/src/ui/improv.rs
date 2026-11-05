@@ -945,6 +945,94 @@ pub(crate) fn caged(root: i32, steps: &[i32]) -> Vec<Vec<Spot>> {
         .collect()
 }
 
+/// A scale's fingering with its root under one finger: the spots, each one's finger, whether that finger reaches a
+/// fret out of the hand's four to get it, and the 1st finger's fret (the position).
+pub(crate) struct RootFinger {
+    pub spots: Vec<Spot>,
+    pub fingers: Vec<u8>,
+    pub stretch: Vec<bool>,
+    pub position: i32,
+    /// what it is, for the list ("ROOT ON 6TH STRING, 2ND FINGER - 2ND POSITION - RECOMMENDED")
+    pub about: String,
+}
+
+/// The fingering with the root on the low E or the A string (`string` 0 or 1) under the 1st, 2nd or 4th finger: one
+/// finger to a fret across four frets from the 1st finger's (above the nut), every note of the scale there on every
+/// string. A note between two strings' reach takes a finger reaching a fret out: with the root under the 1st finger
+/// the 4th reaches up on the lower string, otherwise the 1st reaches back on the higher one (up, when back would be
+/// the nut).
+pub(crate) fn root_finger(root: i32, steps: &[i32], string: usize, finger: i32) -> RootFinger {
+    let open = theory::STANDARD;
+    let mut w = (root - open[string]).rem_euclid(12) - (finger - 1);
+    if w < 1 {
+        w += 12;
+    }
+    let in_scale = |m: i32| steps.contains(&(m - root).rem_euclid(12));
+    let mut r = RootFinger { spots: Vec::new(), fingers: Vec::new(), stretch: Vec::new(), position: w, about: String::new() };
+    for s in 0..6 {
+        for f in w..w + 4 {
+            if in_scale(open[s] + f) {
+                r.spots.push((s, f as u8));
+                r.fingers.push((f - w + 1) as u8);
+                r.stretch.push(false);
+            }
+        }
+        // the note between this string's reach and the next one's (not between the G and B: they meet)
+        if s < 5 && open[s + 1] - open[s] == 5 && in_scale(open[s] + w + 4) {
+            let (at, f, fin) = if finger == 1 || w == 1 { (s, w + 4, 4) } else { (s + 1, w - 1, 1) };
+            r.spots.push((at, f as u8));
+            r.fingers.push(fin);
+            r.stretch.push(true);
+        }
+    }
+    r
+}
+
+/// The six fingerings by the root's finger (6th and 5th string; 1st, 2nd and 4th finger), the fewest stretches
+/// first; the ones with the fewest are RECOMMENDED.
+pub(crate) fn root_fingerings(root: i32, steps: &[i32]) -> Vec<RootFinger> {
+    const STRINGS: [&str; 2] = ["6TH", "5TH"];
+    const FINGERS: [(i32, &str); 3] = [(1, "1ST"), (2, "2ND"), (4, "4TH")];
+    let mut v: Vec<(usize, usize, RootFinger)> = Vec::new();
+    for s in 0..2 {
+        for (k, (f, _)) in FINGERS.iter().enumerate() {
+            v.push((s, k, root_finger(root, steps, s, *f)));
+        }
+    }
+    let reach = |r: &RootFinger| r.stretch.iter().filter(|x| **x).count();
+    v.sort_by_key(|(s, k, r)| (reach(r), *s, *k));
+    let least = v.iter().map(|x| reach(&x.2)).min().unwrap_or(0);
+    v.into_iter()
+        .map(|(s, k, mut r)| {
+            let n = reach(&r);
+            r.about = format!(
+                "ROOT ON {} STRING, {} FINGER - {} POSITION - {}",
+                STRINGS[s],
+                FINGERS[k].1,
+                ordinal(r.position),
+                if n == least {
+                    "RECOMMENDED".to_string()
+                } else {
+                    format!("{} STRETCH{}", n, if n == 1 { "" } else { "ES" })
+                }
+            );
+            r
+        })
+        .collect()
+}
+
+/// 1ST, 2ND, 3RD, 4TH ... 11TH, 12TH, 13TH.
+fn ordinal(n: i32) -> String {
+    let suf = match (n % 10, n % 100) {
+        (_, 11..=13) => "TH",
+        (1, _) => "ST",
+        (2, _) => "ND",
+        (3, _) => "RD",
+        _ => "TH",
+    };
+    format!("{}{}", n, suf)
+}
+
 /// The colour each position is outlined in on the whole neck.
 const POS_COLS: [Color32; 8] = [
     Color32::from_rgb(217, 164, 65),
@@ -1040,45 +1128,64 @@ impl App {
         let si = order[order.iter().position(|i| scales[*i].1 == self.pf_scale).unwrap_or(0)];
         let steps = scales[si].2.clone();
         let root = self.pf_root;
-        const SYSTEMS: [&str; 4] = ["5 POSITIONS (CAGED)", "2 NOTES PER STRING", "3 NOTES PER STRING", "4 NOTES PER STRING"];
-        if let Some(i) = crate::choice_line(ui, "pf_sys", "SYSTEM", &SYSTEMS, (self.pf_sys as usize).min(3), 260.0) {
+        const SYSTEMS: [&str; 5] =
+            ["5 POSITIONS (CAGED)", "2 NOTES PER STRING", "3 NOTES PER STRING", "4 NOTES PER STRING", "ROOT UNDER A FINGER"];
+        if let Some(i) = crate::choice_line(ui, "pf_sys", "SYSTEM", &SYSTEMS, (self.pf_sys as usize).min(4), 260.0) {
             self.pf_sys = i as u8;
             self.pf_pos = 0;
         }
-        let positions: Vec<Vec<Spot>> = match self.pf_sys {
-            0 => caged(root, &steps),
-            n => positions(root, &steps, n as usize + 1),
+        // ROOT UNDER A FINGER: the six fingerings by the root's finger, the fewest stretches first
+        let by_finger = (self.pf_sys == 4).then(|| root_fingerings(root, &steps));
+        let positions: Vec<Vec<Spot>> = match (&by_finger, self.pf_sys) {
+            (Some(rf), _) => rf.iter().map(|r| r.spots.clone()).collect(),
+            (None, 0) => caged(root, &steps),
+            (None, n) => positions(root, &steps, n as usize + 1),
         };
         let np = positions.len();
-        // in order up the neck, numbered from the one you call position 1
+        // the positions in order up the neck, numbered from the one you call position 1 (fingerings by finger: as
+        // they come, easiest first, and never all at once: they overlap)
+        let whole = by_finger.is_none();
+        let word = if whole { "POSITION" } else { "FINGERING" };
         let mut by_neck: Vec<usize> = (0..np).collect();
-        by_neck.sort_by_key(|p| positions[*p].iter().map(|s| s.1).min().unwrap_or(0));
-        let about: Vec<String> = by_neck.iter().map(|p| root_place(&positions[*p], root)).collect();
-        let (first, changed) =
-            numbering_line(ui, "pf_num", &about, &mut self.pf_num, &["ROOT ON 5TH STRING, 2ND", "ROOT ON 5TH"]);
-        if changed {
-            self.dirty = true;
+        if whole {
+            by_neck.sort_by_key(|p| positions[*p].iter().map(|s| s.1).min().unwrap_or(0));
         }
+        let about: Vec<String> = match &by_finger {
+            Some(rf) => rf.iter().map(|r| r.about.clone()).collect(),
+            None => by_neck.iter().map(|p| root_place(&positions[*p], root)).collect(),
+        };
+        let first = if whole {
+            let (first, changed) =
+                numbering_line(ui, "pf_num", &about, &mut self.pf_num, &["ROOT ON 5TH STRING, 2ND", "ROOT ON 5TH"]);
+            if changed {
+                self.dirty = true;
+            }
+            first
+        } else {
+            0
+        };
         // position k as numbered (0-based) -> the index into `positions`
         let nth = |k: usize| by_neck[(first + k) % np];
         let shown: Vec<String> = (0..np)
-            .map(|k| format!("POSITION {}:  {}", k + 1, about[(first + k) % np]))
-            .chain(std::iter::once(format!("WHOLE NECK: ALL {} TOGETHER", np)))
+            .map(|k| format!("{} {}:  {}", word, k + 1, about[(first + k) % np]))
+            .chain(whole.then(|| format!("WHOLE NECK: ALL {} TOGETHER", np)))
             .collect();
         let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
+        // (the choices to step through: every position and the whole neck, or every fingering)
+        let n_show = shown.len().max(1);
         ui.horizontal(|ui| {
             crate::views::form_label(ui, "SHOW");
-            let pick = (self.pf_pos as usize).min(np);
-            if retro_btn_w(ui, "<", 34.0, false).tip("Previous position").clicked() {
-                self.pf_pos = ((pick + np) % (np + 1)) as u8;
+            let pick = (self.pf_pos as usize).min(n_show - 1);
+            if retro_btn_w(ui, "<", 34.0, false).tip(if whole { "Previous position" } else { "Previous fingering" }).clicked() {
+                self.pf_pos = ((pick + n_show - 1) % n_show) as u8;
             }
             let widest = shown.iter().map(|s| crate::font::text_w(s, 2.0)).fold(0.0, f32::max) + 56.0;
             if let Some(i) = crate::dropdown_fixed(ui, "pf_pos", &shown, pick, widest.min(ui.available_width() - 60.0).max(200.0))
             {
                 self.pf_pos = i as u8;
             }
-            if retro_btn_w(ui, ">", 34.0, false).tip("Next position").clicked() {
-                self.pf_pos = ((pick + 1) % (np + 1)) as u8;
+            if retro_btn_w(ui, ">", 34.0, false).tip(if whole { "Next position" } else { "Next fingering" }).clicked() {
+                self.pf_pos = ((pick + 1) % n_show) as u8;
             }
         });
         if let Some(i) =
@@ -1105,7 +1212,7 @@ impl App {
             v.extend(u.iter().rev().skip(1));
             v
         };
-        let pick = (self.pf_pos as usize).min(np);
+        let pick = (self.pf_pos as usize).min(n_show - 1);
         let mut owner: Vec<usize> = Vec::new();
         let shifting = self.pf_play == 1 || (pick == np && self.pf_play == 0);
         let spots: Vec<Spot> = if self.pf_play >= 2 {
@@ -1141,13 +1248,21 @@ impl App {
         let mut dots: Vec<NeckDot> = Vec::new();
         for k in 0..np {
             let pos = &positions[nth(k)];
-            let fing = fingers(pos);
-            let on = bright.map_or(pick == np, |b| b == k);
+            // (fingerings by finger: their own fingers, a finger reaching out of the hand marked: 4s, 1s)
+            let (fing, reach) = match &by_finger {
+                Some(rf) => (rf[nth(k)].fingers.clone(), rf[nth(k)].stretch.clone()),
+                None => (fingers(pos), vec![false; pos.len()]),
+            };
+            // (fingerings by finger: only the one shown - the rest overlap it)
+            let on = bright.map_or(if whole { pick == np } else { k == pick }, |b| b == k);
+            if !whole && !on {
+                continue;
+            }
             for (j, s) in pos.iter().enumerate() {
                 let pc = pitch(s).rem_euclid(12);
                 let text = match self.pf_label {
                     1 => theory::note_name(pc, sharps).to_string(),
-                    2 => fing[j].to_string(),
+                    2 => format!("{}{}", fing[j], if reach[j] { "s" } else { "" }),
                     _ => degree_name(pc, root).to_string(),
                 };
                 // the whole neck: each position in its own colour; one shown: degree colours, the rest dim
@@ -1169,14 +1284,19 @@ impl App {
                     text: if on || pick == np { text } else { String::new() },
                     col,
                     strength: if on || (pick == np && bright.is_none()) { 1.0 } else { 0.22 },
-                    ring: false,
+                    ring: reach[j],
                     root: pc == root.rem_euclid(12),
                 });
             }
         }
         neck_view(ui, &dots, lit);
         if let Some(b) = bright.filter(|b| *b < np) {
-            crate::views::dim_line(ui, &format!("POSITION {}: {}", b + 1, about[(first + b) % np]), 1.0, pal().ink2);
+            crate::views::dim_line(ui, &format!("{} {}: {}", word, b + 1, about[(first + b) % np]), 1.0, pal().ink2);
+        }
+        // (what a ring means, when the fingering shown has one)
+        let shown_k = bright.unwrap_or(pick).min(np.saturating_sub(1));
+        if by_finger.as_ref().is_some_and(|rf| rf.get(nth(shown_k)).is_some_and(|r| r.stretch.contains(&true))) {
+            para(ui, "A ring: a finger reaches one fret out of the hand. 4s: the 4th finger reaches up. 1s: the 1st finger reaches back.", pal().dim);
         }
         // ---- the piano, to look at: the scale, or the note sounding
         let keys: Vec<i32> = match lit {
@@ -1443,6 +1563,39 @@ pub(crate) fn neck_view(ui: &mut egui::Ui, dots: &[NeckDot], lit: Option<Spot>) 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn root_under_a_finger() {
+        let major = [0, 2, 4, 5, 7, 9, 11];
+        // G major, the root on the 6th string under the 2nd finger: 2nd position, no stretch
+        let r = root_finger(7, &major, 0, 2);
+        assert_eq!(r.position, 2);
+        assert!(r.stretch.iter().all(|x| !x));
+        assert_eq!(r.spots[..3], [(0, 2), (0, 3), (0, 5)]);
+        assert_eq!(r.fingers[..3], [1, 2, 4]);
+        // under the 1st finger: 3rd position, the 4th finger reaching up on four strings
+        let r = root_finger(7, &major, 0, 1);
+        assert_eq!(r.position, 3);
+        assert_eq!(r.stretch.iter().filter(|x| **x).count(), 4);
+        assert!(r.spots.iter().zip(&r.stretch).all(|(s, x)| !*x || s.1 == 7));
+        // every note of the scale once, two octaves and more
+        let all = root_fingerings(7, &major);
+        assert_eq!(all.len(), 6);
+        for f in &all {
+            let mut ps: Vec<i32> = f.spots.iter().map(|s| theory::STANDARD[s.0] + s.1 as i32).collect();
+            let n = ps.len();
+            ps.sort();
+            ps.dedup();
+            assert_eq!(ps.len(), n, "a note twice: {}", f.about);
+            assert!(ps.iter().all(|m| major.contains(&(m - 7).rem_euclid(12))));
+            assert!(n >= 14, "{} has {}", f.about, n);
+        }
+        // the fewest stretches first, and marked
+        assert!(all[0].about.ends_with("RECOMMENDED"));
+        assert_eq!(ordinal(1), "1ST");
+        assert_eq!(ordinal(12), "12TH");
+        assert_eq!(ordinal(23), "23RD");
+    }
+
     use super::*;
 
     #[test]

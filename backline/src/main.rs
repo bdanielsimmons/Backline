@@ -4359,6 +4359,10 @@ impl App {
             Ok("prog") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 8;
+                // BACKLINE_PROG_FAM=<n>: that family (5 = GOSPEL)
+                if let Some(f) = std::env::var("BACKLINE_PROG_FAM").ok().and_then(|s| s.parse::<usize>().ok()) {
+                    app.prog_fam = f;
+                }
             }
             Ok("news") => app.apply(Action::News),
             Ok("mini") => app.apply(Action::ToggleMini),
@@ -4438,6 +4442,10 @@ impl App {
             Ok("fingerings") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 1;
+                // BACKLINE_PF_SYS=<n>: that system (4 = ROOT UNDER A FINGER)
+                if let Some(n) = std::env::var("BACKLINE_PF_SYS").ok().and_then(|s| s.parse::<u8>().ok()) {
+                    app.pf_sys = n.min(4);
+                }
             }
             Ok("melodies") => app.sec = Sec::Melodies,
             Ok("ear") => {

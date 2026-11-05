@@ -838,13 +838,18 @@ impl App {
         let sharps = lines::key_sharps(key);
         let mut remove = None;
         for (i, prog) in progs.iter().enumerate() {
-            let chords: Vec<String> = prog.split_whitespace().filter_map(|t| lines::roman_chord(t, key, minor, sev)).collect();
+            let nums = lines::numerals(prog);
+            let chords: Vec<String> = nums.split_whitespace().filter_map(|t| lines::roman_chord(t, key, minor, sev)).collect();
+            // (a progression's own name over it)
+            if let Some(name) = lines::prog_name(prog) {
+                crate::views::dim_line(ui, &name.to_uppercase(), 1.0, pal().dim);
+            }
             let tag = format!("prog{}-{}", g, i);
             let sounding = self.seq_now(&tag);
             let title = format!("{} IN {}", prog, theory::note_name(key, sharps));
             ui.horizontal_wrapped(|ui| {
                 let picked = self.prac_chart.as_ref().is_some_and(|c| c.0 == title || c.0 == format!("{} - ALL 12 KEYS", prog));
-                let b = retro_btn_w(ui, prog, 230.0, picked).tip("Put it on the lead sheet for the band. Right-click for more.");
+                let b = retro_btn_w(ui, nums, 230.0, picked).tip("Put it on the lead sheet for the band. Right-click for more.");
                 if b.clicked() {
                     self.prog_ask = if self.prog_ask == Some((g, i)) { None } else { Some((g, i)) };
                 }
