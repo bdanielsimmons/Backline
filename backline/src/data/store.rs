@@ -381,6 +381,8 @@ pub struct Day {
     pub songs: BTreeMap<i64, u32>,
     /// each loop worked on that day ("track id:start ms:end ms"): seconds on it and passes through it
     pub loop_time: BTreeMap<String, (u32, u32)>,
+    /// the day's notes, in your own words (the diary as a journal)
+    pub note: String,
 }
 
 /// Whether two loops of a song are really the same one nudged a little: they share most of their length.

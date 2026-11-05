@@ -1385,6 +1385,8 @@ impl App {
             }
             self.register_all();
             self.liked.extend(self.store.hearts.iter().map(|e| e.id));
+            // (the day's notes read again, in case they came over too)
+            self.diary_note = Default::default();
             self.serial += 1;
             self.store.save();
             self.store_dirty = false;

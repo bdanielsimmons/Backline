@@ -3562,6 +3562,33 @@ impl App {
         let live = self.acc as u32;
         let day_secs = |app: &App, d: i64| app.store.secs_on(&store::date_str(d)) + if d == today { live } else { 0 };
 
+        // ---- the day's notes, first: a journal in your own words, for the day picked on the calendar (today at first),
+        // saved as you type (a day is only added to the diary once something is written)
+        let note_date = store::date_str(self.diary_sel);
+        if self.diary_note.0 != note_date {
+            let text = self.store.days.iter().find(|d| d.date == note_date).map(|d| d.note.clone()).unwrap_or_default();
+            self.diary_note = (note_date.clone(), text);
+        }
+        section_header(ui, &format!("NOTES  -  {} {}", store::weekday(self.diary_sel), note_date));
+        // (the box grows with what's written: every line in sight, and one more to write on)
+        let nw = ui.available_width();
+        let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
+        let chars: Vec<char> = self.diary_note.1.chars().collect();
+        let lines = layout_lines(&chars, px, nw - 16.0).len().max(1);
+        let nh = ((lines + 1) as f32 * (7.0 * spx(px) + 6.0) + 6.0).clamp(100.0, 400.0);
+        let (nr, _) = ui.allocate_exact_size(Vec2::new(nw, nh), Sense::hover());
+        let o = field(ui, &mut self.ed, crate::tools::F_DIARY_NOTE, &mut self.diary_note.1, nr, "How it went, what clicked, what's next...", true);
+        if o.changed {
+            let text = self.diary_note.1.clone();
+            match self.store.days.iter_mut().find(|d| d.date == note_date) {
+                Some(d) => d.note = text,
+                None if !text.trim().is_empty() => self.store.day_mut(&note_date).note = text,
+                None => {}
+            }
+            self.store_dirty = true;
+        }
+        ui.add_space(8.0);
+
         // ---- summary
         let week: u32 = (0..7).map(|k| day_secs(self, today - k)).sum();
         let (cy, cm, _) = store::civil_from_days(today);
@@ -3641,6 +3668,8 @@ impl App {
             ptext(ui.painter(), Pos2::new(gr.min.x + k as f32 * cw + cw / 2.0, gr.min.y + 7.0), Align::Center, n, 1.0, pal().dim);
         }
         let busiest = (0..ndays).map(|k| day_secs(self, first + k)).max().unwrap_or(0).max(1);
+        // (days with notes get a mark)
+        let noted: std::collections::HashSet<String> = self.store.days.iter().filter(|d| !d.note.trim().is_empty()).map(|d| d.date.clone()).collect();
         for k in 0..ndays {
             let d = first + k;
             let pos = lead + k;
@@ -3666,6 +3695,9 @@ impl App {
             }
             let txt_col = if level >= 2 { pal().lcd } else { pal().ink };
             ptext(ui.painter(), Pos2::new(r.min.x + 5.0, r.min.y + 8.0), Align::Min, &format!("{}", k + 1), 1.0, txt_col);
+            if noted.contains(&store::date_str(d)) {
+                ui.painter().circle_filled(Pos2::new(r.max.x - 6.0, r.min.y + 6.0), 2.5, txt_col);
+            }
             if secs >= 60 {
                 ptext(
                     ui.painter(),

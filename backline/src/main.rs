@@ -2508,6 +2508,8 @@ struct App {
     /// are kept on their own: ones that came in the sync download when they're played)
     sync_in: String,
     here: HashSet<i64>,
+    /// DIARY: the notes being written, and the day they're for
+    diary_note: (String, String),
     srcmap: HashMap<i64, Src>,
     sec: Sec,
     /// the list last open in each group (MUSIC / PRACTICE), to come back to it
@@ -3391,6 +3393,7 @@ impl App {
             store_saved: Instant::now(),
             sync_in: String::new(),
             here: HashSet::new(),
+            diary_note: (String::new(), String::new()),
             srcmap: HashMap::new(),
             sec: Sec::Tidal,
             last_music: Sec::Tidal,

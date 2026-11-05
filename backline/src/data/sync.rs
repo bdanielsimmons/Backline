@@ -1654,6 +1654,13 @@ mod tests {
         assert_eq!(lb["days"], la["days"]);
         assert_eq!(std::fs::read_dir(db.join("sync_backups")).unwrap().count(), 4);
         assert!(!da.join("sync_backups").exists(), "nothing on the PC was replaced");
+        // (the side that was called settles once the caller's last word is in)
+        for _ in 0..300 {
+            if !a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
         assert!(!a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed));
 
         // a tick on the PC goes across as it is (the PC calls this time)

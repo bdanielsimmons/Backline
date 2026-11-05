@@ -117,6 +117,8 @@ pub const F_DIARY_ADD_NAME: u32 = 101;
 pub const F_DIARY_ADD_MIN: u32 = 102;
 /// PREFERENCES > SYNC: the other computer's code
 pub const F_SYNC_CODE: u32 = 103;
+/// DIARY: the day's notes
+pub const F_DIARY_NOTE: u32 = 104;
 
 impl App {
     /// A box you can type into. Shows `shown`; returns the typed text when you press Enter or click away.
