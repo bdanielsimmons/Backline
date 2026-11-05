@@ -568,6 +568,8 @@ enum Action {
     Offline(bool),
     GetYtDlp,
     RemoveExt(i64),
+    /// a song out of a saved SoundCloud / YouTube playlist (by its link), kept out when it's read again
+    RemoveFromList(String, i64),
     // ---- tunes
     PickTune(Track),
     AddToTune(usize, Track),
@@ -875,6 +877,23 @@ fn list_row(
     Some(resp.on_hover_cursor(egui::CursorIcon::PointingHand))
 }
 
+/// Your own files' numbers (as the lists know them), for what only a file on this computer can do.
+static FILE_IDS: std::sync::Mutex<std::collections::BTreeSet<i64>> = std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+pub(crate) fn file_id(id: i64, on: bool) {
+    let mut s = FILE_IDS.lock().unwrap_or_else(|e| e.into_inner());
+    if on {
+        s.insert(id);
+    } else {
+        s.remove(&id);
+    }
+}
+
+/// A song with a file on this computer: one of yours, or a saved copy of a streamed one.
+pub(crate) fn on_disk(id: i64) -> bool {
+    cache::has(id) || FILE_IDS.lock().unwrap_or_else(|e| e.into_inner()).contains(&id)
+}
+
 /// "Go to album / artist / track radio" and the credits, for a Tidal track (files, YouTube and SoundCloud have none).
 /// A track with several artists gets one entry per artist, so you pick which one.
 fn goto_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, tidal: bool) {
@@ -884,8 +903,8 @@ fn goto_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, tidal: bool)
         acts.push(Action::EditInfo(t.id, t.title.clone(), t.artist.clone()));
         ui.close_menu();
     }
-    // a file of yours, or a Tidal song stored on this computer: see the file itself
-    if !tidal || cache::has(t.id) {
+    // a file of yours, or a song saved on this computer: see the file itself
+    if on_disk(t.id) {
         if menu_item(ui, "Show in Explorer") {
             acts.push(Action::ShowFile(t.id));
             ui.close_menu();
@@ -1585,8 +1604,8 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::CopyName(if who.is_empty() { t.title.clone() } else { format!("{} - {}", who, t.title) }));
         ui.close_menu();
     }
-    // (your own files have numbers below zero; a streamed song only when a copy of it is saved here)
-    if (t.id < 0 || cache::has(t.id)) && menu_item(ui, "Delete from this computer") {
+    // (a file of yours, or a streamed song's saved copy: nothing to delete otherwise)
+    if on_disk(t.id) && menu_item(ui, "Delete from this computer") {
         acts.push(Action::DeleteSong(t.clone()));
         ui.close_menu();
     }

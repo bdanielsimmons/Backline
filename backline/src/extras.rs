@@ -257,6 +257,7 @@ impl App {
         match v.kind.as_str() {
             "file" => {
                 self.srcmap.insert(v.id, Src::File(PathBuf::from(&v.src)));
+                crate::file_id(v.id, true);
             }
             "yt" => {
                 self.srcmap.insert(v.id, Src::Yt(v.src.clone()));
@@ -855,6 +856,7 @@ impl App {
             return old;
         }
         self.srcmap.insert(new, Src::File(new_path.to_path_buf()));
+        crate::file_id(new, true);
         for list in [&mut self.store.files, &mut self.store.hearts] {
             for e in list.iter_mut().filter(|e| e.id == old) {
                 e.id = new;
@@ -943,6 +945,7 @@ impl App {
     /// A file of yours that is no longer on disk: out of the file list, likes, playlists, tunes and the queue
     /// (its loops and notes stay, in case it comes back under the same path).
     fn file_gone(&mut self, id: i64) {
+        crate::file_id(id, false);
         self.store.files.retain(|e| e.id != id);
         self.store.hearts.retain(|e| e.id != id);
         for p in &mut self.store.playlists {
@@ -1691,7 +1694,11 @@ impl App {
             Msg::YtList(url, r) => {
                 self.yt_busy = false;
                 match r {
-                    Ok((name, list)) => {
+                    Ok((name, mut list)) => {
+                        // (the songs you took out of it stay out)
+                        if let Some(l) = self.store.lists.iter().find(|l| l.url == url) {
+                            list.retain(|e| !l.removed.contains(&e.id));
+                        }
                         self.yt_msg.clear();
                         self.yt_in.clear();
                         for e in &list {
@@ -1705,6 +1712,7 @@ impl App {
                                 name: name.clone(),
                                 url: url.clone(),
                                 items: list.clone(),
+                                ..Default::default()
                             }),
                         }
                         self.store_dirty = true;
@@ -1736,7 +1744,11 @@ impl App {
             Msg::Sc(r) => {
                 self.sc_busy = false;
                 match r {
-                    Ok(list) => {
+                    Ok(mut list) => {
+                        // (a saved playlist's songs you took out stay out)
+                        if let Some(l) = self.sc_cur.as_ref().and_then(|u| self.store.lists.iter().find(|l| l.url == *u)) {
+                            list.retain(|e| !l.removed.contains(&e.id));
+                        }
                         self.sc_msg = format!("{} TRACKS", list.len());
                         for e in &list {
                             self.register(&e.to_version());
@@ -1771,6 +1783,7 @@ impl App {
                                         name,
                                         url: u,
                                         items: list.clone(),
+                                        ..Default::default()
                                     });
                                 }
                             }
@@ -2861,6 +2874,18 @@ impl App {
                         self.upd_state = 3;
                     }
                 }
+            }
+            Action::RemoveFromList(url, id) => {
+                if let Some(l) = self.store.lists.iter_mut().find(|l| l.url == url) {
+                    l.items.retain(|e| e.id != id);
+                    if !l.removed.contains(&id) {
+                        l.removed.push(id);
+                    }
+                    self.store_dirty = true;
+                }
+                self.yt_results.retain(|e| e.id != id);
+                self.sc_results.retain(|e| e.id != id);
+                self.set_note("REMOVED FROM THIS PLAYLIST");
             }
             Action::RemoveList(i) => {
                 if i < self.store.lists.len() {

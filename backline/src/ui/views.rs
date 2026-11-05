@@ -1063,6 +1063,14 @@ impl App {
                     if which >= 4 {
                         // (taking it out of LIKED is Remove from My Tracks, above)
                     } else if which == 3 || which == 7 {
+                        // a saved playlist's page: take a song out of it (kept out when it's read again)
+                        let open = if which == 7 { self.yt_cur.as_ref() } else { self.sc_cur.as_ref() };
+                        if let Some(url) = open.filter(|u| self.store.lists.iter().any(|l| l.url == **u)) {
+                            if menu_item(ui, "Remove from this playlist") {
+                                acts.push(Action::RemoveFromList(url.clone(), e.id));
+                                ui.close_menu();
+                            }
+                        }
                         if which == 3 && menu_item(ui, "Save to My SoundCloud") {
                             acts.push(Action::ScKeep(e.id));
                             ui.close_menu();
@@ -1127,11 +1135,12 @@ impl App {
         // its songs, known to the player first, then into the queue
         if let Some((k, next)) = queue {
             let l = &mine[k].1;
-            for e in &l.items {
+            let items = l.shown();
+            for e in &items {
                 self.register(&e.to_version());
             }
-            self.keep_all(l.items.iter().map(|e| e.id).collect());
-            acts.push(Action::QueueTracks(l.name.clone(), l.items.iter().map(|e| e.to_track()).collect(), next));
+            self.keep_all(items.iter().map(|e| e.id).collect());
+            acts.push(Action::QueueTracks(l.name.clone(), items.iter().map(|e| e.to_track()).collect(), next));
         }
     }
 
@@ -1142,17 +1151,18 @@ impl App {
             self.read_list_again(&l.kind, &l.url, acts);
             return;
         }
-        for e in &l.items {
+        let items = l.shown();
+        for e in &items {
             self.register(&e.to_version());
         }
-        self.keep_all(l.items.iter().map(|e| e.id).collect());
+        self.keep_all(items.iter().map(|e| e.id).collect());
         if l.kind == "sc" {
             self.sc_cur = Some(l.url.clone());
-            self.sc_results = l.items.clone();
+            self.sc_results = l.shown();
         } else {
             self.yt_cur = Some(l.url.clone());
             self.yt_title = l.name.clone();
-            self.yt_results = l.items.clone();
+            self.yt_results = l.shown();
             self.yt_open = true;
         }
         self.list_ask = None;

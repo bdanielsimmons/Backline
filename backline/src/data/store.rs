@@ -244,6 +244,15 @@ pub struct SavedList {
     pub url: String,
     /// its songs as last read, so it opens at once (REFRESH reads it again)
     pub items: Vec<Ext>,
+    /// the songs you took out of it: kept out when it's read again
+    pub removed: Vec<i64>,
+}
+
+impl SavedList {
+    /// Its songs, without the ones you took out.
+    pub fn shown(&self) -> Vec<Ext> {
+        self.items.iter().filter(|e| !self.removed.contains(&e.id)).cloned().collect()
+    }
 }
 
 /// A recording of a tune: from Tidal, a file on this computer, or a YouTube clip.
@@ -987,6 +996,16 @@ mod share_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_song_taken_out_of_a_saved_list_stays_out() {
+        let e = |id: i64| Ext { kind: "yt".to_string(), id, ..Default::default() };
+        let l = SavedList { items: vec![e(1), e(2), e(3)], removed: vec![2], ..Default::default() };
+        assert_eq!(l.shown().iter().map(|x| x.id).collect::<Vec<_>>(), [1, 3]);
+        // an older library.json (no list of removed songs) still reads
+        let old: SavedList = serde_json::from_str(r#"{"kind": "sc", "name": "x", "url": "u", "items": []}"#).unwrap();
+        assert!(old.removed.is_empty());
+    }
+
     use super::*;
 
     #[test]
