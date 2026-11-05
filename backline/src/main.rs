@@ -4134,6 +4134,10 @@ impl App {
             }
         }
         app.eq_pre = st["eq_pre"].as_f64().map_or(0.0, |v| (v as f32).clamp(-12.0, 12.0));
+        // the hour your practice day ends (a late night stays on the day you started)
+        if let Some(h) = st["day_ends"].as_u64() {
+            crate::store::DAY_ENDS.store(h.min(6) as u8, std::sync::atomic::Ordering::Relaxed);
+        }
         if let Some(b) = st["keep_cache"].as_bool() {
             app.keep_cache = b;
         }
@@ -4667,6 +4671,7 @@ impl App {
             "eq": self.eq_gains.to_vec(),
             "eq_pre": self.eq_pre,
             "keep_cache": self.keep_cache,
+            "day_ends": crate::store::DAY_ENDS.load(std::sync::atomic::Ordering::Relaxed),
             "speed": self.speed,
             "lib_frac": self.lib_frac,
             "stack_w": self.stack_w,

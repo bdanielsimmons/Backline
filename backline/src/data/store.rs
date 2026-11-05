@@ -767,10 +767,24 @@ impl Store {
 }
 
 // ------------------------------------------------------------------ dates
-/// Local calendar date (year, month, day).
+/// The hour your practice day ends (0, midnight, to 6): before it, it's still the day before, so playing late into
+/// the night stays on the day you started. Set in PREFERENCES; 4 at first.
+pub static DAY_ENDS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(4);
+
+/// Today, as practice counts it (year, month, day): the local date, or the day before until DAY_ENDS in the morning.
+/// (Files are named by the clock's own date: `now_local`.)
 pub fn today() -> (i32, u32, u32) {
-    let (y, m, d, ..) = now_local();
-    (y, m, d)
+    let (y, m, d, h, ..) = now_local();
+    day_of(y, m, d, h, DAY_ENDS.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// The practice day at a local date and hour, when the day ends at `ends` o'clock.
+fn day_of(y: i32, m: u32, d: u32, h: u32, ends: u8) -> (i32, u32, u32) {
+    if h < ends as u32 {
+        civil_from_days(days_from_civil(y, m, d) - 1)
+    } else {
+        (y, m, d)
+    }
 }
 
 /// Local date and time: (year, month, day, hour, minute, second).
@@ -996,6 +1010,17 @@ mod share_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_late_night_stays_on_the_day_it_started() {
+        // ending at 4: 1 AM on the 5th is still the 4th, 4 AM is the 5th; ending at midnight, 1 AM is the 5th
+        assert_eq!(day_of(2026, 11, 5, 1, 4), (2026, 11, 4));
+        assert_eq!(day_of(2026, 11, 5, 4, 4), (2026, 11, 5));
+        assert_eq!(day_of(2026, 11, 5, 1, 0), (2026, 11, 5));
+        // across a month and a year
+        assert_eq!(day_of(2026, 12, 1, 2, 4), (2026, 11, 30));
+        assert_eq!(day_of(2027, 1, 1, 0, 3), (2026, 12, 31));
+    }
+
     #[test]
     fn a_song_taken_out_of_a_saved_list_stays_out() {
         let e = |id: i64| Ext { kind: "yt".to_string(), id, ..Default::default() };

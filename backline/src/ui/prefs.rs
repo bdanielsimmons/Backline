@@ -289,6 +289,15 @@ impl App {
                         para(ui, &format!("Saved songs: {}", crate::cache::dir().display()), pal().dim);
                         para(ui, &format!("Settings and library: {}", crate::api::config_dir().display()), pal().dim);
 
+                        section_header(ui, "DIARY");
+                        para(ui, "Practice after midnight counts toward the day before until this hour, so a late session stays on the day you started.", pal().ink2);
+                        const ENDS: [&str; 7] = ["MIDNIGHT", "1 AM", "2 AM", "3 AM", "4 AM", "5 AM", "6 AM"];
+                        let now = crate::store::DAY_ENDS.load(std::sync::atomic::Ordering::Relaxed) as usize;
+                        if let Some(i) = crate::choice_line(ui, "day_ends", "YOUR DAY ENDS AT", &ENDS, now.min(6), 200.0) {
+                            crate::store::DAY_ENDS.store(i as u8, std::sync::atomic::Ordering::Relaxed);
+                            self.dirty = true;
+                        }
+
                         section_header(ui, "SYNC");
                         let sv = crate::sync::view();
                         para(ui, "Keep your plan, progress, loops, lists and practice the same on your computers on this network. Only what you made goes across, never songs: a song downloads on a computer only when you play it there.", pal().ink2);

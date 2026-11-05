@@ -26,6 +26,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 | App state, actions, messages, library page, main loop | `main.rs` |
 | Practice logic (sources, tunes, loops, diary, trainer, stems, metronome, playlists) | `extras.rs` |
 | Practice screens (FILES / YT / SC / TUNES / DIARY / LOOPS lists, practice panel, lead sheet) | `ui/views.rs` |
+| What day it is for practice: `store::today` (diary, plan, routine, keepers...), the day before until `store::DAY_ENDS` in the morning (PREFERENCES > DIARY, 4 AM at first, saved as `day_ends`), so a late night stays on the day it started; files are named by the clock (`now_local`) | `data/store.rs`, `ui/prefs.rs` |
 | DIARY: the day's notes first, a journal (`Day.note`; the box at the top for the day picked, saved as you type, `App.diary_note`; a mark on the calendar's days with notes), then the totals, the calendar and the day's times and entries | `ui/views.rs` (`diary_view`), `data/store.rs` |
 | LOOPS page: songs on the left, the one picked on the right (`loops_view`; narrow windows: list, then one song with < ALL SONGS); `spot_data` gathers songs, loops, bookmarks; `loops_detail` draws the map (`song_wave`) and rows; SHOW / ORDER / export in the "..." menu (`loops_controls`); `Action::PlayAt` plays from a bookmark | `ui/views.rs` |
 | Library window, sign-in, Tidal search box, EQ dock, presets | `ui/library_win.rs` |
