@@ -50,8 +50,9 @@ const WHOLE: [&str; 3] = ["plan.json", "reading_book.txt", "pattern_book.txt"];
 const LOCAL: [&str; 6] = ["files", "folders", "removed_files", "takes", "last", "recent"];
 /// Library parts are items named "library/<key>".
 const LIB: &str = "library/";
-/// How often the two check in with nothing changed, and how long a step over the network may take.
-const HEARTBEAT: Duration = Duration::from_secs(20);
+/// How often the two check in with nothing changed (a safety net: a change is sent at once, or asked for by the
+/// other's announcements), and how long a step over the network may take.
+const HEARTBEAT: Duration = Duration::from_secs(60);
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// How long a typed code waits for the other computer.
 const LINK_WAIT: Duration = Duration::from_secs(60);
@@ -512,16 +513,10 @@ impl Engine {
             (s.peer.as_ref().is_some_and(|p| p.id == h.id), s.on && s.peer.is_none())
         };
         if mine {
-            {
-                let mut s = lock(&self.saved);
-                if let Some(p) = s.peer.as_mut() {
-                    let a = addr.to_string();
-                    if p.addr != a || p.name != h.name {
-                        p.addr = a;
-                        p.name = h.name.clone();
-                        self.write(&s);
-                    }
-                }
+            // (kept with the next round: a computer heard at two addresses doesn't rewrite sync.json each time)
+            if let Some(p) = lock(&self.saved).peer.as_mut() {
+                p.addr = addr.to_string();
+                p.name = h.name.clone();
             }
             if h.dirty || !self.met.swap(true, Ordering::Relaxed) {
                 self.ask(|w| w.poke = true);
