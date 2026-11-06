@@ -341,8 +341,10 @@ struct Ed {
     anchor: Option<usize>,
     /// picked from the box's right-click menu (cut, copy, paste): done as if typed, the next frame
     menu: Option<egui::Event>,
-    /// a notes box whose formatting tools are under the pointer: a press on them leaves it being written in
+    /// a notes box whose tools (or tag suggestions) were under the pointer last frame: a press on them leaves it being
+    /// written in; and this frame's, set while they're drawn
     hold: u32,
+    hold_next: u32,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -3286,6 +3288,17 @@ struct App {
     diary_edit: bool,
     /// DIARY: ALL NOTES open, and how many days' notes it shows (0 = the day's notes box)
     diary_all: usize,
+    /// ALL NOTES: the search; the filter ("*" the starred days, or a #tag); a year, a month or a day at a time (0, 1,
+    /// 2) and a day inside the one shown (0: today); all the tags shown (not only the five used most); the calendar
+    /// page turning (when, which way, the page before)
+    notes_q: String,
+    notes_filter: Option<String>,
+    notes_mode: u8,
+    notes_at: i64,
+    notes_tags_all: bool,
+    notes_flip: Option<(f64, i8, [String; 3])>,
+    /// how many days fit the search and the filter (for ALL NOTES' heading)
+    notes_fit: usize,
     /// DIARY: the notes box sliding to another day (when it started, whether to a later day, the old day's words)
     diary_flip: Option<(f64, bool, String)>,
     diary_add: (String, String),
@@ -4034,6 +4047,13 @@ impl App {
             diary_sel: 0,
             diary_edit: false,
             diary_all: 0,
+            notes_q: String::new(),
+            notes_filter: None,
+            notes_mode: 1,
+            notes_at: 0,
+            notes_tags_all: false,
+            notes_flip: None,
+            notes_fit: 0,
             diary_flip: None,
             diary_add: (String::new(), String::new()),
             entry_edit: None,
@@ -4651,6 +4671,11 @@ impl App {
             Ok("diarynotes") => {
                 app.sec = Sec::Diary;
                 app.diary_all = 30;
+                // (BACKLINE_NOTES_Q=<words>: searched; BACKLINE_NOTES_MODE=0|1|2: a year, month or day at a time)
+                app.notes_q = std::env::var("BACKLINE_NOTES_Q").unwrap_or_default();
+                if let Some(m) = std::env::var("BACKLINE_NOTES_MODE").ok().and_then(|v| v.parse::<u8>().ok()) {
+                    app.notes_mode = m.min(2);
+                }
             }
             Ok("routine") => {
                 app.sec = Sec::Diary;
@@ -7478,6 +7503,8 @@ impl eframe::App for App {
                 }
             }
         }
+        // (what notes boxes' tools were under the pointer this frame, for the next one's presses)
+        self.ed.hold = std::mem::take(&mut self.ed.hold_next);
         // covers rows asked for that weren't drawn: asked for now, and one more frame when they are in already
         let more: Vec<String> =
             ART_WANT.with(|w| ART_TEX.with(|t| w.borrow().iter().filter(|u| !t.borrow().contains_key(*u)).cloned().collect()));

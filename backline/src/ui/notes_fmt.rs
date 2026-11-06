@@ -1,7 +1,7 @@
 //! Formatting in notes (the diary's, a tune's): the marks are kept in the text itself. `# ` starts a heading line,
 //! `- ` a list line, and `---` is a line between sections. Inline there are `**bold**`, `__underline__` and
-//! `[name](https://...)` for a link; a bare web address is a link too. Pure: what the marks mean, and the tools that
-//! put them in or take them out.
+//! `[name](https://...)` for a link; a bare web address is a link too. A `#word` (as #comping) tags the note. Pure:
+//! what the marks mean, the tools that put them in or take them out, a note's tags, and where it names a tune.
 
 /// What a line is.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -35,6 +35,8 @@ pub(crate) struct Look {
     pub link: bool,
     /// in a heading line
     pub head: bool,
+    /// a #tag
+    pub tag: bool,
 }
 
 /// A run of a line's characters, `s..e` in chars, shown one way; `url` for a link.
@@ -84,6 +86,26 @@ pub(crate) fn spans(line: &[char], from: usize) -> Vec<Span> {
             out.push(Span { s, e, look, url });
         }
     };
+    // plain words, with any #tags in them picked out (a # starting a word, then a letter: not C# or #11)
+    let push_plain = |out: &mut Vec<Span>, s: usize, e: usize| {
+        let (mut k, mut from) = (s, s);
+        while k < e {
+            let starts_word = k == 0 || line[k - 1].is_whitespace() || line[k - 1] == '(';
+            if line[k] == '#' && starts_word && k + 1 < e && line[k + 1].is_ascii_alphabetic() {
+                let mut j = k + 1;
+                while j < e && (line[j].is_alphanumeric() || line[j] == '-' || line[j] == '_') {
+                    j += 1;
+                }
+                push(out, from, k, Look::default(), None);
+                push(out, k, j, Look { tag: true, ..Default::default() }, None);
+                k = j;
+                from = j;
+                continue;
+            }
+            k += 1;
+        }
+        push(out, from, e, Look::default(), None);
+    };
     let mark = Look { mark: true, ..Default::default() };
     let (mut i, mut plain) = (from, from);
     while i < n {
@@ -100,7 +122,7 @@ pub(crate) fn spans(line: &[char], from: usize) -> Vec<Span> {
             let tight = i + 2 < n && !line[i + 2].is_whitespace();
             let close = (i + 3..n.saturating_sub(1)).find(|&j| starts(line, j, m) && !line[j - 1].is_whitespace());
             if let Some(j) = close.filter(|_| tight) {
-                push(&mut out, plain, i, Look::default(), None);
+                push_plain(&mut out, plain, i);
                 push(&mut out, i, i + 2, mark, None);
                 push(&mut out, i + 2, j, look, None);
                 push(&mut out, j, j + 2, mark, None);
@@ -129,7 +151,7 @@ pub(crate) fn spans(line: &[char], from: usize) -> Vec<Span> {
                     if let Some(m) = close {
                         let url: String = line[k + 2..m].iter().collect();
                         if is_url(&url) {
-                            push(&mut out, plain, i, Look::default(), None);
+                            push_plain(&mut out, plain, i);
                             push(&mut out, i, i + 1, mark, None);
                             if k > i + 1 {
                                 push(&mut out, i + 1, k, Look { link: true, ..Default::default() }, Some(url));
@@ -156,7 +178,7 @@ pub(crate) fn spans(line: &[char], from: usize) -> Vec<Span> {
             let e = url_end(line, i);
             let url: String = line[i..e].iter().collect();
             if is_url(&url) {
-                push(&mut out, plain, i, Look::default(), None);
+                push_plain(&mut out, plain, i);
                 push(&mut out, i, e, Look { link: true, ..Default::default() }, Some(url));
                 i = e;
                 plain = i;
@@ -165,7 +187,7 @@ pub(crate) fn spans(line: &[char], from: usize) -> Vec<Span> {
         }
         i += 1;
     }
-    push(&mut out, plain, n, Look::default(), None);
+    push_plain(&mut out, plain, n);
     out
 }
 
@@ -212,6 +234,85 @@ pub(crate) fn plain(text: &str) -> String {
     words.join(" ")
 }
 
+/// A text's #tags, lowercased, each once, in the order they first come.
+pub(crate) fn tags(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in text.lines() {
+        let line: Vec<char> = raw.chars().collect();
+        let (block, from) = block_of(&line);
+        if block == Block::Rule {
+            continue;
+        }
+        for sp in spans(&line, from).into_iter().filter(|s| s.look.tag) {
+            let t = line[sp.s..sp.e].iter().collect::<String>().to_lowercase();
+            if !out.contains(&t) {
+                out.push(t);
+            }
+        }
+    }
+    out
+}
+
+/// A #tag being typed, the caret at `cur`: where its # is and what's typed so far (lowercased, the # with it).
+pub(crate) fn tag_at(chars: &[char], cur: usize) -> Option<(usize, String)> {
+    let cur = cur.min(chars.len());
+    let mut s = cur;
+    while s > 0 && (chars[s - 1].is_alphanumeric() || chars[s - 1] == '-' || chars[s - 1] == '_') {
+        s -= 1;
+    }
+    if s == 0 || chars[s - 1] != '#' {
+        return None;
+    }
+    let h = s - 1;
+    if h > 0 && !(chars[h - 1].is_whitespace() || chars[h - 1] == '(') {
+        return None;
+    }
+    if s < cur && !chars[s].is_ascii_alphabetic() {
+        return None;
+    }
+    Some((h, chars[h..cur].iter().collect::<String>().to_lowercase()))
+}
+
+/// Where a line names tunes (`names`, whole words, any case; a longer name before a shorter one inside it):
+/// (start, end, which), in order. Names under three letters aren't looked for.
+pub(crate) fn mentions(line: &[char], names: &[String]) -> Vec<(usize, usize, usize)> {
+    let low: Vec<char> = line.iter().map(|c| c.to_ascii_lowercase()).collect();
+    let word = |c: char| c.is_alphanumeric();
+    let mut found: Vec<(usize, usize, usize)> = Vec::new();
+    for (k, name) in names.iter().enumerate() {
+        let n: Vec<char> = name.trim().chars().map(|c| c.to_ascii_lowercase()).collect();
+        if n.len() < 3 || n.len() > low.len() {
+            continue;
+        }
+        let mut i = 0;
+        while i + n.len() <= low.len() {
+            let fits = low[i..i + n.len()] == n[..]
+                && (i == 0 || !word(low[i - 1]))
+                && (i + n.len() == low.len() || !word(low[i + n.len()]));
+            if fits {
+                found.push((i, i + n.len(), k));
+                i += n.len();
+            } else {
+                i += 1;
+            }
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0).then((b.1 - b.0).cmp(&(a.1 - a.0))));
+    let mut out: Vec<(usize, usize, usize)> = Vec::new();
+    for f in found {
+        if out.last().map_or(true, |l| f.0 >= l.1) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+/// Whether a text names the tune `name` (as `mentions` finds it).
+pub(crate) fn names_tune(text: &str, name: &str) -> bool {
+    let names = [name.to_string()];
+    text.lines().any(|l| !mentions(&l.chars().collect::<Vec<_>>(), &names).is_empty())
+}
+
 /// The formatting tools.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum Tool {
@@ -220,16 +321,18 @@ pub(crate) enum Tool {
     Underline,
     List,
     Link,
+    Tag,
     Line,
 }
 
 /// Each tool and what it does, for its button.
-pub(crate) const TOOLS: [(Tool, &str); 6] = [
+pub(crate) const TOOLS: [(Tool, &str); 7] = [
     (Tool::Heading, "Heading: starts a section."),
     (Tool::Bold, "Bold (Ctrl+B)."),
     (Tool::Underline, "Underline (Ctrl+U)."),
     (Tool::List, "List: a dot at the start of each line."),
     (Tool::Link, "Link (Ctrl+K): paste the web address over https://."),
+    (Tool::Tag, "Tag: mark the day with a word, as #comping or #ear (your tags come up as you type)."),
     (Tool::Line, "A line between sections."),
 ];
 
@@ -310,6 +413,13 @@ pub(crate) fn apply(text: &str, sel: (usize, usize), tool: Tool) -> (String, (us
                 (c.iter().collect(), (at, at + 8))
             }
         }
+        Tool::Tag => {
+            // a # to type the tag after (a space first when it would stick to a word)
+            let t = if s > 0 && !c[s - 1].is_whitespace() { " #" } else { "#" };
+            c.splice(s..e, t.chars()).for_each(drop);
+            let to = s + t.chars().count();
+            (c.iter().collect(), (to, to))
+        }
         Tool::Line => {
             // on a line of its own, after the line the caret is in
             let line_end = c[e..].iter().position(|&ch| ch == '\n').map_or(n, |k| e + k);
@@ -355,6 +465,24 @@ mod tests {
         let lk = looks(&"# Hi **there**\n---".chars().collect::<Vec<_>>());
         assert!(lk[0].mark && lk[1].mark && lk[2].head && !lk[2].bold && lk[5].mark && lk[6].mark && lk[7].bold && lk[7].head);
         assert!(lk[15..].iter().all(|l| l.mark));
+    }
+
+    #[test]
+    fn tags_and_tunes_are_found() {
+        assert_eq!(tags("Shells #comping, then #Ear.\nC# and #11 and a#b aren't; (#gospel) is\n# A heading"), ["#comping", "#ear", "#gospel"]);
+        let c: Vec<char> = "more #com".chars().collect();
+        assert_eq!(tag_at(&c, c.len()), Some((5, "#com".to_string())));
+        assert_eq!(tag_at(&c, 6), Some((5, "#".to_string())));
+        assert_eq!(tag_at(&"F#".chars().collect::<Vec<_>>(), 2), None);
+        assert_eq!(tag_at(&"#9".chars().collect::<Vec<_>>(), 2), None);
+        let names = ["Solar".to_string(), "Autumn Leaves".to_string(), "Leaves".to_string(), "So".to_string()];
+        let line: Vec<char> = "Played autumn leaves, then Solarized... no: Solar. So good".chars().collect();
+        assert_eq!(mentions(&line, &names), vec![(7, 20, 1), (44, 49, 0)]);
+        assert!(names_tune("# Ear\nthe bridge of AUTUMN LEAVES", "Autumn Leaves"));
+        assert!(!names_tune("Solarized", "Solar"));
+        // the tool: a # where the caret is, a space before it when it would stick to a word
+        assert_eq!(apply("good", (4, 4), Tool::Tag), ("good #".to_string(), (6, 6)));
+        assert_eq!(apply("", (0, 0), Tool::Tag), ("#".to_string(), (1, 1)));
     }
 
     #[test]

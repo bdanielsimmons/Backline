@@ -464,7 +464,7 @@ fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rec
                     let x1 = at.x + caret_x(&chars, *s, b, px);
                     let band = Rect::from_min_max(Pos2::new(x0, y - lh / 2.0), Pos2::new(x1, y + lh / 2.0));
                     let bp = cp.with_clip_rect(band.intersect(inner));
-                    if lk.mark || lk.link {
+                    if lk.mark || lk.link || lk.tag {
                         fill_rect(&bp, band, pal().lcd);
                         ptext(&bp, at, Align::Min, &line, px, if lk.mark { pal().dim } else { link_col() });
                     }
@@ -533,6 +533,8 @@ struct Piece {
     raw: usize,
     /// where the next word starts in the text (an underline runs on to it)
     cont: usize,
+    /// one of your tunes named here (which, in the list `lay_notes` was given)
+    tune: Option<usize>,
 }
 
 /// Notes laid out to read, the marks gone: the words, the list dots, the lines (heading rules and lines between
@@ -545,9 +547,9 @@ struct Laid {
     h: f32,
 }
 
-/// Lays notes out `w` wide in the box's text size `px`.
-fn lay_notes(text: &str, px: f32, w: f32) -> Laid {
-    use crate::notes_fmt::{block_of, spans, Block};
+/// Lays notes out `w` wide in the box's text size `px`, the tunes `tunes` linked where they're named.
+fn lay_notes(text: &str, px: f32, w: f32, tunes: &[String]) -> Laid {
+    use crate::notes_fmt::{block_of, mentions, spans, Block};
     crate::font::keep_caps(|| {
         let mut laid = Laid::default();
         let lh = 7.0 * spx(px) + 6.0;
@@ -558,6 +560,7 @@ fn lay_notes(text: &str, px: f32, w: f32) -> Laid {
         for (li, line) in lines.iter().enumerate() {
             let chars: Vec<char> = line.chars().collect();
             let (block, from) = block_of(&chars);
+            let named = mentions(&chars, tunes);
             match block {
                 Block::Rule => {
                     laid.rules.push((y + lh / 2.0, 0.0));
@@ -582,7 +585,8 @@ fn lay_notes(text: &str, px: f32, w: f32) -> Laid {
                             let ws = (k..sp.e).find(|&j| chars[j] == ' ').unwrap_or(sp.e);
                             let we = (ws..sp.e).find(|&j| chars[j] != ' ').unwrap_or(sp.e);
                             let word: String = chars[k..ws].iter().collect();
-                            let ww = if word.is_empty() { 0.0 } else { text_w(&word, tp) };
+                            // (a tag is a chip: room each side)
+                            let ww = if word.is_empty() { 0.0 } else { text_w(&word, tp) + if look.tag { 2.0 * TAG_PAD } else { 0.0 } };
                             let full = ww + space * (we - ws) as f32;
                             if word.is_empty() && x == x0 && k > from {
                                 k = we;
@@ -602,6 +606,7 @@ fn lay_notes(text: &str, px: f32, w: f32) -> Laid {
                                     url: sp.url.clone(),
                                     raw: raw + k,
                                     cont: raw + we,
+                                    tune: named.iter().find(|m| k >= m.0 && k < m.1).map(|m| m.2),
                                 });
                             }
                             x += full;
@@ -621,12 +626,42 @@ fn lay_notes(text: &str, px: f32, w: f32) -> Laid {
     })
 }
 
-/// Draws laid-out notes with their top-left at `o`, `w` wide, faded to `alpha`; `hot` a link under the pointer.
-fn draw_notes(p: &egui::Painter, o: Pos2, w: f32, laid: &Laid, alpha: f32, hot: Option<&str>) {
+/// Draws laid-out notes with their top-left at `o`, `w` wide, faded to `alpha`; `hot` the word under the pointer (its
+/// link, tag or tune shows it); `find` (lowercase) marked wherever it comes.
+fn draw_notes(p: &egui::Painter, o: Pos2, w: f32, laid: &Laid, alpha: f32, hot: Option<usize>, find: &str) {
     let fade = |c: Color32| if alpha < 1.0 { c.gamma_multiply(alpha) } else { c };
+    let hot = hot.and_then(|i| laid.pieces.get(i));
     crate::font::keep_caps(|| {
         for (i, pc) in laid.pieces.iter().enumerate() {
             let at = o + pc.at.to_vec2();
+            let lh = 7.0 * spx(pc.px) + 4.0;
+            let tx = at.x + if pc.look.tag { TAG_PAD } else { 0.0 };
+            // the search, marked (a word at a time)
+            let low = pc.text.to_lowercase();
+            if !find.is_empty() && low.len() == pc.text.len() {
+                let mut from = 0;
+                while let Some(j) = low[from..].find(find) {
+                    let a = from + j;
+                    let b = a + find.len();
+                    if !pc.text.is_char_boundary(a) || !pc.text.is_char_boundary(b) {
+                        break;
+                    }
+                    let x0 = tx + if a > 0 { text_w(&pc.text[..a], pc.px) } else { 0.0 };
+                    let x1 = tx + text_w(&pc.text[..b], pc.px);
+                    p.rect_filled(Rect::from_min_max(Pos2::new(x0 - 1.0, at.y - lh / 2.0), Pos2::new(x1 + 1.0, at.y + lh / 2.0)), 2.0, fade(MARK));
+                    from = b;
+                }
+            }
+            let is_hot = hot.is_some_and(|h| {
+                std::ptr::eq(h, pc) || (h.url.is_some() && h.url == pc.url) || (h.tune.is_some() && h.tune == pc.tune && h.raw.abs_diff(pc.raw) < 64)
+            });
+            if pc.look.tag {
+                // a #tag: a chip in the links' colour
+                let r = Rect::from_min_max(Pos2::new(at.x, at.y - lh / 2.0 + 1.0), Pos2::new(at.x + pc.w, at.y + lh / 2.0 - 1.0));
+                p.rect_filled(r, r.height() / 2.0, fade(link_col().gamma_multiply(if is_hot { 0.34 } else { 0.18 })));
+                ptext(p, Pos2::new(tx, at.y), Align::Min, &pc.text, pc.px, fade(link_col()));
+                continue;
+            }
             let col = fade(if pc.look.link { link_col() } else { pal().ink });
             ptext(p, at, Align::Min, &pc.text, pc.px, col);
             if pc.look.bold || pc.look.head {
@@ -634,13 +669,29 @@ fn draw_notes(p: &egui::Painter, o: Pos2, w: f32, laid: &Laid, alpha: f32, hot: 
             }
             if pc.look.under || pc.look.link {
                 let y = at.y + 3.5 * spx(pc.px) + 1.0;
-                let thick = if hot.is_some() && pc.url.as_deref() == hot { 2.0f32 } else { 1.0 };
+                let thick = if is_hot { 2.0f32 } else { 1.0 };
                 // (on under the space to the next word of the same link or underline, on the same line)
                 let to = match laid.pieces.get(i + 1) {
                     Some(nx) if nx.raw == pc.cont && nx.look == pc.look && nx.url == pc.url && (nx.at.y - pc.at.y).abs() < 0.5 => o.x + nx.at.x,
                     _ => at.x + pc.w,
                 };
                 p.hline(at.x..=to, y, Stroke::new(thick, col));
+            } else if pc.tune.is_some() {
+                // one of your tunes: dotted under, solid while the pointer is on it
+                let y = at.y + 3.5 * spx(pc.px) + 1.0;
+                let to = match laid.pieces.get(i + 1) {
+                    Some(nx) if nx.raw == pc.cont && nx.tune == pc.tune && (nx.at.y - pc.at.y).abs() < 0.5 => o.x + nx.at.x,
+                    _ => at.x + pc.w,
+                };
+                if is_hot {
+                    p.hline(at.x..=to, y, Stroke::new(1.0f32, col));
+                } else {
+                    let mut x = at.x;
+                    while x < to {
+                        p.hline(x..=(x + 2.0).min(to), y, Stroke::new(1.0f32, fade(pal().ink2)));
+                        x += 4.0;
+                    }
+                }
             }
         }
     });
@@ -654,9 +705,9 @@ fn draw_notes(p: &egui::Painter, o: Pos2, w: f32, laid: &Laid, alpha: f32, hot: 
 }
 
 /// The word of laid-out notes under `pos` (relative to the top-left), and where in the text the pointer is (chars).
-fn note_hit(laid: &Laid, pos: Vec2, px: f32) -> Option<(&Piece, usize)> {
+fn note_hit(laid: &Laid, pos: Vec2, px: f32) -> Option<(usize, usize)> {
     let lh = 7.0 * spx(px) + 6.0;
-    let pc = laid.pieces.iter().find(|pc| {
+    let (at, pc) = laid.pieces.iter().enumerate().find(|(_, pc)| {
         let h = if pc.px > px { 7.0 * spx(pc.px) + 10.0 } else { lh };
         (pos.y - pc.at.y).abs() <= h / 2.0 && pos.x >= pc.at.x - 2.0 && pos.x <= pc.at.x + pc.w + 2.0
     })?;
@@ -667,7 +718,7 @@ fn note_hit(laid: &Laid, pos: Vec2, px: f32) -> Option<(&Piece, usize)> {
             (x(*a) - (pos.x - pc.at.x)).abs().total_cmp(&(x(*b) - (pos.x - pc.at.x)).abs())
         })
         .unwrap_or(0);
-    Some((pc, pc.raw + k))
+    Some((at, pc.raw + k))
 }
 
 /// How wide a formatting tool's button is.
@@ -704,6 +755,7 @@ pub(crate) fn note_tools(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut Str
                 Tool::Heading => "H",
                 Tool::Bold => "B",
                 Tool::Underline => "U",
+                Tool::Tag => "#",
                 _ => " ",
             };
             let r = retro_btn_w(ui, label, TOOL_W, false);
@@ -731,7 +783,7 @@ pub(crate) fn note_tools(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut Str
                 Tool::Line => {
                     p.hline(c.x - 7.0..=c.x + 7.0, c.y, s);
                 }
-                Tool::Heading | Tool::Bold => {}
+                Tool::Heading | Tool::Bold | Tool::Tag => {}
             }
             over |= r.hovered();
             if r.tip(tip).clicked() {
@@ -741,9 +793,7 @@ pub(crate) fn note_tools(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut Str
     });
     // (a press on the tools keeps the box being written in, and what's picked in it)
     if over {
-        ed.hold = id;
-    } else if ed.hold == id {
-        ed.hold = 0;
+        ed.hold_next = id;
     }
     let Some(tool) = used else { return false };
     let n = text.chars().count();
@@ -762,9 +812,20 @@ pub(crate) fn note_tools(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut Str
 }
 
 /// A notes box with formatting (the diary's, a tune's): the words formatted to read; a click on them writes (the marks
-/// faint while you do), a click on a link opens it. As tall as what's written, `min_h` at least, `max_h` at most while
-/// writing. Returns what was done and where it is.
-pub(crate) fn notes_box(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, hint: &str, min_h: f32, max_h: f32) -> (FieldOut, Rect) {
+/// faint while you do), a click on a link opens it, on a #tag or one of your tunes (`tunes`) asks for its days or its
+/// page. As tall as what's written, `min_h` at least, `max_h` at most while writing. Returns what was done, where it
+/// is, and what a click asks for.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn notes_box(
+    ui: &mut egui::Ui,
+    ed: &mut Ed,
+    id: u32,
+    text: &mut String,
+    hint: &str,
+    min_h: f32,
+    max_h: f32,
+    tunes: &[String],
+) -> (FieldOut, Rect, Option<NoteClick>) {
     let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
     let lh = 7.0 * spx(px) + 6.0;
     let w = ui.available_width();
@@ -773,23 +834,36 @@ pub(crate) fn notes_box(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut Stri
         let lines = layout_lines(&chars, px, w - 16.0).len().max(1);
         let h = ((lines + 1) as f32 * lh + 6.0).clamp(min_h, max_h);
         let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
-        return (field_x(ui, ed, id, text, r, hint, true, true), r);
+        return (field_x(ui, ed, id, text, r, hint, true, true), r, None);
     }
-    let laid = lay_notes(text, px, w - 16.0);
+    let laid = lay_notes(text, px, w - 16.0, tunes);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, (laid.h + 6.0 + lh / 2.0).max(min_h)), Sense::click());
     let o = r.min + Vec2::new(8.0, 3.0);
-    let hit = resp.hover_pos().and_then(|m| note_hit(&laid, m - o, px)).map(|(pc, k)| (pc.url.clone(), k));
-    let url = hit.as_ref().and_then(|h| h.0.clone());
+    let hit = resp.hover_pos().and_then(|m| note_hit(&laid, m - o, px));
+    let pc = hit.map(|h| &laid.pieces[h.0]);
+    let url = pc.and_then(|p| p.url.clone());
+    let tag = pc.filter(|p| p.look.tag).map(|p| p.text.to_lowercase());
+    let tune = pc.and_then(|p| p.tune);
     let p = ui.painter();
     inset(p, r, pal().lcd);
-    draw_notes(&p.with_clip_rect(r.shrink(2.0)), o, w - 16.0, &laid, 1.0, url.as_deref());
-    let resp = match &url {
-        Some(u) => resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(u),
-        None => resp.on_hover_cursor(egui::CursorIcon::Text),
+    draw_notes(&p.with_clip_rect(r.shrink(2.0)), o, w - 16.0, &laid, 1.0, hit.map(|h| h.0), "");
+    let resp = if let Some(u) = &url {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(u)
+    } else if let Some(t) = &tag {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Every day with {}.", t))
+    } else if let Some(i) = tune {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Open {}.", tunes[i]))
+    } else {
+        resp.on_hover_cursor(egui::CursorIcon::Text)
     };
+    let mut asked = None;
     if resp.clicked() {
         if let Some(u) = url {
             open_link(&u);
+        } else if let Some(t) = tag {
+            asked = Some(NoteClick::Tag(t));
+        } else if let Some(i) = tune {
+            asked = Some(NoteClick::Tune(i));
         } else {
             // writing, the caret where the click was
             ed.id = id;
@@ -797,8 +871,217 @@ pub(crate) fn notes_box(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut Stri
             ed.anchor = Some(ed.cur);
         }
     }
-    (FieldOut { changed: false, enter: false }, r)
+    (FieldOut { changed: false, enter: false }, r, asked)
 }
+
+/// A #tag's chip: room each side of its word.
+const TAG_PAD: f32 = 6.0;
+
+/// Stars on days that clicked.
+const GOLD: Color32 = Color32::from_rgb(232, 184, 74);
+
+/// The search marked in notes.
+const MARK: Color32 = Color32::from_rgba_premultiplied(110, 86, 34, 110);
+
+/// Months, for dates read out.
+const MONTH_NAMES: [&str; 12] =
+    ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+
+/// A five-pointed star at `c`, `r` to its points: filled, or drawn round its edge.
+fn star(p: &egui::Painter, c: Pos2, r: f32, filled: bool, col: Color32) {
+    let pts: Vec<Pos2> = (0..10)
+        .map(|k| {
+            let a = -std::f32::consts::FRAC_PI_2 + k as f32 * std::f32::consts::PI / 5.0;
+            c + Vec2::angled(a) * if k % 2 == 0 { r } else { r * 0.45 }
+        })
+        .collect();
+    if filled {
+        let mut m = egui::Mesh::default();
+        m.colored_vertex(c, col);
+        for q in &pts {
+            m.colored_vertex(*q, col);
+        }
+        for k in 0..10u32 {
+            m.add_triangle(0, 1 + k, 1 + (k + 1) % 10);
+        }
+        p.add(egui::Shape::mesh(m));
+    } else {
+        p.add(egui::Shape::closed_line(pts, Stroke::new(1.3f32, col)));
+    }
+}
+
+/// A button with a star on it (lit gold when on).
+fn star_btn(ui: &mut egui::Ui, on: bool) -> egui::Response {
+    let r = retro_btn_w(ui, " ", 30.0, false);
+    star(ui.painter(), r.rect.center(), 7.0, on, if on { GOLD } else { pal().ink2 });
+    r
+}
+
+/// The tags used in all the days' notes, most used first (then by name), with how many days have each.
+fn tag_counts(days: &[store::Day]) -> Vec<(String, usize)> {
+    let mut n: HashMap<String, usize> = HashMap::new();
+    for d in days {
+        for t in crate::notes_fmt::tags(&d.note) {
+            *n.entry(t).or_default() += 1;
+        }
+    }
+    let mut v: Vec<(String, usize)> = n.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    v
+}
+
+/// What a click on the words of notes asks for: a tag's days, or a tune's page.
+pub(crate) enum NoteClick {
+    Tag(String),
+    Tune(usize),
+}
+
+/// What a click on a day's card in ALL NOTES asks for.
+enum CardClick {
+    Open(i64),
+    Star(i64),
+    Tag(String),
+    Tune(usize),
+    Link(String),
+}
+
+/// A desk calendar's page (ALL NOTES' year, month or day): the band at the top, the big word, a small one under it;
+/// `s` how much of its height shows (it turns over), its words only when it's nearly flat.
+fn paint_page(p: &egui::Painter, r: Rect, s: f32, txt: &[String; 3]) {
+    const PAPER: Color32 = Color32::from_rgb(236, 231, 221);
+    const BAND: Color32 = Color32::from_rgb(168, 68, 58);
+    let h = (r.height() * s).max(1.0);
+    let cr = Rect::from_center_size(r.center(), Vec2::new(r.width(), h));
+    p.rect_filled(cr.translate(Vec2::new(0.0, 3.0)), 7.0, Color32::from_black_alpha(90));
+    p.rect_filled(cr, 7.0, PAPER);
+    let band = Rect::from_min_size(cr.min, Vec2::new(cr.width(), (18.0 * s).min(cr.height())));
+    p.rect_filled(band, egui::Rounding { nw: 7.0, ne: 7.0, sw: 0.0, se: 0.0 }, BAND);
+    for x in [cr.min.x + 16.0, cr.max.x - 16.0] {
+        p.circle_filled(Pos2::new(x, band.min.y + 5.0 * s), 2.6 * s, Color32::from_rgb(58, 23, 20));
+    }
+    if s > 0.75 {
+        crate::font::keep_caps(|| {
+            ptext(p, Pos2::new(cr.center().x, band.center().y + 1.0), Align::Center, &txt[0], 1.0, Color32::WHITE);
+            let big_y = if txt[2].is_empty() { (band.max.y + cr.max.y) / 2.0 } else { band.max.y + (cr.max.y - band.max.y) * 0.4 };
+            ptext_fit(p, Pos2::new(cr.center().x, big_y), Align::Center, &txt[1], 2.4, cr.width() - 12.0, Color32::from_rgb(27, 27, 27));
+            if !txt[2].is_empty() {
+                ptext(p, Pos2::new(cr.center().x, cr.max.y - 8.0), Align::Center, &txt[2], 0.9, Color32::from_rgb(106, 100, 92));
+            }
+        });
+    }
+}
+
+/// The page for a period of ALL NOTES ("2026", "2026-11" or "2026-11-05"), with how many days of notes it has; a
+/// page with nothing on it when there are no notes to show.
+fn page_words(key: &str, empty: bool, n: usize) -> [String; 3] {
+    if empty {
+        return ["NOTES".into(), "NONE".into(), String::new()];
+    }
+    let days = format!("{} {}", n, if n == 1 { "DAY" } else { "DAYS" });
+    match key.len() {
+        4 => ["YEAR".into(), key.to_string(), days],
+        7 => [key[..4].to_string(), title_case(MONTH_NAMES[key[5..7].parse::<usize>().unwrap_or(1).clamp(1, 12) - 1]), days],
+        _ => {
+            let d = store::parse_date(key).unwrap_or(0);
+            let (y, m, dd) = store::civil_from_days(d);
+            [format!("{} {}", &MONTH_NAMES[m as usize - 1][..3], y), dd.to_string(), store::weekday(d).to_string()]
+        }
+    }
+}
+
+/// "NOVEMBER" as "November".
+fn title_case(w: &str) -> String {
+    let mut c = w.chars();
+    c.next().map_or(String::new(), |f| f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase())
+}
+
+/// A period's name, for the arrows' hints.
+fn period_name(key: &str) -> String {
+    match key.len() {
+        4 => key.to_string(),
+        7 => format!("{} {}", title_case(MONTH_NAMES[key[5..7].parse::<usize>().unwrap_or(1).clamp(1, 12) - 1]), &key[..4]),
+        _ => {
+            let d = store::parse_date(key).unwrap_or(0);
+            let (_, m, dd) = store::civil_from_days(d);
+            format!("{} {} {}", store::weekday(d), &MONTH_NAMES[m as usize - 1][..3], dd)
+        }
+    }
+}
+
+/// One day of ALL NOTES as a card: its date (bright) and minutes, its star, its notes formatted (`find` marked, the
+/// tunes `tunes` linked); `slide` its offset across and how much it shows (coming in after the page turns).
+#[allow(clippy::too_many_arguments)]
+fn note_card(ui: &mut egui::Ui, d: i64, day: &store::Day, px: f32, find: &str, tunes: &[String], slide: (f32, f32)) -> Option<CardClick> {
+    let w = ui.available_width();
+    let pad = 12.0;
+    let top = 30.0;
+    let laid = lay_notes(day.note.trim(), px, w - 2.0 * pad, tunes);
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, top + laid.h + 12.0), Sense::click());
+    ui.add_space(6.0);
+    if !ui.is_rect_visible(r) {
+        return None;
+    }
+    let rr = r.translate(Vec2::new(slide.0, 0.0));
+    let fade = |c: Color32| if slide.1 < 1.0 { c.gamma_multiply(slide.1) } else { c };
+    let o = Pos2::new(rr.min.x + pad, rr.min.y + top);
+    let hit = resp.hover_pos().and_then(|m| note_hit(&laid, m - o, px));
+    let pc = hit.map(|h| &laid.pieces[h.0]);
+    let url = pc.and_then(|p| p.url.clone());
+    let tag = pc.filter(|p| p.look.tag).map(|p| p.text.to_lowercase());
+    let tune = pc.and_then(|p| p.tune);
+    let sr = Rect::from_center_size(Pos2::new(rr.max.x - 20.0, rr.min.y + 15.0), Vec2::splat(26.0));
+    let star_hot = resp.hover_pos().is_some_and(|m| sr.contains(m));
+    let p = ui.painter();
+    let face = if resp.hovered() { lerp_col(pal().row_alt, pal().ink, 0.05) } else { pal().row_alt };
+    p.rect_filled(rr, 6.0, fade(face));
+    p.rect_stroke(rr, 6.0, Stroke::new(1.0f32, fade(pal().edge)));
+    // the date, bright; the minutes, dim
+    let (y, m, dd) = store::civil_from_days(d);
+    let date = format!("{} · {} {}, {}", store::weekday(d), &MONTH_NAMES[m as usize - 1][..3], dd, y);
+    let mins: u32 = day.secs.values().sum();
+    crate::font::keep_caps(|| {
+        let dw = ptext(p, Pos2::new(rr.min.x + pad, rr.min.y + 15.0), Align::Min, &date, 1.3, fade(pal().ink));
+        if mins >= 60 {
+            ptext(p, Pos2::new(rr.min.x + pad + dw + 12.0, rr.min.y + 15.0), Align::Min, &mins_text(mins), 1.0, fade(pal().dim));
+        }
+    });
+    star(p, sr.center(), 7.5, day.star, fade(if day.star { GOLD } else if star_hot { pal().ink } else { pal().ink2 }));
+    p.hline(rr.min.x + pad..=rr.max.x - pad, rr.min.y + top - 5.0, Stroke::new(1.0f32, fade(pal().edge)));
+    draw_notes(&p.with_clip_rect(rr), o, w - 2.0 * pad, &laid, slide.1, hit.map(|h| h.0), find);
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = if star_hot {
+        resp.tip(if day.star { "Starred. Click to take the star off." } else { "Star this day." })
+    } else if let Some(u) = &url {
+        resp.tip(u)
+    } else if let Some(t) = &tag {
+        resp.tip(format!("Every day with {}.", t))
+    } else if let Some(i) = tune {
+        resp.tip(format!("Open {}.", tunes[i]))
+    } else {
+        resp.tip("Open this day.")
+    };
+    if !resp.clicked() {
+        return None;
+    }
+    Some(if star_hot {
+        CardClick::Star(d)
+    } else if let Some(u) = url {
+        CardClick::Link(u)
+    } else if let Some(t) = tag {
+        CardClick::Tag(t)
+    } else if let Some(i) = tune {
+        CardClick::Tune(i)
+    } else {
+        CardClick::Open(d)
+    })
+}
+
+/// Partway from `a` to `b`.
+fn lerp_col(a: Color32, b: Color32, k: f32) -> Color32 {
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * k).round() as u8;
+    Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+}
+
 
 /// "LABEL  [ text field ]" on one row (or a taller multi-line box).
 pub(crate) fn field_row(
@@ -3279,8 +3562,46 @@ impl App {
             tooled = note_tools(ui, &mut self.ed, F_T_NOTES, &mut self.store.tunes[i].notes);
         });
         let hint = "What to work on, the form, tricky bars";
-        let (o, _) = notes_box(ui, &mut self.ed, F_T_NOTES, &mut self.store.tunes[i].notes, hint, 84.0, 300.0);
+        let tunes = self.tune_names();
+        let (o, _, asked) = notes_box(ui, &mut self.ed, F_T_NOTES, &mut self.store.tunes[i].notes, hint, 84.0, 300.0, &tunes);
         self.store_dirty |= o.changed || tooled;
+        match asked {
+            Some(NoteClick::Tag(t)) => self.open_notes(Some(t), "", acts),
+            Some(NoteClick::Tune(j)) => self.open_tune(j, acts),
+            None => {}
+        }
+        // the days your diary names this tune: the newest few (a click opens one), all of them in ALL NOTES
+        let name = self.store.tunes[i].name.trim().to_string();
+        let mut named: Vec<(i64, String)> = self
+            .store
+            .days
+            .iter()
+            .filter(|d| !name.is_empty() && crate::notes_fmt::names_tune(&d.note, &name))
+            .filter_map(|d| {
+                let line = d.note.lines().find(|l| crate::notes_fmt::names_tune(l, &name)).unwrap_or("");
+                store::parse_date(&d.date).map(|x| (x, crate::notes_fmt::plain(line)))
+            })
+            .collect();
+        named.sort_by(|a, b| b.0.cmp(&a.0));
+        if !named.is_empty() {
+            section_header(ui, &format!("FROM YOUR DIARY  -  {} {}", named.len(), if named.len() == 1 { "DAY" } else { "DAYS" }));
+            let mut open = None;
+            for (k, (d, line)) in named.iter().take(4).enumerate() {
+                let (_, m, dd) = store::civil_from_days(*d);
+                let when = format!("{} {} {}", store::weekday(*d), &MONTH_NAMES[m as usize - 1][..3], dd);
+                let r = list_row(ui, k, None, || format!("{}   {}", when, line), String::new, RowState::Normal, false, false);
+                if r.is_some_and(|r| r.tip("Open this day in the diary.").clicked()) {
+                    open = Some(*d);
+                }
+            }
+            if named.len() > 4 && retro_btn(ui, &format!("ALL {} IN THE DIARY", named.len()), false).tip("Every day that names this tune.").clicked() {
+                self.open_notes(None, &name, acts);
+            }
+            if let Some(d) = open {
+                self.open_diary_day(d, acts);
+            }
+            ui.add_space(4.0);
+        }
         // who wrote it, when, where from: looked up once for you (MusicBrainz), yours to fix
         {
             let t = &self.store.tunes[i];
@@ -4058,9 +4379,66 @@ impl App {
         }
     }
 
-    /// ALL NOTES, a page of its own: BACK (or Esc, or the DIARY tab) to the diary, then the days' notes.
-    fn all_notes_view(&mut self, ui: &mut egui::Ui) {
-        let noted = noted_days(&self.store.days);
+    /// The names of your tunes (in the Tunes list's order), for linking them where notes name them.
+    fn tune_names(&self) -> Vec<String> {
+        self.store.tunes.iter().map(|t| t.name.clone()).collect()
+    }
+
+    /// A day of the diary, opened (from ALL NOTES or a tune's page).
+    fn open_diary_day(&mut self, d: i64, acts: &mut Vec<Action>) {
+        if self.sec != Sec::Diary {
+            acts.push(Action::Section(Sec::Diary));
+        }
+        self.diary_tab = 0;
+        self.diary_all = 0;
+        self.diary_sel = d;
+        let (y, m, _) = store::civil_from_days(d);
+        self.diary_ym = (y, m);
+    }
+
+    /// ALL NOTES, showing the days with `tag` (or, `find`, the days a search finds).
+    fn open_notes(&mut self, tag: Option<String>, find: &str, acts: &mut Vec<Action>) {
+        if self.sec != Sec::Diary {
+            acts.push(Action::Section(Sec::Diary));
+        }
+        self.diary_tab = 0;
+        self.diary_all = SKIM;
+        self.notes_filter = tag;
+        self.notes_q = find.to_string();
+    }
+
+    /// A tune's page, opened from notes that name it.
+    fn open_tune(&mut self, i: usize, acts: &mut Vec<Action>) {
+        if i < self.store.tunes.len() {
+            if self.sec != Sec::Tunes {
+                acts.push(Action::Section(Sec::Tunes));
+            }
+            self.tune_open = Some(i);
+            self.pick = None;
+        }
+    }
+
+    /// Whether day `d`'s notes fit ALL NOTES' filter (starred, or a tag) and the search `find` (lowercase: in the
+    /// words, or the date as written or read out).
+    fn note_fits(&self, day: &store::Day, d: i64, find: &str) -> bool {
+        match self.notes_filter.as_deref() {
+            Some("*") if !day.star => return false,
+            Some(t) if t != "*" && !crate::notes_fmt::tags(&day.note).iter().any(|g| g == t) => return false,
+            _ => {}
+        }
+        if find.is_empty() {
+            return true;
+        }
+        let (_, m, _) = store::civil_from_days(d);
+        let when = format!("{} {} {}", store::weekday(d), day.date, MONTH_NAMES[m as usize - 1]).to_lowercase();
+        when.contains(find) || crate::notes_fmt::plain(&day.note).to_lowercase().contains(find)
+    }
+
+    /// ALL NOTES, a page of its own: BACK (or Esc, or the DIARY tab) to the diary; a search; ALL, STARRED and your tags
+    /// (the five used most, the rest behind ...); a year, a month or a day at a time, a desk calendar's page turned
+    /// with < and > to the one before or after that has notes; the days as cards (a click opens one, its star stars it,
+    /// a tag on it shows that tag's days, a tune named on it opens the tune's page).
+    fn all_notes_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
         let back = ui.horizontal(|ui| retro_btn(ui, "< BACK", false).tip("Back to the diary (Esc).").clicked()).inner;
         let esc = !self.fullscreen && !self.art_view && self.ed.id == 0 && ui.input(|i| i.key_pressed(egui::Key::Escape));
@@ -4069,61 +4447,280 @@ impl App {
             ui.ctx().request_repaint();
             return;
         }
-        section_header(ui, &format!("ALL NOTES  -  {} DAYS", noted.len()));
-        let mut jump = None;
-        self.diary_skim(ui, &noted, px, &mut jump);
-        if let Some(d) = jump {
-            self.diary_sel = d;
-            let (y, m, _) = store::civil_from_days(d);
-            self.diary_ym = (y, m);
-            self.diary_all = 0;
+        let noted = noted_days(&self.store.days);
+        // (with a search or a filter on: how many of them fit, worked out below and shown the next frame)
+        if self.notes_q.trim().is_empty() && self.notes_filter.is_none() {
+            section_header(ui, &format!("ALL NOTES  -  {} DAYS", noted.len()));
+        } else {
+            section_header(ui, &format!("ALL NOTES  -  {} OF {} DAYS", self.notes_fit, noted.len()));
+        }
+        // the search
+        let (sr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
+        if field(ui, &mut self.ed, crate::tools::F_NOTES_SEARCH, &mut self.notes_q, sr, "Search your notes", false).changed {
+            self.diary_all = SKIM;
+        }
+        ui.add_space(4.0);
+        // the filters: everything, the starred days, your tags (the five used most, then ... for the rest)
+        let tags = tag_counts(&self.store.days);
+        let starred = self.store.days.iter().filter(|d| d.star && !d.note.trim().is_empty()).count();
+        let mut pick: Option<Option<String>> = None;
+        ui.horizontal_wrapped(|ui| {
+            let cur = self.notes_filter.clone();
+            if retro_btn(ui, "ALL", cur.is_none()).tip("Every day with notes.").clicked() {
+                pick = Some(None);
+            }
+            let on = cur.as_deref() == Some("*");
+            let r = retro_btn(ui, &format!("    STARRED {}", starred), on).tip("The days you starred.");
+            star(ui.painter(), Pos2::new(r.rect.min.x + 15.0, r.rect.center().y), 6.0, true, GOLD);
+            if r.clicked() {
+                pick = Some(if on { None } else { Some("*".to_string()) });
+            }
+            for (k, (g, n)) in tags.iter().enumerate() {
+                let on = cur.as_deref() == Some(g.as_str());
+                if !self.notes_tags_all && k >= 5 && !on {
+                    continue;
+                }
+                if retro_btn(ui, &format!("{} {}", g, n), on).tip(format!("Every day with {}.", g)).clicked() {
+                    pick = Some(if on { None } else { Some(g.clone()) });
+                }
+            }
+            if tags.len() > 5 {
+                let (label, tip) = if self.notes_tags_all {
+                    ("LESS", "Only the tags you use most.".to_string())
+                } else {
+                    ("...", format!("{} more tags", tags.len() - 5))
+                };
+                if retro_btn(ui, label, false).tip(tip).clicked() {
+                    self.notes_tags_all = !self.notes_tags_all;
+                }
+            }
+        });
+        if let Some(f) = pick {
+            self.notes_filter = f;
+            self.diary_all = SKIM;
+        }
+        ui.add_space(4.0);
+
+        // the days that fit, newest first
+        let find = self.notes_q.trim().to_lowercase();
+        let tunes = self.tune_names();
+        let at: HashMap<&str, usize> = self.store.days.iter().enumerate().map(|(i, d)| (d.date.as_str(), i)).collect();
+        let days: Vec<(i64, usize)> = noted
+            .iter()
+            .rev()
+            .filter_map(|&d| at.get(store::date_str(d).as_str()).map(|&i| (d, i)))
+            .filter(|&(d, i)| self.note_fits(&self.store.days[i], d, &find))
+            .collect();
+        if self.notes_fit != days.len() {
+            self.notes_fit = days.len();
             ui.ctx().request_repaint();
+        }
+
+        // the period: a year, a month or a day, turned to the one before or after that has notes
+        let mode = self.notes_mode.min(2);
+        let key = |d: i64| -> String {
+            let s = store::date_str(d);
+            match mode {
+                0 => s[..4].to_string(),
+                1 => s[..7].to_string(),
+                _ => s,
+            }
+        };
+        let mut keys: Vec<String> = Vec::new();
+        for &(d, _) in &days {
+            let k = key(d);
+            if keys.last() != Some(&k) {
+                keys.push(k);
+            }
+        }
+        if self.notes_at == 0 {
+            self.notes_at = store::today_days();
+        }
+        let mut cur = key(self.notes_at);
+        if !keys.is_empty() && !keys.contains(&cur) {
+            // (nothing there: the nearest before it that has notes, else the oldest)
+            cur = keys.iter().find(|k| **k <= cur).cloned().unwrap_or_else(|| keys[keys.len() - 1].clone());
+            if let Some(&(d, _)) = days.iter().find(|&&(d, _)| key(d) == cur) {
+                self.notes_at = d;
+            }
+        }
+        let older = keys.iter().find(|k| **k < cur).cloned();
+        let newer = keys.iter().filter(|k| **k > cur).last().cloned();
+        let in_p: Vec<(i64, usize)> = days.iter().copied().filter(|&(d, _)| key(d) == cur).collect();
+        let words = page_words(&cur, days.is_empty(), in_p.len());
+        let now = ui.input(|i| i.time);
+        let mut go: Option<(String, i8)> = None;
+        ui.horizontal_wrapped(|ui| {
+            for (k, name) in ["YEAR", "MONTH", "DAY"].iter().enumerate() {
+                let tip = ["A year at a time.", "A month at a time.", "A day at a time."][k];
+                if retro_btn(ui, name, mode == k as u8).tip(tip).clicked() {
+                    self.notes_mode = k as u8;
+                    self.diary_all = SKIM;
+                }
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            for (label, to, dir) in [("<", &older, -1i8), (">", &newer, 1i8)] {
+                if dir > 0 {
+                    // the calendar's page, turning when it changes
+                    let (pr, _) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::hover());
+                    let (s, shown) = match &self.notes_flip {
+                        Some((t0, _, old)) => {
+                            let t = ((now - t0) / 0.3) as f32;
+                            if t < 0.5 {
+                                ((std::f32::consts::PI * t).cos(), old.clone())
+                            } else {
+                                ((std::f32::consts::PI * t.min(1.0)).cos().abs(), words.clone())
+                            }
+                        }
+                        None => (1.0, words.clone()),
+                    };
+                    paint_page(ui.painter(), pr, s.max(0.02), &shown);
+                }
+                let r = ui
+                    .scope(|ui| {
+                        if to.is_none() {
+                            ui.set_opacity(0.35);
+                        }
+                        retro_btn_w(ui, label, 34.0, false)
+                    })
+                    .inner;
+                if let Some(k) = to {
+                    let tip = format!("{}: {}", if dir < 0 { "Earlier" } else { "Later" }, period_name(k));
+                    if r.tip(tip).clicked() {
+                        go = Some((k.clone(), dir));
+                    }
+                }
+            }
+        });
+        if let Some((k, dir)) = go {
+            if let Some(&(d, _)) = days.iter().find(|&&(d, _)| key(d) == k) {
+                self.notes_at = d;
+                self.notes_flip = Some((now, dir, words.clone()));
+                self.diary_all = SKIM;
+            }
+            ui.ctx().request_repaint();
+        }
+        // the cards come in as the page turns
+        let mut slide = (0.0, 1.0);
+        let mut done = false;
+        if let Some((t0, dir, _)) = &self.notes_flip {
+            let t = ((now - t0) / 0.3) as f32;
+            if t >= 1.0 {
+                done = true;
+            } else {
+                let e = 1.0 - (1.0 - t).powi(3);
+                slide = (*dir as f32 * 30.0 * (1.0 - e), e);
+                ui.ctx().request_repaint();
+            }
+        }
+        if done {
+            self.notes_flip = None;
+        }
+        ui.add_space(6.0);
+
+        // the list: a year by its months (a month's name opens it), a month's days, or the one day
+        if days.is_empty() {
+            let what = if find.is_empty() { "NO NOTES HERE".to_string() } else { format!("NO NOTES MATCH \"{}\"", self.notes_q.trim()) };
+            dim_line(ui, &what, 2.0, pal().ink2);
+            return;
+        }
+        let mut asked: Option<CardClick> = None;
+        let mut month_open: Option<i64> = None;
+        let mut last_month = String::new();
+        let limit = if mode == 2 { 1 } else { self.diary_all.max(SKIM) };
+        for &(d, i) in in_p.iter().take(limit) {
+            if mode == 0 {
+                let k = store::date_str(d)[..7].to_string();
+                if k != last_month {
+                    let n = in_p.iter().filter(|&&(x, _)| store::date_str(x).starts_with(&k)).count();
+                    let (hr, hresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::click());
+                    let hot = hresp.hovered();
+                    let m = k[5..7].parse::<usize>().unwrap_or(1).clamp(1, 12);
+                    crate::font::keep_caps(|| {
+                        let tw = ptext(ui.painter(), Pos2::new(hr.min.x + 4.0, hr.center().y), Align::Min, MONTH_NAMES[m - 1], 1.4, if hot { pal().ink } else { pal().ink2 });
+                        ptext(ui.painter(), Pos2::new(hr.min.x + tw + 14.0, hr.center().y), Align::Min, &format!("{} {}", n, if n == 1 { "DAY" } else { "DAYS" }), 1.0, pal().dim);
+                    });
+                    if hresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Show this month.").clicked() {
+                        month_open = Some(d);
+                    }
+                    last_month = k;
+                }
+            }
+            if let Some(c) = note_card(ui, d, &self.store.days[i], px, &find, &tunes, slide) {
+                asked = Some(c);
+            }
+        }
+        if mode != 2 && in_p.len() > limit {
+            ui.add_space(4.0);
+            if retro_btn(ui, "SHOW MORE", false).tip("Older notes.").clicked() {
+                self.diary_all = limit + SKIM;
+            }
+        }
+        if let Some(d) = month_open {
+            self.notes_mode = 1;
+            self.notes_at = d;
+            ui.ctx().request_repaint();
+        }
+        match asked {
+            Some(CardClick::Open(d)) => {
+                self.open_diary_day(d, acts);
+                ui.ctx().request_repaint();
+            }
+            Some(CardClick::Star(d)) => {
+                let date = store::date_str(d);
+                if let Some(day) = self.store.days.iter_mut().find(|x| x.date == date) {
+                    day.star = !day.star;
+                    self.store_dirty = true;
+                }
+            }
+            Some(CardClick::Tag(t)) => {
+                self.notes_filter = Some(t);
+                self.diary_all = SKIM;
+            }
+            Some(CardClick::Tune(i)) => self.open_tune(i, acts),
+            Some(CardClick::Link(u)) => open_link(&u),
+            None => {}
         }
     }
 
-    /// ALL NOTES: the days' notes to read through, newest first, `diary_all` of them (SHOW MORE for older ones); a
-    /// click opens that day.
-    fn diary_skim(&mut self, ui: &mut egui::Ui, noted: &[i64], px: f32, jump: &mut Option<i64>) {
-        let w = ui.available_width();
-        for &d in noted.iter().rev().take(self.diary_all) {
-            let date = store::date_str(d);
-            let Some(day) = self.store.days.iter().find(|x| x.date == date) else { continue };
-            let laid = lay_notes(day.note.trim(), px, w - 24.0);
-            let mins = day.secs.values().sum::<u32>();
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0 + laid.h), Sense::click());
-            let o = Pos2::new(r.min.x + 12.0, r.min.y + 22.0);
-            let url = resp.hover_pos().and_then(|m| note_hit(&laid, m - o, px)).and_then(|(pc, _)| pc.url.clone());
-            if ui.is_rect_visible(r) {
-                let p = ui.painter();
-                if resp.hovered() {
-                    fill_rect(p, r, pal().row_alt);
-                }
-                let head = match mins {
-                    0..=59 => format!("{} {}", store::weekday(d), date),
-                    _ => format!("{} {}  -  {}", store::weekday(d), date, mins_text(mins)),
-                };
-                crate::font::keep_caps(|| ptext(p, Pos2::new(r.min.x + 8.0, r.min.y + 11.0), Align::Min, &head, 1.0, pal().dim));
-                draw_notes(p, o, w - 24.0, &laid, 1.0, url.as_deref());
-                p.hline(r.min.x + 4.0..=r.max.x - 4.0, r.max.y - 1.0, Stroke::new(1.0f32, pal().edge));
-            }
-            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-            let resp = match &url {
-                Some(u) => resp.tip(u),
-                None => resp.tip("Open this day."),
-            };
-            if resp.clicked() {
-                match url {
-                    Some(u) => open_link(&u),
-                    None => *jump = Some(d),
+    /// While a #tag is being typed in the day's notes: the tags you've used that start the same way (the most used
+    /// first), to pick. True when one was picked.
+    fn diary_tag_pick(&mut self, ui: &mut egui::Ui) -> bool {
+        let id = crate::tools::F_DIARY_NOTE;
+        if self.ed.id != id {
+            return false;
+        }
+        let chars: Vec<char> = self.diary_note.1.chars().collect();
+        let cur = self.ed.cur.min(chars.len());
+        let Some((at, typed)) = crate::notes_fmt::tag_at(&chars, cur) else { return false };
+        let fits: Vec<String> =
+            tag_counts(&self.store.days).into_iter().map(|t| t.0).filter(|g| g.starts_with(&typed) && *g != typed).take(8).collect();
+        if fits.is_empty() {
+            return false;
+        }
+        let mut pick = None;
+        let row = ui.horizontal_wrapped(|ui| {
+            let (lr, _) = ui.allocate_exact_size(Vec2::new(90.0, bh()), Sense::hover());
+            ptext(ui.painter(), Pos2::new(lr.min.x + 4.0, lr.center().y), Align::Min, "YOUR TAGS", 1.0, pal().dim);
+            for g in &fits {
+                if retro_btn(ui, g, false).tip("Use this tag.").clicked() {
+                    pick = Some(g.clone());
                 }
             }
+        });
+        if row.response.contains_pointer() {
+            self.ed.hold_next = id;
         }
-        if noted.len() > self.diary_all {
-            ui.add_space(4.0);
-            if retro_btn(ui, "SHOW MORE", false).tip("Older notes.").clicked() {
-                self.diary_all += SKIM;
-            }
-        }
+        let Some(g) = pick else { return false };
+        let ins: Vec<char> = format!("{} ", g).chars().collect();
+        let mut c = chars;
+        c.splice(at..cur, ins.iter().copied());
+        self.diary_note.1 = c.iter().collect();
+        self.ed.cur = at + ins.len();
+        self.ed.anchor = Some(self.ed.cur);
+        true
     }
 
     pub(crate) fn diary_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
@@ -4144,7 +4741,7 @@ impl App {
             3 => return self.plan_view(ui, acts),
             1 => return self.routine_view(ui, acts),
             2 => return self.listening_view(ui, acts),
-            _ if self.diary_all > 0 => return self.all_notes_view(ui),
+            _ if self.diary_all > 0 => return self.all_notes_view(ui, acts),
             _ => {}
         }
         let today = store::today_days();
@@ -4187,8 +4784,19 @@ impl App {
                         (jump, turn) = (to, Some(up));
                     }
                 }
-                if retro_btn(ui, "ALL NOTES", false).tip("Read all your notes, newest first.").clicked() {
+                if retro_btn(ui, "ALL NOTES", false).tip("Search your notes, by year, month or day.").clicked() {
                     self.diary_all = SKIM;
+                    self.notes_at = self.diary_sel;
+                }
+            }
+            // a star for the day (once it has notes)
+            let starred = self.store.days.iter().find(|d| d.date == note_date).filter(|d| !d.note.trim().is_empty()).map(|d| d.star);
+            if let Some(on) = starred {
+                if star_btn(ui, on).tip(if on { "Starred. Click to take the star off." } else { "Star this day: one that clicked." }).clicked() {
+                    if let Some(d) = self.store.days.iter_mut().find(|d| d.date == note_date) {
+                        d.star = !on;
+                        self.store_dirty = true;
+                    }
                 }
             }
             tools_at_end(ui);
@@ -4197,9 +4805,17 @@ impl App {
         ui.add_space(4.0);
         {
             // (the box grows with what's written: every line in sight, and one more to write on)
-            let hint = "How it went, what clicked, what's next...";
-            let (o, nr) = notes_box(ui, &mut self.ed, crate::tools::F_DIARY_NOTE, &mut self.diary_note.1, hint, 100.0, 400.0);
-            if o.changed || tooled {
+            let hint = "How it went, what clicked, what's next... (#tags sort them)";
+            let tunes = self.tune_names();
+            let (o, nr, asked) = notes_box(ui, &mut self.ed, crate::tools::F_DIARY_NOTE, &mut self.diary_note.1, hint, 100.0, 400.0, &tunes);
+            // typing a #tag: the ones you have, to pick
+            let picked = self.diary_tag_pick(ui);
+            match asked {
+                Some(NoteClick::Tag(t)) => self.open_notes(Some(t), "", acts),
+                Some(NoteClick::Tune(i)) => self.open_tune(i, acts),
+                None => {}
+            }
+            if o.changed || tooled || picked {
                 let text = self.diary_note.1.clone();
                 match self.store.days.iter_mut().find(|d| d.date == note_date) {
                     Some(d) => d.note = text,
@@ -4313,9 +4929,14 @@ impl App {
             ptext(ui.painter(), Pos2::new(gr.min.x + k as f32 * cw + cw / 2.0, gr.min.y + 7.0), Align::Center, n, 1.0, pal().dim);
         }
         let busiest = (0..ndays).map(|k| day_secs(self, first + k)).max().unwrap_or(0).max(1);
-        // (days with notes get a pencil; the note shows under the pointer)
-        let notes: HashMap<String, String> =
-            self.store.days.iter().filter(|d| !d.note.trim().is_empty()).map(|d| (d.date.clone(), note_preview(&d.note))).collect();
+        // (days with notes get a pencil, a starred one a gold star; the note shows under the pointer)
+        let notes: HashMap<String, (String, bool)> = self
+            .store
+            .days
+            .iter()
+            .filter(|d| !d.note.trim().is_empty())
+            .map(|d| (d.date.clone(), (note_preview(&d.note), d.star)))
+            .collect();
         for k in 0..ndays {
             let d = first + k;
             let pos = lead + k;
@@ -4345,8 +4966,12 @@ impl App {
                 ptext(ui.painter(), Pos2::new(r.max.x - 4.0, r.min.y + 8.0), Align::Max, &format!("{}m", secs / 60), 1.0, txt_col);
             }
             let resp = match notes.get(&store::date_str(d)) {
-                Some(preview) => {
-                    pencil(ui.painter(), Pos2::new(r.min.x + 5.0, r.max.y - 18.0), 14.0, txt_col.gamma_multiply(0.8));
+                Some((preview, starred)) => {
+                    if *starred {
+                        star(ui.painter(), Pos2::new(r.min.x + 12.0, r.max.y - 11.0), 7.0, true, GOLD);
+                    } else {
+                        pencil(ui.painter(), Pos2::new(r.min.x + 5.0, r.max.y - 18.0), 14.0, txt_col.gamma_multiply(0.8));
+                    }
                     resp.tip(preview)
                 }
                 None => resp,
@@ -6284,14 +6909,15 @@ fn slide_notes(p: &egui::Painter, rect: Rect, px: f32, old: &str, new: &str, t: 
     let came = 1.0 - (1.0 - t).powi(3);
     let w = inner.width();
     if out < 1.0 {
-        draw_notes(&cp, inner.min + Vec2::new(dx * out, 0.0), w, &lay_notes(old, px, w), 1.0 - out, None);
+        draw_notes(&cp, inner.min + Vec2::new(dx * out, 0.0), w, &lay_notes(old, px, w, &[]), 1.0 - out, None, "");
     }
-    draw_notes(&cp, inner.min + Vec2::new(-dx * (1.0 - came), 0.0), w, &lay_notes(new, px, w), came, None);
+    draw_notes(&cp, inner.min + Vec2::new(-dx * (1.0 - came), 0.0), w, &lay_notes(new, px, w, &[]), came, None, "");
 }
 
 /// Room before the formatting tools on a row, so they end it.
 fn tools_at_end(ui: &mut egui::Ui) {
-    let tw = 6.0 * TOOL_W * crate::font::ui_scale() + 5.0 * 2.0 + 8.0;
+    let n = crate::notes_fmt::TOOLS.len() as f32;
+    let tw = n * TOOL_W * crate::font::ui_scale() + (n - 1.0) * 2.0 + 8.0;
     let room = ui.available_size_before_wrap().x - tw;
     if room > 0.0 {
         ui.add_space(room);

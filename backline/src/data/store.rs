@@ -392,6 +392,9 @@ pub struct Day {
     pub loop_time: BTreeMap<String, (u32, u32)>,
     /// the day's notes, in your own words (the diary as a journal)
     pub note: String,
+    /// starred: a day that clicked (ALL NOTES can show only those)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub star: bool,
 }
 
 /// Whether two loops of a song are really the same one nudged a little: they share most of their length.
