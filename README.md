@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Search, stars and #tags for your diary notes, flipped through by year, month or day
 - Formatting in diary and tune notes, and All Notes in the diary
 - Triad Pairs under Lines > Over Chords
 - Gospel progressions (church, shout and quartet) and scale fingerings by the root's finger
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - 3D Cavern and Canyon: fly between a landscape and its mirror, or down a winding valley that rises with the music
 - 3D Terrain visuals: a landscape the music raises as you glide over it
 - New playlists from any song's menu, with a name, description and cover
-- Visuals - Windows Media Player and MilkDrop style, full screen (G) or in Now Playing, plus 3D Pipes
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
