@@ -1791,15 +1791,35 @@ mod tests {
             assert!(!a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed));
         };
         settle();
+        // a round, and the called side's end of it: it takes in what the two agreed a moment after the caller is done,
+        // and that must land before a file changes again (else the change reads as agreed: a Mac runner showed it)
+        let round = |from: &Arc<Engine>, to: &Arc<Engine>| {
+            let before = *lock(&to.ok_at);
+            let r = from.round(at(to));
+            for _ in 0..300 {
+                if *lock(&to.ok_at) != before {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            r.is_ok()
+        };
+        // (the first round's called side, the PC, done too)
+        for _ in 0..300 {
+            if lock(&a.ok_at).is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
 
         // a tick on the PC goes across as it is (the PC calls this time)
         std::fs::write(da.join("plan_log.json"), "{\"2026-11-01\": [0, 1], \"2026-11-02\": [3], \"2026-11-03\": [2]}").unwrap();
-        assert!(a.round(at(&b)).is_ok());
+        assert!(round(&a, &b));
         assert_eq!(rd(&db, "plan_log.json"), rd(&da, "plan_log.json"));
         settle();
         // an untick on the laptop goes across too (only one side changed)
         std::fs::write(db.join("plan_log.json"), "{\"2026-11-01\": [0], \"2026-11-02\": [3], \"2026-11-03\": [2]}").unwrap();
-        assert!(b.round(at(&a)).is_ok());
+        assert!(round(&b, &a));
         assert_eq!(json_of(&da, "plan_log.json")["2026-11-01"], json!([0]));
         settle();
 
@@ -1810,7 +1830,7 @@ mod tests {
         std::fs::write(db.join("plan.json"), "{\"name\": \"newer\"}").unwrap();
         b.poll();
         let kept = std::fs::read_dir(da.join("sync_backups")).map_or(0, |r| r.count());
-        assert!(b.round(at(&a)).is_ok());
+        assert!(round(&b, &a));
         assert_eq!(rd(&da, "plan.json"), "{\"name\": \"newer\"}");
         assert!(std::fs::read_dir(da.join("sync_backups")).unwrap().count() > kept);
         settle();
@@ -1823,14 +1843,14 @@ mod tests {
         let mut y = json_of(&db, "library.json");
         y["days"].as_array_mut().unwrap().push(json!({"date": "2026-11-05", "secs": {"Lines": 90}}));
         std::fs::write(db.join("library.json"), y.to_string()).unwrap();
-        assert!(a.round(at(&b)).is_ok());
+        assert!(round(&a, &b));
         settle();
         let days = json_of(&db, "library.json")["days"].clone();
         assert_eq!(days.as_array().unwrap().len(), 3);
         assert_eq!(days, json_of(&da, "library.json")["days"]);
 
         // nothing changed: the two still agree, and a call from a computer it isn't linked with is turned away
-        assert!(b.round(at(&a)).is_ok());
+        assert!(round(&b, &a));
         let c = computer(&temp("other"), 30, "OTHER");
         lock(&c.saved).peer = Some(Peer { id: 10, key: [1, 2], ..pb.clone() });
         assert!(matches!(c.round(at(&a)), Err(Fail::Said(_))));
