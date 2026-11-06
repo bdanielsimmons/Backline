@@ -1290,22 +1290,11 @@ impl App {
             self.vis_ui_at = now;
         }
         let n = PRESETS.len();
-        let (left, right, esc) = ui.input(|i| {
-            (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.key_pressed(egui::Key::Escape))
-        });
+        // (the arrow keys move through the song here too, as everywhere: the visuals change with < and > on screen)
+        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
         if esc || resp.double_clicked() {
             self.vis_set_full(false, false);
             return;
-        }
-        if left {
-            self.vis_preset = (self.vis_preset + n - 1) % n;
-            self.vis_ui_at = now;
-            self.dirty = true;
-        }
-        if right {
-            self.vis_preset = (self.vis_preset + 1) % n;
-            self.vis_ui_at = now;
-            self.dirty = true;
         }
         resp.context_menu(|ui| self.vis_menu(ui));
         if self.vis_saver || now - self.vis_ui_at > 3.0 {
@@ -1345,7 +1334,7 @@ impl App {
             p,
             Pos2::new(r.center().x, r.max.y - 14.0),
             egui::Align::Center,
-            "Arrows: previous / next  ·  right-click for all  ·  Esc or double-click to close",
+            "< > on screen: previous / next  ·  right-click for all  ·  Esc or double-click to close",
             0.9,
             Color32::from_white_alpha(140),
         );
