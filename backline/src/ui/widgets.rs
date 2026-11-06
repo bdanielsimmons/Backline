@@ -535,6 +535,11 @@ pub(crate) fn logo(ui: &mut egui::Ui) {
 /// Tabs as one joined strip of segments (a skin worn): the one you are on pressed in and lit. "|" in `items`
 /// starts a new strip beside the last. Returns the clicked one.
 pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
+    segments_tips(ui, items, cur, &[])
+}
+
+/// `segments`, each with a hover hint from `tips` (by the same place in the list; empty for none).
+pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: &[String]) -> Option<usize> {
     let h = 26.0 * font::ui_scale();
     let pad = 22.0;
     let gap = 10.0;
@@ -598,6 +603,10 @@ pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<
     for (n, (i, r)) in cells.iter().enumerate() {
         let resp =
             ui.interact(*r, ui.id().with(("seg", *i, items[*i])), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = match tips.get(*i) {
+            Some(t) if !t.is_empty() => resp.tip(t),
+            _ => resp,
+        };
         let on = *i == cur;
         if on {
             p.rect_filled(r.shrink(1.0), 2.0, pal().lcd);
@@ -647,8 +656,13 @@ pub(crate) fn segments(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<
 }
 
 pub(crate) fn tab_row(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
+    tab_row_tips(ui, items, cur, &[])
+}
+
+/// `tab_row`, each tab with a hover hint from `tips` (by the same place in the list; empty for none).
+pub(crate) fn tab_row_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: &[String]) -> Option<usize> {
     if winamp_ui::chrome_on() {
-        return segments(ui, items, cur);
+        return segments_tips(ui, items, cur, tips);
     }
     font::keep_caps(|| {
         let h = 26.0 * font::ui_scale();
@@ -676,6 +690,10 @@ pub(crate) fn tab_row(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<u
             let resp = ui
                 .interact(r, ui.id().with(("tab", items.join("|"), i)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let resp = match tips.get(i) {
+                Some(t) if !t.is_empty() => resp.tip(t),
+                _ => resp,
+            };
             let p = ui.painter();
             if style() != 0 {
                 let r = Rect::from_min_max(r.min + Vec2::new(0.0, if on { 0.0 } else { 1.0 }), Pos2::new(r.max.x, r.max.y - 2.0));
@@ -940,7 +958,14 @@ pub(crate) fn dropdown_at(
     min_w: f32,
     fixed: bool,
 ) -> Option<usize> {
-    dropdown_list(ui, id, title, items, sel, min_w, fixed, &[], &[])
+    dropdown_list(ui, id, title, items, sel, min_w, fixed, &[], &[], None)
+}
+
+/// A button that always reads `face` and opens a list in headed groups (`heads` as in `dropdown_grouped`); the item
+/// at `sel` is lit, and the list opens on it. An item starting with two spaces sits indented under the one before.
+/// Returns the index chosen this frame.
+pub(crate) fn menu_list(ui: &mut egui::Ui, id: &str, face: &str, items: &[&str], sel: usize, heads: &[(usize, &str)]) -> Option<usize> {
+    dropdown_list(ui, id, "", items, sel, 0.0, false, heads, &[], Some(face))
 }
 
 /// A dropdown whose list is in headed groups (`heads`: the item each group starts at, and its heading), each item
@@ -955,7 +980,7 @@ pub(crate) fn dropdown_grouped(
     heads: &[(usize, &str)],
     dots: &[Color32],
 ) -> Option<usize> {
-    dropdown_list(ui, id, title, items, sel, 0.0, false, heads, dots)
+    dropdown_list(ui, id, title, items, sel, 0.0, false, heads, dots, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -969,8 +994,10 @@ fn dropdown_list(
     fixed: bool,
     heads: &[(usize, &str)],
     dots: &[Color32],
+    face: Option<&str>,
 ) -> Option<usize> {
-    let cur = items.get(sel).copied().unwrap_or("");
+    // (a button that always reads the same shows that, not the choice)
+    let cur = face.unwrap_or_else(|| items.get(sel).copied().unwrap_or(""));
     // (a title in capitals reads as a word beside a choice in mixed case: "Input: Microphone", not "INPUT: Microphone")
     // (each half cased on its own: a mixed-case title would leave a choice in capitals as it is)
     let (title, cur) = if winamp_ui::chrome_on() {
@@ -1048,7 +1075,12 @@ fn dropdown_list(
                         if let Some(c) = dots.get(i) {
                             ui.painter().circle_filled(Pos2::new(r.min.x + 16.0, r.center().y), 4.0, *c);
                         }
-                        ptext(ui.painter(), Pos2::new(r.min.x + 10.0 + indent, r.center().y), Align::Min, it, 2.0, pal().ink);
+                        // (two spaces before it: one of the item above's own pages, set in under it)
+                        let (step, it) = match it.strip_prefix("  ") {
+                            Some(s) => (20.0, s),
+                            None => (0.0, *it),
+                        };
+                        ptext(ui.painter(), Pos2::new(r.min.x + 10.0 + indent + step, r.center().y), Align::Min, it, 2.0, pal().ink);
                         if i == sel && just_opened {
                             rr.scroll_to_me(Some(Align::Center));
                         }

@@ -560,6 +560,105 @@ fn sub_tabs(ui: &mut egui::Ui, items: &[(Sec, &str)], cur: usize) -> Option<usiz
     })
 }
 
+/// A page's group tabs (CHORDS, LINES): each group's name, or its page's own name when it has only the one, and
+/// for hovering, the pages in it.
+pub(crate) fn group_tabs(groups: &[(&'static str, &[(u8, &'static str)])]) -> (Vec<&'static str>, Vec<String>) {
+    let names = groups.iter().map(|g| if g.1.len() == 1 { g.1[0].1 } else { g.0 }).collect();
+    let tips = groups
+        .iter()
+        .map(|g| if g.1.len() == 1 { String::new() } else { g.1.iter().map(|p| p.1).collect::<Vec<_>>().join(", ") })
+        .collect();
+    (names, tips)
+}
+
+/// The button that lists every PRACTICE page (not "GO TO": the search box's button is GO).
+const PAGES: &str = "ALL PAGES";
+
+/// The room the ALL PAGES button takes in a row, the gap before it included.
+pub(crate) fn pages_w() -> f32 {
+    text_w(PAGES, 2.0) + 50.0
+}
+
+/// Where a line of the ALL PAGES list takes you: the PRACTICE tab, then the page's own number
+/// (CHORDS: the page, then one of its own tabs, or `ANY` to leave it on the one it was last on).
+#[derive(Clone, Copy, PartialEq)]
+enum Go {
+    Tunes(u8),
+    Diary(u8),
+    Loops,
+    Reading(u8),
+    Chords(u8, u8),
+    Ear,
+    Lines(u8),
+    Melodies(u8),
+}
+
+const ANY: u8 = 255;
+
+/// The ALL PAGES list: every PRACTICE page under its tab's name (as headings), a page's own tabs set in under it.
+fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go>) {
+    use Go::*;
+    let mut diary = vec![("DIARY", Diary(0)), ("ROUTINE", Diary(1)), ("LISTENING", Diary(2))];
+    if plan {
+        diary.push(("MY PLAN", Diary(3)));
+    }
+    let groups: Vec<(&str, Vec<(&str, Go)>)> = vec![
+        ("TUNES", vec![("YOUR TUNES", Tunes(0)), ("RECOMMENDED", Tunes(1))]),
+        ("DIARY", diary),
+        ("LOOPS", vec![("LOOPS & BOOKMARKS", Loops)]),
+        ("READING", vec![("THE BOOK", Reading(0)), ("MADE-UP LINES", Reading(1))]),
+        (
+            "CHORDS",
+            vec![
+                ("FIND A CHORD", Chords(0, ANY)),
+                ("CHORD ANALYZER", Chords(1, ANY)),
+                ("TRIADS", Chords(2, ANY)),
+                ("  MAP", Chords(2, 0)),
+                ("  VOICE LEADING", Chords(2, 1)),
+                ("  OVER A BASS", Chords(2, 2)),
+                ("VOICINGS", Chords(3, ANY)),
+                ("  INVERSIONS", Chords(3, 0)),
+                ("  WALK THE CHANGES", Chords(3, 1)),
+                ("CLUSTERS", Chords(4, ANY)),
+                ("  SCALES", Chords(4, 0)),
+                ("  FIXED CLUSTER", Chords(4, 1)),
+                ("  FIXED BASS", Chords(4, 2)),
+                ("  IN A TUNE", Chords(4, 3)),
+                ("  BUILD", Chords(4, 4)),
+                ("  MY CHORDS", Chords(4, 5)),
+                ("SCALE HARMONY", Chords(6, ANY)),
+                ("PROGRESSIONS", Chords(8, ANY)),
+                ("PASSING CHORDS", Chords(5, ANY)),
+                ("COMPING MOVES", Chords(7, ANY)),
+                ("  GOSPEL", Chords(7, 0)),
+                ("  QUARTAL & CLUSTERS", Chords(7, 1)),
+            ],
+        ),
+        ("EAR", vec![("EAR TRAINING", Ear)]),
+        (
+            "LINES",
+            vec![
+                ("SLONIMSKY'S DIARY", Lines(0)),
+                ("ATONAL", Lines(5)),
+                ("SCALE FINGERINGS", Lines(1)),
+                ("ARPEGGIOS", Lines(4)),
+                ("PENTATONICS & MORE", Lines(2)),
+                ("SUPERIMPOSE", Lines(3)),
+            ],
+        ),
+        ("CHORD MELODIES", vec![("SONGS", Melodies(0)), ("MOVES", Melodies(1))]),
+    ];
+    let (mut items, mut heads, mut gos) = (Vec::new(), Vec::new(), Vec::new());
+    for (head, pages) in groups {
+        heads.push((items.len(), head));
+        for (name, g) in pages {
+            items.push(name);
+            gos.push(g);
+        }
+    }
+    (items, heads, gos)
+}
+
 /// The LOOPS page's songs, filtered and in order.
 struct SpotData {
     songs: Vec<SpotSong>,
@@ -661,6 +760,70 @@ fn mark_swatches(ui: &mut egui::Ui, cur: Option<[u8; 3]>) -> Option<[u8; 3]> {
 }
 
 impl App {
+    /// ALL PAGES: every PRACTICE page in one list, the one you are on lit; picking one takes you straight there.
+    pub(crate) fn go_to(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let (items, heads, gos) = go_list(crate::plan::have_plan());
+        let sub = |t: u8| match t {
+            2 => self.tr_page,
+            3 => self.vc_page,
+            4 => self.cl_view,
+            7 => self.mv_page,
+            _ => ANY,
+        };
+        let now = match self.sec {
+            Sec::Tunes => Go::Tunes(self.tunes_tab),
+            Sec::Diary => Go::Diary(self.diary_tab),
+            Sec::Loops => Go::Loops,
+            Sec::Reading => Go::Reading(self.rd_mode),
+            Sec::Chords => Go::Chords(self.chords_tab, sub(self.chords_tab)),
+            Sec::Ear => Go::Ear,
+            Sec::Lines => Go::Lines(self.ln_tab),
+            _ => Go::Melodies(self.cm_tab),
+        };
+        let sel = gos.iter().position(|g| *g == now).unwrap_or(usize::MAX);
+        let Some(i) = crate::menu_list(ui, "practice_go", PAGES, &items, sel, &heads) else { return };
+        let g = gos[i];
+        let sec = match g {
+            Go::Tunes(_) => Sec::Tunes,
+            Go::Diary(_) => Sec::Diary,
+            Go::Loops => Sec::Loops,
+            Go::Reading(_) => Sec::Reading,
+            Go::Chords(..) => Sec::Chords,
+            Go::Ear => Sec::Ear,
+            Go::Lines(_) => Sec::Lines,
+            Go::Melodies(_) => Sec::Melodies,
+        };
+        if sec != self.sec {
+            acts.push(Action::Section(sec));
+        }
+        match g {
+            Go::Tunes(t) => self.tunes_tab = t,
+            Go::Diary(t) => self.diary_tab = t,
+            Go::Reading(t) => {
+                // (as its own tabs do: what was playing for the other one stops)
+                if self.rd_mode != t {
+                    self.rd_mode = t;
+                    self.player.send(crate::player::Cmd::StopOnce);
+                    self.rd_play = None;
+                }
+            }
+            Go::Chords(t, s) => {
+                self.chords_tab = t;
+                if s != ANY {
+                    match t {
+                        2 => self.tr_page = s,
+                        3 => self.vc_page = s,
+                        4 => self.cl_view = s,
+                        _ => self.mv_page = s,
+                    }
+                }
+            }
+            Go::Lines(t) => self.ln_tab = t,
+            Go::Melodies(t) => self.cm_tab = t,
+            Go::Loops | Go::Ear => {}
+        }
+    }
+
     // ------------------------------------------------------------ switchers
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
     /// Each group comes back to the list you last had open in it. The plain build has only MUSIC, so only its row shows.
@@ -728,7 +891,15 @@ impl App {
         }
         if PRACTICE && in_practice {
             let cur = PRACTICE_SECS.iter().position(|s| s.0 == self.sec).unwrap_or(0);
-            if let Some(i) = sub_tabs(ui, &PRACTICE_SECS, cur) {
+            // the tabs, then ALL PAGES at the end of the row: every page in one list
+            let go_w = pages_w();
+            let mut hit = None;
+            ui.horizontal(|ui| {
+                let w = (ui.available_width() - go_w).max(120.0);
+                ui.allocate_ui(Vec2::new(w, 24.0), |ui| hit = sub_tabs(ui, &PRACTICE_SECS, cur));
+                self.go_to(ui, acts);
+            });
+            if let Some(i) = hit {
                 acts.push(Action::Section(PRACTICE_SECS[i].0));
             }
             return;
@@ -5612,6 +5783,34 @@ fn bar_row(ui: &mut egui::Ui, name: &str, secs: u32, most: u32, col: Color32, ri
 #[cfg(test)]
 mod summary_tests {
     use super::*;
+
+    #[test]
+    fn a_group_of_one_page_shows_its_name() {
+        const G: [(&str, &[(u8, &str)]); 2] = [("SCALES", &[(1, "SCALE FINGERINGS"), (4, "ARPEGGIOS")]), ("OVER CHORDS", &[(3, "SUPERIMPOSE")])];
+        let (names, tips) = group_tabs(&G);
+        assert_eq!(names, ["SCALES", "SUPERIMPOSE"]);
+        assert_eq!(tips, ["SCALE FINGERINGS, ARPEGGIOS", ""]);
+    }
+
+    #[test]
+    fn all_pages_lists_every_page_once() {
+        let (items, heads, gos) = go_list(true);
+        assert_eq!(items.len(), gos.len());
+        let names: Vec<&str> = heads.iter().map(|h| h.1).collect();
+        assert_eq!(names, ["TUNES", "DIARY", "LOOPS", "READING", "CHORDS", "EAR", "LINES", "CHORD MELODIES"]);
+        for (i, g) in gos.iter().enumerate() {
+            assert!(!gos[..i].contains(g), "{} twice", items[i]);
+        }
+        assert!(gos.contains(&Go::Lines(3)) && gos.contains(&Go::Diary(3)));
+        assert!(!go_list(false).2.contains(&Go::Diary(3)));
+        // a page's own tabs only ever sit under it
+        for (i, it) in items.iter().enumerate() {
+            if it.starts_with("  ") {
+                let Go::Chords(t, s) = gos[i] else { panic!("{it}") };
+                assert!(s != ANY && matches!(gos[i - 1], Go::Chords(p, _) if p == t));
+            }
+        }
+    }
 
     #[test]
     fn periods_cover_the_right_days() {

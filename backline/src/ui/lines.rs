@@ -295,12 +295,12 @@ impl App {
         // three groups on top, the pages of the open one under them (each page keeps its own number)
         const GROUPS: [(&str, &[(u8, &str)]); 3] = [
             ("PATTERNS", &[(0, "SLONIMSKY'S DIARY"), (5, "ATONAL")]),
-            ("SCALES", &[(1, "SCALES"), (4, "ARPEGGIOS"), (2, "PENTATONICS & MORE")]),
+            ("SCALES", &[(1, "SCALE FINGERINGS"), (4, "ARPEGGIOS"), (2, "PENTATONICS & MORE")]),
             ("OVER CHORDS", &[(3, "SUPERIMPOSE")]),
         ];
         let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.ln_tab)).unwrap_or(0);
-        let names: Vec<&str> = GROUPS.iter().map(|g| g.0).collect();
-        if let Some(g) = tab_row(ui, &names, group) {
+        let (names, tips) = crate::views::group_tabs(&GROUPS);
+        if let Some(g) = tab_row_tips(ui, &names, group, &tips) {
             if g != group {
                 self.ln_tab = GROUPS[g].1[0].0;
             }

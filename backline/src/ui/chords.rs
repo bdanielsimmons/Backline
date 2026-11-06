@@ -18,11 +18,11 @@ impl App {
         const GROUPS: [(&str, &[(u8, &str)]); 3] = [
             ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
             ("SHAPES", &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")]),
-            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "MOVES")]),
+            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "COMPING MOVES")]),
         ];
         let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
-        let names: Vec<&str> = GROUPS.iter().map(|g| g.0).collect();
-        if let Some(g) = tab_row(ui, &names, group) {
+        let (names, tips) = crate::views::group_tabs(&GROUPS);
+        if let Some(g) = tab_row_tips(ui, &names, group, &tips) {
             if g != group {
                 self.chords_tab = GROUPS[g].1[0].0;
             }
@@ -730,7 +730,7 @@ impl App {
     /// drop 2 / drop 3 / drop 2 & 4 seventh chords - every inversion on a string set, then walked through the changes
     /// of a tune with the smallest moves.
     fn voicings(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        if let Some(v) = tab_row(ui, &["SHAPES", "WALK THE CHANGES"], self.vc_page as usize) {
+        if let Some(v) = tab_row(ui, &["INVERSIONS", "WALK THE CHANGES"], self.vc_page as usize) {
             self.vc_page = v as u8;
         }
         ui.add_space(6.0);

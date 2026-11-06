@@ -1359,14 +1359,26 @@ impl App {
                     }
                 }
             }
+            // on a practice page with the side list (no tab row to hold it): ALL PAGES, at the end of this row
+            let pages = crate::PRACTICE
+                && !tabs
+                && !side
+                && matches!(
+                    self.sec,
+                    Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Ear | Sec::Melodies
+                );
+            let pages_w = if pages { crate::views::pages_w() } else { 0.0 };
             if !self.offline && !side {
                 let go_w = 54.0;
-                let w = (ui.available_width() - go_w - ui.spacing().item_spacing.x).max(80.0);
+                let w = (ui.available_width() - go_w - pages_w - ui.spacing().item_spacing.x).max(80.0);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
                 self.search_input(ui, rect, acts);
                 if retro_btn_w(ui, "GO", go_w, false).clicked() {
                     acts.push(Action::Search(self.search.clone()));
                 }
+            }
+            if pages {
+                self.go_to(ui, acts);
             }
         });
 
