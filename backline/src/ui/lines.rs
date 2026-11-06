@@ -296,7 +296,7 @@ impl App {
         const GROUPS: [(&str, &[(u8, &str)]); 3] = [
             ("PATTERNS", &[(0, "SLONIMSKY'S DIARY"), (5, "ATONAL")]),
             ("SCALES", &[(1, "SCALE FINGERINGS"), (4, "ARPEGGIOS"), (2, "PENTATONICS & MORE")]),
-            ("OVER CHORDS", &[(3, "SUPERIMPOSE")]),
+            ("OVER CHORDS", &[(3, "SUPERIMPOSE"), (6, "TRIAD PAIRS")]),
         ];
         let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.ln_tab)).unwrap_or(0);
         let (names, tips) = crate::views::group_tabs(&GROUPS);
@@ -316,12 +316,14 @@ impl App {
         ui.add_space(6.0);
         // only the improvising tabs play a line over something
         self.ln_backing = None;
+        self.ln_prog = None;
         match self.ln_tab {
             0 => self.slonimsky(ui, acts),
             1 => self.fingerings(ui, acts),
             2 => self.pentatonics(ui, acts),
             4 => self.arpeggios(ui, acts),
             5 => self.atonal(ui, acts),
+            6 => self.triad_pairs(ui, acts),
             _ => self.superimpose(ui, acts),
         }
     }

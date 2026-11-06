@@ -128,6 +128,10 @@ mod record_ui;
 mod routine;
 #[path = "ui/si_core.rs"]
 mod si_core;
+#[path = "ui/tp_core.rs"]
+mod tp_core;
+#[path = "ui/pairs.rs"]
+mod pairs;
 #[path = "ui/skin.rs"]
 mod skin;
 #[path = "ui/staff.rs"]
@@ -2926,6 +2930,18 @@ struct App {
     si_pick: u8,
     si_kind: u8,
     si_kroot: u8,
+    /// TRIAD PAIRS: over a chord or through changes; a suggested pair or any two triads; the suggestion picked;
+    /// the two triads picked (root, kind); the strings (0 anywhere, then the sets from the top down); the exercise;
+    /// the changes (0 the open tune when there is one, then the set ones) and their key
+    tp_mode: u8,
+    tp_any: bool,
+    tp_pick: u8,
+    tp_a: (i32, u8),
+    tp_b: (i32, u8),
+    tp_strings: u8,
+    tp_ex: u8,
+    tp_prog: u8,
+    tp_key: i32,
     /// SCALE FINGERINGS: the scale (by name), key, system (0 five positions, else notes a string), the position
     /// shown (its count = the whole neck), labels, which shape is position 1 (255: the one rooted on the 5th
     /// string), the starred scales, and shifting through them all
@@ -2998,6 +3014,9 @@ struct App {
     cm_step: Option<((usize, usize), usize)>,
     /// a line played over something (0 nothing, 1 drone, 2 chord, 3 band) and that chord's notes; None for plain lines
     ln_backing: Option<(u8, Vec<i32>)>,
+    /// a line over changes (TRIAD PAIRS): the chart the band plays (its text, its bars in play order), and each
+    /// chord in turn - its notes, voiced low, and how many beats it lasts - for the drone and the strummed chord
+    ln_prog: Option<(String, Vec<usize>, Vec<(Vec<i32>, f32)>)>,
     /// SLONIMSKY'S DIARY: the book's pattern open, the note it starts on (0 = C, as written), played backwards
     ln_at: usize,
     ln_root: i32,
@@ -3710,6 +3729,15 @@ impl App {
             si_pick: 0,
             si_kind: 0,
             si_kroot: 7,
+            tp_mode: 0,
+            tp_any: false,
+            tp_pick: 0,
+            tp_a: (2, 0),
+            tp_b: (4, 1),
+            tp_strings: 0,
+            tp_ex: 0,
+            tp_prog: 0,
+            tp_key: 0,
             pf_scale: "Ionian (Major)".to_string(),
             pf_root: 0,
             pf_sys: 0,
@@ -3759,6 +3787,7 @@ impl App {
             ar_tune: 0,
             cm_step: None,
             ln_backing: None,
+            ln_prog: None,
             ln_at: 0,
             ln_root: 0,
             ln_back: false,
@@ -4492,6 +4521,12 @@ impl App {
                 app.sec = Sec::Lines;
                 app.ln_tab = 3;
             }
+            // BACKLINE_TP_MODE=1: through the changes
+            Ok("triadpairs") => {
+                app.sec = Sec::Lines;
+                app.ln_tab = 6;
+                app.tp_mode = std::env::var("BACKLINE_TP_MODE").ok().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0).min(1);
+            }
             Ok("fingerings") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 1;
@@ -4532,7 +4567,7 @@ impl App {
                 app.sec = Sec::Lines;
                 // BACKLINE_LN_TAB=<tab number>: that LINES tab (5 = ATONAL)
                 if let Some(t) = std::env::var("BACKLINE_LN_TAB").ok().and_then(|s| s.parse::<u8>().ok()) {
-                    app.ln_tab = t.min(5);
+                    app.ln_tab = t.min(6);
                 }
             }
             Ok("atonal") => {
@@ -5553,24 +5588,50 @@ impl App {
         let bar = 4.0 * 60.0 / self.ln_bpm.max(20) as f32;
         let len = notes.len() as f32 * gap;
         let bars = (len / bar).ceil().max(1.0) as usize;
-        let back: Vec<i16> = match mode {
-            // the root, low, struck each bar so it never dies away
-            1 => band::sequence_sound(&vec![vec![chord[0] - 12]; bars], bar),
-            // the chord, strummed on the one of each bar
-            2 => band::sequence_sound(&vec![chord.clone(); bars], bar),
-            // the band on the chord
-            _ => {
-                let name = format!(
-                    "{}{}",
-                    theory::note_name(chord[0], lines::key_sharps(chord[0])),
-                    if chord.get(1).is_some_and(|t| t - chord[0] == 3) { "m7" } else { "6" }
-                );
-                let text = format!("T44 {}|", format!("| {} ", name).repeat(bars));
-                let chart = crate::chart::parse_friendly(&text);
-                let order: Vec<usize> = (0..chart.bars.len()).collect();
+        let back: Vec<i16> = match (mode, self.ln_prog.as_ref().filter(|p| !p.2.is_empty())) {
+            // over changes: the band plays the chart; the drone and the chord follow it, struck as each chord comes
+            (3, Some((text, order, _))) => {
+                let chart = crate::chart::parse_friendly(text);
                 let lv = [0, 1, 2].map(|i| if self.band_parts[i] { self.band_lv[i] } else { 0.0 });
-                band::render(&chart, &order, self.ln_bpm as f32, self.band_style, lv, false)
+                band::render(&chart, order, self.ln_bpm as f32, self.band_style, lv, false)
             }
+            (_, Some((_, _, chords))) => {
+                let beat = 60.0 / self.ln_bpm.max(20) as f32;
+                let mut mix: Vec<f32> = Vec::new();
+                let mut t = 0.0;
+                for (notes, beats) in chords {
+                    let d = beats * beat;
+                    let strike: Vec<i32> = if *mode == 1 { vec![notes[0] - 12] } else { notes.clone() };
+                    let at = (t * band::RATE) as usize;
+                    for (i, x) in band::sequence_sound(&[strike], d).into_iter().enumerate() {
+                        if mix.len() <= at + i {
+                            mix.resize(at + i + 1, 0.0);
+                        }
+                        mix[at + i] += x as f32;
+                    }
+                    t += d;
+                }
+                mix.into_iter().map(|x| x.clamp(-32768.0, 32767.0) as i16).collect()
+            }
+            (mode, None) => match mode {
+                // the root, low, struck each bar so it never dies away
+                1 => band::sequence_sound(&vec![vec![chord[0] - 12]; bars], bar),
+                // the chord, strummed on the one of each bar
+                2 => band::sequence_sound(&vec![chord.clone(); bars], bar),
+                // the band on the chord
+                _ => {
+                    let name = format!(
+                        "{}{}",
+                        theory::note_name(chord[0], lines::key_sharps(chord[0])),
+                        if chord.get(1).is_some_and(|t| t - chord[0] == 3) { "m7" } else { "6" }
+                    );
+                    let text = format!("T44 {}|", format!("| {} ", name).repeat(bars));
+                    let chart = crate::chart::parse_friendly(&text);
+                    let order: Vec<usize> = (0..chart.bars.len()).collect();
+                    let lv = [0, 1, 2].map(|i| if self.band_parts[i] { self.band_lv[i] } else { 0.0 });
+                    band::render(&chart, &order, self.ln_bpm as f32, self.band_style, lv, false)
+                }
+            },
         };
         // the two together; the line a little louder than what it sits on
         let n = line.len().max(back.len());

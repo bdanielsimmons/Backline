@@ -644,6 +644,7 @@ fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go
                 ("ARPEGGIOS", Lines(4)),
                 ("PENTATONICS & MORE", Lines(2)),
                 ("SUPERIMPOSE", Lines(3)),
+                ("TRIAD PAIRS", Lines(6)),
             ],
         ),
         ("CHORD MELODIES", vec![("SONGS", Melodies(0)), ("MOVES", Melodies(1))]),

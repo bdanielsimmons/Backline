@@ -652,16 +652,27 @@ impl App {
 
 pub(crate) use crate::si_core::*;
 
+/// A chord's notes counted from its root, each once, low to high (a major triad when the name isn't a chord).
+pub(crate) fn chord_rel(name: &str) -> Vec<i32> {
+    match theory::chord_notes(name) {
+        Some(n) => {
+            let mut v: Vec<i32> = n.pcs.iter().map(|p| (p - n.root).rem_euclid(12)).collect();
+            v.sort();
+            v.dedup();
+            v
+        }
+        None => vec![0, 4, 7],
+    }
+}
+
 impl App {
-    /// SUPERIMPOSE: a shape over a chord - the usual choices for it, or any shape you pick - with each note marked
-    /// a chord tone, a tension or a note to avoid, on the neck and the piano, and played over the chord.
-    pub(crate) fn superimpose(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Play a shape from another root over the chord. It can be a pentatonic, a triad or an arpeggio. Each note shows what it is over the chord: a chord tone, a tension (color), or a note to avoid landing on.", pal().ink2);
+    /// The chord to play over (SUPERIMPOSE and TRIAD PAIRS share it): its root, then its kind and which chord, as in
+    /// FIND A CHORD. Returns the root, the chord's suffix, its name, and its notes from the root.
+    pub(crate) fn si_chord_pick(&mut self, ui: &mut egui::Ui) -> (i32, &'static str, String, Vec<i32>) {
         let sharps = lines::key_sharps(self.si_root);
         if let Some(pc) = Self::note_row(ui, "CHORD ROOT", self.si_root, sharps) {
             self.si_root = pc;
         }
-        // the chord, as in FIND A CHORD: its kind, then which
         let fams: Vec<&str> = theory::FINDER_FAMILIES.iter().map(|f| f.0).collect();
         let fam = (self.si_fam as usize).min(fams.len() - 1);
         if let Some(i) = crate::choice_line(ui, "si_fam", "KIND", &fams, fam, 200.0) {
@@ -669,6 +680,7 @@ impl App {
             self.si_chord = 0;
             self.si_scale = 0;
             self.si_pick = 0;
+            self.tp_pick = 0;
         }
         let fam = (self.si_fam as usize).min(fams.len() - 1);
         let list = theory::FINDER_FAMILIES[fam].1;
@@ -680,19 +692,20 @@ impl App {
             self.si_chord = i as u8;
             self.si_scale = 0;
             self.si_pick = 0;
+            self.tp_pick = 0;
         }
         let ch = (self.si_chord as usize).min(list.len() - 1);
         let suffix = list[ch].1;
         let chord_name = format!("{}{}", theory::note_name(root, sharps), suffix);
-        let chord: Vec<i32> = match theory::chord_notes(&chord_name) {
-            Some(n) => {
-                let mut v: Vec<i32> = n.pcs.iter().map(|p| (p - n.root).rem_euclid(12)).collect();
-                v.sort();
-                v.dedup();
-                v
-            }
-            None => vec![0, 4, 7],
-        };
+        (root, suffix, chord_name.clone(), chord_rel(&chord_name))
+    }
+
+    /// SUPERIMPOSE: a shape over a chord - the usual choices for it, or any shape you pick - with each note marked
+    /// a chord tone, a tension or a note to avoid, on the neck and the piano, and played over the chord.
+    pub(crate) fn superimpose(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        para(ui, "Play a shape from another root over the chord. It can be a pentatonic, a triad or an arpeggio. Each note shows what it is over the chord: a chord tone, a tension (color), or a note to avoid landing on.", pal().ink2);
+        let (root, suffix, chord_name, chord) = self.si_chord_pick(ui);
+        let sharps = lines::key_sharps(root);
         // the chord's notes as they are (for naming each note over it: #11, \u{266D}13...)
         let chord_abs: Vec<i32> = chord.iter().map(|x| (root + x).rem_euclid(12)).collect();
         // the scale it is heard in: every one that fits, the usual first

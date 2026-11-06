@@ -1779,23 +1779,29 @@ mod tests {
         assert_eq!(lb["days"], la["days"]);
         assert_eq!(std::fs::read_dir(db.join("sync_backups")).unwrap().count(), 4);
         assert!(!da.join("sync_backups").exists(), "nothing on the PC was replaced");
-        // (the side that was called settles once the caller's last word is in)
-        for _ in 0..300 {
-            if !a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed) {
-                break;
+        // (the side that was called settles once the caller's last word is in: wait for it before changing files
+        // again, or its last write can land after the next change - a slow machine showed it)
+        let settle = || {
+            for _ in 0..300 {
+                if !a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
             }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(!a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed));
+            assert!(!a.dirty.load(Ordering::Relaxed) && !b.dirty.load(Ordering::Relaxed));
+        };
+        settle();
 
         // a tick on the PC goes across as it is (the PC calls this time)
         std::fs::write(da.join("plan_log.json"), "{\"2026-11-01\": [0, 1], \"2026-11-02\": [3], \"2026-11-03\": [2]}").unwrap();
         assert!(a.round(at(&b)).is_ok());
         assert_eq!(rd(&db, "plan_log.json"), rd(&da, "plan_log.json"));
+        settle();
         // an untick on the laptop goes across too (only one side changed)
         std::fs::write(db.join("plan_log.json"), "{\"2026-11-01\": [0], \"2026-11-02\": [3], \"2026-11-03\": [2]}").unwrap();
         assert!(b.round(at(&a)).is_ok());
         assert_eq!(json_of(&da, "plan_log.json")["2026-11-01"], json!([0]));
+        settle();
 
         // the plan changed on both: the newer wins, and the other is kept
         std::fs::write(da.join("plan.json"), "{\"name\": \"older\"}").unwrap();
@@ -1807,6 +1813,7 @@ mod tests {
         assert!(b.round(at(&a)).is_ok());
         assert_eq!(rd(&da, "plan.json"), "{\"name\": \"newer\"}");
         assert!(std::fs::read_dir(da.join("sync_backups")).unwrap().count() > kept);
+        settle();
 
         // a diary day added on each while apart: both kept
         let mut x = json_of(&da, "library.json");
@@ -1817,6 +1824,7 @@ mod tests {
         y["days"].as_array_mut().unwrap().push(json!({"date": "2026-11-05", "secs": {"Lines": 90}}));
         std::fs::write(db.join("library.json"), y.to_string()).unwrap();
         assert!(a.round(at(&b)).is_ok());
+        settle();
         let days = json_of(&db, "library.json")["days"].clone();
         assert_eq!(days.as_array().unwrap().len(), 3);
         assert_eq!(days, json_of(&da, "library.json")["days"]);
