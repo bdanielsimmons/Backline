@@ -772,9 +772,10 @@ fn list_row(
     // taken even when the row is off screen, so it never lands on the next one
     let heart = ROW_HEART.with(|h| h.take());
     let split = ROW_STEMS.with(|s| s.take());
+    let art = ROW_ART.with(|a| a.borrow_mut().take());
     let w = ui.available_width();
-    // (taller with the library's zoom)
-    let row_h = ROW_H * font::ui_scale();
+    // (taller with the library's zoom, and with a cover)
+    let row_h = if art.is_some() { ROW_ART_H } else { ROW_H } * font::ui_scale();
     let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, row_h));
     // rows sit flush, whatever gap the page puts between other things
     let flush = |ui: &mut egui::Ui| {
@@ -784,6 +785,13 @@ fn list_row(
         }
     };
     if !ui.is_rect_visible(probe) {
+        // (a cover a screen away is asked for already, so it is there when the row scrolls into view)
+        if let Some(url) = art.filter(|u| !u.is_empty()) {
+            let clip = ui.clip_rect();
+            if clip.expand2(Vec2::new(0.0, clip.height())).intersects(probe) {
+                ART_WANT.with(|w| w.borrow_mut().push(url));
+            }
+        }
         ui.allocate_space(Vec2::new(w, row_h));
         flush(ui);
         return None;
@@ -863,6 +871,11 @@ fn list_row(
             row_text(p, Pos2::new(x0 + 34.0, cy), Align::Max, &n.to_string(), 34.0, fg2);
         }
         tx = x0 + 44.0 * font::ui_scale();
+    }
+    if let Some(url) = &art {
+        let a = ART_PX * font::ui_scale();
+        row_cover(ui, Rect::from_min_size(Pos2::new(tx, cy - a / 2.0), Vec2::splat(a)), url);
+        tx += ART_W * font::ui_scale();
     }
     if left_has_cells {
         // cell layout shared with the column header
@@ -1014,6 +1027,8 @@ struct Images {
     map: HashMap<String, (Option<egui::TextureHandle>, Instant)>,
     requested: HashSet<String>,
     req: Sender<String>,
+    /// the rows' covers ("thumb:...") waiting to load
+    thumbs: Thumbs,
     /// average colour of the top and bottom half of each cover, for the art-view gradient
     avg: HashMap<String, [Color32; 2]>,
     /// per place a cover is shown (album view, player): the cover on show, the one it is fading from, and when
@@ -1036,7 +1051,13 @@ impl Images {
             return tex.as_ref().map(|h| h.id());
         }
         if self.requested.insert(url.to_string()) {
-            let _ = self.req.send(url.to_string());
+            if url.starts_with("thumb:") {
+                let (m, cv) = &*self.thumbs;
+                m.lock().unwrap_or_else(|e| e.into_inner()).push(url.to_string());
+                cv.notify_one();
+            } else {
+                let _ = self.req.send(url.to_string());
+            }
         }
         None
     }
@@ -1105,6 +1126,63 @@ fn cover_path(url: &str) -> std::path::PathBuf {
     api::config_dir().join("covers").join(format!("{:016x}", h))
 }
 
+/// A picture, from its address: "thumb:" a row's cover (small and square), "gray:" in black and white, "file:" from a
+/// song file (or its folder), "img:" a file on this computer, else the web (kept on disk once fetched, so covers show
+/// offline too).
+fn picture(api: &Api, url: &str) -> Option<egui::ColorImage> {
+    let (thumb, url) = match url.strip_prefix("thumb:") {
+        Some(u) => (true, u),
+        None => (false, url),
+    };
+    let (gray, real) = match url.strip_prefix("gray:") {
+        Some(u) => (true, u),
+        None => (false, url),
+    };
+    let bytes = match real.strip_prefix("file:") {
+        Some(path) => sources::file_art(std::path::Path::new(path)),
+        None if real.starts_with("img:") => std::fs::read(&real[4..]).ok(),
+        None => {
+            let kept = cover_path(real);
+            match std::fs::read(&kept).ok().filter(|b| b.len() > 100) {
+                Some(b) => Some(b),
+                None => {
+                    let b = api.fetch(real).ok();
+                    if let Some(b) = &b {
+                        if let Some(d) = kept.parent() {
+                            let _ = std::fs::create_dir_all(d);
+                        }
+                        let _ = std::fs::write(&kept, b);
+                    }
+                    b
+                }
+            }
+        }
+    };
+    bytes.and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
+        let im = if thumb {
+            // a row's cover: square and small. A video's picture has black bands above and below its 16:9 frame:
+            // those go first, then the middle of it is taken
+            let im = if real.contains("ytimg.com") && im.height() * 4 == im.width() * 3 {
+                let band = im.width() * 9 / 16;
+                im.crop_imm(0, (im.height() - band) / 2, im.width(), band)
+            } else {
+                im
+            };
+            let s = im.width().min(im.height());
+            im.crop_imm((im.width() - s) / 2, (im.height() - s) / 2, s, s).thumbnail(96, 96)
+        } else if im.width().max(im.height()) > 800 {
+            // covers are only ever drawn up to a few hundred pixels: kept small, not at the file's full size
+            im.thumbnail(800, 800)
+        } else {
+            im
+        };
+        let im = if gray { im.grayscale() } else { im };
+        let rgba = im.to_rgba8();
+        let size = [rgba.width() as usize, rgba.height() as usize];
+        egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw())
+    })
+}
+
 fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<String> {
     let (req_tx, req_rx) = channel::<String>();
     let req_rx = Arc::new(Mutex::new(req_rx));
@@ -1118,45 +1196,41 @@ fn spawn_image_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Sender<Str
                 Ok(u) => u,
                 Err(_) => break,
             };
-            let (gray, real) = match url.strip_prefix("gray:") {
-                Some(u) => (true, u.to_string()),
-                None => (false, url.clone()),
-            };
-            // a file's cover comes from the file (or its folder); the rest from the web
-            // (a picture from the web is kept on disk once fetched: covers show offline too)
-            let bytes = match real.strip_prefix("file:") {
-                Some(path) => sources::file_art(std::path::Path::new(path)),
-                None if real.starts_with("img:") => std::fs::read(&real[4..]).ok(),
-                None => {
-                    let kept = cover_path(&real);
-                    match std::fs::read(&kept).ok().filter(|b| b.len() > 100) {
-                        Some(b) => Some(b),
-                        None => {
-                            let b = api.fetch(&real).ok();
-                            if let Some(b) = &b {
-                                if let Some(d) = kept.parent() {
-                                    let _ = std::fs::create_dir_all(d);
-                                }
-                                let _ = std::fs::write(&kept, b);
-                            }
-                            b
-                        }
-                    }
-                }
-            };
-            let img = bytes.and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
-                // covers are only ever drawn up to a few hundred pixels: kept small, not at the file's full size
-                let im = if im.width().max(im.height()) > 800 { im.thumbnail(800, 800) } else { im };
-                let im = if gray { im.grayscale() } else { im };
-                let rgba = im.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw())
-            });
+            let img = picture(&api, &url);
             let _ = tx.send(Msg::Img(url, img));
             ctx.request_repaint();
         });
     }
     req_tx
+}
+
+/// The rows' covers waiting to load: the last asked for first (where the list is now, not where it was scrolled
+/// past), on two threads of their own so the big covers never wait behind them.
+type Thumbs = Arc<(Mutex<Vec<String>>, std::sync::Condvar)>;
+
+fn spawn_thumb_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) -> Thumbs {
+    let q: Thumbs = Arc::new((Mutex::new(Vec::new()), std::sync::Condvar::new()));
+    for _ in 0..2 {
+        let (q, tx, api, ctx) = (q.clone(), tx.clone(), api.clone(), ctx.clone());
+        std::thread::spawn(move || loop {
+            let url = {
+                let (m, cv) = &*q;
+                let mut v = m.lock().unwrap_or_else(|e| e.into_inner());
+                loop {
+                    match v.pop() {
+                        Some(u) => break u,
+                        None => v = cv.wait(v).unwrap_or_else(|e| e.into_inner()),
+                    }
+                }
+            };
+            let img = picture(&api, &url);
+            if tx.send(Msg::Img(url, img)).is_err() {
+                break;
+            }
+            ctx.request_repaint();
+        });
+    }
+    q
 }
 
 /// Texture for a cover, optionally the black-and-white version (falls back to colour while it loads).
@@ -1208,6 +1282,13 @@ fn paint_record(p: &egui::Painter, rect: Rect, spin: Option<f32>) {
 
 /// Covers shown as records instead of squares (click a cover to switch). Saved in the settings.
 static VINYL: AtomicBool = AtomicBool::new(false);
+
+/// Covers beside the songs in track lists (the switch at the left of their header). Saved in the settings.
+static ROW_ARTS: AtomicBool = AtomicBool::new(true);
+
+pub(crate) fn row_arts_on() -> bool {
+    ROW_ARTS.load(Ordering::Relaxed)
+}
 
 /// How far the record has turned: it spins up to 33 1/3 rpm times the playback speed (`speed`, 0 = stopped)
 /// and coasts to a stop on pause.
@@ -1374,6 +1455,57 @@ thread_local! {
     static HEART_HIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// set just before `list_row` when that row's song is split into stems
     static ROW_STEMS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// set just before `list_row`: the row's cover (a picture's address; "" none) to show at its left
+    static ROW_ART: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// the rows' covers asked for this frame (on screen, or a screen away), and from last frame's, those ready to
+    /// draw (None: there is no picture)
+    static ART_WANT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    static ART_TEX: std::cell::RefCell<HashMap<String, Option<egui::TextureId>>> = std::cell::RefCell::new(HashMap::new());
+}
+
+/// A track row's height with covers on, the cover's size, and the room it takes at the row's left.
+const ROW_ART_H: f32 = 40.0;
+const ART_PX: f32 = 32.0;
+const ART_W: f32 = 42.0;
+
+/// Give the next `list_row` a cover at its left, when covers are on (`cover` as a track keeps it: a Tidal picture's
+/// id, a web address or "file:<path>"; empty for none).
+pub(crate) fn row_art(cover: &str) {
+    if row_arts_on() {
+        let url = if cover.is_empty() { String::new() } else { format!("thumb:{}", cover_url(cover, 80)) };
+        ROW_ART.with(|a| *a.borrow_mut() = Some(url));
+    }
+}
+
+/// A row's cover: the picture once it has come in (loaded in the background), a quiet square till then, the gem when
+/// there is none.
+fn row_cover(ui: &egui::Ui, r: Rect, url: &str) {
+    let tex = if url.is_empty() {
+        Some(None)
+    } else {
+        ART_WANT.with(|w| w.borrow_mut().push(url.to_string()));
+        ART_TEX.with(|t| t.borrow().get(url).copied())
+    };
+    match tex {
+        Some(Some(id)) => {
+            egui::Image::new(egui::load::SizedTexture::new(id, r.size())).rounding(Rounding::same(3.0)).paint_at(ui, r);
+        }
+        Some(None) => paint_record(ui.painter(), r, None),
+        None => {
+            ui.painter().rect_filled(r, Rounding::same(3.0), Color32::from_black_alpha(45));
+        }
+    }
+}
+
+/// The covers drawing rows asked for: an icon of a picture (the switch in a track list's header).
+fn picture_icon(p: &egui::Painter, c: Pos2, col: Color32) {
+    let r = Rect::from_center_size(c, Vec2::new(14.0, 11.0));
+    let s = Stroke::new(1.3f32, col);
+    p.rect_stroke(r, 1.5, s);
+    p.line_segment([Pos2::new(r.min.x + 2.0, r.max.y - 2.0), Pos2::new(r.min.x + 6.0, r.min.y + 5.0)], s);
+    p.line_segment([Pos2::new(r.min.x + 6.0, r.min.y + 5.0), Pos2::new(r.min.x + 9.0, r.max.y - 3.0)], s);
+    p.line_segment([Pos2::new(r.min.x + 8.0, r.min.y + 7.0), Pos2::new(r.max.x - 2.0, r.max.y - 2.0)], s);
+    p.circle_filled(Pos2::new(r.max.x - 3.5, r.min.y + 3.5), 1.4, col);
 }
 
 /// Mark the next `list_row` when its song has stems.
@@ -1461,7 +1593,8 @@ fn cards_header(ui: &mut egui::Ui, right: &str) {
 }
 
 /// Header row over a track list; right-click it to choose the columns.
-fn col_header(ui: &mut egui::Ui, numbered: bool) {
+/// `art`: the rows below have covers (room kept for them; the switch at the left turns them on and off).
+fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0 * font::ui_scale()), Sense::hover());
     // it stays at the top while the list scrolls (and is clicked where it shows)
@@ -1469,11 +1602,25 @@ fn col_header(ui: &mut egui::Ui, numbered: bool) {
     let resp = ui.interact(rect, ui.id().with("col_head_hit"), Sense::click());
     fill_rect(&painter, rect, pal().edge);
     let cy = rect.center().y;
-    let tx = rect.min.x + 8.0 + if numbered { 44.0 * font::ui_scale() } else { 0.0 };
+    let tx = rect.min.x
+        + 8.0
+        + if numbered { 44.0 * font::ui_scale() } else { 0.0 }
+        + if art { ART_W * font::ui_scale() } else { 0.0 };
     let avail = (rect.max.x - 10.0 - right_w() - tx).max(40.0);
     let cw = col_widths(avail);
     let p = &painter;
-    ui_text(p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, if numbered { "#" } else { "" }, 2.0, 400.0, pal().trim);
+    if numbered {
+        // covers on or off: a little picture, lit when they're on
+        let on = row_arts_on();
+        let ir = Rect::from_center_size(Pos2::new(rect.min.x + 18.0, cy), Vec2::new(24.0, rect.height()));
+        let ihit = ui.interact(ir, ui.id().with("col_head_art"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let col = if ihit.hovered() { pal().ink } else if on { pal().trim } else { pal().trim.gamma_multiply(0.45) };
+        picture_icon(p, ir.center(), col);
+        if ihit.tip(if on { "Covers on. Click to hide them." } else { "Covers off. Click to show them." }).clicked() {
+            ROW_ARTS.store(!on, Ordering::Relaxed);
+            COLS_CHANGED.store(true, Ordering::Relaxed);
+        }
+    }
     if col_on(3) {
         let sc = font::ui_scale();
         let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
@@ -1521,6 +1668,11 @@ fn col_header(ui: &mut egui::Ui, numbered: bool) {
                 COLS_CHANGED.store(true, Ordering::Relaxed);
             }
         }
+        let on = row_arts_on();
+        if menu_item(ui, if on { "[x] COVERS" } else { "[ ] COVERS" }) {
+            ROW_ARTS.store(!on, Ordering::Relaxed);
+            COLS_CHANGED.store(true, Ordering::Relaxed);
+        }
     });
 }
 
@@ -1542,11 +1694,17 @@ fn tracks_list(
     own: Option<&str>,
     acts: &mut Vec<Action>,
 ) {
-    col_header(ui, true);
+    // covers beside the songs (not on an album's own page: they would all be the same one)
+    let one_album = tracks.len() > 1 && tracks.iter().all(|t| t.cover == tracks[0].cover);
+    let art = row_arts_on() && !one_album;
+    col_header(ui, true, art);
     for (i, t) in tracks.iter().enumerate() {
         let state = if playing_id == Some(t.id) { RowState::Playing } else { RowState::Normal };
         row_heart(liked.contains(&t.id));
         row_stems(t.id);
+        if art {
+            row_art(&t.cover);
+        }
         let r = list_row(
             ui,
             i,
@@ -2467,6 +2625,14 @@ struct App {
     /// art view caption: size (0 small, 1 medium, 2 large) and soft black text on a light plate instead of soft white
     cap_size: u8,
     cap_dark: bool,
+    /// what Now Playing shows of the song: 0 art and info (with visuals in place of the cover, a small cover fades in
+    /// over the words when the mouse moves or a song starts), 1 info only, 2 nothing
+    cap_show: u8,
+    /// that small cover: how far in (0..1), when it was last called up, for which song; when the choice was changed
+    cap_art: f32,
+    cap_art_at: f64,
+    cap_song: i64,
+    cap_mode_at: f64,
     /// the album view's background colours as shown, easing toward the new cover's
     bg_now: Option<[Color32; 2]>,
     /// the sound output chosen in Preferences (None = the system default), and the outputs last found
@@ -3302,12 +3468,13 @@ impl App {
         let (tx, rx) = channel();
         let ctx = cc.egui_ctx.clone();
         let req = spawn_image_pool(api.clone(), tx.clone(), ctx.clone());
+        let thumbs = spawn_thumb_pool(api.clone(), tx.clone(), ctx.clone());
         let mut app = App {
             api,
             tx,
             rx,
             ctx,
-            images: Images { map: HashMap::new(), requested: HashSet::new(), req, avg: HashMap::new(), hold: HashMap::new() },
+            images: Images { map: HashMap::new(), requested: HashSet::new(), req, thumbs, avg: HashMap::new(), hold: HashMap::new() },
             _font_tex: font_tex,
             auth: Auth::LoggedOut,
             login_code: None,
@@ -3401,6 +3568,11 @@ impl App {
             art_border: 1,
             cap_size: 1,
             cap_dark: false,
+            cap_show: 0,
+            cap_art: 0.0,
+            cap_art_at: 0.0,
+            cap_song: 0,
+            cap_mode_at: -10.0,
             bg_now: None,
             out_device: None,
             sys_output: String::new(),
@@ -3963,7 +4135,7 @@ impl App {
         app.prefer_lossless = true;
         app.vis_np = st["vis_np"].as_bool().unwrap_or(false);
         if let Some(v) = st["vis_preset"].as_str() {
-            app.vis_preset = visuals::find(v);
+            app.vis_preset = visuals::offered(visuals::find(v));
         }
         if let Some(m) = st["vis_idle"].as_u64() {
             app.vis_idle = m as u32;
@@ -4102,6 +4274,9 @@ impl App {
         }
         if let Some(b) = st["cap_dark"].as_bool() {
             app.cap_dark = b;
+        }
+        if let Some(b) = st["cap_show"].as_u64() {
+            app.cap_show = (b as u8).min(2);
         }
         if let Some(b) = st["art_border"].as_u64() {
             app.art_border = (b as u8).min(2);
@@ -4258,6 +4433,9 @@ impl App {
         }
         if let Some(v) = st["vinyl"].as_bool() {
             VINYL.store(v, Ordering::Relaxed);
+        }
+        if let Some(v) = st["row_art"].as_bool() {
+            ROW_ARTS.store(v, Ordering::Relaxed);
         }
         if let Some(w) = st["col_w"].as_array() {
             let w: Vec<f32> = w.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
@@ -4742,6 +4920,7 @@ impl App {
             "art_border": self.art_border,
             "cap_size": self.cap_size,
             "cap_dark": self.cap_dark,
+            "cap_show": self.cap_show,
             "out_device": self.out_device,
             "viz": [self.viz[0].save(), self.viz[1].save()],
             "lyrics": self.show_lyrics,
@@ -4788,6 +4967,7 @@ impl App {
             "cols": COLS.load(Ordering::Relaxed),
             "cols_v": 2,
             "vinyl": VINYL.load(Ordering::Relaxed),
+            "row_art": ROW_ARTS.load(Ordering::Relaxed),
             "col_w": *COL_W.lock().unwrap(),
             "loops": self.loops.iter().map(|(k, v)| (k.to_string(), serde_json::json!([v.0, v.1]))).collect::<serde_json::Map<String, serde_json::Value>>(),
         });
@@ -6654,6 +6834,23 @@ impl eframe::App for App {
             }
         }
         self.drain(ctx);
+        // the covers the rows asked for last frame: ready to draw this one (or known to have no picture)
+        let wants: Vec<String> = ART_WANT.with(|w| std::mem::take(&mut *w.borrow_mut()));
+        let mut ready: HashMap<String, Option<egui::TextureId>> = HashMap::new();
+        for u in wants {
+            if !ready.contains_key(&u) {
+                match self.images.get(&u) {
+                    Some(id) => {
+                        ready.insert(u, Some(id));
+                    }
+                    None if self.images.failed(&u) => {
+                        ready.insert(u, None);
+                    }
+                    None => {}
+                }
+            }
+        }
+        ART_TEX.with(|t| *t.borrow_mut() = ready);
         // the visuals' own window, while it is open (it draws on a thread of its own)
         self.pop_frame(ctx);
         let mut acts: Vec<Action> = Vec::new();
@@ -7279,6 +7476,14 @@ impl eframe::App for App {
                     let tracks = p.tracks.clone();
                     std::thread::spawn(move || crate::api::save_liked(&tracks));
                 }
+            }
+        }
+        // covers rows asked for that weren't drawn: asked for now, and one more frame when they are in already
+        let more: Vec<String> =
+            ART_WANT.with(|w| ART_TEX.with(|t| w.borrow().iter().filter(|u| !t.borrow().contains_key(*u)).cloned().collect()));
+        for u in more {
+            if self.images.get(&u).is_some() || self.images.failed(&u) {
+                ctx.request_repaint();
             }
         }
         // (out of sight, a playing song needs no clock or spectrum drawn: the player says when it ends)

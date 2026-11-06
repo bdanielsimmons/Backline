@@ -176,8 +176,7 @@ struct Asked {
 impl Asked {
     /// Another preset, `by` steps on from `preset` (or from the one just picked).
     fn step(&mut self, preset: usize, by: usize) {
-        let n = PRESETS.len();
-        self.picked = Some((self.picked.unwrap_or(preset).min(n - 1) + by) % n);
+        self.picked = Some(visuals::next_shown(self.picked.unwrap_or(preset), by));
     }
 }
 
@@ -216,8 +215,8 @@ fn ui(ctx: &egui::Context, own: &mut Own, now: &Now, pin: bool, seen: bool, t: f
             let (f, dt) = own.music(now, viz, t);
             let preset = visuals::resolve(now.preset.min(PRESETS.len() - 1), f.t);
             let p = ui.painter().with_clip_rect(r);
-            visuals::paint_preset(&p, r, SLOT, preset, f, dt, t, &own.gl, &mut own.pipes, &mut own.stars, |world, look| {
-                visuals::hear(viz, ctl, now.song, t, world, look)
+            visuals::paint_preset(&p, r, SLOT, preset, f, dt, t, &own.gl, &mut own.pipes, &mut own.stars, || {
+                visuals::hear(viz, ctl, now.song, t)
             });
         }
         if body.drag_started() {

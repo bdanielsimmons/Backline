@@ -8,7 +8,6 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use eframe::egui_glow;
 use eframe::glow::{self, HasContext};
-use crate::terrain::World;
 use std::sync::{Arc, Mutex};
 
 /// A preset: its group in the menu, its name, and how it's drawn.
@@ -28,10 +27,9 @@ pub(crate) enum Kind {
     Random(Option<&'static str>),
     Pipes,
     Stars,
-    /// 3D (ui/terrain.rs): a world (the terrain, a cavern, a canyon) in one of its looks, or (None) a different look
-    /// for each song.
-    Terrain(World, Option<usize>),
-    /// 3D (ui/wave.rs): the wave, a sheet of light drifting across.
+    /// 3D (ui/terrain.rs): the terrain the music builds as the camera glides over it.
+    Terrain,
+    /// 3D (ui/wave.rs): the wave, a sheet of light drifting across. Kept, but not offered (see `hidden`).
     Wave,
 }
 
@@ -214,19 +212,9 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset { group: "Milk", name: "Plasma", kind: Kind::Gpu(PLASMA) },
     Preset { group: "Milk", name: "Tornado", kind: Kind::Gpu(TORNADO) },
     Preset { group: "Milk", name: "Smoke Rings", kind: Kind::Gpu(SMOKE) },
-    // ---- 3D (the terrain's looks in assets/terrain_looks.bin, in order)
+    // ---- 3D
     Preset { group: "3D", name: "Wave", kind: Kind::Wave },
-    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain(World::Exact, None) },
-    Preset { group: "3D", name: "Experimental Terrain", kind: Kind::Terrain(World::Terrain, None) },
-    Preset { group: "3D", name: "Cavern", kind: Kind::Terrain(World::Cavern, None) },
-    Preset { group: "3D", name: "Canyon", kind: Kind::Terrain(World::Canyon, None) },
-    Preset { group: "3D", name: "Rose Terrain", kind: Kind::Terrain(World::Terrain, Some(0)) },
-    Preset { group: "3D", name: "Blue Terrain", kind: Kind::Terrain(World::Terrain, Some(1)) },
-    Preset { group: "3D", name: "Meadow Terrain", kind: Kind::Terrain(World::Terrain, Some(2)) },
-    Preset { group: "3D", name: "Night Terrain", kind: Kind::Terrain(World::Terrain, Some(3)) },
-    Preset { group: "3D", name: "Sepia Terrain", kind: Kind::Terrain(World::Terrain, Some(4)) },
-    Preset { group: "3D", name: "Amber Terrain", kind: Kind::Terrain(World::Terrain, Some(5)) },
-    Preset { group: "3D", name: "Aurora Terrain", kind: Kind::Terrain(World::Terrain, Some(6)) },
+    Preset { group: "3D", name: "Terrain", kind: Kind::Terrain },
     // ---- screensavers
     Preset { group: "Screensavers", name: "3D Pipes", kind: Kind::Pipes },
     Preset { group: "Screensavers", name: "Starfield", kind: Kind::Stars },
@@ -245,14 +233,43 @@ pub(crate) fn group_title(g: &str) -> &str {
     }
 }
 
-/// A preset by name, as saved ("Group: Name", or an older plain name); Down the Drain when unknown.
+/// A preset by name, as saved ("Group: Name", or an older plain name); a 3D one no longer kept (Cavern, Canyon, the
+/// terrain's colours) is the Terrain; Down the Drain when unknown.
 pub(crate) fn find(name: &str) -> usize {
     let (g, n) = name.split_once(": ").unwrap_or(("", name));
+    let by_name = |want: &str| PRESETS.iter().position(|p| p.name == want).unwrap_or(0);
     PRESETS
         .iter()
         .position(|p| p.name.eq_ignore_ascii_case(n) && (g.is_empty() || p.group == g))
         .or_else(|| PRESETS.iter().position(|p| p.name.eq_ignore_ascii_case(n)))
-        .unwrap_or_else(|| PRESETS.iter().position(|p| p.name == "Down the Drain").unwrap_or(0))
+        .unwrap_or_else(|| by_name(if g == "3D" { "Terrain" } else { "Down the Drain" }))
+}
+
+/// Kept in the code but not offered: in no menu, and passed over by the arrows.
+pub(crate) fn hidden(i: usize) -> bool {
+    matches!(PRESETS[i.min(PRESETS.len() - 1)].kind, Kind::Wave)
+}
+
+/// What a saved choice shows: itself, or the Terrain in place of one not offered.
+pub(crate) fn offered(i: usize) -> usize {
+    if hidden(i) {
+        find("3D: Terrain")
+    } else {
+        i.min(PRESETS.len() - 1)
+    }
+}
+
+/// The preset `by` steps on from `i` (`PRESETS.len() - 1` steps back one), passing over those not offered.
+pub(crate) fn next_shown(i: usize, by: usize) -> usize {
+    let n = PRESETS.len();
+    let mut j = i.min(n - 1);
+    for _ in 0..n {
+        j = (j + by) % n;
+        if !hidden(j) {
+            return j;
+        }
+    }
+    i
 }
 
 /// How a preset is saved: "Group: Name" (several groups have a Random).
@@ -267,7 +284,7 @@ pub(crate) fn resolve(i: usize, t: f32) -> usize {
     let pool: Vec<usize> = (0..PRESETS.len())
         .filter(|&j| match PRESETS[j].kind {
             // (the terrain takes a while to build: never a twenty-second stop in a round)
-            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain(..) | Kind::Wave => false,
+            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain | Kind::Wave => false,
             _ => g.map_or(true, |g| PRESETS[j].group == g),
         })
         .collect();
@@ -794,8 +811,8 @@ fn paint_wave(p: &egui::Painter, rect: Rect, slot: u8, f: Frame, t: f64, state: 
     p.add(egui::PaintCallback { rect, callback: Arc::new(cb) });
 }
 
-/// `preset` in `r`, into the slot's own pictures (as `paint_gpu`); `hear` says what the 3D worlds hear, asked only by
-/// them.
+/// `preset` in `r`, into the slot's own pictures (as `paint_gpu`); `hear` says what the terrain hears, asked only by
+/// it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_preset(
     p: &egui::Painter,
@@ -808,40 +825,31 @@ pub(crate) fn paint_preset(
     gl: &Arc<Mutex<Gl>>,
     pipes: &mut Pipes,
     stars: &mut Stars,
-    hear: impl FnOnce(World, Option<usize>) -> crate::terrain::Input,
+    hear: impl FnOnce() -> crate::terrain::Input,
 ) {
     match PRESETS[preset].kind {
         Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(p, r, slot, preset, f, gl, None),
-        Kind::Terrain(world, look) => paint_gpu(p, r, slot, preset, f, gl, Some(Arc::new(hear(world, look)))),
+        Kind::Terrain => paint_gpu(p, r, slot, preset, f, gl, Some(Arc::new(hear()))),
         Kind::Wave => paint_wave(p, r, slot, f, t, gl),
         Kind::Pipes => pipes.draw(p, r, dt, f.bass),
         Kind::Stars => stars.draw(p, r, dt, f.bass),
     }
 }
 
-/// What the 3D worlds hear and see at time `t`: the player's latest samples, the song as it plays (for reading it
+/// What the terrain hears and sees at time `t`: the player's latest samples, the song as it plays (for reading it
 /// ahead of what is heard), and `song`, a number that changes with it.
-pub(crate) fn hear(
-    viz: &Mutex<crate::player::Viz>,
-    ctl: &crate::player::Ctl,
-    song: u64,
-    t: f64,
-    world: World,
-    theme: Option<usize>,
-) -> crate::terrain::Input {
+pub(crate) fn hear(viz: &Mutex<crate::player::Viz>, ctl: &crate::player::Ctl, song: u64, t: f64) -> crate::terrain::Input {
     let (samples, first, rate, file) = match viz.lock() {
         Ok(v) => (v.samples.clone(), v.first.clone(), v.rate as f32, v.song.clone()),
         Err(_) => (Vec::new(), Vec::new(), 44100.0, None),
     };
     let music = file.map(|file| crate::terrain::Music { file, at: ctl.pos() as f64, speed: ctl.speed(), ab: ctl.ab() });
-    // (test switches BACKLINE_3D_LOOK=<n>: that look of the world; BACKLINE_3D_EVERY=<seconds>: a new phase that
-    // often, as if the song changed)
-    let theme = theme.or_else(|| std::env::var("BACKLINE_3D_LOOK").ok().and_then(|v| v.parse().ok()));
+    // (test switch BACKLINE_3D_EVERY=<seconds>: a new group of sets that often, as if the song changed)
     let song = match std::env::var("BACKLINE_3D_EVERY").ok().and_then(|v| v.parse::<f64>().ok()) {
         Some(s) if s > 0.0 => song.wrapping_add((t / s) as u64),
         _ => song,
     };
-    crate::terrain::Input { t, samples, first, rate, song, world, theme, music }
+    crate::terrain::Input { t, samples, first, rate, song, music }
 }
 
 /// A preset as "Group: Name" (a random one also says what it is showing at time `t`).
@@ -1158,7 +1166,7 @@ impl App {
         let song = self.cur_track().map_or(0, |t| t.id as u64);
         let (viz, ctl) = (&self.player.viz, &self.player.ctl);
         let (pipes, stars) = (&mut self.vis_pipes, &mut self.vis_stars);
-        paint_preset(&p, r, slot, preset, f, dt, t, &self.vis_gl, pipes, stars, |world, look| hear(viz, ctl, song, t, world, look));
+        paint_preset(&p, r, slot, preset, f, dt, t, &self.vis_gl, pipes, stars, || hear(viz, ctl, song, t));
         ui.ctx().request_repaint();
     }
 
@@ -1173,7 +1181,7 @@ impl App {
         crate::views::dim_line(ui, &self.vis_name(), 1.6, crate::pal().ink);
         ui.separator();
         for g in GROUPS {
-            let only: Vec<usize> = (0..PRESETS.len()).filter(|&i| PRESETS[i].group == *g).collect();
+            let only: Vec<usize> = (0..PRESETS.len()).filter(|&i| PRESETS[i].group == *g && !hidden(i)).collect();
             if only.len() == 1 {
                 let i = only[0];
                 let mark = if i == self.vis_preset { "* " } else { "  " };
@@ -1187,7 +1195,7 @@ impl App {
             let title = group_title(g);
             let mark = if PRESETS[self.vis_preset].group == *g { "* " } else { "  " };
             crate::sub_menu(ui, &format!("{}{}", mark, title), |ui| {
-                for (i, p) in PRESETS.iter().enumerate().filter(|(_, p)| p.group == *g) {
+                for (i, p) in PRESETS.iter().enumerate().filter(|(i, p)| p.group == *g && !hidden(*i)) {
                     let mark = if i == self.vis_preset { "* " } else { "  " };
                     if crate::menu_item(ui, &format!("{}{}", mark, p.name)) {
                         self.vis_preset = i;
@@ -1326,7 +1334,7 @@ impl App {
                 if h.hovered() { Color32::WHITE } else { Color32::from_white_alpha(170) },
             );
             if h.clicked() {
-                self.vis_preset = (self.vis_preset + by) % n;
+                self.vis_preset = next_shown(self.vis_preset, by);
                 self.dirty = true;
             }
         }

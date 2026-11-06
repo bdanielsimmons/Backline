@@ -275,7 +275,7 @@ pub struct Version {
 }
 
 /// A file's cover: the picture inside it (or beside it), found by the image loader from "file:<path>".
-fn file_cover(kind: &str, src: &str, cover: &str) -> String {
+pub fn file_cover(kind: &str, src: &str, cover: &str) -> String {
     if kind == "file" && cover.is_empty() {
         format!("file:{}", src)
     } else {

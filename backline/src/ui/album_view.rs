@@ -5,6 +5,9 @@ use crate::extras::Knob;
 use crate::tools::F_SPEED;
 use crate::views::label;
 
+/// What Now Playing can show of the song (`App.cap_show`).
+const CAP_SHOW: [&str; 3] = ["ART AND INFO", "INFO ONLY", "NOTHING"];
+
 impl App {
     pub(crate) fn art_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let full = ui.max_rect();
@@ -281,8 +284,18 @@ impl App {
 
         }
 
-        // ---- caption
-        if let Some(tr) = &track {
+        // ---- caption (as chosen: art and info, info only, or nothing)
+        let now = ui.input(|i| i.time);
+        let said = (2.0 - (now - self.cap_mode_at) as f32).clamp(0.0, 1.0);
+        if said > 0.0 {
+            let label = format!("SHOWING: {}", CAP_SHOW[self.cap_show.min(2) as usize]);
+            let w = crate::text_w(&label, 1.2) + 32.0;
+            let bar = Rect::from_center_size(Pos2::new(art_zone.center().x, art_zone.max.y - caption_h - 40.0), Vec2::new(w, 28.0));
+            p.rect_filled(bar, 14.0, Color32::from_black_alpha((170.0 * said) as u8));
+            crate::ptext(&p, bar.center(), Align::Center, &label, 1.2, Color32::from_white_alpha((235.0 * said) as u8));
+            ui.ctx().request_repaint();
+        }
+        if let Some(tr) = track.as_ref().filter(|_| self.cap_show < 2) {
             let cx = art_zone.center().x;
             let k = cap_k;
             let y0 = art_zone.max.y - caption_h + 14.0 * k;
@@ -307,6 +320,39 @@ impl App {
             );
             ptext_fit(&p, Pos2::new(cx, y0), Align::Center, &tr.title, 3.0 * k, w, ink);
             ptext_fit(&p, Pos2::new(cx, y0 + 30.0 * k), Align::Center, &sub, 2.0 * k, w, ink.gamma_multiply(0.85));
+            // with visuals in place of the cover: a small cover over the words, called up by a new song or the mouse
+            // moving, coming in slowly, staying while the mouse moves and 4 seconds after, then slowly going
+            if self.cap_show == 0 && self.vis_in_np() {
+                if self.cap_song != tr.id {
+                    self.cap_song = tr.id;
+                    self.cap_art_at = now;
+                }
+                if ui.rect_contains_pointer(full) && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
+                    self.cap_art_at = now;
+                }
+                let up = now - self.cap_art_at < 4.0;
+                self.cap_art = if up { (self.cap_art + dt / 1.2).min(1.0) } else { (self.cap_art - dt / 2.0).max(0.0) };
+                if up || self.cap_art > 0.0 {
+                    ui.ctx().request_repaint();
+                }
+                let f = self.cap_art * self.cap_art * (3.0 - 2.0 * self.cap_art);
+                if let (true, Some(id)) = (f > 0.0, tex) {
+                    let s = (120.0 * k).min(plate.min.y - art_zone.min.y - 24.0).max(48.0);
+                    let r = Rect::from_center_size(Pos2::new(cx, plate.min.y - 14.0 - s / 2.0), Vec2::splat(s));
+                    // a soft shadow under it
+                    for g in 1..=6 {
+                        let e = g as f32 * 2.0;
+                        p.rect_filled(r.expand(e), Rounding::same(8.0 + e), Color32::from_black_alpha((14.0 * f) as u8));
+                    }
+                    let tint = Color32::from_white_alpha((255.0 * f) as u8);
+                    egui::Image::new(egui::load::SizedTexture::new(id, r.size()))
+                        .rounding(Rounding::same(8.0))
+                        .tint(tint)
+                        .paint_at(ui, r);
+                }
+            } else {
+                self.cap_art = 0.0;
+            }
             // right-click: text size and colour
             ui.interact(plate, ui.id().with("caption"), Sense::click()).context_menu(|ui| {
                 for (i, name) in ["SMALL", "MEDIUM", "LARGE"].iter().enumerate() {
@@ -321,6 +367,15 @@ impl App {
                     let mark = if self.cap_dark == dark { "> " } else { "   " };
                     if menu_item(ui, &format!("{}COLOR: {}", mark, name)) {
                         self.cap_dark = dark;
+                        self.dirty = true;
+                        ui.close_menu();
+                    }
+                }
+                for (i, name) in CAP_SHOW.iter().enumerate() {
+                    let mark = if self.cap_show as usize == i { "> " } else { "   " };
+                    if menu_item(ui, &format!("{}SHOW: {}", mark, name)) {
+                        self.cap_show = i as u8;
+                        self.cap_mode_at = now;
                         self.dirty = true;
                         ui.close_menu();
                     }
@@ -674,6 +729,15 @@ impl App {
                     self.dirty = true;
                 }
                 vb.context_menu(|ui| self.vis_menu(ui));
+                // what's shown of the song: art and info, info only, nothing (a click goes to the next)
+                let show = self.cap_show.min(2) as usize;
+                let tip = format!("Showing {}. Click for {}.", CAP_SHOW[show].to_lowercase(), CAP_SHOW[(show + 1) % 3].to_lowercase());
+                if icon_btn(ui, &crate::icons::IC_CARD, show == 0, ink).tip(tip).clicked() {
+                    self.cap_show = ((show + 1) % 3) as u8;
+                    self.cap_mode_at = ui.input(|i| i.time);
+                    self.cap_art_at = ui.input(|i| i.time);
+                    self.dirty = true;
+                }
                 if crate::popout::CAN && crate::popout::button(ui, ink).tip("Pop out visuals").clicked() {
                     self.pop_toggle();
                 }

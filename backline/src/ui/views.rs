@@ -1528,14 +1528,18 @@ impl App {
             6 => !self.store.sc.is_empty(),
             _ => false,
         };
+        let art = crate::row_arts_on();
         if !above {
-            col_header(ui, true);
+            col_header(ui, true, art);
         }
         for (i, e) in list.iter().enumerate() {
             let state = if playing == Some(e.id) { RowState::Playing } else { RowState::Normal };
             let stored = if yt { cache::has(e.id) } else { true };
             crate::row_heart(self.liked.contains(&e.id));
             crate::row_stems(e.id);
+            if art {
+                crate::row_art(&store::file_cover(&e.kind, &e.src, &e.cover));
+            }
             let r = list_row(
                 ui,
                 i,
@@ -2839,12 +2843,16 @@ impl App {
         play_buttons(ui, &tracks, acts, false);
         ui.add_space(4.0);
         let playing = self.cur_track().map(|t| t.id);
-        col_header(ui, true);
+        let art = crate::row_arts_on();
+        col_header(ui, true, art);
         for (k, v) in items.iter().enumerate() {
             let state = if playing == Some(v.id) { RowState::Playing } else { RowState::Normal };
             let stored = v.kind == "file" || cache::has(v.id);
             crate::row_heart(self.liked.contains(&v.id));
             crate::row_stems(v.id);
+            if art {
+                crate::row_art(&store::file_cover(&v.kind, &v.src, &v.cover));
+            }
             // a loop shows as its name and where it is, the song after it
             let title = match v.loop_ab {
                 Some((a, b)) => format!("LOOP: {} ({}-{})  {}", v.loop_name, fmt_time(a), fmt_time(b), v.title),
