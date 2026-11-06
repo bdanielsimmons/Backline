@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Formatting in diary and tune notes, and All Notes in the diary
 - Triad Pairs under Lines > Over Chords
 - Gospel progressions (church, shout and quartet) and scale fingerings by the root's finger
 - Sync between your computers on the same network, with no account or cloud
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - 3D Terrain visuals: a landscape the music raises as you glide over it
 - New playlists from any song's menu, with a name, description and cover
 - Visuals - Windows Media Player and MilkDrop style, full screen (G) or in Now Playing, plus 3D Pipes
-- Note view - press NOTES on the waveform to see the song by pitch; on a split song it uses only the stems you have on, so a bass line or solo stands out. Point at it for the note's name.
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
