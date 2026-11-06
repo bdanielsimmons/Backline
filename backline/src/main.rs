@@ -776,6 +776,10 @@ fn list_row(
     let split = ROW_STEMS.with(|s| s.take());
     let art = ROW_ART.with(|a| a.borrow_mut().take());
     let w = ui.available_width();
+    // (a list too narrow for the cover goes without, as its header does)
+    let fit = row_fit(w, num.is_some(), art.is_some());
+    let art = art.filter(|_| fit.art);
+    let (num, heart) = (num.filter(|_| fit.num), heart.filter(|_| fit.heart));
     // (taller with the library's zoom, and with a cover)
     let row_h = if art.is_some() { ROW_ART_H } else { ROW_H } * font::ui_scale();
     let probe = Rect::from_min_size(ui.cursor().min, Vec2::new(w, row_h));
@@ -855,7 +859,7 @@ fn list_row(
     let left_has_cells = lraw.contains('\t');
     if let Some(liked) = heart {
         let heart_w = HEART_W * font::ui_scale();
-        let slot = if left_has_cells { rect.max.x - 10.0 - right_w() } else { rect.max.x - 10.0 - rw - heart_w };
+        let slot = if left_has_cells { rect.max.x - 10.0 - fit.right } else { rect.max.x - 10.0 - rw - heart_w };
         let hr = Rect::from_min_size(Pos2::new(slot, rect.min.y), Vec2::new(heart_w, rect.height()));
         if draw_heart(ui, hr, liked, resp.hovered(), ui.id().with(("heart", idx, rect.min.y as i32))) {
             HEART_HIT.with(|h| h.set(true));
@@ -881,8 +885,7 @@ fn list_row(
     }
     if left_has_cells {
         // cell layout shared with the column header
-        let avail = (rect.max.x - 10.0 - right_w() - tx).max(40.0);
-        let cw = col_widths(avail);
+        let cw = col_widths(fit.avail);
         let cells: Vec<&str> = lraw.split('\t').collect();
         let mut x = tx;
         for (i, c) in cells.iter().enumerate().take(3) {
@@ -891,7 +894,7 @@ fn list_row(
                 x += cw[i];
             }
         }
-        if let (true, Some((key, bpm))) = (col_on(3), cells.get(3).and_then(|c| c.split_once('|'))) {
+        if let (true, Some((key, bpm))) = (fit.kb, cells.get(3).and_then(|c| c.split_once('|'))) {
             let sc = font::ui_scale();
             let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
             row_text(p, Pos2::new(kx, cy), Align::Min, key, (KB_GAP - 6.0) * sc, fg2);
@@ -1443,9 +1446,50 @@ static COL_W: Mutex<[f32; 3]> = Mutex::new([0.4, 0.3, 0.3]);
 /// the columns were changed (shown, hidden or resized): the settings need saving
 static COLS_CHANGED: AtomicBool = AtomicBool::new(false);
 
-/// Room kept on the right of a row for LENGTH (and KEY / BPM when shown).
-fn right_w() -> f32 {
-    (80.0 + HEART_W + if col_on(3) { KB_W } else { 0.0 }) * font::ui_scale()
+/// How a track row (and the header over it) fits a list `w` wide.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RowFit {
+    /// where the cells start, from the row's left (after the number and the cover)
+    lead: f32,
+    /// the room for NAME, ARTIST and ALBUM
+    avail: f32,
+    /// the room kept on the right for the heart, LENGTH and KEY / BPM
+    right: f32,
+    /// KEY / BPM shown
+    kb: bool,
+    /// the cover shown
+    art: bool,
+    /// the row's number shown
+    num: bool,
+    /// the heart shown
+    heart: bool,
+}
+
+/// A narrow list gives way before the names get squeezed past reading: ALBUM, then ARTIST (`col_widths`), then
+/// KEY / BPM, then the covers; a very narrow one the numbers, then the hearts.
+fn row_fit(w: f32, numbered: bool, art: bool) -> RowFit {
+    let sc = font::ui_scale();
+    let fit = |kb: bool, art: bool, num: bool, heart: bool| {
+        let lead = 8.0 + if num { 44.0 * sc } else { 0.0 } + if art { ART_W * sc } else { 0.0 };
+        let right = (80.0 + if heart { HEART_W } else { 0.0 } + if kb { KB_W } else { 0.0 }) * sc;
+        RowFit { lead, avail: w - 10.0 - right - lead, right, kb, art, num, heart }
+    };
+    let (min, least) = (110.0 * sc, 60.0 * sc);
+    let mut f = fit(col_on(3), art, numbered, true);
+    if f.avail < min && f.kb {
+        f = fit(false, f.art, f.num, true);
+    }
+    if f.avail < min && f.art {
+        f = fit(false, false, f.num, true);
+    }
+    if f.avail < least && f.num {
+        f = fit(false, false, false, true);
+    }
+    if f.avail < least {
+        f = fit(false, false, false, false);
+    }
+    f.avail = f.avail.max(40.0);
+    f
 }
 
 /// the heart's slot in a track row, left of KEY / BPM and LENGTH
@@ -1604,14 +1648,12 @@ fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     let resp = ui.interact(rect, ui.id().with("col_head_hit"), Sense::click());
     fill_rect(&painter, rect, pal().edge);
     let cy = rect.center().y;
-    let tx = rect.min.x
-        + 8.0
-        + if numbered { 44.0 * font::ui_scale() } else { 0.0 }
-        + if art { ART_W * font::ui_scale() } else { 0.0 };
-    let avail = (rect.max.x - 10.0 - right_w() - tx).max(40.0);
+    let fit = row_fit(w, numbered, art);
+    let tx = rect.min.x + fit.lead;
+    let avail = fit.avail;
     let cw = col_widths(avail);
     let p = &painter;
-    if numbered {
+    if fit.num {
         // covers on or off: a little picture, lit when they're on
         let on = row_arts_on();
         let ir = Rect::from_center_size(Pos2::new(rect.min.x + 18.0, cy), Vec2::new(24.0, rect.height()));
@@ -1623,22 +1665,23 @@ fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
             COLS_CHANGED.store(true, Ordering::Relaxed);
         }
     }
-    if col_on(3) {
+    if fit.kb {
         let sc = font::ui_scale();
         let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
-        ui_text(p, Pos2::new(kx, cy), Align::Min, "KEY", 2.0, 400.0, pal().trim);
-        ui_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 2.0, 400.0, pal().trim);
+        ui_text(p, Pos2::new(kx, cy), Align::Min, "KEY", 2.0, (KB_GAP - 6.0) * sc, pal().trim);
+        ui_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 2.0, 50.0 * sc, pal().trim);
     }
-    ui_text(p, Pos2::new(tx, cy), Align::Min, "NAME", 2.0, 400.0, pal().trim);
+    // each heading kept inside its column
+    ui_text(p, Pos2::new(tx, cy), Align::Min, "NAME", 2.0, (cw[0] - 12.0).max(20.0), pal().trim);
     let mut x = tx + cw[0];
     for (i, name) in COL_NAMES[..2].iter().enumerate() {
         if cw[i + 1] > 0.0 {
-            ui_text(p, Pos2::new(x, cy), Align::Min, name, 2.0, 400.0, pal().trim);
+            ui_text(p, Pos2::new(x, cy), Align::Min, name, 2.0, (cw[i + 1] - 12.0).max(20.0), pal().trim);
             x += cw[i + 1];
         }
     }
     if col_on(2) {
-        ui_text(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, "LENGTH", 2.0, 400.0, pal().trim);
+        ui_text(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, "LENGTH", 2.0, 76.0 * font::ui_scale(), pal().trim);
     }
     // drag the line between two columns to share the room differently
     let vis: Vec<usize> = (0..3).filter(|&i| cw[i] > 0.0).collect();
@@ -7756,7 +7799,18 @@ mod tests {
             assert_eq!(w[2] > 0.0, bits & 2 == 2);
         }
         COLS.store(0b1000, Ordering::Relaxed);
-        assert_eq!(right_w(), 80.0 + HEART_W + KB_W, "room for the heart and KEY / BPM when shown");
+        let wide = row_fit(900.0, true, true);
+        assert_eq!(wide.right, 80.0 + HEART_W + KB_W, "room for the heart and KEY / BPM when shown");
+        assert!(wide.kb && wide.art && wide.avail == 900.0 - 10.0 - wide.right - (8.0 + 44.0 + ART_W));
+        // a narrow list: KEY / BPM give way first, then the covers, so the names stay readable
+        let mid = row_fit(335.0, true, true);
+        assert!(!mid.kb && mid.art && mid.avail >= 110.0, "{:?}", mid);
+        let thin = row_fit(260.0, true, true);
+        assert!(!thin.kb && !thin.art && thin.num && thin.heart && thin.avail >= 90.0, "{:?}", thin);
+        // a very narrow one: the numbers and the hearts go too
+        let tiny = row_fit(150.0, true, true);
+        assert!(!tiny.num && !tiny.heart && tiny.avail >= 50.0, "{:?}", tiny);
+        assert!(row_fit(100.0, true, false).avail >= 40.0, "never less than a sliver");
         COLS.store(saved, Ordering::Relaxed);
     }
 
