@@ -130,6 +130,8 @@ mod routine;
 mod si_core;
 #[path = "ui/tp_core.rs"]
 mod tp_core;
+#[path = "ui/notes_fmt.rs"]
+mod notes_fmt;
 #[path = "ui/pairs.rs"]
 mod pairs;
 #[path = "ui/skin.rs"]
@@ -339,6 +341,8 @@ struct Ed {
     anchor: Option<usize>,
     /// picked from the box's right-click menu (cut, copy, paste): done as if typed, the next frame
     menu: Option<egui::Event>,
+    /// a notes box whose formatting tools are under the pointer: a press on them leaves it being written in
+    hold: u32,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -3114,6 +3118,10 @@ struct App {
     diary_sel: i64,
     /// DIARY: the picked day's times can be changed, and practice added by hand (what, minutes)
     diary_edit: bool,
+    /// DIARY: ALL NOTES open, and how many days' notes it shows (0 = the day's notes box)
+    diary_all: usize,
+    /// DIARY: the notes box sliding to another day (when it started, whether to a later day, the old day's words)
+    diary_flip: Option<(f64, bool, String)>,
     diary_add: (String, String),
     /// DIARY: the journal entry being changed (its place in the store's entries)
     entry_edit: Option<usize>,
@@ -3853,6 +3861,8 @@ impl App {
             diary_ym: (0, 0),
             diary_sel: 0,
             diary_edit: false,
+            diary_all: 0,
+            diary_flip: None,
             diary_add: (String::new(), String::new()),
             entry_edit: None,
             mt: band::Metro::default(),
@@ -4456,6 +4466,14 @@ impl App {
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
             Ok("diary") => app.sec = Sec::Diary,
+            Ok("diarywrite") => {
+                app.sec = Sec::Diary;
+                app.ed.id = crate::tools::F_DIARY_NOTE;
+            }
+            Ok("diarynotes") => {
+                app.sec = Sec::Diary;
+                app.diary_all = 30;
+            }
             Ok("routine") => {
                 app.sec = Sec::Diary;
                 app.diary_tab = 1;
@@ -4561,6 +4579,10 @@ impl App {
                 app.prac_chart = Some(("Cherokee".to_string(), crate::tour::CHEROKEE.to_string()));
             }
             Ok("tunes") => app.sec = Sec::Tunes,
+            Ok("tunepage") => {
+                app.sec = Sec::Tunes;
+                app.tune_open = (!app.store.tunes.is_empty()).then_some(0);
+            }
             Ok("reading") => app.sec = Sec::Reading,
             Ok("chords") => app.sec = Sec::Chords,
             Ok("lines") => {

@@ -880,7 +880,6 @@ pub fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (yy as i32, m, d)
 }
 
-#[cfg(test)]
 pub fn parse_date(s: &str) -> Option<i64> {
     let mut it = s.split('-');
     let y = it.next()?.parse::<i32>().ok()?;

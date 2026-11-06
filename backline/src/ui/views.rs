@@ -123,6 +123,12 @@ fn line_of(lines: &[(usize, usize)], cur: usize) -> usize {
 /// One text field drawn in the pixel font (single line, or several wrapped lines).
 /// Edits are written straight into `text`.
 pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rect, hint: &str, multi: bool) -> FieldOut {
+    field_x(ui, ed, id, text, rect, hint, multi, false)
+}
+
+/// A text field; `fmt`: notes with formatting, its marks faint and the words they format shown so (see `notes_box`).
+#[allow(clippy::too_many_arguments)]
+fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rect, hint: &str, multi: bool, fmt: bool) -> FieldOut {
     // (a skin's font is drawn a size up: a step down here, so it sits inside the box)
     let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
     let lh = 7.0 * spx(px) + 6.0;
@@ -242,7 +248,7 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         if let Some(pp) = ui.input(|i| i.pointer.interact_pos()) {
             ed.cur = at(&chars, pp, hoff, voff, &lines);
         }
-    } else if focused && ui.input(|i| i.pointer.primary_pressed()) && !resp.hovered() {
+    } else if focused && ui.input(|i| i.pointer.primary_pressed()) && !resp.hovered() && ed.hold != id {
         ed.id = 0;
         ed.anchor = None;
     }
@@ -438,6 +444,42 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         let cy = if multi { y } else { rect.center().y };
         ptext(&cp, Pos2::new(inner.min.x - hoff, cy), Align::Min, &line, px, pal().ink);
     }
+    // formatting: the marks faint, links blue, bold drawn twice a hair apart, underlines (each run the line again,
+    // seen only inside it, as the selection is)
+    if fmt {
+        let looks = crate::notes_fmt::looks(&chars);
+        for (li, (s, e)) in lines.iter().enumerate() {
+            let y = inner.min.y - voff + li as f32 * lh + lh / 2.0;
+            if y < inner.min.y - lh || y > inner.max.y + lh {
+                continue;
+            }
+            let line: String = chars[*s..(*e).min(chars.len())].iter().collect();
+            let at = Pos2::new(inner.min.x - hoff, y);
+            let mut a = *s;
+            while a < *e {
+                let lk = looks[a];
+                let b = (a + 1..*e).find(|&k| looks[k] != lk).unwrap_or(*e);
+                if lk != crate::notes_fmt::Look::default() && chars[a] != '\n' {
+                    let x0 = at.x + caret_x(&chars, *s, a, px);
+                    let x1 = at.x + caret_x(&chars, *s, b, px);
+                    let band = Rect::from_min_max(Pos2::new(x0, y - lh / 2.0), Pos2::new(x1, y + lh / 2.0));
+                    let bp = cp.with_clip_rect(band.intersect(inner));
+                    if lk.mark || lk.link {
+                        fill_rect(&bp, band, pal().lcd);
+                        ptext(&bp, at, Align::Min, &line, px, if lk.mark { pal().dim } else { link_col() });
+                    }
+                    if lk.bold || lk.head {
+                        ptext(&bp, at + Vec2::new(0.6, 0.0), Align::Min, &line, px, pal().ink);
+                    }
+                    if lk.under || lk.link {
+                        let col = if lk.link { link_col() } else { pal().ink };
+                        cp.hline(x0..=x1 - spx(px), y + 3.5 * spx(px) + 1.0, Stroke::new(1.0f32, col));
+                    }
+                }
+                a = b;
+            }
+        }
+    }
     // the selection, shown inverted over the text
     if let Some((ss, se)) = ed.anchor.filter(|a| focused && *a != ed.cur).map(|a| (a.min(ed.cur), a.max(ed.cur))) {
         for (li, (s, e)) in lines.iter().enumerate() {
@@ -463,6 +505,299 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
         fill_rect(&cp, Rect::from_min_size(Pos2::new(x, cy - 8.0), Vec2::new(spx(2.0), 16.0)), pal().ink);
     }
     out
+}
+
+// -------------------------------------------------------------- notes with formatting
+// (the marks and the tools are in notes_fmt.rs; here the box that shows them)
+
+/// Links in notes: a blue that reads on the box's face, dark or light.
+fn link_col() -> Color32 {
+    let l = pal().lcd;
+    let lum = 0.3 * l.r() as f32 + 0.59 * l.g() as f32 + 0.11 * l.b() as f32;
+    if lum < 110.0 {
+        Color32::from_rgb(120, 175, 255)
+    } else {
+        Color32::from_rgb(25, 90, 200)
+    }
+}
+
+/// A word (and the spaces after it) of notes laid out to read: `at` its left end and the middle of its line, `w` its
+/// width without the spaces, `raw` where it starts in the text (chars).
+struct Piece {
+    at: Pos2,
+    text: String,
+    px: f32,
+    w: f32,
+    look: crate::notes_fmt::Look,
+    url: Option<String>,
+    raw: usize,
+    /// where the next word starts in the text (an underline runs on to it)
+    cont: usize,
+}
+
+/// Notes laid out to read, the marks gone: the words, the list dots, the lines (heading rules and lines between
+/// sections, as y with x from..to), and how tall (from the top, at 0).
+#[derive(Default)]
+struct Laid {
+    pieces: Vec<Piece>,
+    dots: Vec<Pos2>,
+    rules: Vec<(f32, f32)>,
+    h: f32,
+}
+
+/// Lays notes out `w` wide in the box's text size `px`.
+fn lay_notes(text: &str, px: f32, w: f32) -> Laid {
+    use crate::notes_fmt::{block_of, spans, Block};
+    crate::font::keep_caps(|| {
+        let mut laid = Laid::default();
+        let lh = 7.0 * spx(px) + 6.0;
+        let space = (text_w("a a", px) - text_w("aa", px)).max(spx(px) * 2.0);
+        let mut y = 0.0f32;
+        let mut raw = 0usize;
+        let lines: Vec<&str> = text.trim_end().split('\n').collect();
+        for (li, line) in lines.iter().enumerate() {
+            let chars: Vec<char> = line.chars().collect();
+            let (block, from) = block_of(&chars);
+            match block {
+                Block::Rule => {
+                    laid.rules.push((y + lh / 2.0, 0.0));
+                    y += lh;
+                }
+                _ => {
+                    let head = block == Block::Heading;
+                    let (tp, th) = if head { (px + 0.4, 7.0 * spx(px + 0.4) + 10.0) } else { (px, lh) };
+                    if head && li > 0 {
+                        y += 4.0;
+                    }
+                    let x0 = if block == Block::Item { 18.0 } else { 0.0 };
+                    if block == Block::Item {
+                        laid.dots.push(Pos2::new(8.0, y + th / 2.0));
+                    }
+                    // the words, each with the spaces after it, kept whole on a line where they fit
+                    let mut x = x0;
+                    for sp in spans(&chars, from).into_iter().filter(|s| !s.look.mark) {
+                        let look = crate::notes_fmt::Look { head, ..sp.look };
+                        let mut k = sp.s;
+                        while k < sp.e {
+                            let ws = (k..sp.e).find(|&j| chars[j] == ' ').unwrap_or(sp.e);
+                            let we = (ws..sp.e).find(|&j| chars[j] != ' ').unwrap_or(sp.e);
+                            let word: String = chars[k..ws].iter().collect();
+                            let ww = if word.is_empty() { 0.0 } else { text_w(&word, tp) };
+                            let full = ww + space * (we - ws) as f32;
+                            if word.is_empty() && x == x0 && k > from {
+                                k = we;
+                                continue;
+                            }
+                            if x + ww > w && x > x0 && !word.is_empty() {
+                                x = x0;
+                                y += th;
+                            }
+                            if !word.is_empty() {
+                                laid.pieces.push(Piece {
+                                    at: Pos2::new(x, y + th / 2.0),
+                                    text: word,
+                                    px: tp,
+                                    w: ww,
+                                    look,
+                                    url: sp.url.clone(),
+                                    raw: raw + k,
+                                    cont: raw + we,
+                                });
+                            }
+                            x += full;
+                            k = we;
+                        }
+                    }
+                    if head {
+                        laid.rules.push((y + th - 1.0, 1.0));
+                    }
+                    y += th;
+                }
+            }
+            raw += chars.len() + 1;
+        }
+        laid.h = y;
+        laid
+    })
+}
+
+/// Draws laid-out notes with their top-left at `o`, `w` wide, faded to `alpha`; `hot` a link under the pointer.
+fn draw_notes(p: &egui::Painter, o: Pos2, w: f32, laid: &Laid, alpha: f32, hot: Option<&str>) {
+    let fade = |c: Color32| if alpha < 1.0 { c.gamma_multiply(alpha) } else { c };
+    crate::font::keep_caps(|| {
+        for (i, pc) in laid.pieces.iter().enumerate() {
+            let at = o + pc.at.to_vec2();
+            let col = fade(if pc.look.link { link_col() } else { pal().ink });
+            ptext(p, at, Align::Min, &pc.text, pc.px, col);
+            if pc.look.bold || pc.look.head {
+                ptext(p, at + Vec2::new(0.6, 0.0), Align::Min, &pc.text, pc.px, col);
+            }
+            if pc.look.under || pc.look.link {
+                let y = at.y + 3.5 * spx(pc.px) + 1.0;
+                let thick = if hot.is_some() && pc.url.as_deref() == hot { 2.0f32 } else { 1.0 };
+                // (on under the space to the next word of the same link or underline, on the same line)
+                let to = match laid.pieces.get(i + 1) {
+                    Some(nx) if nx.raw == pc.cont && nx.look == pc.look && nx.url == pc.url && (nx.at.y - pc.at.y).abs() < 0.5 => o.x + nx.at.x,
+                    _ => at.x + pc.w,
+                };
+                p.hline(at.x..=to, y, Stroke::new(thick, col));
+            }
+        }
+    });
+    for d in &laid.dots {
+        p.circle_filled(o + d.to_vec2(), 2.3, fade(pal().ink2));
+    }
+    for (y, kind) in &laid.rules {
+        let col = fade(if *kind > 0.0 { pal().edge } else { pal().ink2 });
+        p.hline(o.x..=o.x + w, o.y + y, Stroke::new(1.0f32, col));
+    }
+}
+
+/// The word of laid-out notes under `pos` (relative to the top-left), and where in the text the pointer is (chars).
+fn note_hit(laid: &Laid, pos: Vec2, px: f32) -> Option<(&Piece, usize)> {
+    let lh = 7.0 * spx(px) + 6.0;
+    let pc = laid.pieces.iter().find(|pc| {
+        let h = if pc.px > px { 7.0 * spx(pc.px) + 10.0 } else { lh };
+        (pos.y - pc.at.y).abs() <= h / 2.0 && pos.x >= pc.at.x - 2.0 && pos.x <= pc.at.x + pc.w + 2.0
+    })?;
+    let chars: Vec<char> = pc.text.chars().collect();
+    let k = (0..=chars.len())
+        .min_by(|a, b| {
+            let x = |n: usize| crate::font::keep_caps(|| text_w(&chars[..n].iter().collect::<String>(), pc.px));
+            (x(*a) - (pos.x - pc.at.x)).abs().total_cmp(&(x(*b) - (pos.x - pc.at.x)).abs())
+        })
+        .unwrap_or(0);
+    Some((pc, pc.raw + k))
+}
+
+/// How wide a formatting tool's button is.
+const TOOL_W: f32 = 28.0;
+
+/// Opens a link from notes in the web browser (web addresses only).
+fn open_link(url: &str) {
+    if url.starts_with("https://") || url.starts_with("http://") {
+        let _ = webbrowser::open(url);
+    }
+}
+
+/// The formatting tools for the notes box `id`, on the row they're put in: heading, bold, underline, list, link, a
+/// line. They work where the caret is in the box (at the end when it isn't being written in), as do Ctrl+B, Ctrl+U
+/// and Ctrl+K while it is. Returns whether the text changed.
+pub(crate) fn note_tools(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String) -> bool {
+    use crate::notes_fmt::{apply, Tool, TOOLS};
+    let mut used: Option<Tool> = None;
+    if ed.id == id {
+        ui.input(|i| {
+            for (key, tool) in [(egui::Key::B, Tool::Bold), (egui::Key::U, Tool::Underline), (egui::Key::K, Tool::Link)] {
+                if i.modifiers.command && i.key_pressed(key) {
+                    used = Some(tool);
+                }
+            }
+        });
+    }
+    let mut over = false;
+    // (one group, close together: it moves to the next row whole when the row is full)
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for (tool, tip) in TOOLS {
+            let label = match tool {
+                Tool::Heading => "H",
+                Tool::Bold => "B",
+                Tool::Underline => "U",
+                _ => " ",
+            };
+            let r = retro_btn_w(ui, label, TOOL_W, false);
+            let (rc, col) = (r.rect, pal().ink);
+            let p = ui.painter();
+            let c = rc.center();
+            let s = Stroke::new(1.5f32, col);
+            match tool {
+                Tool::Underline => {
+                    p.hline(c.x - 5.0..=c.x + 5.0, c.y + 8.0, s);
+                }
+                Tool::List => {
+                    for k in [-5.0, 0.0, 5.0] {
+                        p.circle_filled(Pos2::new(c.x - 6.0, c.y + k), 1.4, col);
+                        p.hline(c.x - 2.0..=c.x + 7.0, c.y + k, s);
+                    }
+                }
+                Tool::Link => {
+                    // two links of a chain
+                    let r1 = Rect::from_center_size(c + Vec2::new(-3.0, 2.0), Vec2::new(9.0, 5.0));
+                    let r2 = Rect::from_center_size(c + Vec2::new(3.0, -2.0), Vec2::new(9.0, 5.0));
+                    p.rect_stroke(r1, 2.5, s);
+                    p.rect_stroke(r2, 2.5, s);
+                }
+                Tool::Line => {
+                    p.hline(c.x - 7.0..=c.x + 7.0, c.y, s);
+                }
+                Tool::Heading | Tool::Bold => {}
+            }
+            over |= r.hovered();
+            if r.tip(tip).clicked() {
+                used = Some(tool);
+            }
+        }
+    });
+    // (a press on the tools keeps the box being written in, and what's picked in it)
+    if over {
+        ed.hold = id;
+    } else if ed.hold == id {
+        ed.hold = 0;
+    }
+    let Some(tool) = used else { return false };
+    let n = text.chars().count();
+    if ed.id != id {
+        ed.id = id;
+        ed.cur = n;
+        ed.anchor = None;
+    }
+    let cur = ed.cur.min(n);
+    let a = ed.anchor.map_or(cur, |a| a.min(n));
+    let (new, (s, e)) = apply(text, (a.min(cur), a.max(cur)), tool);
+    *text = new;
+    ed.anchor = Some(s);
+    ed.cur = e;
+    true
+}
+
+/// A notes box with formatting (the diary's, a tune's): the words formatted to read; a click on them writes (the marks
+/// faint while you do), a click on a link opens it. As tall as what's written, `min_h` at least, `max_h` at most while
+/// writing. Returns what was done and where it is.
+pub(crate) fn notes_box(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, hint: &str, min_h: f32, max_h: f32) -> (FieldOut, Rect) {
+    let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
+    let lh = 7.0 * spx(px) + 6.0;
+    let w = ui.available_width();
+    if ed.id == id || text.trim().is_empty() {
+        let chars: Vec<char> = text.chars().collect();
+        let lines = layout_lines(&chars, px, w - 16.0).len().max(1);
+        let h = ((lines + 1) as f32 * lh + 6.0).clamp(min_h, max_h);
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+        return (field_x(ui, ed, id, text, r, hint, true, true), r);
+    }
+    let laid = lay_notes(text, px, w - 16.0);
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, (laid.h + 6.0 + lh / 2.0).max(min_h)), Sense::click());
+    let o = r.min + Vec2::new(8.0, 3.0);
+    let hit = resp.hover_pos().and_then(|m| note_hit(&laid, m - o, px)).map(|(pc, k)| (pc.url.clone(), k));
+    let url = hit.as_ref().and_then(|h| h.0.clone());
+    let p = ui.painter();
+    inset(p, r, pal().lcd);
+    draw_notes(&p.with_clip_rect(r.shrink(2.0)), o, w - 16.0, &laid, 1.0, url.as_deref());
+    let resp = match &url {
+        Some(u) => resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(u),
+        None => resp.on_hover_cursor(egui::CursorIcon::Text),
+    };
+    if resp.clicked() {
+        if let Some(u) = url {
+            open_link(&u);
+        } else {
+            // writing, the caret where the click was
+            ed.id = id;
+            ed.cur = hit.map_or(text.chars().count(), |h| h.1);
+            ed.anchor = Some(ed.cur);
+        }
+    }
+    (FieldOut { changed: false, enter: false }, r)
 }
 
 /// "LABEL  [ text field ]" on one row (or a taller multi-line box).
@@ -2927,16 +3262,17 @@ impl App {
             ui.add_space(8.0);
             lcd_box(ui, &format!("{} MIN PRACTICED", secs / 60), 150.0, pal().ink2);
         });
-        let o = field_row(
-            ui,
-            &mut self.ed,
-            F_T_NOTES,
-            "NOTES",
-            &mut self.store.tunes[i].notes,
-            "What to work on, the form, tricky bars",
-            Some(84.0),
-        );
-        self.store_dirty |= o.changed;
+        // its notes, with the formatting tools (as the diary's)
+        let mut tooled = false;
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(70.0, bh()), Sense::hover());
+            ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, "NOTES", 2.0, pal().ink2);
+            tools_at_end(ui);
+            tooled = note_tools(ui, &mut self.ed, F_T_NOTES, &mut self.store.tunes[i].notes);
+        });
+        let hint = "What to work on, the form, tricky bars";
+        let (o, _) = notes_box(ui, &mut self.ed, F_T_NOTES, &mut self.store.tunes[i].notes, hint, 84.0, 300.0);
+        self.store_dirty |= o.changed || tooled;
         // who wrote it, when, where from: looked up once for you (MusicBrainz), yours to fix
         {
             let t = &self.store.tunes[i];
@@ -3714,6 +4050,74 @@ impl App {
         }
     }
 
+    /// ALL NOTES, a page of its own: BACK (or Esc, or the DIARY tab) to the diary, then the days' notes.
+    fn all_notes_view(&mut self, ui: &mut egui::Ui) {
+        let noted = noted_days(&self.store.days);
+        let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
+        let back = ui.horizontal(|ui| retro_btn(ui, "< BACK", false).tip("Back to the diary (Esc).").clicked()).inner;
+        let esc = !self.fullscreen && !self.art_view && self.ed.id == 0 && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if back || esc {
+            self.diary_all = 0;
+            ui.ctx().request_repaint();
+            return;
+        }
+        section_header(ui, &format!("ALL NOTES  -  {} DAYS", noted.len()));
+        let mut jump = None;
+        self.diary_skim(ui, &noted, px, &mut jump);
+        if let Some(d) = jump {
+            self.diary_sel = d;
+            let (y, m, _) = store::civil_from_days(d);
+            self.diary_ym = (y, m);
+            self.diary_all = 0;
+            ui.ctx().request_repaint();
+        }
+    }
+
+    /// ALL NOTES: the days' notes to read through, newest first, `diary_all` of them (SHOW MORE for older ones); a
+    /// click opens that day.
+    fn diary_skim(&mut self, ui: &mut egui::Ui, noted: &[i64], px: f32, jump: &mut Option<i64>) {
+        let w = ui.available_width();
+        for &d in noted.iter().rev().take(self.diary_all) {
+            let date = store::date_str(d);
+            let Some(day) = self.store.days.iter().find(|x| x.date == date) else { continue };
+            let laid = lay_notes(day.note.trim(), px, w - 24.0);
+            let mins = day.secs.values().sum::<u32>();
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0 + laid.h), Sense::click());
+            let o = Pos2::new(r.min.x + 12.0, r.min.y + 22.0);
+            let url = resp.hover_pos().and_then(|m| note_hit(&laid, m - o, px)).and_then(|(pc, _)| pc.url.clone());
+            if ui.is_rect_visible(r) {
+                let p = ui.painter();
+                if resp.hovered() {
+                    fill_rect(p, r, pal().row_alt);
+                }
+                let head = match mins {
+                    0..=59 => format!("{} {}", store::weekday(d), date),
+                    _ => format!("{} {}  -  {}", store::weekday(d), date, mins_text(mins)),
+                };
+                crate::font::keep_caps(|| ptext(p, Pos2::new(r.min.x + 8.0, r.min.y + 11.0), Align::Min, &head, 1.0, pal().dim));
+                draw_notes(p, o, w - 24.0, &laid, 1.0, url.as_deref());
+                p.hline(r.min.x + 4.0..=r.max.x - 4.0, r.max.y - 1.0, Stroke::new(1.0f32, pal().edge));
+            }
+            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+            let resp = match &url {
+                Some(u) => resp.tip(u),
+                None => resp.tip("Open this day."),
+            };
+            if resp.clicked() {
+                match url {
+                    Some(u) => open_link(&u),
+                    None => *jump = Some(d),
+                }
+            }
+        }
+        if noted.len() > self.diary_all {
+            ui.add_space(4.0);
+            if retro_btn(ui, "SHOW MORE", false).tip("Older notes.").clicked() {
+                self.diary_all += SKIM;
+            }
+        }
+    }
+
     pub(crate) fn diary_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
@@ -3725,12 +4129,14 @@ impl App {
         }
         if let Some(i) = tab_row(ui, tabs, self.diary_tab as usize) {
             self.diary_tab = i as u8;
+            self.diary_all = 0;
         }
         ui.add_space(6.0);
         match self.diary_tab {
             3 => return self.plan_view(ui, acts),
             1 => return self.routine_view(ui, acts),
             2 => return self.listening_view(ui, acts),
+            _ if self.diary_all > 0 => return self.all_notes_view(ui),
             _ => {}
         }
         let today = store::today_days();
@@ -3751,23 +4157,71 @@ impl App {
             let text = self.store.days.iter().find(|d| d.date == note_date).map(|d| d.note.clone()).unwrap_or_default();
             self.diary_note = (note_date.clone(), text);
         }
-        section_header(ui, &format!("NOTES  -  {} {}", store::weekday(self.diary_sel), note_date));
-        // (the box grows with what's written: every line in sight, and one more to write on)
-        let nw = ui.available_width();
+        let noted = noted_days(&self.store.days);
         let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
-        let chars: Vec<char> = self.diary_note.1.chars().collect();
-        let lines = layout_lines(&chars, px, nw - 16.0).len().max(1);
-        let nh = ((lines + 1) as f32 * (7.0 * spx(px) + 6.0) + 6.0).clamp(100.0, 400.0);
-        let (nr, _) = ui.allocate_exact_size(Vec2::new(nw, nh), Sense::hover());
-        let o = field(ui, &mut self.ed, crate::tools::F_DIARY_NOTE, &mut self.diary_note.1, nr, "How it went, what clicked, what's next...", true);
-        if o.changed {
-            let text = self.diary_note.1.clone();
-            match self.store.days.iter_mut().find(|d| d.date == note_date) {
-                Some(d) => d.note = text,
-                None if !text.trim().is_empty() => self.store.day_mut(&note_date).note = text,
-                None => {}
+        section_header(ui, &format!("NOTES  -  {} {}", store::weekday(self.diary_sel), note_date));
+        // skimming: the day before or after that has notes, or all of them to read through (a page of their own)
+        // and the formatting tools at the end of the row
+        let (mut jump, mut turn, mut tooled) = (None, None, false);
+        ui.horizontal_wrapped(|ui| {
+            if !noted.is_empty() {
+                for (label, up, tip) in [("<", false, "Previous day with notes."), (">", true, "Next day with notes.")] {
+                    let to = note_step(&noted, self.diary_sel, up);
+                    let r = ui
+                        .scope(|ui| {
+                            if to.is_none() {
+                                ui.set_opacity(0.35);
+                            }
+                            retro_btn_w(ui, label, 34.0, false)
+                        })
+                        .inner;
+                    if to.is_some() && r.tip(tip).clicked() {
+                        (jump, turn) = (to, Some(up));
+                    }
+                }
+                if retro_btn(ui, "ALL NOTES", false).tip("Read all your notes, newest first.").clicked() {
+                    self.diary_all = SKIM;
+                }
             }
-            self.store_dirty = true;
+            tools_at_end(ui);
+            tooled = note_tools(ui, &mut self.ed, crate::tools::F_DIARY_NOTE, &mut self.diary_note.1);
+        });
+        ui.add_space(4.0);
+        {
+            // (the box grows with what's written: every line in sight, and one more to write on)
+            let hint = "How it went, what clicked, what's next...";
+            let (o, nr) = notes_box(ui, &mut self.ed, crate::tools::F_DIARY_NOTE, &mut self.diary_note.1, hint, 100.0, 400.0);
+            if o.changed || tooled {
+                let text = self.diary_note.1.clone();
+                match self.store.days.iter_mut().find(|d| d.date == note_date) {
+                    Some(d) => d.note = text,
+                    None if !text.trim().is_empty() => self.store.day_mut(&note_date).note = text,
+                    None => {}
+                }
+                self.store_dirty = true;
+            }
+            // flipped to another day: the old day's words slide out as the new day's slide in
+            let mut done = false;
+            if let Some((t0, later, old)) = &self.diary_flip {
+                let t = ((ui.input(|i| i.time) - t0) / 0.3) as f32;
+                if t >= 1.0 {
+                    done = true;
+                } else {
+                    slide_notes(ui.painter(), nr, px, old, &self.diary_note.1, t, *later);
+                    ui.ctx().request_repaint();
+                }
+            }
+            if done {
+                self.diary_flip = None;
+            }
+        }
+        if let Some(d) = jump {
+            self.diary_sel = d;
+            let (y, m, _) = store::civil_from_days(d);
+            self.diary_ym = (y, m);
+            let old = self.diary_note.1.clone();
+            self.diary_flip = turn.map(|later| (ui.input(|i| i.time), later, old));
+            ui.ctx().request_repaint();
         }
         ui.add_space(8.0);
 
@@ -3842,22 +4296,24 @@ impl App {
         let next = if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
         let ndays = next - first;
         let lead = (first + 4).rem_euclid(7);
-        let gw = ui.available_width().min(7.0 * 64.0);
+        let gw = ui.available_width().min(7.0 * 84.0);
         let cw = (gw / 7.0).floor();
+        let ch = 46.0;
         let rows = (lead + ndays + 6) / 7;
-        let (gr, _) = ui.allocate_exact_size(Vec2::new(cw * 7.0, 16.0 + rows as f32 * 32.0), Sense::hover());
+        let (gr, _) = ui.allocate_exact_size(Vec2::new(cw * 7.0, 16.0 + rows as f32 * ch), Sense::hover());
         for (k, n) in ["S", "M", "T", "W", "T", "F", "S"].iter().enumerate() {
             ptext(ui.painter(), Pos2::new(gr.min.x + k as f32 * cw + cw / 2.0, gr.min.y + 7.0), Align::Center, n, 1.0, pal().dim);
         }
         let busiest = (0..ndays).map(|k| day_secs(self, first + k)).max().unwrap_or(0).max(1);
-        // (days with notes get a mark)
-        let noted: std::collections::HashSet<String> = self.store.days.iter().filter(|d| !d.note.trim().is_empty()).map(|d| d.date.clone()).collect();
+        // (days with notes get a pencil; the note shows under the pointer)
+        let notes: HashMap<String, String> =
+            self.store.days.iter().filter(|d| !d.note.trim().is_empty()).map(|d| (d.date.clone(), note_preview(&d.note))).collect();
         for k in 0..ndays {
             let d = first + k;
             let pos = lead + k;
             let r = Rect::from_min_size(
-                Pos2::new(gr.min.x + (pos % 7) as f32 * cw + 2.0, gr.min.y + 16.0 + (pos / 7) as f32 * 32.0 + 2.0),
-                Vec2::new(cw - 4.0, 28.0),
+                Pos2::new(gr.min.x + (pos % 7) as f32 * cw + 2.0, gr.min.y + 16.0 + (pos / 7) as f32 * ch + 2.0),
+                Vec2::new(cw - 4.0, ch - 4.0),
             );
             let secs = day_secs(self, d);
             let resp =
@@ -3877,19 +4333,16 @@ impl App {
             }
             let txt_col = if level >= 2 { pal().lcd } else { pal().ink };
             ptext(ui.painter(), Pos2::new(r.min.x + 5.0, r.min.y + 8.0), Align::Min, &format!("{}", k + 1), 1.0, txt_col);
-            if noted.contains(&store::date_str(d)) {
-                ui.painter().circle_filled(Pos2::new(r.max.x - 6.0, r.min.y + 6.0), 2.5, txt_col);
-            }
             if secs >= 60 {
-                ptext(
-                    ui.painter(),
-                    Pos2::new(r.max.x - 4.0, r.max.y - 7.0),
-                    Align::Max,
-                    &format!("{}m", secs / 60),
-                    1.0,
-                    txt_col,
-                );
+                ptext(ui.painter(), Pos2::new(r.max.x - 4.0, r.min.y + 8.0), Align::Max, &format!("{}m", secs / 60), 1.0, txt_col);
             }
+            let resp = match notes.get(&store::date_str(d)) {
+                Some(preview) => {
+                    pencil(ui.painter(), Pos2::new(r.min.x + 5.0, r.max.y - 18.0), 14.0, txt_col.gamma_multiply(0.8));
+                    resp.tip(preview)
+                }
+                None => resp,
+            };
             if resp.clicked() {
                 self.diary_sel = d;
             }
@@ -5781,9 +6234,92 @@ fn bar_row(ui: &mut egui::Ui, name: &str, secs: u32, most: u32, col: Color32, ri
     ptext(p, Pos2::new(r.max.x, r.center().y), Align::Max, right, 1.0, pal().ink2);
 }
 
+/// How many days' notes ALL NOTES shows at a time.
+const SKIM: usize = 30;
+
+/// The days with notes written, in order (days since 1970).
+fn noted_days(days: &[store::Day]) -> Vec<i64> {
+    let mut v: Vec<i64> = days.iter().filter(|d| !d.note.trim().is_empty()).filter_map(|d| store::parse_date(&d.date)).collect();
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// The nearest day with notes after `from` (`later`), or before it.
+fn note_step(noted: &[i64], from: i64, later: bool) -> Option<i64> {
+    if later {
+        noted.iter().copied().find(|&d| d > from)
+    } else {
+        noted.iter().copied().rev().find(|&d| d < from)
+    }
+}
+
+/// The start of a note on one line, for the calendar's hover.
+fn note_preview(note: &str) -> String {
+    let flat = crate::notes_fmt::plain(note);
+    match flat.char_indices().nth(160) {
+        Some((i, _)) => format!("{}...", flat[..i].trim_end()),
+        None => flat,
+    }
+}
+
+/// Slide, flipping to the next day with notes (`later`) or back: over the notes box (`rect`) the old day's words slide
+/// out and fade as the new day's slide in, formatted as they read; `t` 0..1.
+fn slide_notes(p: &egui::Painter, rect: Rect, px: f32, old: &str, new: &str, t: f32, later: bool) {
+    let face = rect.shrink(2.0);
+    let inner = rect.shrink2(Vec2::new(8.0, 3.0));
+    // the box's face again, over the words drawn there
+    p.rect_filled(face, 0.0, pal().lcd);
+    let cp = p.with_clip_rect(face);
+    let dx = if later { -40.0 } else { 40.0 };
+    let out = (t * 1.25).min(1.0).powi(2);
+    let came = 1.0 - (1.0 - t).powi(3);
+    let w = inner.width();
+    if out < 1.0 {
+        draw_notes(&cp, inner.min + Vec2::new(dx * out, 0.0), w, &lay_notes(old, px, w), 1.0 - out, None);
+    }
+    draw_notes(&cp, inner.min + Vec2::new(-dx * (1.0 - came), 0.0), w, &lay_notes(new, px, w), came, None);
+}
+
+/// Room before the formatting tools on a row, so they end it.
+fn tools_at_end(ui: &mut egui::Ui) {
+    let tw = 6.0 * TOOL_W * crate::font::ui_scale() + 5.0 * 2.0 + 8.0;
+    let room = ui.available_size_before_wrap().x - tw;
+    if room > 0.0 {
+        ui.add_space(room);
+    }
+}
+
+/// A little pencil (a calendar day with notes): `at` its top-left corner, `size` across.
+fn pencil(p: &egui::Painter, at: Pos2, size: f32, col: Color32) {
+    let k = size / 16.0;
+    let pt = |x: f32, y: f32| Pos2::new(at.x + x * k, at.y + y * k);
+    let stroke = Stroke::new(1.3f32, col);
+    p.add(egui::Shape::closed_line(vec![pt(3.0, 13.0), pt(4.0, 9.5), pt(11.5, 2.0), pt(14.0, 4.5), pt(6.5, 12.0)], stroke));
+    p.line_segment([pt(10.0, 3.5), pt(12.5, 6.0)], stroke);
+    p.line_segment([pt(3.0, 13.0), pt(6.5, 12.0)], stroke);
+}
+
 #[cfg(test)]
 mod summary_tests {
     use super::*;
+
+    #[test]
+    fn skimming_goes_day_to_day_with_notes() {
+        let day = |date: &str, note: &str| store::Day { date: date.into(), note: note.into(), ..Default::default() };
+        let days = [day("2026-11-05", "Comping, tried drop 2"), day("2026-10-30", "  "), day("2026-11-01", "Blues in F"), day("2026-10-28", "x")];
+        let noted = noted_days(&days);
+        let at = |s: &str| store::parse_date(s).unwrap();
+        assert_eq!(noted, [at("2026-10-28"), at("2026-11-01"), at("2026-11-05")]);
+        // from a day without notes, and from one with them
+        assert_eq!(note_step(&noted, at("2026-11-06"), false), Some(at("2026-11-05")));
+        assert_eq!(note_step(&noted, at("2026-11-01"), false), Some(at("2026-10-28")));
+        assert_eq!(note_step(&noted, at("2026-11-01"), true), Some(at("2026-11-05")));
+        assert_eq!(note_step(&noted, at("2026-11-05"), true), None);
+        assert_eq!(note_step(&noted, at("2026-10-28"), false), None);
+        assert_eq!(note_preview("Two\nlines"), "Two lines");
+        assert!(note_preview(&"word ".repeat(100)).ends_with("...") && note_preview(&"word ".repeat(100)).len() < 170);
+    }
 
     #[test]
     fn a_group_of_one_page_shows_its_name() {
