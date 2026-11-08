@@ -20,6 +20,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Pitch tab tuning in Hz: find or type the record's A (A = 452), set yours, and match them in one click
+- Copy songs from your other computer: browse its files, pick the ones you want, and they copy in the background
 - Save a radio or mix as a playlist, in Backline or on Tidal, and add songs to playlists without leaving the page
 - Search, stars and #tags for your diary notes, flipped through by year, month or day
 - Formatting in diary and tune notes, and All Notes in the diary
@@ -28,8 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Sync between your computers on the same network, with no account or cloud
 - Pop the visuals out into a small window of their own
 - 3D Wave: a sheet of light drifting across the sky, glowing where it folds
-- 3D Cavern and Canyon: fly between a landscape and its mirror, or down a winding valley that rises with the music
-- 3D Terrain visuals: a landscape the music raises as you glide over it
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
