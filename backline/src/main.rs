@@ -247,10 +247,12 @@ enum Msg {
     TidalListDone(Result<String, String>),
     /// a song taken out of one of your Tidal playlists: (the playlist, the song, its nth time there), or why not
     TidalListRemoved(String, i64, usize, Result<(), String>),
-    /// a new playlist made on your Tidal account (its name), shown once the library is loaded again
+    /// a new playlist made on your Tidal account (what to say), shown once the library is loaded again
     TidalListMade(Result<String, String>),
     /// one of your Tidal playlists renamed: (its id, the new name), or why not
     TidalListRenamed(String, String, Result<(), String>),
+    /// a song is in that Tidal playlist already: (its id, its name, the song), to ask before adding it again
+    TidalListDupe(String, String, Track),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
     /// files added: the songs, the folders, and playlist files read (their name and songs)
     Added(Vec<store::Ext>, Vec<String>, Vec<(String, Vec<i64>)>),
@@ -553,21 +555,23 @@ enum Action {
     PackOpen(bool),
     PackUnlock,
     ShareTake,
-    /// put a song in one of your Tidal playlists: (playlist id, its name, the song); an empty id makes a new
-    /// playlist with that name
-    TidalListAdd(String, String, i64),
+    /// put a song in one of your Tidal playlists: (playlist id, its name, the song, again: even if it's in it
+    /// already); an empty id makes a new playlist with that name
+    TidalListAdd(String, String, Track, bool),
     /// take a song out of one of your own Tidal playlists: (playlist id, the song, its nth time in the list)
     TidalListRemove(String, i64, usize),
     /// open the panel to rename one of your own Tidal playlists: (its id, its name now)
     TidalListRename(String, String),
-    /// put a song, or a loop of it (from, to, the loop's name), in one of your Backline playlists (by its place)
-    PlaylistAdd(usize, Track, Option<(f32, f32, String)>),
+    /// put a song, or a loop of it (from, to, the loop's name), in one of your Backline playlists (by its place);
+    /// again: even if it's in it already (otherwise that is asked first)
+    PlaylistAdd(usize, Track, Option<(f32, f32, String)>, bool),
     /// open the New Playlist panel (with this song in it)
     PlaylistNew(Option<Track>),
-    /// open the New Playlist panel for a song, or a loop of it (from, to, the loop's name)
-    PlaylistNewWith(Track, Option<(f32, f32, String)>),
-    /// open the New Playlist panel with these songs in it, named (a radio, a mix): you can change the name
-    PlaylistNewFrom(String, Vec<Track>),
+    /// open the New Playlist panel with these songs in it, named (a radio, a mix): you can change the name;
+    /// on Tidal (true) or in Backline
+    PlaylistNewFrom(String, Vec<Track>, bool),
+    /// open ADD TO PLAYLIST for a song, or a loop of it (from, to, the loop's name)
+    PlaylistPicker(Track, Option<(f32, f32, String)>),
     /// make the playlist the New Playlist panel describes
     PlaylistMake(new_playlist::NewPl),
     /// open the panel on one of your playlists: its name, description and cover
@@ -1818,7 +1822,11 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::PickTune(t.clone()));
         ui.close_menu();
     }
-    playlist_menu(ui, acts, t, None);
+    // (a window of its own, to find one among many: you stay where you are)
+    if menu_item(ui, "Add to playlist...") {
+        acts.push(Action::PlaylistPicker(t.clone(), None));
+        ui.close_menu();
+    }
     if menu_item(ui, "Copy name") {
         let who = t.artists_text();
         acts.push(Action::CopyName(if who.is_empty() { t.title.clone() } else { format!("{} - {}", who, t.title) }));
@@ -1831,11 +1839,11 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
     }
 }
 
-/// What "Add to playlist" offers: your Backline playlists' names, and your own Tidal playlists (id, name; None until
-/// they're loaded, which the menu asks for in `want_tidal`). Kept in step with the app at the start of each frame.
+/// What free-standing menus need to know of your Tidal playlists: whether you're logged in (and online), and your
+/// own playlists (id, name; None until they're loaded, which a menu asks for in `want_tidal`). Kept in step with the
+/// app at the start of each frame.
 #[derive(Default)]
 pub(crate) struct PlMenu {
-    pub names: Vec<String>,
     pub tidal_on: bool,
     pub tidal: Option<Vec<(String, String)>>,
     pub want_tidal: bool,
@@ -1843,61 +1851,6 @@ pub(crate) struct PlMenu {
 
 thread_local! {
     pub(crate) static PL_MENU: std::cell::RefCell<PlMenu> = std::cell::RefCell::new(PlMenu::default());
-}
-
-/// A small heading inside a menu (BACKLINE, TIDAL).
-fn menu_head(ui: &mut egui::Ui, text: &str) {
-    let sc = font::ui_scale();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0 * sc, 18.0 * sc), Sense::hover());
-    ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + 1.0), Align::Min, text, 1.5, pal().dim);
-}
-
-/// "Add to playlist": a new playlist, or one of yours in Backline (and on Tidal, for a Tidal song that isn't a
-/// loop). The menu closes and you stay where you are; a message over the library says where it went.
-/// `lp`: a loop of the song (from, to, its name) rather than all of it.
-pub(crate) fn playlist_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, lp: Option<(f32, f32, String)>) {
-    let label = if lp.is_some() { "Add this loop to a playlist" } else { "Add to playlist" };
-    sub_menu(ui, label, |ui| {
-        if menu_item(ui, "New playlist...") {
-            acts.push(Action::PlaylistNewWith(t.clone(), lp.clone()));
-            ui.close_menu();
-        }
-        PL_MENU.with(|m| {
-            let mut m = m.borrow_mut();
-            let tidal = t.id > 0 && lp.is_none() && m.tidal_on;
-            let mut want = false;
-            egui::ScrollArea::vertical().max_height(420.0 * font::ui_scale()).show(ui, |ui| {
-                if !m.names.is_empty() {
-                    menu_head(ui, "BACKLINE");
-                }
-                for (i, n) in m.names.iter().enumerate() {
-                    if menu_item(ui, n) {
-                        acts.push(Action::PlaylistAdd(i, t.clone(), lp.clone()));
-                        ui.close_menu();
-                    }
-                }
-                if tidal {
-                    menu_head(ui, "TIDAL");
-                    match &m.tidal {
-                        None => {
-                            want = true;
-                            menu_head(ui, "Loading...");
-                        }
-                        Some(l) if l.is_empty() => menu_head(ui, "None yet"),
-                        Some(l) => {
-                            for (uuid, name) in l {
-                                if menu_item(ui, name) {
-                                    acts.push(Action::TidalListAdd(uuid.clone(), name.clone(), t.id));
-                                    ui.close_menu();
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-            m.want_tidal |= want;
-        });
-    });
 }
 
 /// Menu entry that shows the link and copies it. Nothing is shown when there is no link (local files).
@@ -1976,8 +1929,25 @@ fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, acts: &mut Vec<Acti
 
 /// PLAY and SHUFFLE for a list; `refresh`: and REFRESH, to load it from Tidal again (your library).
 fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refresh: bool) {
+    play_buttons_save(ui, tracks, acts, refresh, None);
+}
+
+/// "Save as a Tidal playlist..." and "Save as a Backline playlist...": these songs, under `name` (which can be
+/// changed before it's made). Tidal only for songs that are all Tidal's, when you're logged in.
+fn save_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, tracks: &[Track], name: &str) {
+    let tidal = !tracks.is_empty() && tracks.iter().all(|t| t.id > 0) && PL_MENU.with(|m| m.borrow().tidal_on);
+    if tidal && menu_item(ui, "Save as a Tidal playlist...") {
+        acts.push(Action::PlaylistNewFrom(name.to_string(), tracks.to_vec(), true));
+    }
+    if menu_item(ui, "Save as a Backline playlist...") {
+        acts.push(Action::PlaylistNewFrom(name.to_string(), tracks.to_vec(), false));
+    }
+}
+
+/// The same, and (`save`: the list's name) a way to keep these songs as a playlist of your own.
+fn play_buttons_save(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refresh: bool, save: Option<&str>) {
     if winamp_ui::chrome_on() {
-        play_icons(ui, tracks, acts, refresh);
+        play_icons(ui, tracks, acts, refresh, save);
         return;
     }
     ui.horizontal(|ui| {
@@ -1996,12 +1966,23 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
         if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Reload your library from Tidal.").clicked() {
             acts.push(Action::RefreshLibrary);
         }
+        if let Some(name) = save {
+            let b = retro_btn(ui, "SAVE AS PLAYLIST...", false).tip("Keep these songs as a playlist, on Tidal or in Backline.");
+            let id = ui.id().with("list_save");
+            if b.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(id));
+            }
+            egui::popup_below_widget(ui, id, &b, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(200.0 * font::ui_scale());
+                save_items(ui, acts, tracks, name);
+            });
+        }
     });
 }
 
 /// The same, a skin worn: a big round PLAY, SHUFFLE and ADD TO QUEUE as icons (names on hover), and "..." for the
 /// rest.
-fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refresh: bool) {
+fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refresh: bool, save: Option<&str>) {
     let sc = font::ui_scale();
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -2038,6 +2019,28 @@ fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refre
         if icon(ui, "queue", "Add to queue").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
+        // save as a playlist: a plus in a ring, its two choices under it (on Tidal, in Backline)
+        if let Some(name) = save {
+            let (r, resp) = ui.allocate_exact_size(Vec2::splat(34.0 * sc), Sense::click());
+            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.hovered() {
+                ui.painter().circle_filled(r.center(), r.width() / 2.0, Color32::from_white_alpha(12));
+            }
+            let col = if resp.hovered() { pal().ink } else { pal().ink2 };
+            let (c, rad, s) = (r.center(), 8.5 * sc, Stroke::new(1.6 * sc, col));
+            ui.painter().circle_stroke(c, rad, s);
+            ui.painter().line_segment([c - Vec2::new(rad * 0.5, 0.0), c + Vec2::new(rad * 0.5, 0.0)], s);
+            ui.painter().line_segment([c - Vec2::new(0.0, rad * 0.5), c + Vec2::new(0.0, rad * 0.5)], s);
+            let resp = resp.tip("Save as a playlist, on Tidal or in Backline");
+            let id = ui.id().with("list_save");
+            if resp.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(id));
+            }
+            egui::popup_below_widget(ui, id, &resp, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(200.0 * sc);
+                save_items(ui, acts, tracks, name);
+            });
+        }
         let more = icon(ui, "more", "More");
         let id = ui.id().with("list_more");
         if more.clicked() {
@@ -2053,6 +2056,9 @@ fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refre
             }
             if refresh && menu_item(ui, "Refresh from Tidal") {
                 acts.push(Action::RefreshLibrary);
+            }
+            if let Some(name) = save {
+                save_items(ui, acts, tracks, name);
             }
         });
     });
@@ -2403,29 +2409,15 @@ fn page_view(
                     }
                 }
                 ui.add_space(6.0);
+                // (a radio, a mix, an album: its songs can be kept as a playlist of yours, under its name or another)
                 if !page.tracks.is_empty() {
-                    play_buttons(ui, &page.tracks, acts, false);
+                    play_buttons_save(ui, &page.tracks, acts, false, Some(&page.title));
                 }
-                // a radio or a mix: keep its songs as a playlist (in Backline or on Tidal), under its name or another
-                let mix = page.card.as_ref().map_or(page.title.ends_with(" radio"), |c| c.kind == Kind::Mix);
                 // one of your own Tidal playlists: rename it
-                let own = page.card.as_ref().filter(|c| c.kind == Kind::Playlist && page.saved.is_none());
-                if (mix && !page.tracks.is_empty()) || own.is_some() {
-                    ui.horizontal(|ui| {
-                        if mix
-                            && !page.tracks.is_empty()
-                            && retro_btn(ui, "SAVE AS PLAYLIST", false)
-                                .tip("Keep these songs as a playlist, in Backline or on Tidal. You can change the name.")
-                                .clicked()
-                        {
-                            acts.push(Action::PlaylistNewFrom(page.title.clone(), page.tracks.clone()));
-                        }
-                        if let Some(c) = own {
-                            if retro_btn(ui, "RENAME", false).tip("Give this playlist a new name on Tidal.").clicked() {
-                                acts.push(Action::TidalListRename(c.id.clone(), page.title.clone()));
-                            }
-                        }
-                    });
+                if let Some(c) = page.card.as_ref().filter(|c| c.kind == Kind::Playlist && page.saved.is_none()) {
+                    if retro_btn(ui, "RENAME", false).tip("Give this playlist a new name on Tidal.").clicked() {
+                        acts.push(Action::TidalListRename(c.id.clone(), page.title.clone()));
+                    }
                 }
                 // an album or someone else's playlist: keep it in your Tidal albums / playlists
                 if let (Some(c), Some(saved)) = (&page.card, page.saved) {
@@ -2952,6 +2944,12 @@ struct App {
     queue_from: String,
     /// a short message over the library ("Added to ..."), and when it came
     toast: Option<(String, f64)>,
+    /// a song about to go in a playlist it's in already: asked about first
+    pl_dupe: Option<new_playlist::PlDupe>,
+    /// ADD TO PLAYLIST, while it's open; what's typed to find a playlist; the side picked last (Tidal or Backline)
+    pl_picker: Option<new_playlist::Picker>,
+    pl_find: String,
+    pl_last_tidal: bool,
     /// your own Tidal playlists (None until asked for), and whether they are being fetched
     tidal_lists: Option<Vec<(String, String)>>,
     /// the New Playlist panel, while open
@@ -3847,6 +3845,10 @@ impl App {
             pl_open: None,
             queue_from: String::new(),
             toast: None,
+            pl_dupe: None,
+            pl_picker: None,
+            pl_find: String::new(),
+            pl_last_tidal: true,
             tidal_lists: None,
             new_pl_dlg: None,
             tidal_lists_busy: false,
@@ -4953,6 +4955,18 @@ impl App {
                 app.sec = Sec::Files;
                 app.toast = Some(("Added to Walking uP radio".into(), 0.0));
             }
+            // ADD TO PLAYLIST for a song
+            Ok("addto") => {
+                app.sec = Sec::Files;
+                let t = Track { id: 9001, title: "Walking uP".into(), artist: "Doobie Powell".into(), ..Default::default() };
+                app.apply(Action::PlaylistPicker(t, None));
+            }
+            // the question when a song is in the playlist already
+            Ok("dupe") => {
+                app.sec = Sec::Files;
+                let t = Track { id: 9001, title: "Walking uP".into(), artist: "Doobie Powell".into(), ..Default::default() };
+                app.pl_dupe = Some(new_playlist::PlDupe::Backline(0, "Quiet Wave radio".into(), t, None));
+            }
             Ok("slonimsky") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 0;
@@ -5274,16 +5288,11 @@ impl App {
         }
     }
 
-    /// Keep what a song's "Add to playlist" menu offers in step with your playlists, and fetch your Tidal ones when
-    /// a menu asked for them.
+    /// Keep what the menus know of your Tidal playlists in step, and fetch them when a menu asked for them.
     fn sync_pl_menu(&mut self) {
         let tidal_on = self.api.has_token() && !self.offline;
         let want = PL_MENU.with(|m| {
             let mut m = m.borrow_mut();
-            let pls = &self.store.playlists;
-            if m.names.len() != pls.len() || m.names.iter().zip(pls).any(|(a, b)| *a != b.name) {
-                m.names = pls.iter().map(|p| p.name.clone()).collect();
-            }
             if m.tidal != self.tidal_lists {
                 m.tidal = self.tidal_lists.clone();
             }
@@ -7649,6 +7658,8 @@ impl eframe::App for App {
         self.credits_overlay(ctx);
         self.art_preview_overlay(ctx);
         self.new_playlist_panel(ctx, &mut acts);
+        self.picker_panel(ctx, &mut acts);
+        self.dupe_panel(ctx, &mut acts);
         self.edit_info_panel(ctx);
         self.takes_panel(ctx);
         self.skin_loading_panel(ctx);

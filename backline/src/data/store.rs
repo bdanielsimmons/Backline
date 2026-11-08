@@ -284,6 +284,11 @@ pub fn file_cover(kind: &str, src: &str, cover: &str) -> String {
 }
 
 impl Version {
+    /// The same song (a Tidal one by its id, a file or a clip by where it is), and the same loop of it or all of it.
+    pub fn same_as(&self, o: &Version) -> bool {
+        self.kind == o.kind && (if self.kind == "tidal" { self.id == o.id } else { self.src == o.src }) && self.loop_ab == o.loop_ab
+    }
+
     pub fn to_track(&self) -> Track {
         Track {
             id: self.id,

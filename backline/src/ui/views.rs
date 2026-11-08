@@ -4231,7 +4231,10 @@ impl App {
                             ui.close_menu();
                         }
                         if let Some(v) = &c.v {
-                            crate::playlist_menu(ui, acts, &v.to_track(), Some((s.a, s.b, s.name.clone())));
+                            if menu_item(ui, "Add this loop to a playlist...") {
+                                acts.push(Action::PlaylistPicker(v.to_track(), Some((s.a, s.b, s.name.clone()))));
+                                ui.close_menu();
+                            }
                         }
                         if menu_item(ui, "Delete this loop") {
                             acts.push(Action::ForgetLoop(c.id, *i));

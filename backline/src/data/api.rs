@@ -878,14 +878,21 @@ impl Api {
         (s.access_token.clone(), s.country.clone(), s.user_id)
     }
 
-    /// Add a track to one of your Tidal playlists (already in it: left as it is).
-    pub fn playlist_add(&self, uuid: &str, id: i64) -> Res<()> {
-        self.playlist_add_all(uuid, &[id])
+    /// Add a track to one of your Tidal playlists (already in it: left as it is, unless `again`).
+    pub fn playlist_add(&self, uuid: &str, id: i64, again: bool) -> Res<()> {
+        self.playlist_add_all(uuid, &[id], again)
     }
 
-    /// Add tracks to one of your Tidal playlists, in order (those already in it are left as they are), a batch at
-    /// a time.
-    pub fn playlist_add_all(&self, uuid: &str, ids: &[i64]) -> Res<()> {
+    /// Whether a track is in one of your Tidal playlists already.
+    pub fn playlist_has(&self, uuid: &str, id: i64) -> Res<bool> {
+        let items = self.paged(&format!("/playlists/{}/items", uuid), &[], 10_000)?;
+        Ok(item_at(&items, id, 0).is_some())
+    }
+
+    /// Add tracks to one of your Tidal playlists, in order, a batch at a time (those already in it are left as they
+    /// are, unless `again`: then they're in it twice).
+    pub fn playlist_add_all(&self, uuid: &str, ids: &[i64], again: bool) -> Res<()> {
+        let dupes = if again { "ADD" } else { "SKIP" };
         guard()?;
         let (tok, country, _) = self.auth();
         for batch in ids.chunks(50) {
@@ -898,11 +905,11 @@ impl Api {
                 .bearer_auth(&tok)
                 .header("If-None-Match", etag)
                 .query(&[("countryCode", country.as_str())])
-                .form(&[("trackIds", idstr.as_str()), ("onDupes", "SKIP"), ("onArtifactNotFound", "SKIP")])
+                .form(&[("trackIds", idstr.as_str()), ("onDupes", dupes), ("onArtifactNotFound", "SKIP")])
                 .send()
                 .map_err(e2s)?;
             let st = r.status();
-            log(&format!("POST playlist {} {} item(s) -> {}", uuid, batch.len(), st.as_u16()));
+            log(&format!("POST playlist {} {} item(s) ({}) -> {}", uuid, batch.len(), dupes, st.as_u16()));
             if !st.is_success() {
                 return Err(format!("{}: {}", st.as_u16(), r.text().unwrap_or_default().chars().take(120).collect::<String>()));
             }

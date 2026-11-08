@@ -10,6 +10,7 @@ use eframe::egui::{self, Sense, Vec2};
 
 const F_NEW_NAME: u32 = 103;
 const F_NEW_DESC: u32 = 104;
+use crate::tools::F_PL_FIND;
 
 /// What the panel holds while it is open.
 #[derive(Clone, Default)]
@@ -29,6 +30,34 @@ pub(crate) struct NewPl {
     pub edit: Option<usize>,
     /// one of your Tidal playlists being renamed (its id)
     pub tidal_edit: Option<String>,
+}
+
+/// ADD TO PLAYLIST, while it's open: the song, and which of your playlists are shown.
+#[derive(Clone)]
+pub(crate) struct Picker {
+    pub track: Track,
+    /// a loop of it rather than all of it: (from, to, its name)
+    pub lp: Option<(f32, f32, String)>,
+    /// your Tidal playlists shown (else your Backline ones)
+    pub tidal: bool,
+}
+
+/// A song about to go in a playlist it's in already: asked about before it goes in twice.
+#[derive(Clone)]
+pub(crate) enum PlDupe {
+    /// one of your Backline playlists: its place, its name, the song, a loop of it (from, to, the loop's name)
+    Backline(usize, String, Track, Option<(f32, f32, String)>),
+    /// one of your Tidal playlists: its id, its name, the song
+    Tidal(String, String, Track),
+}
+
+/// The question, in words: (heading, the line under it).
+fn dupe_words(d: &PlDupe) -> (&'static str, String) {
+    let (what, list) = match d {
+        PlDupe::Backline(_, list, t, Some((_, _, lname))) => (format!("Your loop \"{}\" of {}", lname, t.title), list),
+        PlDupe::Backline(_, list, t, None) | PlDupe::Tidal(_, list, t) => (format!("\"{}\"", t.title), list),
+    };
+    ("ALREADY IN THIS PLAYLIST", format!("{} is already in {}.", what, list))
 }
 
 /// What a new playlist starts with, in a line ("Starts with ...", "100 songs, starting with ...").
@@ -93,6 +122,151 @@ impl App {
         self.new_pl_dlg = Some(d);
     }
 
+    /// ADD TO PLAYLIST: find one of your playlists by name, on Tidal or in Backline (TIDAL | BACKLINE), and put the
+    /// song in it, or make a new one. It closes when one is picked and you stay where you were. Enter takes the first
+    /// that matches.
+    pub(crate) fn picker_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let Some(mut pk) = self.pl_picker.take() else { return };
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let tidal_ok = pk.track.id > 0 && pk.lp.is_none() && self.api.has_token() && !self.offline;
+        if !tidal_ok {
+            pk.tidal = false;
+        }
+        if pk.tidal {
+            self.load_tidal_lists();
+        }
+        // what's listed: (name, the words on the right); None while your Tidal playlists come in
+        let mut v = self.version_of(&pk.track);
+        v.loop_ab = pk.lp.as_ref().map(|l| (l.0, l.1));
+        let rows: Option<Vec<(String, String)>> = if pk.tidal {
+            self.tidal_lists.as_ref().map(|l| l.iter().map(|(_, n)| (n.clone(), String::new())).collect())
+        } else {
+            Some(
+                self.store
+                    .playlists
+                    .iter()
+                    .map(|p| {
+                        let has = p.items.iter().any(|x| x.same_as(&v));
+                        let n = p.items.len();
+                        (p.name.clone(), if has { "already in it".to_string() } else { format!("{} song{}", n, if n == 1 { "" } else { "s" }) })
+                    })
+                    .collect(),
+            )
+        };
+        let find = self.pl_find.trim().to_string();
+        let order: Vec<usize> = match &rows {
+            Some(r) if find.is_empty() => (0..r.len()).collect(),
+            Some(r) => crate::filtered(&find, r, |(n, _)| vec![n.clone()], if pk.tidal { 12 } else { 11 }),
+            None => Vec::new(),
+        };
+        let what = match &pk.lp {
+            Some((_, _, n)) => format!("Your loop \"{}\" of {}", n, pk.track.title),
+            None => format!("{} - {}", pk.track.artists_text(), pk.track.title),
+        };
+        let max_h = (ctx.screen_rect().height() * 0.5).clamp(150.0, 440.0);
+        let (mut pick, mut new) = (None, false);
+        panel(ctx, "playlist_picker", 460.0, |ui| {
+            title_line(ui, "ADD TO PLAYLIST", 3.0, pal().ink);
+            para(ui, &what, pal().ink2);
+            ui.add_space(6.0);
+            if tidal_ok {
+                if let Some(k) = crate::segments(ui, &["TIDAL", "BACKLINE"], if pk.tidal { 0 } else { 1 }) {
+                    pk.tidal = k == 0;
+                }
+                ui.add_space(6.0);
+            }
+            let w = ui.available_width();
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, crate::bh()), Sense::hover());
+            let hint = if pk.tidal { "Find one of your Tidal playlists" } else { "Find one of your Backline playlists" };
+            if crate::views::field(ui, &mut self.ed, F_PL_FIND, &mut self.pl_find, rect, hint, false).enter {
+                pick = order.first().copied();
+            }
+            ui.add_space(6.0);
+            egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| match &rows {
+                None => crate::dim_line(ui, "LOADING YOUR TIDAL PLAYLISTS...", 1.0, pal().dim),
+                Some(r) if r.is_empty() => crate::dim_line(ui, "NONE YET. MAKE ONE BELOW.", 1.0, pal().dim),
+                Some(_) if order.is_empty() => crate::dim_line(ui, "NO PLAYLISTS MATCH.", 1.0, pal().dim),
+                Some(r) => {
+                    for (row, &k) in order.iter().enumerate() {
+                        let (n, right) = &r[k];
+                        let resp =
+                            crate::list_row(ui, row, None, || n.clone(), || right.clone(), crate::RowState::Normal, false, false);
+                        if resp.is_some_and(|r| r.clicked()) {
+                            pick = Some(k);
+                        }
+                    }
+                }
+            });
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if retro_btn_w(ui, "NEW PLAYLIST...", 150.0, false).clicked() {
+                    new = true;
+                }
+                if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
+                    close = true;
+                }
+            });
+        });
+        if tidal_ok {
+            self.pl_last_tidal = pk.tidal;
+        }
+        let picked = pick.and_then(|k| {
+            if pk.tidal {
+                let (u, n) = self.tidal_lists.as_ref()?.get(k)?.clone();
+                Some(Action::TidalListAdd(u, n, pk.track.clone(), false))
+            } else {
+                Some(Action::PlaylistAdd(k, pk.track.clone(), pk.lp.clone(), false))
+            }
+        });
+        if let Some(a) = picked {
+            acts.push(a);
+            self.ed.id = 0;
+            return;
+        }
+        if new {
+            // on the side that was showing
+            self.open_new_playlist(NewPl { tracks: vec![pk.track], loop_ab: pk.lp, tidal: pk.tidal, ..Default::default() });
+            return;
+        }
+        if close {
+            self.ed.id = 0;
+            return;
+        }
+        self.pl_picker = Some(pk);
+    }
+
+    /// The question when a song is in the playlist already: ADD AGAIN (Enter) or CANCEL (Esc).
+    pub(crate) fn dupe_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let Some(d) = self.pl_dupe.clone() else { return };
+        let (mut again, mut cancel) = ctx.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+        let (head, line) = dupe_words(&d);
+        panel(ctx, "playlist_dupe", 440.0, |ui| {
+            title_line(ui, head, 3.0, pal().ink);
+            ui.add_space(4.0);
+            para(ui, &line, pal().ink2);
+            ui.add_space(2.0);
+            title_line(ui, "Add it again?", 2.0, pal().ink);
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if retro_btn_w(ui, "ADD AGAIN", 130.0, true).clicked() {
+                    again = true;
+                }
+                if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if again {
+            acts.push(match d {
+                PlDupe::Backline(i, _, t, lp) => Action::PlaylistAdd(i, t, lp, true),
+                PlDupe::Tidal(uuid, name, t) => Action::TidalListAdd(uuid, name, t, true),
+            });
+            self.pl_dupe = None;
+        } else if cancel {
+            self.pl_dupe = None;
+        }
+    }
+
     /// The New Playlist panel, while it is open.
     pub(crate) fn new_playlist_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
         let Some(mut d) = self.new_pl_dlg.take() else { return };
@@ -115,8 +289,10 @@ impl App {
                 "RENAME PLAYLIST"
             } else if d.edit.is_some() {
                 "EDIT PLAYLIST"
+            } else if d.tidal {
+                "NEW TIDAL PLAYLIST"
             } else {
-                "NEW PLAYLIST"
+                "NEW BACKLINE PLAYLIST"
             };
             title_line(ui, head, 3.0, pal().ink);
             if let Some(what) = starts_with(&d.tracks, d.loop_ab.as_ref()) {
@@ -196,6 +372,8 @@ impl App {
                         });
                         if d.tidal {
                             crate::dim_line(ui, "Saved to your Tidal account. Tidal sets the cover.", 1.0, pal().dim);
+                        } else {
+                            crate::dim_line(ui, "Saved in Backline, on this computer.", 1.0, pal().dim);
                         }
                     }
                 });
@@ -242,7 +420,15 @@ impl App {
             }
             ui.add_space(14.0);
             ui.horizontal(|ui| {
-                if retro_btn_w(ui, if d.edit.is_some() || renaming { "SAVE" } else { "CREATE" }, 120.0, true).clicked() {
+                // (where it goes, said on the button too)
+                let go = if d.edit.is_some() || renaming {
+                    "SAVE"
+                } else if d.tidal {
+                    "Create on Tidal"
+                } else {
+                    "Create in Backline"
+                };
+                if retro_btn_w(ui, go, if go == "SAVE" { 120.0 } else { 200.0 }, true).clicked() {
                     make = true;
                 }
                 if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
@@ -281,6 +467,17 @@ mod tests {
         assert!(radio.starts_with("3 songs, starting with ") && radio.ends_with("Blue Monk"), "{}", radio);
         let lp = (1.0, 9.0, "head".to_string());
         assert_eq!(starts_with(&[t("Blue Monk")], Some(&lp)).unwrap(), "Starts with the loop \"head\" of Blue Monk");
+    }
+
+    #[test]
+    fn a_song_twice_is_asked_about() {
+        let t = Track { id: 1, title: "Blue Monk".into(), ..Default::default() };
+        let (_, line) = dupe_words(&PlDupe::Backline(0, "Shed".into(), t.clone(), None));
+        assert_eq!(line, "\"Blue Monk\" is already in Shed.");
+        let (_, line) = dupe_words(&PlDupe::Backline(0, "Shed".into(), t.clone(), Some((1.0, 9.0, "head".into()))));
+        assert_eq!(line, "Your loop \"head\" of Blue Monk is already in Shed.");
+        let (_, line) = dupe_words(&PlDupe::Tidal("u".into(), "Quiet".into(), t));
+        assert_eq!(line, "\"Blue Monk\" is already in Quiet.");
     }
 }
 
