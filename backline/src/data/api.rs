@@ -880,9 +880,52 @@ impl Api {
 
     /// Add a track to one of your Tidal playlists (already in it: left as it is).
     pub fn playlist_add(&self, uuid: &str, id: i64) -> Res<()> {
+        self.playlist_add_all(uuid, &[id])
+    }
+
+    /// Add tracks to one of your Tidal playlists, in order (those already in it are left as they are), a batch at
+    /// a time.
+    pub fn playlist_add_all(&self, uuid: &str, ids: &[i64]) -> Res<()> {
         guard()?;
         let (tok, country, _) = self.auth();
-        // Tidal wants the playlist's current version with a change, so two edits never cross
+        for batch in ids.chunks(50) {
+            // Tidal wants the playlist's current version with a change, so two edits never cross
+            let etag = self.playlist_etag(uuid, &tok, &country)?;
+            let idstr = batch.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            let r = self
+                .http
+                .post(format!("{}/playlists/{}/items", API, uuid))
+                .bearer_auth(&tok)
+                .header("If-None-Match", etag)
+                .query(&[("countryCode", country.as_str())])
+                .form(&[("trackIds", idstr.as_str()), ("onDupes", "SKIP"), ("onArtifactNotFound", "SKIP")])
+                .send()
+                .map_err(e2s)?;
+            let st = r.status();
+            log(&format!("POST playlist {} {} item(s) -> {}", uuid, batch.len(), st.as_u16()));
+            if !st.is_success() {
+                return Err(format!("{}: {}", st.as_u16(), r.text().unwrap_or_default().chars().take(120).collect::<String>()));
+            }
+        }
+        Ok(())
+    }
+
+    /// A playlist's current version (Tidal's ETag), which a change to it has to name.
+    fn playlist_etag(&self, uuid: &str, tok: &str, country: &str) -> Res<String> {
+        let head = self
+            .http
+            .get(format!("{}/playlists/{}", API, uuid))
+            .bearer_auth(tok)
+            .query(&[("countryCode", country)])
+            .send()
+            .map_err(e2s)?;
+        Ok(head.headers().get("etag").and_then(|e| e.to_str().ok()).unwrap_or("*").to_string())
+    }
+
+    /// Give one of your Tidal playlists a new name (its description stays as it is).
+    pub fn playlist_rename(&self, uuid: &str, title: &str) -> Res<()> {
+        guard()?;
+        let (tok, country, _) = self.auth();
         let head = self
             .http
             .get(format!("{}/playlists/{}", API, uuid))
@@ -891,18 +934,19 @@ impl Api {
             .send()
             .map_err(e2s)?;
         let etag = head.headers().get("etag").and_then(|e| e.to_str().ok()).unwrap_or("*").to_string();
-        let idstr = id.to_string();
+        let cur: Value = head.json().map_err(e2s)?;
+        let desc = cur["description"].as_str().unwrap_or("").to_string();
         let r = self
             .http
-            .post(format!("{}/playlists/{}/items", API, uuid))
+            .post(format!("{}/playlists/{}", API, uuid))
             .bearer_auth(&tok)
             .header("If-None-Match", etag)
             .query(&[("countryCode", country.as_str())])
-            .form(&[("trackIds", idstr.as_str()), ("onDupes", "SKIP"), ("onArtifactNotFound", "SKIP")])
+            .form(&[("title", title), ("description", desc.as_str())])
             .send()
             .map_err(e2s)?;
         let st = r.status();
-        log(&format!("POST playlist {} item {} -> {}", uuid, id, st.as_u16()));
+        log(&format!("POST playlist {} rename -> {}", uuid, st.as_u16()));
         if st.is_success() {
             Ok(())
         } else {

@@ -1563,5 +1563,36 @@ impl App {
                     });
                 });
         });
+        self.draw_toast(ui, avail);
+    }
+
+    /// The note over the library for a moment ("Added to ..."): a pill at the foot of the page, fading out.
+    fn draw_toast(&mut self, ui: &egui::Ui, area: Rect) {
+        let Some((text, at)) = self.toast.clone() else { return };
+        const SHOW: f32 = 2.6;
+        const FADE: f32 = 0.5;
+        let age = (ui.input(|i| i.time) - at) as f32;
+        if age > SHOW + FADE {
+            self.toast = None;
+            return;
+        }
+        let a = if age < 0.15 { age / 0.15 } else if age > SHOW { 1.0 - (age - SHOW) / FADE } else { 1.0 }.clamp(0.0, 1.0);
+        let sc = font::ui_scale();
+        let px = 2.0;
+        let tw = font::text_w(&text, px).min((area.width() - 90.0 * sc).max(60.0));
+        let (w, h) = (tw + 58.0 * sc, 34.0 * sc);
+        let y = area.max.y - 18.0 * sc - h / 2.0 + (1.0 - a) * 6.0;
+        let r = Rect::from_center_size(Pos2::new(area.center().x, y), Vec2::new(w, h));
+        let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lib_toast")));
+        p.rect_filled(r.translate(Vec2::new(0.0, 3.0)), h / 2.0, egui::Color32::from_black_alpha((110.0 * a) as u8));
+        p.rect_filled(r, h / 2.0, pal().bar_txt.gamma_multiply(a));
+        // a tick, then the words
+        let ink = pal().lcd.gamma_multiply(a);
+        let c = Pos2::new(r.min.x + 20.0 * sc, r.center().y);
+        let s = egui::Stroke::new(2.2 * sc, ink);
+        p.line_segment([c + Vec2::new(-5.0, 0.0) * sc, c + Vec2::new(-1.5, 3.5) * sc], s);
+        p.line_segment([c + Vec2::new(-1.5, 3.5) * sc, c + Vec2::new(5.5, -4.0) * sc], s);
+        crate::ptext_fit(&p, Pos2::new(r.min.x + 36.0 * sc, r.center().y), Align::Min, &text, px, tw, ink);
+        ui.ctx().request_repaint();
     }
 }

@@ -2948,134 +2948,68 @@ impl App {
     // ------------------------------------------------------------ PLAYLISTS
     pub(crate) fn playlists_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
-        let open = self.pl_open.filter(|&i| i < self.store.playlists.len());
-        let picking = self.pl_pick.is_some();
-        if let (Some(i), false) = (open, picking) {
+        if let Some(i) = self.pl_open.filter(|&i| i < self.store.playlists.len()) {
             self.playlist_detail(ui, acts, i);
             return;
         }
-        if let Some(t) = self.pl_pick.clone() {
-            let what = match &self.pl_loop {
-                Some((a, b, name)) => {
-                    format!("THE LOOP \"{}\" ({}-{}) OF {} - {}", name, fmt_time(*a), fmt_time(*b), t.artist, t.title)
-                }
-                None => format!("\"{} - {}\"", t.artist, t.title),
-            };
-            let which = if self.pl_tidal { "TIDAL PLAYLIST" } else { "PLAYLIST" };
-            para(ui, &format!("ADD {} TO WHICH {}?", what, which), pal().ink);
-            ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "CANCEL", false).clicked() {
-                    self.pl_pick = None;
-                    self.pl_loop = None;
-                    self.pl_tidal = false;
-                }
-            });
-            ui.add_space(4.0);
-            let backline: &[store::Playlist] = if self.pl_tidal { &[] } else { &self.store.playlists };
-            if !backline.is_empty() {
-                section_header(ui, "BACKLINE PLAYLISTS");
-            }
-            for (i, pl) in backline.iter().enumerate() {
-                let n = pl.items.len();
-                if let Some(r) =
-                    list_row(ui, i, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
-                {
-                    if r.clicked() {
-                        acts.push(Action::PlaylistAdd(i, t.clone()));
-                    }
-                }
-            }
-            if t.id > 0 && self.pl_loop.is_none() && self.api.has_token() {
-                ui.add_space(8.0);
-                section_header(ui, "YOUR TIDAL PLAYLISTS");
-                if self.tidal_lists.is_none() && !self.tidal_lists_busy {
-                    self.tidal_lists_busy = true;
-                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
-                        let _ = tx.send(crate::Msg::TidalLists(api.own_playlists()));
-                        ctx.request_repaint();
-                    });
-                }
-                match &self.tidal_lists {
-                    None => dim_line(ui, "LOADING...", 1.0, pal().dim),
-                    Some(l) if l.is_empty() => {
-                        dim_line(ui, "NONE YET. TYPE A NAME BELOW AND PRESS NEW ON TIDAL.", 1.0, pal().dim)
-                    }
-                    Some(l) => {
-                        for (k, (uuid, name)) in l.iter().enumerate() {
-                            if let Some(r) =
-                                list_row(ui, k, Some(k + 1), || name.clone(), String::new, RowState::Normal, false, false)
-                            {
-                                if r.clicked() {
-                                    acts.push(Action::TidalListAdd(uuid.clone(), name.clone(), t.id));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            ui.add_space(6.0);
-        } else {
-            title_line(ui, "PLAYLISTS", 3.0, pal().ink);
-            title_line(ui, "your own lists, mixing Tidal, SoundCloud, YouTube and files", 2.0, pal().ink2);
-            ui.add_space(4.0);
-        }
+        title_line(ui, "PLAYLISTS", 3.0, pal().ink);
+        title_line(ui, "your own lists, mixing Tidal, SoundCloud, YouTube and files", 2.0, pal().ink2);
+        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             let w = (ui.available_width() - 78.0).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let o = field(ui, &mut self.ed, F_NEW_PL, &mut self.new_pl, rect, "New playlist name", false);
-            // the New Playlist panel: a name, a picture, in Backline or on Tidal (with the song being placed in it)
+            // the New Playlist panel: a name, a picture, in Backline or on Tidal
             if o.enter || retro_btn_w(ui, "NEW", 70.0, false).tip("Create a playlist").clicked() {
-                acts.push(Action::PlaylistNew(self.pl_pick.clone()));
+                acts.push(Action::PlaylistNew(None));
             }
         });
-        if self.pl_pick.is_none() {
-            self.share_buttons(ui, acts);
-            ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "SAVE QUEUE AS PLAYLIST", false)
-                    .tip("Turns the queue into a playlist. Type a name above first, or it gets a number.")
-                    .clicked()
-                {
-                    acts.push(Action::PlaylistFromQueue);
+        self.share_buttons(ui, acts);
+        ui.horizontal_wrapped(|ui| {
+            if retro_btn(ui, "SAVE QUEUE AS PLAYLIST", false)
+                .tip("Turns the queue into a playlist, named after what it was started from (a radio, a mix). You can change the name.")
+                .clicked()
+            {
+                acts.push(Action::PlaylistFromQueue);
+            }
+        });
+        if self.store.playlists.is_empty() {
+            para(ui, "Right-click any song and choose ADD TO PLAYLIST. Playlists live on this PC only, and one list can mix every source.", pal().ink2);
+        }
+        ui.add_space(4.0);
+        // your playlists, filtered by name as you type
+        let filter = self.lib_filter.trim().to_string();
+        if !self.store.playlists.is_empty() {
+            self.filter_box(ui, "Filter your playlists");
+        }
+        let order: Vec<usize> = if filter.is_empty() {
+            (0..self.store.playlists.len()).collect()
+        } else {
+            crate::filtered(&filter, &self.store.playlists, |p| vec![p.name.clone()], 4)
+        };
+        if !filter.is_empty() && order.is_empty() && !self.store.playlists.is_empty() {
+            title_line(ui, "No playlists match.", 2.0, pal().ink2);
+        }
+        for (row, &i) in order.iter().enumerate() {
+            let pl = &self.store.playlists[i];
+            let n = pl.items.len();
+            if let Some(r) =
+                list_row(ui, row, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
+            {
+                if r.clicked() {
+                    acts.push(Action::PlaylistOpen(Some(i)));
                 }
-            });
-            if self.store.playlists.is_empty() {
-                para(ui, "Right-click any song and choose ADD TO A BACKLINE PLAYLIST. Playlists live on this PC only, and one list can mix every source.", pal().ink2);
-            }
-            ui.add_space(4.0);
-            // your playlists, filtered by name as you type
-            let filter = self.lib_filter.trim().to_string();
-            if !self.store.playlists.is_empty() {
-                self.filter_box(ui, "Filter your playlists");
-            }
-            let order: Vec<usize> = if filter.is_empty() {
-                (0..self.store.playlists.len()).collect()
-            } else {
-                crate::filtered(&filter, &self.store.playlists, |p| vec![p.name.clone()], 4)
-            };
-            if !filter.is_empty() && order.is_empty() && !self.store.playlists.is_empty() {
-                title_line(ui, "No playlists match.", 2.0, pal().ink2);
-            }
-            for (row, &i) in order.iter().enumerate() {
-                let pl = &self.store.playlists[i];
-                let n = pl.items.len();
-                if let Some(r) =
-                    list_row(ui, row, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
-                {
-                    if r.clicked() {
-                        acts.push(Action::PlaylistOpen(Some(i)));
+                r.context_menu(|ui| {
+                    // (the panel has its description and cover too)
+                    if menu_item(ui, "Rename...") {
+                        acts.push(Action::PlaylistEdit(i));
+                        ui.close_menu();
                     }
-                    r.context_menu(|ui| {
-                        if menu_item(ui, "Edit details...") {
-                            acts.push(Action::PlaylistEdit(i));
-                            ui.close_menu();
-                        }
-                        if menu_item(ui, "Delete this playlist") {
-                            acts.push(Action::PlaylistDelete(i));
-                            ui.close_menu();
-                        }
-                    });
-                }
+                    if menu_item(ui, "Delete this playlist") {
+                        acts.push(Action::PlaylistDelete(i));
+                        ui.close_menu();
+                    }
+                });
             }
         }
         ui.add_space(20.0);
@@ -3087,7 +3021,7 @@ impl App {
             if retro_btn(ui, "< ALL PLAYLISTS", false).clicked() {
                 acts.push(Action::PlaylistOpen(None));
             }
-            if retro_btn(ui, "EDIT...", false).tip("Name, description and cover").clicked() {
+            if retro_btn(ui, "RENAME / EDIT", false).tip("Its name, description and cover").clicked() {
                 acts.push(Action::PlaylistEdit(pi));
             }
         });
@@ -4297,10 +4231,7 @@ impl App {
                             ui.close_menu();
                         }
                         if let Some(v) = &c.v {
-                            if menu_item(ui, "Add this loop to a playlist...") {
-                                acts.push(Action::PlaylistPickLoop(v.to_track(), s.a, s.b, s.name.clone()));
-                                ui.close_menu();
-                            }
+                            crate::playlist_menu(ui, acts, &v.to_track(), Some((s.a, s.b, s.name.clone())));
                         }
                         if menu_item(ui, "Delete this loop") {
                             acts.push(Action::ForgetLoop(c.id, *i));

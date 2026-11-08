@@ -1,6 +1,7 @@
 //! New Playlist: a panel to name a new playlist (in Backline or on your Tidal account), say what it is for, give it
 //! a cover (a ready-made one, or a picture of your own, picked or dropped on the panel) and see it before making it.
-//! Opened from a song's right-click menu, the playlist picker and the LISTS pages.
+//! Opened from a song's right-click menu, a radio's SAVE AS PLAYLIST, the queue and the LISTS pages; also renames a
+//! playlist (yours in Backline, or on Tidal).
 
 use crate::api::Track;
 use crate::credits::panel;
@@ -13,9 +14,9 @@ const F_NEW_DESC: u32 = 104;
 /// What the panel holds while it is open.
 #[derive(Clone, Default)]
 pub(crate) struct NewPl {
-    /// the song it starts with (None: an empty playlist)
-    pub track: Option<Track>,
-    /// a loop of that song, when the playlist starts with a loop: (from, to, its name)
+    /// the songs it starts with (none: an empty playlist), as a radio's
+    pub tracks: Vec<Track>,
+    /// a loop of the first song, when the playlist starts with a loop: (from, to, its name)
     pub loop_ab: Option<(f32, f32, String)>,
     pub name: String,
     /// a few words on what it is for
@@ -26,6 +27,19 @@ pub(crate) struct NewPl {
     pub tidal: bool,
     /// one of your playlists being changed (by its place), not a new one
     pub edit: Option<usize>,
+    /// one of your Tidal playlists being renamed (its id)
+    pub tidal_edit: Option<String>,
+}
+
+/// What a new playlist starts with, in a line ("Starts with ...", "100 songs, starting with ...").
+fn starts_with(tracks: &[Track], lp: Option<&(f32, f32, String)>) -> Option<String> {
+    let t = tracks.first()?;
+    let song = format!("{} - {}", t.artists_text(), t.title);
+    Some(match (lp, tracks.len()) {
+        (Some((_, _, n)), _) => format!("Starts with the loop \"{}\" of {}", n, t.title),
+        (None, 1) => format!("Starts with {}", song),
+        (None, n) => format!("{} songs, starting with {}", n, song),
+    })
 }
 
 /// A picture for a playlist, kept in Backline's folder (so it stays when the original moves): its new path.
@@ -84,8 +98,9 @@ impl App {
         let Some(mut d) = self.new_pl_dlg.take() else { return };
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         let mut make = false;
-        let tidal_ok = self.api.has_token() && d.loop_ab.is_none() && d.track.as_ref().map_or(true, |t| t.id > 0);
-        if !tidal_ok {
+        let renaming = d.tidal_edit.is_some();
+        let tidal_ok = self.api.has_token() && d.loop_ab.is_none() && d.tracks.iter().all(|t| t.id > 0);
+        if !tidal_ok && !renaming {
             d.tidal = false;
         }
         let covers = samples();
@@ -95,14 +110,20 @@ impl App {
         let thumbs: Vec<Option<egui::TextureId>> = covers.iter().map(|c| self.images.get(&art_url(c))).collect();
         let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
         let now = ctx.input(|i| i.time) as f32;
-        panel(ctx, "new_playlist", if d.tidal { 480.0 } else { 620.0 }, |ui| {
-            title_line(ui, if d.edit.is_some() { "EDIT PLAYLIST" } else { "NEW PLAYLIST" }, 3.0, pal().ink);
-            if let Some(t) = &d.track {
-                let what = match &d.loop_ab {
-                    Some((_, _, n)) => format!("Starts with the loop \"{}\" of {}", n, t.title),
-                    None => format!("Starts with {} - {}", t.artists_text(), t.title),
-                };
+        panel(ctx, "new_playlist", if d.tidal || renaming { 480.0 } else { 620.0 }, |ui| {
+            let head = if renaming {
+                "RENAME PLAYLIST"
+            } else if d.edit.is_some() {
+                "EDIT PLAYLIST"
+            } else {
+                "NEW PLAYLIST"
+            };
+            title_line(ui, head, 3.0, pal().ink);
+            if let Some(what) = starts_with(&d.tracks, d.loop_ab.as_ref()) {
                 para(ui, &what, pal().ink2);
+            }
+            if renaming {
+                para(ui, "On your Tidal account.", pal().ink2);
             }
             ui.add_space(8.0);
             ui.horizontal_top(|ui| {
@@ -155,11 +176,14 @@ impl App {
                     if crate::views::field(ui, &mut self.ed, F_NEW_NAME, &mut d.name, rect, "Playlist name", false).enter {
                         make = true;
                     }
-                    ui.add_space(8.0);
-                    crate::dim_line(ui, "DESCRIPTION", 1.0, pal().ink2);
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 92.0), Sense::hover());
-                    crate::views::field(ui, &mut self.ed, F_NEW_DESC, &mut d.desc, rect, "Add an optional description", true);
-                    if tidal_ok && d.edit.is_none() {
+                    // (a Tidal playlist renamed keeps its description)
+                    if !renaming {
+                        ui.add_space(8.0);
+                        crate::dim_line(ui, "DESCRIPTION", 1.0, pal().ink2);
+                        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 92.0), Sense::hover());
+                        crate::views::field(ui, &mut self.ed, F_NEW_DESC, &mut d.desc, rect, "Add an optional description", true);
+                    }
+                    if tidal_ok && d.edit.is_none() && !renaming {
                         ui.add_space(8.0);
                         ui.horizontal_wrapped(|ui| {
                             if retro_btn(ui, "IN BACKLINE", !d.tidal).tip("Saved on this computer; can mix all sources.").clicked()
@@ -218,7 +242,7 @@ impl App {
             }
             ui.add_space(14.0);
             ui.horizontal(|ui| {
-                if retro_btn_w(ui, if d.edit.is_some() { "SAVE" } else { "CREATE" }, 120.0, true).clicked() {
+                if retro_btn_w(ui, if d.edit.is_some() || renaming { "SAVE" } else { "CREATE" }, 120.0, true).clicked() {
                     make = true;
                 }
                 if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
@@ -240,6 +264,23 @@ impl App {
             return;
         }
         self.new_pl_dlg = Some(d);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_a_new_playlist_starts_with() {
+        let t = |n: &str| Track { id: 1, title: n.into(), artist: "Monk".into(), ..Default::default() };
+        assert_eq!(starts_with(&[], None), None);
+        let one = starts_with(&[t("Blue Monk")], None).unwrap();
+        assert!(one.starts_with("Starts with ") && one.ends_with("Blue Monk"), "{}", one);
+        let radio = starts_with(&[t("Blue Monk"), t("Bemsha Swing"), t("Epistrophy")], None).unwrap();
+        assert!(radio.starts_with("3 songs, starting with ") && radio.ends_with("Blue Monk"), "{}", radio);
+        let lp = (1.0, 9.0, "head".to_string());
+        assert_eq!(starts_with(&[t("Blue Monk")], Some(&lp)).unwrap(), "Starts with the loop \"head\" of Blue Monk");
     }
 }
 

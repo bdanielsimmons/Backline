@@ -1614,14 +1614,52 @@ impl App {
             }
             Msg::TidalListMade(r) => match r {
                 Ok(name) => {
-                    self.set_note(&format!("CREATED {} ON TIDAL", name.to_uppercase()));
+                    self.toast(&format!("Made {} on Tidal", name));
                     self.tidal_lists = None;
                     self.apply(Action::RefreshLibrary);
                 }
-                Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
+                Err(e) => {
+                    self.toast = None;
+                    self.set_err(format!("TIDAL PLAYLIST: {}", e))
+                }
             },
             Msg::TidalListDone(r) => match r {
-                Ok(note) => self.set_note(&note),
+                Ok(note) => self.toast(&note),
+                Err(e) => {
+                    self.toast = None;
+                    self.set_err(format!("TIDAL PLAYLIST: {}", e))
+                }
+            },
+            Msg::TidalListRenamed(uuid, name, r) => match r {
+                Ok(()) => {
+                    // the new name everywhere it shows: your playlists, the library's LISTS, the page itself
+                    if let Some(l) = self.tidal_lists.as_mut() {
+                        for (_, n) in l.iter_mut().filter(|(u, _)| *u == uuid) {
+                            *n = name.clone();
+                        }
+                    }
+                    for p in self.page.iter_mut().chain(self.back.iter_mut()).chain(self.fwd.iter_mut()).chain(self.lib_page.iter_mut()) {
+                        let here = p.card.as_ref().is_some_and(|c| c.id == uuid);
+                        let listed = p.rows.iter().any(|(_, cs)| cs.iter().any(|c| c.id == uuid));
+                        if !here && !listed {
+                            continue;
+                        }
+                        let pg = Arc::make_mut(p);
+                        if here {
+                            pg.title = name.clone();
+                            if let Some(c) = pg.card.as_mut() {
+                                c.title = name.clone();
+                            }
+                        }
+                        for (_, cs) in pg.rows.iter_mut() {
+                            for c in cs.iter_mut().filter(|c| c.id == uuid) {
+                                c.title = name.clone();
+                            }
+                        }
+                    }
+                    self.serial += 1;
+                    self.toast(&format!("Renamed to {} on Tidal", name));
+                }
                 Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
             },
             Msg::TidalListRemoved(uuid, id, nth, r) => match r {
@@ -2398,9 +2436,7 @@ impl App {
                 if s != Sec::Tunes {
                     self.pick = None;
                 }
-                if s != Sec::Lists {
-                    self.pl_pick = None;
-                } else {
+                if s == Sec::Lists {
                     // saved file / YouTube / SoundCloud items need their sources known before they can play
                     let vs: Vec<Version> = self.store.playlists.iter().flat_map(|p| p.items.iter().cloned()).collect();
                     for v in &vs {
@@ -2523,20 +2559,6 @@ impl App {
                     format!("USING YOUR {} SIGN-IN. CLOSE THAT BROWSER IF IT FAILS.", sources::SC_BROWSERS[n as usize])
                 };
             }
-            Action::PlaylistPick(t) => {
-                self.set_note(&format!("PICK A PLAYLIST FOR: {}", t.title.to_uppercase()));
-                self.pl_pick = Some(t);
-                self.pl_loop = None;
-                self.pl_tidal = false;
-                self.apply(Action::Section(Sec::Lists));
-            }
-            Action::PlaylistPickTidal(t) => {
-                self.set_note(&format!("PICK A TIDAL PLAYLIST FOR: {}", t.title.to_uppercase()));
-                self.pl_pick = Some(t);
-                self.pl_loop = None;
-                self.pl_tidal = true;
-                self.apply(Action::Section(Sec::Lists));
-            }
             Action::TidalListAdd(uuid, name, id) => {
                 let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
                 let fresh = uuid.is_empty();
@@ -2544,16 +2566,18 @@ impl App {
                     // the new one shows in the list next time it is opened
                     self.tidal_lists = None;
                 }
+                self.toast(&format!("Adding to {} on Tidal...", name));
                 std::thread::spawn(move || {
                     let r = if fresh { api.playlist_create(&name, "") } else { Ok(uuid) }
                         .and_then(|u| api.playlist_add(&u, id))
-                        .map(|_| format!("ADDED TO {} ON TIDAL", name.to_uppercase()));
+                        .map(|_| format!("Added to {} on Tidal", name));
                     let _ = tx.send(Msg::TidalListDone(r));
                     ctx.request_repaint();
                 });
-                self.pl_pick = None;
-                self.pl_loop = None;
-                self.new_pl.clear();
+            }
+            Action::TidalListRename(uuid, name) => {
+                let d = crate::new_playlist::NewPl { name, tidal: true, tidal_edit: Some(uuid), ..Default::default() };
+                self.open_new_playlist(d);
             }
             Action::TidalListRemove(uuid, id, nth) => {
                 let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
@@ -2701,42 +2725,43 @@ impl App {
                     ctx.request_repaint();
                 });
             }
-            Action::PlaylistPickLoop(t, a, b, name) => {
-                self.set_note(&format!("PICK A PLAYLIST FOR THE LOOP: {}", name.to_uppercase()));
-                self.pl_pick = Some(t);
-                self.pl_loop = Some((a, b, name));
-                self.apply(Action::Section(Sec::Lists));
-            }
-            Action::PlaylistAdd(i, t) => {
+            Action::PlaylistAdd(i, t, lp) => {
                 if i < self.store.playlists.len() {
                     let mut v = self.version_of(&t);
-                    if let Some((a, b, name)) = self.pl_loop.take() {
+                    if let Some((a, b, name)) = lp {
                         v.loop_ab = Some((a, b));
                         v.loop_name = name;
                     }
-                    self.store.playlists[i].items.push(v);
-                    self.store_dirty = true;
-                    let n = self.store.playlists[i].name.to_uppercase();
-                    self.set_note(&format!("ADDED TO {}", n));
+                    let name = self.store.playlists[i].name.clone();
+                    // the same song (or the same loop of it) once is enough
+                    let same = |x: &Version| {
+                        x.kind == v.kind
+                            && (if v.kind == "tidal" { x.id == v.id } else { x.src == v.src })
+                            && x.loop_ab == v.loop_ab
+                    };
+                    if self.store.playlists[i].items.iter().any(same) {
+                        self.toast(&format!("Already in {}", name));
+                    } else {
+                        self.store.playlists[i].items.push(v);
+                        self.store_dirty = true;
+                        self.toast(&format!("Added to {}", name));
+                    }
                 }
-                self.pl_pick = None;
                 self.serial += 1;
             }
             Action::PlaylistNew(t) => {
                 let d = crate::new_playlist::NewPl {
-                    loop_ab: if t.is_some() { self.pl_loop.clone() } else { None },
-                    track: t,
+                    tracks: t.into_iter().collect(),
                     name: self.new_pl.trim().to_string(),
-                    desc: String::new(),
-                    art: String::new(),
-                    tidal: self.pl_tidal,
-                    edit: None,
+                    ..Default::default()
                 };
                 self.open_new_playlist(d);
             }
-            Action::PlaylistNewWith(t, tidal) => {
-                self.pl_loop = None;
-                self.open_new_playlist(crate::new_playlist::NewPl { track: Some(t), tidal, ..Default::default() });
+            Action::PlaylistNewWith(t, lp) => {
+                self.open_new_playlist(crate::new_playlist::NewPl { tracks: vec![t], loop_ab: lp, ..Default::default() });
+            }
+            Action::PlaylistNewFrom(name, tracks) => {
+                self.open_new_playlist(crate::new_playlist::NewPl { name, tracks, ..Default::default() });
             }
             Action::PlaylistEdit(i) => {
                 if let Some(pl) = self.store.playlists.get(i) {
@@ -2761,63 +2786,79 @@ impl App {
                     crate::new_playlist::keep_art(&d.art).unwrap_or_default()
                 };
                 if let Some(pl) = d.edit.and_then(|i| self.store.playlists.get_mut(i)) {
+                    let was = pl.name.clone();
                     if !d.name.trim().is_empty() {
                         pl.name = d.name.trim().to_string();
                     }
                     pl.desc = d.desc.trim().to_string();
                     pl.art = art;
+                    let now = pl.name.clone();
                     self.store_dirty = true;
                     self.serial += 1;
+                    if now != was {
+                        self.toast(&format!("Renamed to {}", now));
+                    }
                     return;
                 }
+                // one of your Tidal playlists, renamed
+                if let Some(uuid) = d.tidal_edit.clone() {
+                    let name = d.name.trim().to_string();
+                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                    std::thread::spawn(move || {
+                        let r = api.playlist_rename(&uuid, &name);
+                        let _ = tx.send(Msg::TidalListRenamed(uuid, name, r));
+                        ctx.request_repaint();
+                    });
+                    return;
+                }
+                let count = d.tracks.len();
+                let songs = if count > 1 { format!(" with {} songs", count) } else { String::new() };
                 if d.tidal {
                     let name = d.name.trim().to_string();
                     let desc = d.desc.trim().to_string();
-                    let id = d.track.as_ref().map(|t| t.id);
+                    let ids: Vec<i64> = d.tracks.iter().map(|t| t.id).collect();
                     let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
                     self.tidal_lists = None;
+                    self.toast(&format!("Making {} on Tidal...", name));
                     std::thread::spawn(move || {
                         let r = api.playlist_create(&name, &desc).and_then(|u| {
-                            if let Some(id) = id {
-                                api.playlist_add(&u, id)?;
+                            if !ids.is_empty() {
+                                api.playlist_add_all(&u, &ids)?;
                             }
                             Ok(u)
                         });
-                        let _ = tx.send(Msg::TidalListMade(r.map(|_| name)));
+                        let _ = tx.send(Msg::TidalListMade(r.map(|_| format!("{}{}", name, songs))));
                         ctx.request_repaint();
                     });
                 } else {
                     let typed = d.name.trim().to_string();
                     let name = if typed.is_empty() { format!("Playlist {}", self.store.playlists.len() + 1) } else { typed };
-                    let mut items: Vec<store::Version> = d.track.iter().map(|t| self.version_of(t)).collect();
+                    let mut items: Vec<store::Version> = d.tracks.iter().map(|t| self.version_of(t)).collect();
                     if let (Some((a, b, lname)), Some(v)) = (d.loop_ab, items.first_mut()) {
                         v.loop_ab = Some((a, b));
                         v.loop_name = lname;
                     }
-                    self.store.playlists.push(store::Playlist { name, items, art, desc: d.desc.trim().to_string() });
-                    self.pl_open = Some(self.store.playlists.len() - 1);
-                    self.apply(Action::Section(Sec::Lists));
+                    self.store.playlists.push(store::Playlist { name: name.clone(), items, art, desc: d.desc.trim().to_string() });
+                    // made from the LISTS page: open it there; from anywhere else, stay where you are
+                    if self.sec == Sec::Lists {
+                        self.pl_open = Some(self.store.playlists.len() - 1);
+                    }
+                    self.toast(&format!("Made {}{}", name, songs));
                     self.store_dirty = true;
                     self.serial += 1;
                 }
                 self.new_pl.clear();
-                self.pl_pick = None;
-                self.pl_loop = None;
-                self.pl_tidal = false;
             }
             Action::PlaylistFromQueue => {
                 if self.queue.is_empty() {
-                    self.set_note("THE QUEUE IS EMPTY");
+                    self.toast("The queue is empty");
                     return;
                 }
+                // named after what it was started from (a radio, a mix), or what was typed; the name can be changed
                 let typed = self.new_pl.trim().to_string();
-                let name = if typed.is_empty() { format!("Playlist {}", self.store.playlists.len() + 1) } else { typed };
-                let items: Vec<Version> = self.queue.iter().map(|t| self.version_of(t)).collect();
-                self.store.playlists.push(store::Playlist { name, items, ..Default::default() });
-                self.new_pl.clear();
-                self.store_dirty = true;
-                self.set_note("QUEUE SAVED AS A PLAYLIST");
-                self.serial += 1;
+                let name = if typed.is_empty() { self.queue_from.clone() } else { typed };
+                let tracks = self.queue.to_vec();
+                self.apply(Action::PlaylistNewFrom(name, tracks));
             }
             Action::PlaylistRemove(pi, ti) => {
                 if let Some(p) = self.store.playlists.get_mut(pi) {
