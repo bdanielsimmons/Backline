@@ -123,6 +123,9 @@ pub const F_DIARY_NOTE: u32 = 104;
 pub const F_NOTES_SEARCH: u32 = 105;
 /// the box that finds a playlist to put a song in (ADD TO PLAYLIST)
 pub const F_PL_FIND: u32 = 106;
+/// PITCH: the A the record is tuned to, and the A you play at (Hz)
+pub const F_REC_A: u32 = 107;
+pub const F_MY_A: u32 = 108;
 
 impl App {
     /// A box you can type into. Shows `shown`; returns the typed text when you press Enter or click away.

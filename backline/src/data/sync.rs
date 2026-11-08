@@ -23,6 +23,11 @@
 //! and the app is told to read it again (`Incoming::Files`); library parts go to the app, which puts them in its
 //! library and saves it (`Incoming::Library`, then `library_saved`; library.json isn't read till then). sync.json (on
 //! or off, this computer's id and code, the linked computer, its key, the last agreed hashes) never goes across.
+//!
+//! Songs never go across by themselves. You can copy one when you choose to: the other computer lists the song files
+//! in its Backline (`Shared`, kept up to date by its app with `share`), and sends one on asking (`peer_files`,
+//! `fetch`), over a call proven like a round's and signed (`Wire::Songs`; the file's bytes go raw, with their
+//! signature after them). Only a file in that list is ever sent.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -51,8 +56,8 @@ const FILES: [&str; 7] = [
 /// Files that are one piece (never put together): the newer change wins.
 const WHOLE: [&str; 3] = ["plan.json", "reading_book.txt", "pattern_book.txt"];
 /// library.json's parts each computer keeps to itself: the song files on its own disk (its folders, the ones taken
-/// out), its takes, and what it played.
-const LOCAL: [&str; 6] = ["files", "folders", "removed_files", "takes", "last", "recent"];
+/// out, the ones copied from the other computer), its takes, and what it played.
+const LOCAL: [&str; 7] = ["files", "folders", "removed_files", "takes", "last", "recent", "copied"];
 /// Library parts are items named "library/<key>".
 const LIB: &str = "library/";
 /// How often the two check in with nothing changed (a safety net: a change is sent at once, or asked for by the
@@ -144,6 +149,19 @@ impl View {
         };
         format!("Linked with {}. Synced {} {}{} ago.", name, n, unit, if n == 1 { "" } else { "s" })
     }
+}
+
+/// A song file this computer lets its linked computer copy (one of its Files): where it is here, and what it is.
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
+#[serde(default)]
+pub(crate) struct Shared {
+    pub path: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub dur: f32,
+    /// its size in bytes (filled in as it's listed)
+    pub size: u64,
 }
 
 static ENGINE: Mutex<Option<Arc<Engine>>> = Mutex::new(None);
@@ -269,6 +287,32 @@ pub(crate) fn view() -> View {
     v
 }
 
+/// The song files this computer lets the linked computer copy (the app's Files, kept up to date by it).
+pub(crate) fn share(files: Vec<Shared>) {
+    if let Some(e) = engine() {
+        *lock(&e.shared) = files;
+    }
+}
+
+/// The linked computer's name, while syncing is on.
+pub(crate) fn peer_name() -> Option<String> {
+    let e = engine()?;
+    let s = lock(&e.saved);
+    s.peer.as_ref().filter(|_| s.on).map(|p| p.name.clone())
+}
+
+/// The song files in Backline on the linked computer (it's asked: from a thread of your own).
+pub(crate) fn peer_files() -> Result<Vec<Shared>, String> {
+    engine().ok_or_else(|| "Sync is off".to_string())?.list_there()
+}
+
+/// Copy one of the linked computer's song files (`path`, as it is there) to `to` here: written whole (a .part file,
+/// then renamed), `got` counting the bytes as they come (`size`: how many are coming, once that's known); `stop`
+/// ends it early. Its size.
+pub(crate) fn fetch(path: &str, to: &Path, got: &AtomicU64, size: &AtomicU64, stop: &AtomicBool) -> Result<u64, String> {
+    engine().ok_or_else(|| "Sync is off".to_string())?.fetch(path, to, got, size, stop)
+}
+
 /// What's here, as last read: each item's hash and text, items unreadable just now ("library/": all of the library),
 /// the files' times (read again when they change), and each item's hash at the last look (a change since then is a
 /// change made here).
@@ -344,6 +388,8 @@ struct Engine {
     ok_at: Mutex<Option<Instant>>,
     note: Mutex<String>,
     wake: (Mutex<Wake>, Condvar),
+    /// the song files this computer lets the linked one copy
+    shared: Mutex<Vec<Shared>>,
 }
 
 impl Engine {
@@ -371,6 +417,7 @@ impl Engine {
             ok_at: Mutex::new(None),
             note: Mutex::new(String::new()),
             wake: (Mutex::new(Wake::default()), Condvar::new()),
+            shared: Mutex::new(Vec::new()),
         }
     }
 
@@ -654,6 +701,7 @@ impl Engine {
         let mut c = Conn::new(s, 1);
         match c.recv()? {
             Wire::Hello { id, nonce } => self.serve_round(c, id, nonce),
+            Wire::Songs { id, nonce } => self.serve_songs(c, id, nonce),
             Wire::Join { id, name, nonce, host } => {
                 let me_host = !host;
                 let ready = if me_host { lock(&self.saved).peer.is_none() } else { self.joining_code().is_some() };
@@ -903,6 +951,150 @@ impl Engine {
             log(&format!("{} called: took {} ({}), sent {}", peer.name, took.len(), names_of(&took), sent));
         }
         Ok(())
+    }
+
+    /// A call for songs to the linked computer: proven both ways as a round is, then signed.
+    fn songs_call(&self) -> Result<Conn, String> {
+        let peer = self.peer().ok_or_else(|| "Not linked with another computer".to_string())?;
+        let addr = lock(&self.near)
+            .get(&peer.id)
+            .map(|n| n.addr)
+            .or_else(|| peer.addr.parse().ok())
+            .ok_or_else(|| format!("{} hasn't been heard from yet", peer.name))?;
+        let unreached = || {
+            format!("Can't reach {}. Backline needs to be open there with SYNC on (and allowed through its firewall).", peer.name)
+        };
+        let s = TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|_| unreached())?;
+        let mut c = Conn::new(s, 0);
+        let mine = random();
+        c.send(&Wire::Songs { id: self.id(), nonce: mine })?;
+        // (a Backline from before copying songs doesn't know the call: it hangs up)
+        match c.recv().map_err(|_| format!("Update Backline on {} to copy songs from it.", peer.name))? {
+            Wire::Proof { nonce, mac: m } if m == mac(peer.key, &[b"songs", &le(mine), &le(nonce)]) => {
+                c.key = Some(session(peer.key, mine, nonce));
+                Ok(c)
+            }
+            Wire::No { why } => Err(why),
+            _ => Err(format!("{} isn't linked with this computer any more: link them again.", peer.name)),
+        }
+    }
+
+    /// The song files the linked computer lets this one copy.
+    fn list_there(&self) -> Result<Vec<Shared>, String> {
+        let mut c = self.songs_call()?;
+        c.send(&Wire::List)?;
+        match c.recv()? {
+            Wire::Listing { files } => Ok(files),
+            Wire::No { why } => Err(why),
+            _ => Err("an unexpected answer".to_string()),
+        }
+    }
+
+    /// One of the linked computer's song files, copied here (see `fetch`).
+    fn fetch(&self, path: &str, to: &Path, got: &AtomicU64, size_out: &AtomicU64, stop: &AtomicBool) -> Result<u64, String> {
+        let mut c = self.songs_call()?;
+        c.send(&Wire::Get { path: path.to_string() })?;
+        let size = match c.recv()? {
+            Wire::File { size } => size,
+            Wire::No { why } => return Err(why),
+            _ => return Err("an unexpected answer".to_string()),
+        };
+        size_out.store(size, Ordering::Relaxed);
+        if let Some(d) = to.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        let part = PathBuf::from(format!("{}.part", to.display()));
+        let r = (|| {
+            let mut out = std::fs::File::create(&part).map_err(|e| e.to_string())?;
+            let mut h = file_hasher(c.key.unwrap_or_default(), size);
+            let mut buf = vec![0u8; 256 << 10];
+            let mut left = size;
+            while left > 0 {
+                if stop.load(Ordering::Relaxed) {
+                    return Err("Stopped".to_string());
+                }
+                let want = left.min(buf.len() as u64) as usize;
+                let n = c.s.read(&mut buf[..want]).map_err(|e| e.to_string())?;
+                if n == 0 {
+                    return Err("The other computer stopped sending".to_string());
+                }
+                h.write(&buf[..n]);
+                out.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                left -= n as u64;
+                got.fetch_add(n as u64, Ordering::Relaxed);
+            }
+            match c.recv()? {
+                Wire::Sum { mac: m } if m == h.finish() => {}
+                _ => return Err("The song came over damaged: try again".to_string()),
+            }
+            out.flush().map_err(|e| e.to_string())
+        })();
+        if let Err(e) = r {
+            let _ = std::fs::remove_file(&part);
+            return Err(e);
+        }
+        std::fs::rename(&part, to).map_err(|e| e.to_string())?;
+        Ok(size)
+    }
+
+    /// A call for songs, the linked computer calling: it may ask for the list of song files here, and for any of
+    /// them (nothing that isn't in the list), till it hangs up.
+    fn serve_songs(&self, mut c: Conn, id: u64, theirs: u64) -> Result<(), String> {
+        let Some(peer) = self.peer().filter(|p| p.id == id) else {
+            let why = format!("{} isn't linked with this computer any more: link them again.", self.name);
+            return c.send(&Wire::No { why });
+        };
+        let mine = random();
+        c.send(&Wire::Proof { nonce: mine, mac: mac(peer.key, &[b"songs", &le(theirs), &le(mine)]) })?;
+        c.key = Some(session(peer.key, theirs, mine));
+        loop {
+            // (the other side hung up, or went quiet: done)
+            let Ok(w) = c.recv() else { return Ok(()) };
+            match w {
+                Wire::List => {
+                    let files: Vec<Shared> = lock(&self.shared)
+                        .clone()
+                        .into_iter()
+                        .filter_map(|mut f| {
+                            f.size = std::fs::metadata(&f.path).ok().filter(|m| m.is_file())?.len();
+                            Some(f)
+                        })
+                        .collect();
+                    c.send(&Wire::Listing { files })?;
+                }
+                Wire::Get { path } => {
+                    if !lock(&self.shared).iter().any(|f| f.path == path) {
+                        c.send(&Wire::No { why: format!("That song isn't in Backline on {}", self.name) })?;
+                        continue;
+                    }
+                    let mut f = match std::fs::File::open(&path) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            c.send(&Wire::No { why: format!("{} can't open it: {}", self.name, e) })?;
+                            continue;
+                        }
+                    };
+                    let size = f.metadata().map_err(|e| e.to_string())?.len();
+                    c.send(&Wire::File { size })?;
+                    let mut h = file_hasher(c.key.unwrap_or_default(), size);
+                    let mut buf = vec![0u8; 256 << 10];
+                    let mut left = size;
+                    while left > 0 {
+                        let want = left.min(buf.len() as u64) as usize;
+                        let n = f.read(&mut buf[..want]).map_err(|e| e.to_string())?;
+                        if n == 0 {
+                            return Err("a song got shorter while it was sent".to_string());
+                        }
+                        h.write(&buf[..n]);
+                        c.s.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                        left -= n as u64;
+                    }
+                    c.send(&Wire::Sum { mac: h.finish() })?;
+                    log(&format!("sent {} a song: {}", peer.name, path));
+                }
+                _ => return Err("an unexpected message".to_string()),
+            }
+        }
     }
 
     /// Reads what's here again when one of its files changed since the last look, and stamps when each item changed
@@ -1337,6 +1529,15 @@ enum Wire {
     Ack,
     Busy,
     No { why: String },
+    /// a call for songs: who calls, and a fresh number (answered with Proof, as a round is)
+    Songs { id: u64, nonce: u64 },
+    /// asks for the song files there, and the answer
+    List,
+    Listing { files: Vec<Shared> },
+    /// asks for one of them (by where it is there); the answer is File, its bytes, then Sum (their signature)
+    Get { path: String },
+    File { size: u64 },
+    Sum { mac: u64 },
 }
 
 /// One item on the calling side: its hash (0: not there), the hash both last agreed on (0: never), when it changed
@@ -1470,6 +1671,15 @@ fn mac(key: [u64; 2], parts: &[&[u8]]) -> u64 {
         h.write(p);
     }
     h.finish()
+}
+
+/// The signature of a song file's bytes as they go across (SipHash under the call's key, fed as the bytes come).
+#[allow(deprecated)]
+fn file_hasher(key: [u64; 2], size: u64) -> std::hash::SipHasher {
+    let mut h = std::hash::SipHasher::new_with_keys(key[0], key[1]);
+    h.write(b"file");
+    h.write(&le(size));
+    h
 }
 
 /// An item's hash (never 0: 0 is "not there").
@@ -1733,6 +1943,48 @@ mod tests {
         let (again, _) = read_here(&d, false);
         let hashes = |x: &BTreeMap<String, (u64, String)>| x.iter().map(|(n, (h, _))| (n.clone(), *h)).collect::<Vec<_>>();
         assert_eq!(hashes(&items), hashes(&again));
+    }
+
+    #[test]
+    fn a_song_is_copied_only_when_asked_and_only_one_that_is_shared() {
+        let (da, db) = (temp("songs_pc"), temp("songs_laptop"));
+        let a = computer(&da, 30, "PC");
+        let b = computer(&db, 40, "LAPTOP");
+        type_code(&b, &lock(&a.saved).code.clone());
+        a.call_join(at(&b), true).unwrap();
+        linked_to(&b);
+        // the PC shares one song; another file sits beside it, not shared
+        let song = da.join("Walking uP.mp3");
+        let bytes: Vec<u8> = (0..700_000u32).map(|i| (i * 7 % 251) as u8).collect();
+        std::fs::write(&song, &bytes).unwrap();
+        std::fs::write(da.join("secret.txt"), "not a song").unwrap();
+        let path = song.to_string_lossy().to_string();
+        *lock(&a.shared) = vec![Shared { path: path.clone(), title: "Walking uP".into(), ..Default::default() }];
+        *lock(&b.near) = HashMap::from([(30, Near { addr: at(&a), linked: true, joining: None })]);
+        // the laptop sees it, with its size
+        let list = b.list_there().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!((list[0].title.as_str(), list[0].size), ("Walking uP", bytes.len() as u64));
+        // and copies it, byte for byte
+        let to = db.join("From PC").join("Walking uP.mp3");
+        let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
+        assert_eq!(b.fetch(&path, &to, &got, &size, &stop).unwrap(), bytes.len() as u64);
+        assert_eq!(size.load(Ordering::Relaxed), bytes.len() as u64);
+        assert_eq!(std::fs::read(&to).unwrap(), bytes);
+        assert_eq!(got.load(Ordering::Relaxed), bytes.len() as u64);
+        assert!(!PathBuf::from(format!("{}.part", to.display())).exists());
+        // a file that isn't shared is never sent
+        let other = da.join("secret.txt").to_string_lossy().to_string();
+        assert!(b.fetch(&other, &db.join("x.txt"), &got, &size, &stop).is_err());
+        assert!(!db.join("x.txt").exists());
+        // stopped: nothing half-written is left
+        stop.store(true, Ordering::Relaxed);
+        let to2 = db.join("again.mp3");
+        assert!(b.fetch(&path, &to2, &got, &size, &stop).is_err());
+        assert!(!to2.exists() && !PathBuf::from(format!("{}.part", to2.display())).exists());
+        for e in [&a, &b] {
+            e.gen.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     #[test]

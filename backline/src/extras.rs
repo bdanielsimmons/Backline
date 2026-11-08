@@ -256,7 +256,12 @@ impl App {
     pub(crate) fn register(&mut self, v: &Version) {
         match v.kind.as_str() {
             "file" => {
-                self.srcmap.insert(v.id, Src::File(PathBuf::from(&v.src)));
+                // (a song of the other computer's, copied here: played from the copy)
+                let p = match crate::peer_files::copy_of(&self.store.copied, v) {
+                    Some(here) if !std::path::Path::new(&v.src).exists() => PathBuf::from(here),
+                    _ => PathBuf::from(&v.src),
+                };
+                self.srcmap.insert(v.id, Src::File(p));
                 crate::file_id(v.id, true);
             }
             "yt" => {
@@ -1470,7 +1475,7 @@ impl App {
         });
     }
 
-    fn add_exts(&mut self, exts: Vec<Ext>) -> usize {
+    pub(crate) fn add_exts(&mut self, exts: Vec<Ext>) -> usize {
         let mut n = 0;
         for e in exts {
             if self.store.files.iter().any(|x| x.id == e.id) {
@@ -1630,6 +1635,9 @@ impl App {
                     self.set_err(format!("TIDAL PLAYLIST: {}", e))
                 }
             },
+            Msg::PeerFiles(r) => self.peer_files_in(r),
+            Msg::Copied(job, r) => self.copied(job, r),
+            Msg::CopyEnd(ok) => self.copy_end(ok),
             Msg::TidalListDupe(uuid, name, t) => {
                 self.toast = None;
                 self.set_note("");
@@ -2096,10 +2104,14 @@ impl App {
                     Err(e) => self.set_err(format!("TUNING CHECK FAILED: {}", e)),
                     Ok(Some((c, conf))) if conf >= 0.04 => {
                         self.tuning = Some((id, c, conf));
+                        // the record's A, kept with the song (PITCH shows it and matches it to yours)
+                        let hz = crate::meta::a4_of(c as f32);
+                        crate::meta::set_a4(id, Some((hz * 10.0).round() / 10.0));
+                        self.store_dirty = true;
                         let mut how = if c.abs() <= 4 {
                             "IT IS TUNED TO A440".to_string()
                         } else {
-                            format!("THIS TRACK IS {} CENTS {} OF A440", c.abs(), if c > 0 { "SHARP" } else { "FLAT" })
+                            format!("THIS TRACK IS AT A = {:.1} HZ, {} CENTS {} OF A440", hz, c.abs(), if c > 0 { "SHARP" } else { "FLAT" })
                         };
                         if let Some(k) = crate::meta::get(id).and_then(|i| i.key) {
                             how += &format!(". KEY: {}", crate::meta::key_long(k).to_uppercase());
@@ -2585,6 +2597,26 @@ impl App {
                     let _ = tx.send(Msg::TidalListDone(r));
                     ctx.request_repaint();
                 });
+            }
+            Action::CopyHere(files) => {
+                self.copying_last_for_now = false;
+                let jobs = files.into_iter().map(|file| crate::peer_files::Job { file, keep: true, play: None }).collect();
+                self.copy_songs(jobs);
+            }
+            Action::PlayFromThere(f) => {
+                // the song, as one of this computer's would be, to play once it's come over
+                let mut t = crate::sources::ext_for_file(std::path::Path::new(&f.path)).to_version().to_track();
+                if !f.title.is_empty() {
+                    t.title = f.title.clone();
+                    t.artist = f.artist.clone();
+                }
+                t.duration = f.dur;
+                self.srcmap.insert(t.id, Src::File(PathBuf::from(&f.path)));
+                self.orig_queue = None;
+                self.queue = Arc::new(vec![t.clone()]);
+                self.cur = None;
+                self.q_manual = 0;
+                self.get_from_there(&t, f.path.clone(), false);
             }
             Action::TidalListRename(uuid, name) => {
                 let d = crate::new_playlist::NewPl { name, tidal: true, tidal_edit: Some(uuid), ..Default::default() };

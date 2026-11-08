@@ -572,6 +572,10 @@ pub struct Store {
     pub playlists: Vec<Playlist>,
     /// your files taken out of Backline (by id): a scan of their folder leaves them out
     pub removed_files: Vec<i64>,
+    /// songs copied from your other computer: where each is there, and where its copy is here (a synced playlist
+    /// that names it there plays the copy here); this computer's own, like `files`
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub copied: std::collections::BTreeMap<String, String>,
     pub bpm: HashMap<i64, u32>,
     /// tempo and key found by listening to the audio (see meta.rs)
     pub meta: HashMap<i64, crate::meta::Info>,

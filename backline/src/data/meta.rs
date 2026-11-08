@@ -17,6 +17,9 @@ pub struct Info {
     pub tidal: bool,
     /// set by you (Key and BPM...): wins over Tidal and detection, kept on this computer only
     pub mine: bool,
+    /// the A the recording is tuned to, in Hz (found by FIND, or typed in PITCH); None: not known
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub a4: Option<f32>,
 }
 
 static TABLE: LazyLock<Mutex<HashMap<i64, Info>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -51,12 +54,39 @@ pub fn set_detected(id: i64, found: Info) {
 /// Your own key and tempo for a track (None for both = forget yours).
 pub fn set_mine(id: i64, bpm: Option<u16>, key: Option<u8>) {
     let mut t = TABLE.lock().unwrap();
+    // (the record's tuning stays, whatever happens to the key and tempo)
+    let a4 = t.get(&id).and_then(|i| i.a4);
     if bpm.is_none() && key.is_none() {
         t.remove(&id);
         TRIED.lock().unwrap().remove(&id);
+        if a4.is_some() {
+            t.insert(id, Info { a4, ..Default::default() });
+        }
     } else {
-        t.insert(id, Info { bpm, key, tidal: false, mine: true });
+        t.insert(id, Info { bpm, key, tidal: false, mine: true, a4 });
     }
+}
+
+/// The A a recording is tuned to, in Hz (found or typed; None: forget it).
+pub fn set_a4(id: i64, hz: Option<f32>) {
+    TABLE.lock().unwrap().entry(id).or_default().a4 = hz;
+}
+
+/// The A (Hz) of a recording that is `cents` off A440.
+pub fn a4_of(cents: f32) -> f32 {
+    440.0 * 2f32.powf(cents / 1200.0)
+}
+
+/// How far, in cents, to move a recording tuned to A = `from` Hz so its A sounds at `to` Hz.
+pub fn cents_between(from: f32, to: f32) -> f32 {
+    1200.0 * (to / from).log2()
+}
+
+/// An A typed in Hz ("452", "A=442", "440 hz"), within what any record is tuned to.
+pub fn parse_hz(s: &str) -> Option<f32> {
+    let s = s.trim().to_ascii_lowercase().replace(' ', "");
+    let s = s.trim_start_matches("a=").trim_start_matches("a4=").trim_end_matches("hz");
+    s.parse::<f32>().ok().filter(|h| (380.0..=500.0).contains(h))
 }
 
 /// A key typed by hand: "A", "F#m", "Eb minor", "Bb major".
@@ -76,7 +106,7 @@ pub fn load(saved: &HashMap<i64, Info>) {
 
 /// The detected values, for library.json.
 pub fn saved() -> HashMap<i64, Info> {
-    TABLE.lock().unwrap().iter().filter(|(_, v)| !v.tidal || v.mine).map(|(k, v)| (*k, *v)).collect()
+    TABLE.lock().unwrap().iter().filter(|(_, v)| !v.tidal || v.mine || v.a4.is_some()).map(|(k, v)| (*k, *v)).collect()
 }
 
 /// Claim the analyzer for this track, if it still lacks tempo or key and nothing else is being analyzed.
@@ -99,7 +129,7 @@ pub fn detect(id: i64, bytes: Vec<u8>) -> Info {
         TRIED.lock().unwrap().insert(id);
     }
     BUSY.store(false, Ordering::Release);
-    Info { bpm, key, tidal: false, mine: false }
+    Info { bpm, key, ..Default::default() }
 }
 
 const MAJOR: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -164,6 +194,25 @@ pub fn parse_key(key: &str, scale: &str) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tuning_in_hz_and_cents() {
+        // a record at A = 452: down 46.6 cents to play along at 440
+        assert!((cents_between(452.0, 440.0) + 46.6).abs() < 0.1);
+        assert!((a4_of(46.6) - 452.0).abs() < 0.1);
+        assert!((a4_of(0.0) - 440.0).abs() < 1e-3);
+        assert!((cents_between(440.0, 442.0) - 7.85).abs() < 0.05, "an orchestra's 442 is 8 cents up");
+        assert_eq!(parse_hz("452"), Some(452.0));
+        assert_eq!(parse_hz("A=442"), Some(442.0));
+        assert_eq!(parse_hz(" 432 Hz"), Some(432.0));
+        assert_eq!(parse_hz("44"), None, "not an A anyone tunes to");
+        // the record's A stays when the key and tempo are set or forgotten
+        set_a4(777001, Some(452.0));
+        set_mine(777001, Some(120), None);
+        assert_eq!(get(777001).and_then(|i| i.a4), Some(452.0));
+        set_mine(777001, None, None);
+        assert_eq!(get(777001).and_then(|i| i.a4), Some(452.0));
+    }
 
     #[test]
     fn typed_keys() {

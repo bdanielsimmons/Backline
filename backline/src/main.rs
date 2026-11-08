@@ -78,6 +78,8 @@ mod chords;
 mod clusters;
 #[path = "ui/credits.rs"]
 mod credits;
+#[path = "ui/peer_files.rs"]
+mod peer_files;
 #[path = "ui/new_playlist.rs"]
 mod new_playlist;
 #[path = "ui/ear.rs"]
@@ -253,6 +255,10 @@ enum Msg {
     TidalListRenamed(String, String, Result<(), String>),
     /// a song is in that Tidal playlist already: (its id, its name, the song), to ask before adding it again
     TidalListDupe(String, String, Track),
+    /// the other computer's song files (or why not); a song copied from it (or why not); the copying done (how many)
+    PeerFiles(Result<Vec<sync::Shared>, String>),
+    Copied(peer_files::Job, Result<PathBuf, String>),
+    CopyEnd(usize),
     /// files / folders chosen or dropped: the audio found (and the folders to watch)
     /// files added: the songs, the folders, and playlist files read (their name and songs)
     Added(Vec<store::Ext>, Vec<String>, Vec<(String, Vec<i64>)>),
@@ -572,6 +578,10 @@ enum Action {
     PlaylistNewFrom(String, Vec<Track>, bool),
     /// open ADD TO PLAYLIST for a song, or a loop of it (from, to, the loop's name)
     PlaylistPicker(Track, Option<(f32, f32, String)>),
+    /// copy songs from the other computer to this one (into your files)
+    CopyHere(Vec<sync::Shared>),
+    /// play a song from the other computer (a copy for now, not added to your files)
+    PlayFromThere(sync::Shared),
     /// make the playlist the New Playlist panel describes
     PlaylistMake(new_playlist::NewPl),
     /// open the panel on one of your playlists: its name, description and cover
@@ -781,6 +791,7 @@ fn list_row(
     let heart = ROW_HEART.with(|h| h.take());
     let split = ROW_STEMS.with(|s| s.take());
     let art = ROW_ART.with(|a| a.borrow_mut().take());
+    let gutter = ROW_GUTTER.with(|g| g.take());
     let w = ui.available_width();
     // (a list too narrow for the cover goes without, as its header does)
     let fit = row_fit(w, num.is_some(), art.is_some());
@@ -888,6 +899,8 @@ fn list_row(
         let a = ART_PX * font::ui_scale();
         row_cover(ui, Rect::from_min_size(Pos2::new(tx, cy - a / 2.0), Vec2::splat(a)), url);
         tx += ART_W * font::ui_scale();
+    } else if gutter {
+        tx += GUT_W * font::ui_scale();
     }
     if left_has_cells {
         // cell layout shared with the column header
@@ -1509,6 +1522,8 @@ thread_local! {
     static ROW_STEMS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// set just before `list_row`: the row's cover (a picture's address; "" none) to show at its left
     static ROW_ART: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// set just before `list_row`: without a cover, the row still starts after the header's covers switch
+    static ROW_GUTTER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// the rows' covers asked for this frame (on screen, or a screen away), and from last frame's, those ready to
     /// draw (None: there is no picture)
     static ART_WANT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -1519,6 +1534,8 @@ thread_local! {
 const ROW_ART_H: f32 = 40.0;
 const ART_PX: f32 = 32.0;
 const ART_W: f32 = 42.0;
+/// the room for the covers switch at the left of a list of albums, playlists or artists with covers off
+const GUT_W: f32 = 26.0;
 
 /// Give the next `list_row` a cover at its left, when covers are on (`cover` as a track keeps it: a Tidal picture's
 /// id, a web address or "file:<path>"; empty for none).
@@ -1633,15 +1650,38 @@ fn sticky_head(ui: &egui::Ui, rect: Rect, key: &str) -> (Rect, egui::Painter) {
 }
 
 /// The header of a list of albums, playlists or artists: NAME, and what the right-hand column holds. It stays at
-/// the top while the list scrolls.
-fn cards_header(ui: &mut egui::Ui, right: &str) {
+/// the top while the list scrolls. `art`: the rows have covers (or the room for the covers switch, at the left).
+fn cards_header(ui: &mut egui::Ui, right: &str, art: bool) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0 * font::ui_scale()), Sense::hover());
+    let sc = font::ui_scale();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 20.0 * sc), Sense::hover());
     let (rect, p) = sticky_head(ui, rect, "cards_head");
     fill_rect(&p, rect, pal().edge);
     let cy = rect.center().y;
-    ui_text(&p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, "NAME", 2.0, 400.0, pal().trim);
+    let mut x = rect.min.x + 8.0;
+    if art {
+        // as the rows have it: the covers' column, or a narrow one for the switch when they're off (or don't fit)
+        let shown = row_arts_on() && row_fit(w, false, true).art;
+        let col = if shown { ART_W } else { GUT_W } * sc;
+        art_switch(ui, &p, Pos2::new(x + if shown { ART_PX * sc / 2.0 } else { 10.0 }, cy), rect.height(), "cards_head_art");
+        x += col;
+    }
+    ui_text(&p, Pos2::new(x, cy), Align::Min, "NAME", 2.0, 400.0, pal().trim);
     ui_text(&p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, right, 2.0, 400.0, pal().trim);
+}
+
+/// The covers switch in a list's header: a little picture, lit when covers are on; a click turns them on or off
+/// (in every list).
+fn art_switch(ui: &egui::Ui, p: &egui::Painter, c: Pos2, h: f32, key: &str) {
+    let on = row_arts_on();
+    let ir = Rect::from_center_size(c, Vec2::new(24.0, h));
+    let ihit = ui.interact(ir, ui.id().with(key), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let col = if ihit.hovered() { pal().ink } else if on { pal().trim } else { pal().trim.gamma_multiply(0.45) };
+    picture_icon(p, ir.center(), col);
+    if ihit.tip(if on { "Covers on. Click to hide them." } else { "Covers off. Click to show them." }).clicked() {
+        ROW_ARTS.store(!on, Ordering::Relaxed);
+        COLS_CHANGED.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Header row over a track list; right-click it to choose the columns.
@@ -1661,15 +1701,7 @@ fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     let p = &painter;
     if fit.num {
         // covers on or off: a little picture, lit when they're on
-        let on = row_arts_on();
-        let ir = Rect::from_center_size(Pos2::new(rect.min.x + 18.0, cy), Vec2::new(24.0, rect.height()));
-        let ihit = ui.interact(ir, ui.id().with("col_head_art"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let col = if ihit.hovered() { pal().ink } else if on { pal().trim } else { pal().trim.gamma_multiply(0.45) };
-        picture_icon(p, ir.center(), col);
-        if ihit.tip(if on { "Covers on. Click to hide them." } else { "Covers off. Click to show them." }).clicked() {
-            ROW_ARTS.store(!on, Ordering::Relaxed);
-            COLS_CHANGED.store(true, Ordering::Relaxed);
-        }
+        art_switch(ui, p, Pos2::new(rect.min.x + 18.0, cy), rect.height(), "col_head_art");
     }
     if fit.kb {
         let sc = font::ui_scale();
@@ -1865,8 +1897,14 @@ fn link_item(ui: &mut egui::Ui, acts: &mut Vec<Action>, link: Option<String>) {
     }
 }
 
-fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, acts: &mut Vec<Action>) {
+/// `head`: under a `cards_header` with the covers switch (the rows keep its room when covers are off).
+fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, head: bool, acts: &mut Vec<Action>) {
     for (i, c) in cards.iter().enumerate() {
+        // its cover at the left, as the songs have (covers on)
+        row_art(&c.image);
+        if head {
+            ROW_GUTTER.with(|g| g.set(true));
+        }
         let r = list_row(
             ui,
             i,
@@ -2332,7 +2370,7 @@ fn page_view(
                 if key == "Artists" && filter.trim().is_empty() {
                     if let Some((_, new)) = page.rows.iter().find(|r| r.0 == api::NEW_FROM_FOLLOWED) {
                         section_header(ui, "NEW FROM ARTISTS YOU FOLLOW");
-                        cards_list(ui, &new[..new.len().min(8)], false, acts);
+                        cards_list(ui, &new[..new.len().min(8)], false, false, acts);
                         ui.add_space(6.0);
                         section_header(ui, "ARTISTS YOU FOLLOW");
                     }
@@ -2360,8 +2398,9 @@ fn page_view(
                                 Tab::Albums => "ARTIST",
                                 _ => "",
                             },
+                            true,
                         );
-                        cards_list(ui, cards, false, acts);
+                        cards_list(ui, cards, false, true, acts);
                     }
                 }
                 if !any {
@@ -2471,7 +2510,7 @@ fn page_view(
     }
     for (title, cards) in &page.rows {
         section_header(ui, title);
-        cards_list(ui, cards, true, acts);
+        cards_list(ui, cards, true, false, acts);
     }
     ui.add_space(20.0);
 }
@@ -2950,6 +2989,17 @@ struct App {
     pl_picker: Option<new_playlist::Picker>,
     pl_find: String,
     pl_last_tidal: bool,
+    /// songs from the other computer: the copying, its list as shown here, a song whose file is there (asked about),
+    /// what to do with such a song (0 ask, 1 play from there, 2 save a copy), whether ALWAYS is ticked, how many files
+    /// were last shared with it, whether the last copy was only to play now, and FILES showing that computer's songs
+    copying: Arc<peer_files::Copying>,
+    peer: peer_files::PeerView,
+    peer_ask: Option<(Track, String)>,
+    peer_play: u8,
+    peer_always: bool,
+    shared_n: usize,
+    copying_last_for_now: bool,
+    files_there: bool,
     /// your own Tidal playlists (None until asked for), and whether they are being fetched
     tidal_lists: Option<Vec<(String, String)>>,
     /// the New Playlist panel, while open
@@ -3019,6 +3069,10 @@ struct App {
     semis: i32,
     /// the pitch as typed in its box
     pitch_text: String,
+    /// the A you play at (Hz: 440, 442, 432...), and what's typed for it and for the record's A
+    my_a: f32,
+    my_a_text: String,
+    rec_a_text: String,
     chan: u32,
     acc: f32,
     acc_at: Instant,
@@ -3849,6 +3903,14 @@ impl App {
             pl_picker: None,
             pl_find: String::new(),
             pl_last_tidal: true,
+            copying: Arc::new(peer_files::Copying::default()),
+            peer: peer_files::PeerView::default(),
+            peer_ask: None,
+            peer_play: 0,
+            peer_always: false,
+            shared_n: usize::MAX,
+            copying_last_for_now: false,
+            files_there: false,
             tidal_lists: None,
             new_pl_dlg: None,
             tidal_lists_busy: false,
@@ -3902,6 +3964,9 @@ impl App {
             last_wrap_at: None,
             semis: 0,
             pitch_text: String::new(),
+            my_a: 440.0,
+            my_a_text: String::new(),
+            rec_a_text: String::new(),
             chan: 0,
             acc: 0.0,
             acc_at: Instant::now(),
@@ -4270,6 +4335,10 @@ impl App {
         meta::load(&app.store.meta);
         app.init_store();
         app.liked.extend(app.store.hearts.iter().map(|e| e.id));
+        // songs played from the other computer last time were only for then
+        std::thread::spawn(|| {
+            let _ = std::fs::remove_dir_all(peer_files::for_now_dir());
+        });
         // SYNC with your other computer, when it's on: what comes in arrives as messages
         {
             let (tx, ctx) = (app.tx.clone(), app.ctx.clone());
@@ -4574,6 +4643,8 @@ impl App {
         };
         app.loops_show = st["loops_show"].as_u64().unwrap_or(0).min(2) as u8;
         app.loops_fav = st["loops_fav"].as_bool().unwrap_or(false);
+        app.peer_play = st["peer_play"].as_u64().unwrap_or(0).min(2) as u8;
+        app.my_a = st["my_a"].as_f64().map(|a| a as f32).filter(|a| (380.0..=500.0).contains(a)).unwrap_or(440.0);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         // (a height you dragged; none: as tall as it can be. The old "prac_h" is left behind, so everyone starts tall)
@@ -4740,9 +4811,12 @@ impl App {
                 app.practice = true;
                 app.more = true;
                 app.mtab = ["trainer", "pitch", "stems"].iter().position(|x| *x == t).unwrap_or(0) as u8;
-                // with the tour song playing, so the tab shows what it does
+                // with the tour song playing, so the tab shows what it does (BACKLINE_REC_A=452: tuned to that A)
                 if let Some(p) = tour_song::ready() {
                     let t = sources::ext_for_file(&p).to_track();
+                    if let Some(a) = std::env::var("BACKLINE_REC_A").ok().and_then(|a| meta::parse_hz(&a)) {
+                        meta::set_a4(t.id, Some(a));
+                    }
                     app.srcmap.insert(t.id, Src::File(p));
                     app.queue = Arc::new(vec![t]);
                     app.play_index(0);
@@ -4955,6 +5029,43 @@ impl App {
                 app.sec = Sec::Files;
                 app.toast = Some(("Added to Walking uP radio".into(), 0.0));
             }
+            // the other computer's songs (BACKLINE_PEER_NAME names it), some picked, some here, a copy going on; the
+            // question when a playlist's song is there
+            Ok("peerfiles") => {
+                app.sec = Sec::Files;
+                app.files_there = true;
+                let songs = [
+                    ("Doobie Powell", "Walking uP", 3_920_000u64),
+                    ("Doobie Powell", "I'm Blessed", 5_410_000),
+                    ("Doobie Powell", "Peace & Love", 6_020_000),
+                    ("Ari Hoenig", "For Tracy", 7_810_000),
+                    ("J.A.M", "Quiet Wave", 4_480_000),
+                    ("Ponta Box", "FELLINI", 4_900_000),
+                    ("Kyoto Jazz Sextet", "Children Of Peace", 7_200_000),
+                    ("Benedikt Jahnel Trio", "Mono Lake", 5_100_000),
+                    ("Django Bates' Beloved", "Senza Bitterness", 4_700_000),
+                    ("Avishai Cohen", "Lookie", 6_800_000),
+                ];
+                let list: Vec<sync::Shared> = songs
+                    .iter()
+                    .map(|(a, t, z)| sync::Shared { path: format!("D:/Music/{} - {}.mp3", a, t), title: t.to_string(), artist: a.to_string(), size: *z, ..Default::default() })
+                    .collect();
+                app.peer.here = [list[4].path.clone()].into_iter().collect();
+                app.peer.sel = [list[0].path.clone(), list[1].path.clone(), list[3].path.clone()].into_iter().collect();
+                app.peer.list = Some(Ok(list));
+                let c = &app.copying;
+                c.running.store(true, Ordering::Relaxed);
+                *c.name.lock().unwrap() = "Peace & Love".into();
+                c.size.store(6_020_000, Ordering::Relaxed);
+                c.got.store(2_600_000, Ordering::Relaxed);
+                c.done.store(2, Ordering::Relaxed);
+                c.total.store(12, Ordering::Relaxed);
+            }
+            Ok("peerask") => {
+                app.sec = Sec::Files;
+                let t = Track { id: 9001, title: "Walking uP".into(), artist: "Doobie Powell".into(), ..Default::default() };
+                app.peer_ask = Some((t, "D:/Music/Doobie Powell - Walking uP.mp3".into()));
+            }
             // ADD TO PLAYLIST for a song
             Ok("addto") => {
                 app.sec = Sec::Files;
@@ -5156,6 +5267,8 @@ impl App {
             "cols_v": 2,
             "vinyl": VINYL.load(Ordering::Relaxed),
             "row_art": ROW_ARTS.load(Ordering::Relaxed),
+            "my_a": self.my_a,
+            "peer_play": self.peer_play,
             "col_w": *COL_W.lock().unwrap(),
             "loops": self.loops.iter().map(|(k, v)| (k.to_string(), serde_json::json!([v.0, v.1]))).collect::<serde_json::Map<String, serde_json::Value>>(),
         });
@@ -5302,6 +5415,8 @@ impl App {
         if want && tidal_on {
             self.load_tidal_lists();
         }
+        // (and the songs your other computer may copy from this one)
+        self.share_files();
     }
 
     /// Fetch your own Tidal playlists in the background (once; they're kept till something changes them).
@@ -5800,7 +5915,9 @@ impl App {
                 let name = format!("{} - {}", t.artist, t.title);
                 // a song on your other computer's disk (it came in the sync): not gone, just not on this one
                 if sync::linked() && !self.store.files.iter().any(|e| e.id == t.id) {
-                    self.set_note(&format!("NOT ON THIS COMPUTER: {}", name.to_uppercase()));
+                    // played from there, or copied here, or asked which
+                    let there = p.to_string_lossy().into_owned();
+                    self.song_elsewhere(&t, there);
                     return;
                 }
                 self.apply(Action::FileGone(t.id));
@@ -7659,6 +7776,7 @@ impl eframe::App for App {
         self.art_preview_overlay(ctx);
         self.new_playlist_panel(ctx, &mut acts);
         self.picker_panel(ctx, &mut acts);
+        self.peer_ask_panel(ctx);
         self.dupe_panel(ctx, &mut acts);
         self.edit_info_panel(ctx);
         self.takes_panel(ctx);

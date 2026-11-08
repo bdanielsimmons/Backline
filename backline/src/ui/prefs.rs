@@ -320,6 +320,16 @@ impl App {
                         if sv.on {
                             if sv.peer.is_some() {
                                 para(ui, &sv.linked_line(), pal().ink);
+                                // song files stay on their computer; one of yours that's on the other: what to do
+                                para(ui, "Song files stay on their own computer: copy the ones you want in FILES. When a song in a playlist is on the other computer:", pal().ink2);
+                                ui.horizontal_wrapped(|ui| {
+                                    for (k, name) in ["ASK", "PLAY FROM THERE", "SAVE A COPY HERE"].iter().enumerate() {
+                                        if retro_btn(ui, name, self.peer_play == k as u8).clicked() {
+                                            self.peer_play = k as u8;
+                                            self.dirty = true;
+                                        }
+                                    }
+                                });
                             } else {
                                 para(ui, &format!("This computer's code: {}", sv.code_shown()), pal().ink);
                                 para(ui, "Type this code on your other computer: the first time, it takes this computer's plan, progress and lists (what it had is backed up). Or type that computer's code here to take its things:", pal().ink2);

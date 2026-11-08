@@ -1564,6 +1564,7 @@ impl App {
                 });
         });
         self.draw_toast(ui, avail);
+        self.draw_copying(ui, avail);
     }
 
     /// The note over the library for a moment ("Added to ..."): a pill at the foot of the page, fading out.

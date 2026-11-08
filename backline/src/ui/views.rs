@@ -1890,7 +1890,7 @@ impl App {
             return;
         }
         section_header(ui, "PLAYLISTS");
-        crate::cards_header(ui, "LENGTH");
+        crate::cards_header(ui, "LENGTH", false);
         let mut queue: Option<(usize, bool)> = None;
         for (k, (i, l)) in mine.iter().enumerate() {
             let length = || {
@@ -2225,6 +2225,21 @@ impl App {
     pub(crate) fn files_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
         title_line(ui, "MY FILES", 3.0, pal().ink);
+        // linked with another computer: its songs too, to copy the ones you want (they never come over by themselves)
+        if let Some(name) = crate::peer_files::peer_name() {
+            let tabs = ["THIS COMPUTER", name.as_str()];
+            if let Some(k) = crate::segments(ui, &tabs, self.files_there as usize) {
+                self.files_there = k == 1;
+                if self.files_there {
+                    self.peer.list = None;
+                }
+            }
+            ui.add_space(4.0);
+            if self.files_there {
+                self.peer_files_view(ui, acts, &name);
+                return;
+            }
+        }
         let n = self.store.files.len();
         // how many, then one ADD with its choices under it (the count short, so they share a line)
         ui.horizontal_wrapped(|ui| {
@@ -6305,9 +6320,15 @@ impl App {
                                         let o = field(ui, &mut self.ed, crate::tools::F_PITCH, &mut self.pitch_text, pr, "+0.00", false);
                                         if o.enter {
                                             let s = self.pitch_text.trim().to_lowercase().replace(' ', "");
-                                            let cents = match s.strip_suffix('c') {
-                                                Some(c) => c.parse::<f32>().ok(),
-                                                None => s.parse::<f32>().ok().map(|x| x * 100.0),
+                                            // semitones, cents ("30c"), or the A to hear the record at ("445hz")
+                                            let rec_a = tid.and_then(crate::meta::get).and_then(|i| i.a4).unwrap_or(440.0);
+                                            let cents = if s.ends_with("hz") {
+                                                crate::meta::parse_hz(&s).map(|hz| crate::meta::cents_between(rec_a, hz))
+                                            } else {
+                                                match s.strip_suffix('c') {
+                                                    Some(c) => c.parse::<f32>().ok(),
+                                                    None => s.parse::<f32>().ok().map(|x| x * 100.0),
+                                                }
                                             };
                                             if let Some(c) = cents {
                                                 let want = (c.round() as i32).clamp(-1200, 1200);
@@ -6325,43 +6346,95 @@ impl App {
                                             acts.push(Action::Transpose(100));
                                         }
                                     });
-                // the tuning, the ear mode and saving it: a second row
+                // the tuning: the A the record is at (found, or typed), the A you play at, and the shift between
+                let cur_id = self.cur_track().map(|t| t.id);
+                let rec_a = cur_id.and_then(crate::meta::get).and_then(|i| i.a4);
+                let unclear = matches!(self.tuning, Some((id, _, conf)) if Some(id) == cur_id && conf < 0.0);
+                let hz = |a: f32| if (a - a.round()).abs() < 0.05 { format!("{:.0}", a) } else { format!("{:.1}", a) };
+                centered_row(ui, "pitch_t0", |ui| {
+                    label(ui, "RECORD A =", 100.0);
+                    if self.ed.id != crate::tools::F_REC_A {
+                        self.rec_a_text = rec_a.map_or(String::new(), hz);
+                    }
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(64.0, bh()), Sense::hover());
+                    let o = field(ui, &mut self.ed, crate::tools::F_REC_A, &mut self.rec_a_text, r, "---", false);
+                    if o.enter {
+                        // a typed A (452), or nothing to forget it
+                        if let Some(id) = cur_id {
+                            let t = self.rec_a_text.trim().to_string();
+                            if t.is_empty() {
+                                crate::meta::set_a4(id, None);
+                                self.store_dirty = true;
+                            } else if let Some(a) = crate::meta::parse_hz(&t) {
+                                crate::meta::set_a4(id, Some(a));
+                                self.store_dirty = true;
+                            }
+                        }
+                        self.ed.id = 0;
+                    }
+                    label(ui, "HZ", 28.0);
+                    let find = if self.tuning_busy {
+                        "LISTENING..."
+                    } else if unclear {
+                        "UNCLEAR: AGAIN"
+                    } else {
+                        "FIND"
+                    };
+                    if retro_btn_w(ui, find, if find == "FIND" { 60.0 } else { 130.0 }, false)
+                        .tip("Listens to the record and finds the A it's tuned to. If you know it (A = 452), type it in the box instead.")
+                        .clicked()
+                    {
+                        acts.push(Action::FindTuning);
+                    }
+                });
+                centered_row(ui, "pitch_t1", |ui| {
+                    label(ui, "YOUR A =", 100.0);
+                    if self.ed.id != crate::tools::F_MY_A {
+                        self.my_a_text = hz(self.my_a);
+                    }
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(64.0, bh()), Sense::hover());
+                    let o = field(ui, &mut self.ed, crate::tools::F_MY_A, &mut self.my_a_text, r, "440", false);
+                    if o.enter {
+                        if let Some(a) = crate::meta::parse_hz(&self.my_a_text) {
+                            self.my_a = a;
+                            self.dirty = true;
+                        }
+                        self.ed.id = 0;
+                    }
+                    label(ui, "HZ", 28.0);
+                    match rec_a {
+                        Some(a) => {
+                            let c = crate::meta::cents_between(a, self.my_a).round() as i32;
+                            let txt = if c == 0 { "IN TUNE".to_string() } else { format!("MATCH ({:+}c)", c) };
+                            let tip = format!(
+                                "Moves the record from A = {} to your A = {}: {:+} cents. The speed stays.",
+                                hz(a),
+                                hz(self.my_a),
+                                c
+                            );
+                            if retro_btn_w(ui, &txt, 124.0, self.semis == c).tip(&tip).clicked() {
+                                acts.push(Action::Transpose(c - self.semis));
+                            }
+                        }
+                        None => {
+                            retro_btn_w(ui, "MATCH", 80.0, false).tip("Find the record's A, or type it, first.");
+                        }
+                    }
+                });
+                // what you hear now, in cents and in Hz
+                let line = match rec_a {
+                    Some(a) => format!(
+                        "Now {:+}c: the record's A {} sounds at {} Hz",
+                        self.semis,
+                        hz(a),
+                        hz(a * 2f32.powf(self.semis as f32 / 1200.0))
+                    ),
+                    None => format!("Now {:+}c. Type 445hz in Pitch to hear the record at A = 445 Hz", self.semis),
+                };
+                dim_centered(ui, &line);
+                ui.add_space(4.0);
+                // back to the record's pitch, the ear mode and saving it
                 centered_row(ui, "pitch_1", |ui| {
-                                        let cur_id = self.cur_track().map(|t| t.id);
-                                        match self.tuning {
-                                            Some((id, c, _)) if Some(id) == cur_id && c.abs() > 4 => {
-                                                if retro_btn_w(ui, &format!("TUNE TO A440 ({:+}c)", -c), 150.0, self.semis == -c)
-                                                    .tip("Shifts the track to A440, so you can play along without retuning.")
-                                                    .clicked()
-                                                {
-                                                    acts.push(Action::Transpose(-c - self.semis));
-                                                }
-                                            }
-                                            Some((id, _, conf)) if Some(id) == cur_id && conf >= 0.0 && !self.tuning_busy => {
-                                                if retro_btn_w(ui, "IN TUNE (A440)", 140.0, true)
-                                                    .tip("This recording is at A440 already: play along as it is. Click to measure again.")
-                                                    .clicked()
-                                                {
-                                                    acts.push(Action::FindTuning);
-                                                }
-                                            }
-                                            _ => {
-                                                let unclear = matches!(self.tuning, Some((id, _, conf)) if Some(id) == cur_id && conf < 0.0);
-                                                let label = if self.tuning_busy {
-                                                    "LISTENING..."
-                                                } else if unclear {
-                                                    "UNCLEAR: TRY AGAIN"
-                                                } else {
-                                                    "FIND TUNING"
-                                                };
-                                                if retro_btn_w(ui, label, if unclear { 160.0 } else { 116.0 }, false)
-                                                    .tip("Measures how far this recording is from A440 and offers to fix it. Old records and some modern tracks are off.")
-                                                    .clicked()
-                                                {
-                                                    acts.push(Action::FindTuning);
-                                                }
-                                            }
-                                        }
                                         if self.semis != 0 && retro_btn_w(ui, "0", 28.0, false).tip("Reset to the original pitch.").clicked() {
                                             acts.push(Action::Transpose(-self.semis));
                                         }
