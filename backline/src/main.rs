@@ -3518,6 +3518,8 @@ struct App {
     notes_mode: u8,
     notes_tags_all: bool,
     notes_flip: Option<(f64, i8, [String; 3])>,
+    /// the diary calendar's page turning to another month: when, which way, the page it turns from
+    diary_cal_flip: Option<(f64, i8, [String; 3])>,
     /// how many days fit the search and the filter (for ALL NOTES' heading)
     notes_fit: usize,
     /// DIARY: the notes box sliding to another day (when it started, whether to a later day, the old day's words)
@@ -4287,6 +4289,7 @@ impl App {
             notes_mode: 1,
             notes_tags_all: false,
             notes_flip: None,
+            diary_cal_flip: None,
             notes_fit: 0,
             diary_flip: None,
             diary_add: (String::new(), String::new()),

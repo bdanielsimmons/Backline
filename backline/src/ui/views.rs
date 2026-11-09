@@ -971,6 +971,24 @@ fn paint_page(p: &egui::Painter, r: Rect, s: f32, txt: &[String; 3]) {
     }
 }
 
+/// A desk calendar's page as it turns (`flip`: when it started, the page it turns from): how much of it shows and
+/// which words (the old page's going down, the new one's coming up), and whether it's still turning.
+fn page_turn(flip: &Option<(f64, i8, [String; 3])>, now: f64, words: &[String; 3]) -> (f32, [String; 3], bool) {
+    match flip {
+        Some((t0, _, old)) => {
+            let t = ((now - t0) / 0.3) as f32;
+            if t >= 1.0 {
+                (1.0, words.clone(), false)
+            } else if t < 0.5 {
+                ((std::f32::consts::PI * t).cos(), old.clone(), true)
+            } else {
+                ((std::f32::consts::PI * t).cos().abs(), words.clone(), true)
+            }
+        }
+        None => (1.0, words.clone(), false),
+    }
+}
+
 /// The page for a period of ALL NOTES ("2026", "2026-11" or "2026-11-05"), with how many days of notes it has (`empty`:
 /// none).
 fn page_words(key: &str, empty: bool, n: usize) -> [String; 3] {
@@ -4498,23 +4516,14 @@ impl App {
         });
         ui.add_space(4.0);
         let mut deeper = false;
-        ui.horizontal(|ui| {
+        // (a row as tall as the page, so the arrows and TODAY sit level with its middle)
+        ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 66.0), egui::Layout::left_to_right(Align::Center), |ui| {
             for (label, dir) in [("<", -1i8), (">", 1i8)] {
                 if dir > 0 {
                     // the calendar's page, turning when it changes; a click goes in (a year to its months, a month to
                     // its days, a day to the diary)
                     let (pr, presp) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::click());
-                    let (s, shown) = match &self.notes_flip {
-                        Some((t0, _, old)) => {
-                            let t = ((now - t0) / 0.3) as f32;
-                            if t < 0.5 {
-                                ((std::f32::consts::PI * t).cos(), old.clone())
-                            } else {
-                                ((std::f32::consts::PI * t.min(1.0)).cos().abs(), words.clone())
-                            }
-                        }
-                        None => (1.0, words.clone()),
-                    };
+                    let (s, shown, _) = page_turn(&self.notes_flip, now, &words);
                     paint_page(ui.painter(), pr, s.max(0.02), &shown);
                     let tip = ["Show this year's months.", "Show this month's days.", "Open this day in the diary."][mode as usize];
                     if presp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked() {
@@ -4866,34 +4875,66 @@ impl App {
         // ---- calendar
         ui.add_space(8.0);
         let (y, m) = self.diary_ym;
-        const MONTHS: [&str; 12] = [
-            "JANUARY",
-            "FEBRUARY",
-            "MARCH",
-            "APRIL",
-            "MAY",
-            "JUNE",
-            "JULY",
-            "AUGUST",
-            "SEPTEMBER",
-            "OCTOBER",
-            "NOVEMBER",
-            "DECEMBER",
+        // the month as a desk calendar's page (as ALL NOTES has it): turned by < and >, its practice time under the
+        // name; a click shows the month's notes
+        let ym_key = format!("{:04}-{:02}", y, m);
+        let month_secs: u32 = self
+            .store
+            .days
+            .iter()
+            .filter(|d| d.date.starts_with(&ym_key))
+            .map(|d| d.secs.values().sum::<u32>())
+            .sum::<u32>()
+            + if (y, m) == (cy, cm) { live } else { 0 };
+        let words = [
+            y.to_string(),
+            title_case(MONTH_NAMES[(m as usize - 1) % 12]),
+            if month_secs > 0 { mins_text(month_secs) } else { "NO PRACTICE".to_string() },
         ];
-        ui.horizontal_wrapped(|ui| {
+        let now = ui.input(|i| i.time);
+        let (mut to, mut notes) = (None::<((i32, u32), i8)>, false);
+        ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 66.0), egui::Layout::left_to_right(Align::Center), |ui| {
             if retro_btn_w(ui, "<", 34.0, false).tip("Previous month.").clicked() {
-                self.diary_ym = if m == 1 { (y - 1, 12) } else { (y, m - 1) };
+                to = Some((if m == 1 { (y - 1, 12) } else { (y, m - 1) }, -1));
             }
-            let (r, _) = ui.allocate_exact_size(Vec2::new(190.0, bh()), Sense::hover());
-            ptext(ui.painter(), r.center(), Align::Center, &format!("{} {}", MONTHS[(m as usize - 1) % 12], y), 2.0, pal().ink);
+            let (pr, presp) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::click());
+            let (s, shown, turning) = page_turn(&self.diary_cal_flip, now, &words);
+            paint_page(ui.painter(), pr, s.max(0.02), &shown);
+            if turning {
+                ui.ctx().request_repaint();
+            }
+            if presp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("This month's notes.").clicked() {
+                notes = true;
+            }
             if retro_btn_w(ui, ">", 34.0, false).tip("Next month.").clicked() {
-                self.diary_ym = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+                to = Some((if m == 12 { (y + 1, 1) } else { (y, m + 1) }, 1));
             }
             if retro_btn(ui, "TODAY", false).tip("Jump to today.").clicked() {
                 self.diary_sel = today;
-                self.diary_ym = (cy, cm);
+                to = Some(((cy, cm), if (cy, cm) < (y, m) { -1 } else { 1 }));
             }
         });
+        if let Some((ym, dir)) = to {
+            if ym != (y, m) {
+                self.diary_cal_flip = Some((now, dir, words.clone()));
+            }
+            self.diary_ym = ym;
+            ui.ctx().request_repaint();
+        }
+        if self.diary_cal_flip.as_ref().is_some_and(|f| now - f.0 >= 0.3) {
+            self.diary_cal_flip = None;
+        }
+        if notes {
+            // (on the day picked, if it's in this month; else the month's first)
+            let (sy, sm, _) = store::civil_from_days(self.diary_sel);
+            if (sy, sm) != (y, m) {
+                self.diary_sel = store::days_from_civil(y, m, 1);
+            }
+            self.notes_mode = 1;
+            self.diary_all = SKIM;
+            ui.ctx().request_repaint();
+            return;
+        }
         ui.add_space(4.0);
         let first = store::days_from_civil(y, m, 1);
         let next = if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
