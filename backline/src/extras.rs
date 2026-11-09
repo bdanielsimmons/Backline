@@ -2091,11 +2091,14 @@ impl App {
                     }
                 }
                 Ok(None) => {
-                    self.upd_note = if crate::update::build() == 0 {
-                        "Updates are off: this is a development build (no build number).".to_string()
+                    if crate::update::build() == 0 {
+                        self.upd_note = "Updates are off: this is a development build (no build number).".to_string();
                     } else {
-                        "Checked just now. You're up to date.".to_string()
-                    };
+                        // (PREFERENCES says how long ago, from this)
+                        self.upd_at = crate::unix_now();
+                        self.upd_note.clear();
+                        self.dirty = true;
+                    }
                 }
                 Err(e) => {
                     api::log(&format!("update check: {}", e));

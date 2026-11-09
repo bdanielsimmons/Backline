@@ -399,6 +399,11 @@ impl App {
                         para(ui, &status, pal().ink2);
                         if !self.upd_note.is_empty() {
                             para(ui, &self.upd_note.clone(), pal().ink2);
+                        } else if self.upd_at > 0 && self.upd_state == 0 {
+                            // how long ago it looked (kept up to date while this shows)
+                            let ago = crate::ago_text(self.upd_at, crate::unix_now());
+                            para(ui, &format!("Checked {}. You're up to date.", ago), pal().ink2);
+                            ui.ctx().request_repaint_after(std::time::Duration::from_secs(30));
                         }
                         if check_box(ui, "RESTART TO UPDATE WHEN IDLE", self.auto_restart)
                             .tip("Off by default. When on, Backline restarts to install a downloaded update after 5 idle minutes with nothing playing. When off, it only restarts when you click.")

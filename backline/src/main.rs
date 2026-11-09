@@ -1485,6 +1485,19 @@ fn liked_top(old: &[Track], had: usize, newest: &[Track], total: usize) -> Optio
     Some((v, added))
 }
 
+/// How long ago a moment was, as people say it: "just now", "1 min ago", "5 mins ago", "1 hr ago", "3 hrs ago",
+/// "2 days ago" (`then` and `now` in seconds since 1970).
+fn ago_text(then: u64, now: u64) -> String {
+    let d = now.saturating_sub(then);
+    let plural = |n: u64, one: &str, many: &str| format!("{} {} ago", n, if n == 1 { one } else { many });
+    match d {
+        0..=59 => "just now".to_string(),
+        60..=3599 => plural(d / 60, "min", "mins"),
+        3600..=86399 => plural(d / 3600, "hr", "hrs"),
+        _ => plural(d / 86400, "day", "days"),
+    }
+}
+
 /// Your liked songs as they load in the background: 0 loading, 1 all read, 2 the reading stopped (an error).
 static LIB_LOAD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
@@ -3018,6 +3031,8 @@ struct App {
     list_ask: Option<String>,
     upd: Option<update::Info>,
     upd_note: String,
+    /// when the last update check found you up to date (seconds since 1970; 0: not yet), for "Checked 2 mins ago"
+    upd_at: u64,
     upd_state: u8,
     last_active: Instant,
     show_help: bool,
@@ -3964,6 +3979,7 @@ impl App {
             list_ask: None,
             upd: None,
             upd_note: String::new(),
+            upd_at: 0,
             upd_state: 0,
             last_active: Instant::now(),
             show_help: false,
@@ -4751,6 +4767,7 @@ impl App {
         };
         app.loops_show = st["loops_show"].as_u64().unwrap_or(0).min(2) as u8;
         app.peer_play = st["peer_play"].as_u64().unwrap_or(0).min(2) as u8;
+        app.upd_at = st["upd_at"].as_u64().unwrap_or(0);
         app.my_a = st["my_a"].as_f64().map(|a| a as f32).filter(|a| (380.0..=500.0).contains(a)).unwrap_or(440.0);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
@@ -5378,6 +5395,7 @@ impl App {
             "vinyl": VINYL.load(Ordering::Relaxed),
             "row_art": ROW_ARTS.load(Ordering::Relaxed),
             "my_a": self.my_a,
+            "upd_at": self.upd_at,
             "peer_play": self.peer_play,
             "col_w": *COL_W.lock().unwrap(),
             "loops": self.loops.iter().map(|(k, v)| (k.to_string(), serde_json::json!([v.0, v.1]))).collect::<serde_json::Map<String, serde_json::Value>>(),
@@ -8360,6 +8378,17 @@ mod tests {
         let x: Vec<f32> = (0..4000).map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / rate).sin()).collect();
         assert!((goertzel(&x, 440.0, rate) - 1.0).abs() < 0.05, "a full-scale 440 Hz tone reads about 1");
         assert!(goertzel(&x, 1000.0, rate) < 0.05, "and nothing at 1 kHz");
+    }
+
+    #[test]
+    fn how_long_ago() {
+        let now = 1_000_000_000u64;
+        assert_eq!(ago_text(now - 20, now), "just now");
+        assert_eq!(ago_text(now - 60, now), "1 min ago");
+        assert_eq!(ago_text(now - 150, now), "2 mins ago");
+        assert_eq!(ago_text(now - 3600, now), "1 hr ago");
+        assert_eq!(ago_text(now - 6 * 3600 + 5, now), "5 hrs ago");
+        assert_eq!(ago_text(now - 2 * 86400, now), "2 days ago");
     }
 
     #[test]
