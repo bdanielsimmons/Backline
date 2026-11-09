@@ -1154,32 +1154,6 @@ fn cover_path(url: &str) -> std::path::PathBuf {
     api::config_dir().join("covers").join(format!("{:016x}", h))
 }
 
-/// The covers kept on disk, trimmed: past 150 MB, the ones fetched longest ago go till it's under 100 MB (they're
-/// fetched again if they're wanted).
-fn prune_covers() {
-    let Ok(rd) = std::fs::read_dir(api::config_dir().join("covers")) else { return };
-    let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = rd
-        .flatten()
-        .filter_map(|e| {
-            let m = e.metadata().ok()?;
-            m.is_file().then(|| (m.modified().unwrap_or(std::time::UNIX_EPOCH), m.len(), e.path()))
-        })
-        .collect();
-    let mut total: u64 = files.iter().map(|f| f.1).sum();
-    if total < 150 << 20 {
-        return;
-    }
-    files.sort_by_key(|f| f.0);
-    for (_, len, p) in files {
-        if total < 100 << 20 {
-            break;
-        }
-        if std::fs::remove_file(&p).is_ok() {
-            total -= len;
-        }
-    }
-}
-
 /// A picture, from its address: "thumb:" a row's cover (small and square), "gray:" in black and white, "file:" from a
 /// song file (or its folder), "img:" a file on this computer, else the web (kept on disk once fetched, so covers show
 /// offline too).
@@ -4475,8 +4449,6 @@ impl App {
         std::thread::spawn(|| {
             let _ = std::fs::remove_dir_all(peer_files::for_now_dir());
         });
-        // the covers kept on disk, trimmed when there are too many
-        std::thread::spawn(prune_covers);
         // SYNC with your other computer, when it's on: what comes in arrives as messages
         {
             let (tx, ctx) = (app.tx.clone(), app.ctx.clone());
