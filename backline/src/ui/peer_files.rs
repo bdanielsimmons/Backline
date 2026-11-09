@@ -47,6 +47,11 @@ pub(crate) struct PeerView {
     pub busy: bool,
     pub here: HashSet<String>,
     pub sel: BTreeSet<String>,
+    /// with this computer's songs too: those songs as last taken, the rows of the list (this computer's or not, and
+    /// which), sorted, and what they were made from (made again when that changes)
+    pub mine: Vec<store::Ext>,
+    pub rows: Vec<(bool, usize)>,
+    pub sig: (usize, usize, usize, bool),
 }
 
 /// The linked computer's name, as it's shown ("ORCHESTRION" reads "Orchestrion"; a test copy may pretend one:
@@ -184,8 +189,14 @@ impl App {
             }
         };
         if job.keep {
-            // into your files, remembered as the copy of that song there
-            let e = crate::sources::ext_for_file(&path);
+            // into your files under its own names (a file without tags would be named after its folder, "From ..."),
+            // remembered as the copy of that song there
+            let mut e = crate::sources::ext_for_file(&path);
+            if !job.file.title.is_empty() {
+                e.title = job.file.title.clone();
+                e.artist = job.file.artist.clone();
+                e.album = job.file.album.clone();
+            }
             self.add_exts(vec![e]);
             self.store.copied.insert(job.file.path.clone(), path.to_string_lossy().into_owned());
             self.peer.here.insert(job.file.path.clone());
@@ -243,7 +254,7 @@ impl App {
 
     pub(crate) fn get_from_there(&mut self, t: &crate::api::Track, there: String, keep: bool) {
         self.copying_last_for_now = !keep;
-        let file = Shared { path: there, title: t.title.clone(), artist: t.artist.clone(), album: t.album.clone(), dur: t.duration, size: 0 };
+        let file = Shared { path: there, title: t.title.clone(), artist: t.artist.clone(), album: t.album.clone(), dur: t.duration, ..Default::default() };
         self.copy_songs(vec![Job { file, keep, play: Some(t.id) }]);
     }
 
@@ -253,11 +264,21 @@ impl App {
             return;
         }
         self.shared_n = self.store.files.len();
+        // (a song copied from the other computer says where it is there: that computer knows it as its own)
+        let came: std::collections::HashMap<&String, &String> = self.store.copied.iter().map(|(there, here)| (here, there)).collect();
         let files = self
             .store
             .files
             .iter()
-            .map(|e| Shared { path: e.src.clone(), title: e.title.clone(), artist: e.artist.clone(), album: e.album.clone(), dur: e.dur, size: 0 })
+            .map(|e| Shared {
+                path: e.src.clone(),
+                title: e.title.clone(),
+                artist: e.artist.clone(),
+                album: e.album.clone(),
+                dur: e.dur,
+                size: 0,
+                from: came.get(&e.src).map(|s| s.to_string()).unwrap_or_default(),
+            })
             .collect();
         sync::share(files);
     }
@@ -278,14 +299,38 @@ impl App {
     /// Its songs came (or why not): which of them are here already.
     pub(crate) fn peer_files_in(&mut self, r: Result<Vec<Shared>, String>) {
         self.peer.busy = false;
+        // (the list is made again from what came)
+        self.peer.sig = Default::default();
         if let Ok(list) = &r {
-            // copied before, or a song of yours by the same name and length
+            // the copies here named after their folder ("From ...", before copies kept their names): their own names,
+            // from the computer they came from
+            let mut fixed = false;
+            for f in list.iter().filter(|f| !f.title.is_empty()) {
+                let Some(local) = self.store.copied.get(&f.path).cloned() else { continue };
+                if let Some(e) = self.store.files.iter_mut().find(|e| e.src == local && e.artist.starts_with("From ") && e.artist != f.artist) {
+                    e.title = f.title.clone();
+                    e.artist = f.artist.clone();
+                    e.album = f.album.clone();
+                    fixed = true;
+                }
+            }
+            if fixed {
+                self.store_dirty = true;
+                self.serial += 1;
+                // (and the other computer sees the names too)
+                self.shared_n = usize::MAX;
+            }
+            // here already: copied before, one of this computer's own that was copied there, or a song of yours by
+            // the same name
             let mine: HashSet<(String, String)> =
                 self.store.files.iter().map(|e| (e.title.to_lowercase(), e.artist.to_lowercase())).collect();
+            let paths: HashSet<&String> = self.store.files.iter().map(|e| &e.src).collect();
             self.peer.here = list
                 .iter()
                 .filter(|f| {
-                    self.store.copied.contains_key(&f.path) || mine.contains(&(f.title.to_lowercase(), f.artist.to_lowercase()))
+                    self.store.copied.contains_key(&f.path)
+                        || (!f.from.is_empty() && paths.contains(&f.from))
+                        || mine.contains(&(f.title.to_lowercase(), f.artist.to_lowercase()))
                 })
                 .map(|f| f.path.clone())
                 .collect();
@@ -295,34 +340,70 @@ impl App {
         self.peer.list = Some(r);
     }
 
-    /// FILES on the other computer: its songs, to pick and copy here (or play one from there).
-    pub(crate) fn peer_files_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, name: &str) {
+    /// FILES with the linked computer's songs (`with_here`: and this computer's, in one list by artist and title, each
+    /// saying where it is): this computer's play when clicked, the other's are picked to copy here (or played from
+    /// there, right-click).
+    pub(crate) fn peer_files_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, name: &str, with_here: bool) {
         if self.peer.list.is_none() {
             self.load_peer_files();
         }
-        let list = match &self.peer.list {
+        let list = match self.peer.list.take() {
             None => {
                 crate::dim_line(ui, &format!("ASKING {} FOR ITS SONGS...", name.to_uppercase()), 2.0, pal().ink2);
                 return;
             }
             Some(Err(e)) => {
-                para(ui, e, pal().red);
-                if retro_btn(ui, "TRY AGAIN", false).clicked() {
-                    self.peer.list = None;
+                para(ui, &e, pal().red);
+                if !retro_btn(ui, "TRY AGAIN", false).clicked() {
+                    self.peer.list = Some(Err(e));
                 }
                 return;
             }
-            Some(Ok(l)) => l.clone(),
+            Some(Ok(l)) => l,
         };
-        let total: u64 = list.iter().map(|f| f.size).sum();
-        title_line(ui, &format!("{} songs on {}, {}", list.len(), name, size_text(total)), 2.0, pal().ink2);
-        para(ui, "Pick the songs to copy to this computer: they go in your Music folder and your files. Right-click one to play it from there.", pal().ink2);
+        // the rows: this computer's files (with it), then the other's (those here already left out when this
+        // computer's are shown: they're among them), sorted together; made again only when what they're from changes
+        let sig = (self.store.files.len(), list.len(), self.peer.here.len(), with_here);
+        if self.peer.sig != sig {
+            self.peer.sig = sig;
+            self.peer.mine = if with_here { self.store.files.clone() } else { Vec::new() };
+            let (mine, here) = (&self.peer.mine, &self.peer.here);
+            let mut rows: Vec<(bool, usize)> = (0..mine.len())
+                .map(|k| (true, k))
+                .chain((0..list.len()).filter(|&k| !(with_here && here.contains(&list[k].path))).map(|k| (false, k)))
+                .collect();
+            if with_here {
+                rows.sort_by_cached_key(|&(h, k)| {
+                    let (a, t) = if h { (&mine[k].artist, &mine[k].title) } else { (&list[k].artist, &list[k].title) };
+                    (a.to_lowercase(), t.to_lowercase())
+                });
+            }
+            self.peer.rows = rows;
+        }
+        let (mine, rows) = (std::mem::take(&mut self.peer.mine), std::mem::take(&mut self.peer.rows));
+        let mut refresh = false;
+        let words = |&(here, k): &(bool, usize)| -> [String; 3] {
+            if here {
+                [mine[k].artist.clone(), mine[k].title.clone(), mine[k].album.clone()]
+            } else {
+                [list[k].artist.clone(), list[k].title.clone(), list[k].album.clone()]
+            }
+        };
+        let theirs: Vec<usize> = rows.iter().filter(|r| !r.0).map(|r| r.1).collect();
+        let total: u64 = theirs.iter().map(|&k| list[k].size).sum();
+        let head = if with_here {
+            format!("{} songs: {} on this computer, {} on {} ({})", rows.len(), mine.len(), theirs.len(), name, size_text(total))
+        } else {
+            format!("{} songs on {}, {}", list.len(), name, size_text(total))
+        };
+        title_line(ui, &head, 2.0, pal().ink2);
+        para(ui, "Click a song on the other computer to pick it, then copy the ones you picked here: they go in your Music folder and your files. Right-click one to play it from there.", pal().ink2);
         // the songs, filtered as you type
         let filter = self.lib_filter.trim().to_string();
         let order: Vec<usize> = if filter.is_empty() {
-            (0..list.len()).collect()
+            (0..rows.len()).collect()
         } else {
-            crate::filtered(&filter, &list, |f| vec![f.title.clone(), f.artist.clone(), f.album.clone()], 21)
+            crate::filtered(&filter, &rows, |r| words(r).to_vec(), if with_here { 22 } else { 21 })
         };
         let picked: Vec<&Shared> = list.iter().filter(|f| self.peer.sel.contains(&f.path)).collect();
         let picked_size: u64 = picked.iter().map(|f| f.size).sum();
@@ -340,27 +421,50 @@ impl App {
                 self.copy_songs(jobs);
                 self.peer.sel.clear();
             }
-            let shown: Vec<String> =
-                order.iter().map(|&k| &list[k]).filter(|f| !self.peer.here.contains(&f.path)).map(|f| f.path.clone()).collect();
-            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip("Picks every song in the list as it's filtered, except those here already.").clicked() {
+            let shown: Vec<String> = order
+                .iter()
+                .map(|&i| rows[i])
+                .filter(|&(here, k)| !here && !self.peer.here.contains(&list[k].path))
+                .map(|(_, k)| list[k].path.clone())
+                .collect();
+            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(&format!("Picks every song on {} in the list as it's filtered, except those here already.", name)).clicked() {
                 self.peer.sel.extend(shown);
             }
             if !self.peer.sel.is_empty() && retro_btn(ui, "CLEAR", false).clicked() {
                 self.peer.sel.clear();
             }
             if retro_btn(ui, "REFRESH", false).tip(&format!("Ask {} for its songs again.", name)).clicked() {
-                self.peer.list = None;
+                refresh = true;
             }
         });
-        self.filter_box(ui, &format!("Filter the songs on {}", name));
+        self.filter_box(ui, if with_here { "Filter the songs" } else { "Filter the songs there" });
         if order.is_empty() {
-            title_line(ui, if list.is_empty() { "No songs in Backline there." } else { "No songs match." }, 2.0, pal().ink2);
+            title_line(ui, if rows.is_empty() { "No songs." } else { "No songs match." }, 2.0, pal().ink2);
         }
-        for (row, &k) in order.iter().enumerate() {
+        // this computer's songs as shown, to play from the one clicked
+        let here_tracks: Vec<crate::api::Track> =
+            order.iter().map(|&i| rows[i]).filter(|r| r.0).map(|(_, k)| mine[k].to_version().to_track()).collect();
+        let e_of = |k: usize| &mine[k];
+        let mut here_n = 0usize;
+        let there_tag = name.to_uppercase();
+        for (row, &i) in order.iter().enumerate() {
+            let (is_here, k) = rows[i];
+            if is_here {
+                let e = e_of(k);
+                let left = || if e.artist.is_empty() { e.title.clone() } else { format!("{} - {}", e.artist, e.title) };
+                let right = || "THIS COMPUTER".to_string();
+                let at = here_n;
+                here_n += 1;
+                let Some(r) = crate::list_row(ui, row, None, left, right, RowState::Normal, false, false) else { continue };
+                if r.clicked() {
+                    acts.push(Action::Play(here_tracks.clone(), at));
+                }
+                continue;
+            }
             let f = &list[k];
             let (here, on) = (self.peer.here.contains(&f.path), self.peer.sel.contains(&f.path));
             let left = || if f.artist.is_empty() { f.title.clone() } else { format!("{} - {}", f.artist, f.title) };
-            let right = || if here { "ON THIS COMPUTER".to_string() } else { size_text(f.size) };
+            let right = || if here { "ON THIS COMPUTER".to_string() } else { format!("{}  {}", there_tag, size_text(f.size)) };
             let state = if on { RowState::Playing } else if here { RowState::Played } else { RowState::Normal };
             let Some(r) = crate::list_row(ui, row, None, left, right, state, false, false) else { continue };
             if r.clicked() && !here {
@@ -380,6 +484,14 @@ impl App {
                     ui.close_menu();
                 }
             });
+        }
+        // (what was taken out to draw from goes back; REFRESH asks again instead)
+        self.peer.mine = mine;
+        self.peer.rows = rows;
+        if refresh {
+            self.peer.sig = Default::default();
+        } else {
+            self.peer.list = Some(Ok(list));
         }
     }
 

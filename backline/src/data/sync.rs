@@ -162,6 +162,9 @@ pub(crate) struct Shared {
     pub dur: f32,
     /// its size in bytes (filled in as it's listed)
     pub size: u64,
+    /// where it is on the computer it was copied from ("" for one of this computer's own): that computer knows it as
+    /// its own song, and doesn't copy it back
+    pub from: String,
 }
 
 static ENGINE: Mutex<Option<Arc<Engine>>> = Mutex::new(None);

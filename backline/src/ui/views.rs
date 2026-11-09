@@ -2243,17 +2243,31 @@ impl App {
         title_line(ui, "MY FILES", 3.0, pal().ink);
         // linked with another computer: its songs too, to copy the ones you want (they never come over by themselves)
         if let Some(name) = crate::peer_files::peer_name() {
-            // (where the songs are: here, or on the linked device)
-            let tabs = ["THIS COMPUTER", name.as_str()];
-            if let Some(k) = crate::segments(ui, &tabs, self.files_there as usize) {
-                self.files_there = k == 1;
-                if self.files_there {
-                    self.peer.list = None;
+            // SOURCE: this computer's songs, the linked computer's, or both in one list
+            ui.horizontal_wrapped(|ui| {
+                label(ui, "SOURCE", 0.0);
+                let tick = |on: bool| if on { "[x]" } else { "[ ]" };
+                if retro_btn(ui, &format!("{} This computer", tick(self.files_here)), self.files_here)
+                    .tip("The songs on this computer.")
+                    .clicked()
+                {
+                    // (one of the two always stays on)
+                    self.files_here = !self.files_here || !self.files_there;
                 }
-            }
+                if retro_btn(ui, &format!("{} {}", tick(self.files_there), name), self.files_there)
+                    .tip(format!("The songs in Backline on {}, to copy the ones you want.", name))
+                    .clicked()
+                {
+                    self.files_there = !self.files_there || !self.files_here;
+                    if self.files_there {
+                        self.peer.list = None;
+                    }
+                }
+            });
             ui.add_space(4.0);
             if self.files_there {
-                self.peer_files_view(ui, acts, &name);
+                let with_here = self.files_here;
+                self.peer_files_view(ui, acts, &name, with_here);
                 return;
             }
         }

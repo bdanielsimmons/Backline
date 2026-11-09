@@ -1062,7 +1062,7 @@ impl App {
         let here = |s: Sec| !side && self.sec == s;
         // the computer this one is linked with (SYNC): its songs, under LINKED DEVICES
         let peer = crate::peer_files::peer_name();
-        let there = here(Sec::Files) && self.files_there && peer.is_some();
+        let there = here(Sec::Files) && self.files_there && !self.files_here && peer.is_some();
         // (icon, name, lit, what it does); no icon: a group's heading
         let mut rows: Vec<(&str, &str, bool, u8)> = vec![
             ("home", "Home", here(Sec::Tidal) && !on_lib && !self.offline, 1),
@@ -1154,11 +1154,13 @@ impl App {
             Some(4) => acts.push(if self.offline { Action::Section(Sec::Tidal) } else { Action::Library }),
             Some(5) => {
                 self.files_there = false;
+                self.files_here = true;
                 acts.push(Action::Section(Sec::Files));
             }
             // the linked computer: its songs, to copy the ones you want
             Some(8) => {
                 self.files_there = true;
+                self.files_here = false;
                 self.peer.list = None;
                 acts.push(Action::Section(Sec::Files));
             }

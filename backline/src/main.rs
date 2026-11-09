@@ -3028,7 +3028,8 @@ struct App {
     pl_last_tidal: bool,
     /// songs from the other computer: the copying, its list as shown here, a song whose file is there (asked about),
     /// what to do with such a song (0 ask, 1 play from there, 2 save a copy), whether ALWAYS is ticked, how many files
-    /// were last shared with it, whether the last copy was only to play now, and FILES showing that computer's songs
+    /// were last shared with it, whether the last copy was only to play now, and FILES' sources (this computer's
+    /// songs, that computer's: either or both)
     copying: Arc<peer_files::Copying>,
     peer: peer_files::PeerView,
     peer_ask: Option<(Track, String)>,
@@ -3037,6 +3038,7 @@ struct App {
     shared_n: usize,
     copying_last_for_now: bool,
     files_there: bool,
+    files_here: bool,
     /// your own Tidal playlists (None until asked for), and whether they are being fetched
     tidal_lists: Option<Vec<(String, String)>>,
     /// the New Playlist panel, while open
@@ -3949,6 +3951,7 @@ impl App {
             shared_n: usize::MAX,
             copying_last_for_now: false,
             files_there: false,
+            files_here: true,
             tidal_lists: None,
             new_pl_dlg: None,
             tidal_lists_busy: false,
@@ -5072,6 +5075,8 @@ impl App {
             Ok("peerfiles") => {
                 app.sec = Sec::Files;
                 app.files_there = true;
+                // (BACKLINE_FILES_HERE: this computer's songs in the list too)
+                app.files_here = std::env::var_os("BACKLINE_FILES_HERE").is_some();
                 let songs = [
                     ("Doobie Powell", "Walking uP", 3_920_000u64),
                     ("Doobie Powell", "I'm Blessed", 5_410_000),
