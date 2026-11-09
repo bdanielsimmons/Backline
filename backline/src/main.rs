@@ -4743,6 +4743,8 @@ impl App {
             }
         }
         cache::scan();
+        // (saved copies of YouTube and SoundCloud songs nothing has any more, left from before: deleted)
+        app.drop_unused_copies(&cache::ids());
         // every stored song gets its details in its own tags (from the liked list, the lists you made and the songs
         // played lately), in the background; offline, the songs are listed from those tags
         let mut known: Vec<Track> = crate::api::load_liked();

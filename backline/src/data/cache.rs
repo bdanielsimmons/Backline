@@ -262,6 +262,11 @@ pub fn stats() -> (usize, u64) {
     (n, total)
 }
 
+/// The tracks stored on this computer (by id).
+pub fn ids() -> Vec<i64> {
+    set().lock().map(|s| s.iter().copied().collect()).unwrap_or_default()
+}
+
 pub fn remove(id: i64) {
     if let Some(p) = path_for(id) {
         let _ = std::fs::remove_file(p);

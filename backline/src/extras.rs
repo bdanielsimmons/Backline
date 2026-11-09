@@ -1311,6 +1311,49 @@ impl App {
     }
 
     // ------------------------------------------------------------ sources
+    /// Every song you still have somewhere: your clips, liked songs, saved playlists, your playlists, tunes, the queue
+    /// and the song left playing.
+    fn songs_in_use(&self) -> HashSet<i64> {
+        let mut u: HashSet<i64> = HashSet::new();
+        u.extend(self.store.yt.iter().chain(self.store.sc.iter()).chain(self.store.hearts.iter()).map(|e| e.id));
+        for l in &self.store.lists {
+            u.extend(l.shown().iter().map(|e| e.id));
+        }
+        for p in &self.store.playlists {
+            u.extend(p.items.iter().map(|v| v.id));
+        }
+        for t in &self.store.tunes {
+            u.extend(t.versions.iter().map(|v| v.id));
+        }
+        if let Some(l) = &self.store.last {
+            u.insert(l.version.id);
+        }
+        u.extend(self.queue.iter().map(|t| t.id));
+        if let Some(t) = self.cur_track() {
+            u.insert(t.id);
+        }
+        u
+    }
+
+    /// The saved copies of these YouTube and SoundCloud songs (Tidal's are kept as they play, by their own rule) that
+    /// nothing has any more: deleted, so nothing is left behind on the disk. How many.
+    pub(crate) fn drop_unused_copies(&mut self, ids: &[i64]) -> usize {
+        let candidates: Vec<i64> = ids.iter().copied().filter(|&id| id < 0 && cache::has(id)).collect();
+        if candidates.is_empty() {
+            return 0;
+        }
+        let used = self.songs_in_use();
+        let mut n = 0;
+        for id in candidates.into_iter().filter(|id| !used.contains(id)) {
+            cache::remove(id);
+            n += 1;
+        }
+        if n > 0 {
+            api::log(&format!("deleted {} saved copies nothing has any more", n));
+        }
+        n
+    }
+
     /// With keeping songs on: these songs are kept one by one in the background, so they play at once and with no
     /// internet (the ones kept already, or waiting their turn, are skipped). How many were added to the line.
     pub(crate) fn keep_all(&self, ids: Vec<i64>) -> usize {
@@ -1393,6 +1436,8 @@ impl App {
             }
             self.register_all();
             self.liked.extend(self.store.hearts.iter().map(|e| e.id));
+            // (a song taken out of everything on the other computer leaves no saved copy behind here)
+            self.drop_unused_copies(&cache::ids());
             // (the day's notes read again, in case they came over too)
             self.diary_note = Default::default();
             self.serial += 1;
@@ -2996,12 +3041,17 @@ impl App {
                 }
                 self.yt_results.retain(|e| e.id != id);
                 self.sc_results.retain(|e| e.id != id);
-                self.set_note("REMOVED FROM THIS PLAYLIST");
+                // (nowhere else now: its saved copy goes too)
+                let gone = self.drop_unused_copies(&[id]);
+                self.set_note(if gone > 0 { "REMOVED FROM THIS PLAYLIST, AND ITS SAVED COPY DELETED" } else { "REMOVED FROM THIS PLAYLIST" });
             }
             Action::RemoveList(i) => {
                 if i < self.store.lists.len() {
-                    self.store.lists.remove(i);
+                    let l = self.store.lists.remove(i);
                     self.store_dirty = true;
+                    // its songs' saved copies, those nowhere else
+                    let ids: Vec<i64> = l.items.iter().map(|e| e.id).collect();
+                    self.drop_unused_copies(&ids);
                 }
             }
             Action::YtKeep(id) => {
