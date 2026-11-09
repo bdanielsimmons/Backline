@@ -298,7 +298,7 @@ impl App {
                             self.dirty = true;
                         }
 
-                        section_header(ui, "SYNC");
+                        section_header(ui, "LINKED DEVICES (SYNC)");
                         let sv = crate::sync::view();
                         para(ui, "Keep your plan, progress, loops, lists and practice the same on your computers on this network. Only what you made goes across, never songs: a song downloads on a computer only when you play it there.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {

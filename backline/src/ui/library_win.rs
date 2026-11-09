@@ -1060,6 +1060,9 @@ impl App {
         let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
         let on_lib = self.page.as_ref().is_some_and(|p| p.library);
         let here = |s: Sec| !side && self.sec == s;
+        // the computer this one is linked with (SYNC): its songs, under LINKED DEVICES
+        let peer = crate::peer_files::peer_name();
+        let there = here(Sec::Files) && self.files_there && peer.is_some();
         // (icon, name, lit, what it does); no icon: a group's heading
         let mut rows: Vec<(&str, &str, bool, u8)> = vec![
             ("home", "Home", here(Sec::Tidal) && !on_lib && !self.offline, 1),
@@ -1067,7 +1070,7 @@ impl App {
             ("heart", "My Tracks", here(Sec::Mine), 2),
             ("list", "Lists", here(Sec::Lists), 3),
             ("tidal", "Tidal", here(Sec::Tidal) && (on_lib || self.offline), 4),
-            ("folder", "Files", here(Sec::Files), 5),
+            ("folder", "Files", here(Sec::Files) && !there, 5),
             ("cloud", "SoundCloud", here(Sec::Sc), 6),
             ("youtube", "YouTube", here(Sec::Yt), 7),
         ];
@@ -1086,6 +1089,9 @@ impl App {
                 ("diary", "Diary", here(Sec::Diary), 11),
                 ("book", "Reading", here(Sec::Reading), 13),
             ]);
+        }
+        if let Some(name) = peer.as_deref() {
+            rows.extend([("", "Linked devices", false, 0), ("globe", name, there, 8)]);
         }
         let foot = [
             ("gear", "Settings", side && !self.show_winamp && !self.show_log, 20u8),
@@ -1146,7 +1152,16 @@ impl App {
             Some(2) => acts.push(Action::Section(Sec::Mine)),
             Some(3) => acts.push(Action::Section(Sec::Lists)),
             Some(4) => acts.push(if self.offline { Action::Section(Sec::Tidal) } else { Action::Library }),
-            Some(5) => acts.push(Action::Section(Sec::Files)),
+            Some(5) => {
+                self.files_there = false;
+                acts.push(Action::Section(Sec::Files));
+            }
+            // the linked computer: its songs, to copy the ones you want
+            Some(8) => {
+                self.files_there = true;
+                self.peer.list = None;
+                acts.push(Action::Section(Sec::Files));
+            }
             Some(6) => acts.push(Action::Section(Sec::Sc)),
             Some(7) => acts.push(Action::Section(Sec::Yt)),
             Some(10) => acts.push(Action::Section(Sec::Tunes)),

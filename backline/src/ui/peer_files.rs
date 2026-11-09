@@ -146,7 +146,7 @@ impl App {
     /// Copy these songs from the other computer, after any already waiting.
     pub(crate) fn copy_songs(&mut self, jobs: Vec<Job>) {
         let Some(peer) = sync::peer_name() else {
-            self.set_err("NOT LINKED WITH ANOTHER COMPUTER (PREFERENCES > SYNC)".to_string());
+            self.set_err("NOT LINKED WITH ANOTHER COMPUTER (PREFERENCES > LINKED DEVICES)".to_string());
             return;
         };
         if jobs.is_empty() {
@@ -413,7 +413,7 @@ impl App {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if retro_btn(ui, if always { "[x] ALWAYS DO THIS" } else { "[ ] ALWAYS DO THIS" }, always)
-                    .tip("Don't ask again. You can change it in PREFERENCES > SYNC.")
+                    .tip("Don't ask again. You can change it in PREFERENCES > LINKED DEVICES.")
                     .clicked()
                 {
                     always = !always;

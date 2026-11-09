@@ -2243,6 +2243,7 @@ impl App {
         title_line(ui, "MY FILES", 3.0, pal().ink);
         // linked with another computer: its songs too, to copy the ones you want (they never come over by themselves)
         if let Some(name) = crate::peer_files::peer_name() {
+            // (where the songs are: here, or on the linked device)
             let tabs = ["THIS COMPUTER", name.as_str()];
             if let Some(k) = crate::segments(ui, &tabs, self.files_there as usize) {
                 self.files_there = k == 1;
