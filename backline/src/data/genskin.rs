@@ -467,11 +467,40 @@ fn playpaus(t: &Th) -> Pic {
 
 fn monoster(t: &Th) -> Pic {
     let mut p = Pic::new(58, 24, t.lcd);
+    // in narrow letters, each word in the middle of its own slot (STEREO 29 wide, MONO 27), so the two sit evenly
     for (y, c) in [(0, t.lcd_ink), (12, t.lcd_dim)] {
-        p.text(0, y + 3, "STEREO", c);
-        p.text(29 + 4, y + 3, "MONO", c);
+        small_text(&mut p, (29 - small_w("STEREO")) / 2, y + 3, "STEREO", c);
+        small_text(&mut p, 29 + (27 - small_w("MONO")) / 2, y + 3, "MONO", c);
     }
     p
+}
+
+/// The narrow letters of MONO and STEREO (as Winamp's own lights have them), each its own width.
+fn small_glyph(c: char) -> &'static [&'static str] {
+    match c {
+        'S' => &[".##", "#..", ".#.", "..#", "##."],
+        'T' => &["###", ".#.", ".#.", ".#.", ".#."],
+        'E' => &["###", "#..", "##.", "#..", "###"],
+        'R' => &["##.", "#.#", "##.", "#.#", "#.#"],
+        'O' => &[".#.", "#.#", "#.#", "#.#", ".#."],
+        'M' => &["#...#", "##.##", "#.#.#", "#...#", "#...#"],
+        'N' => &["#..#", "##.#", "#.##", "#..#", "#..#"],
+        _ => &[],
+    }
+}
+
+/// Narrow letters, a pixel between them.
+fn small_text(p: &mut Pic, x: i32, y: i32, s: &str, c: Color32) {
+    let mut x = x;
+    for ch in s.chars() {
+        let g = small_glyph(ch);
+        p.art(x, y, g, c);
+        x += g.first().map_or(0, |r| r.len() as i32) + 1;
+    }
+}
+
+fn small_w(s: &str) -> i32 {
+    s.chars().map(|c| small_glyph(c).first().map_or(0, |r| r.len() as i32) + 1).sum::<i32>() - 1
 }
 
 /// volume.bmp / balance.bmp: 28 level pictures 15 pixels apart, then the knob (pressed, normal) at the bottom.
