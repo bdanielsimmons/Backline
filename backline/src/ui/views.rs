@@ -2246,15 +2246,12 @@ impl App {
             // SOURCE: this computer's songs, the linked computer's, or both in one list
             ui.horizontal_wrapped(|ui| {
                 label(ui, "SOURCE", 0.0);
-                let tick = |on: bool| if on { "[x]" } else { "[ ]" };
-                if retro_btn(ui, &format!("{} This computer", tick(self.files_here)), self.files_here)
-                    .tip("The songs on this computer.")
-                    .clicked()
-                {
+                if crate::check_box(ui, "THIS COMPUTER", self.files_here).tip("The songs on this computer.").clicked() {
                     // (one of the two always stays on)
                     self.files_here = !self.files_here || !self.files_there;
                 }
-                if retro_btn(ui, &format!("{} {}", tick(self.files_there), name), self.files_there)
+                ui.add_space(6.0);
+                if crate::check_box(ui, &name.to_uppercase(), self.files_there)
                     .tip(format!("The songs in Backline on {}, to copy the ones you want.", name))
                     .clicked()
                 {

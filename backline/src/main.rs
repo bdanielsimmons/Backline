@@ -4858,6 +4858,10 @@ impl App {
                     if let Some(a) = std::env::var("BACKLINE_REC_A").ok().and_then(|a| meta::parse_hz(&a)) {
                         meta::set_a4(t.id, Some(a));
                     }
+                    // (BACKLINE_CHAN=<n>: in that ear mode)
+                    if let Some(c) = std::env::var("BACKLINE_CHAN").ok().and_then(|c| c.parse::<u32>().ok()) {
+                        app.chan = c % extras::CHAN_NAMES.len() as u32;
+                    }
                     app.srcmap.insert(t.id, Src::File(p));
                     app.queue = Arc::new(vec![t]);
                     app.play_index(0);

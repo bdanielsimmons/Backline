@@ -524,7 +524,7 @@ impl App {
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if retro_btn(ui, if always { "[x] ALWAYS DO THIS" } else { "[ ] ALWAYS DO THIS" }, always)
+                if crate::check_box(ui, "ALWAYS DO THIS", always)
                     .tip("Don't ask again. You can change it in PREFERENCES > LINKED DEVICES.")
                     .clicked()
                 {

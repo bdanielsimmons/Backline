@@ -382,8 +382,10 @@ impl App {
             wa_text(&t, &p, pl, 111.0, 43.0, &format!("{:>3}", self.kbps.min(999)));
             wa_text(&t, &p, pl, 156.0, 43.0, &format!("{:>2}", (rate / 1000).min(99)));
         }
-        t.spr(&p, "monoster", (29.0, 12.0, 27.0, 12.0), pl.r(212.0, 41.0, 27.0, 12.0));
-        t.spr(&p, "monoster", (0.0, if active { 0.0 } else { 12.0 }, 29.0, 12.0), pl.r(239.0, 41.0, 29.0, 12.0));
+        // (an ear mode plays one sound in both ears: left or right alone, mono, no center, bass only)
+        let mono = active && self.practice && self.chan != 0;
+        t.spr(&p, "monoster", (29.0, if mono { 0.0 } else { 12.0 }, 27.0, 12.0), pl.r(212.0, 41.0, 27.0, 12.0));
+        t.spr(&p, "monoster", (0.0, if active && !mono { 0.0 } else { 12.0 }, 29.0, 12.0), pl.r(239.0, 41.0, 29.0, 12.0));
         // the visualizer, in the skin's own colours (2 = top of the bars ... 17 = bottom, 23 = peaks);
         // click it for bars / wave / both, right-click for all its settings
         let vz = hit(ui, "viz", pl.r(24.0, 43.0, 76.0, 16.0), false)
