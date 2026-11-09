@@ -247,6 +247,8 @@ impl App {
         if let Some(l) = &self.store.last {
             vs.push(l.version.clone());
         }
+        // (what you played lately too: the RECENT tab plays them)
+        vs.extend(self.store.recent.iter().map(|r| r.0.clone()));
         for v in &vs {
             self.register(v);
         }
@@ -425,7 +427,7 @@ impl App {
         self.update_metro(playing);
         self.pomo_tick();
         self.plan_tick();
-        if playing && self.last_cap.elapsed() > Duration::from_secs(10) {
+        if playing && self.last_cap.elapsed() > Duration::from_secs(60) {
             self.capture_last();
         }
         // no internet: try Tidal again now and then, less often each time (never in offline mode)
@@ -581,7 +583,13 @@ impl App {
         }
         if let Some(t) = self.cur_track() {
             let v = self.version_of(&t);
-            let queue: Vec<_> = self.queue.iter().map(|q| self.version_of(q)).collect();
+            // (the same queue as last time: its songs as they were kept, not made again one by one)
+            let qp = Arc::as_ptr(&self.queue) as usize;
+            let queue: Vec<_> = match self.store.last.take() {
+                Some(l) if self.last_q == qp && l.queue.len() == self.queue.len() => l.queue,
+                _ => self.queue.iter().map(|q| self.version_of(q)).collect(),
+            };
+            self.last_q = qp;
             let index = self.cur.unwrap_or(0);
             self.store.last = Some(Last { version: v, pos: self.pos(), speed: self.speed, queue, index });
             self.store_dirty = true;
@@ -1206,8 +1214,11 @@ impl App {
             .or_else(|| self.store.tune_of(t.id).and_then(|i| self.tune_bpm(i)))
             .or_else(|| crate::meta::get(t.id).and_then(|m| m.bpm).map(u32::from))
             .unwrap_or(0);
-        self.wave = (t.id, None);
-        self.wave_fine = (t.id, None);
+        // (the same song again - repeat one, back to its start - keeps its outline: not worked out again)
+        if self.wave.0 != t.id {
+            self.wave = (t.id, None);
+            self.wave_fine = (t.id, None);
+        }
         self.sync_loop();
     }
 
@@ -1291,6 +1302,11 @@ impl App {
         if self.notes.0 == id && self.notes.1 == mask && (self.notes_busy || self.notes.2.is_some()) {
             return;
         }
+        // (tried already and couldn't: not again, every frame)
+        if self.notes_tried == (id, mask) {
+            return;
+        }
+        self.notes_tried = (id, mask);
         self.notes = (id, mask, None);
         self.notes_tex.clear();
         if split && mask == 0 {
@@ -1298,12 +1314,17 @@ impl App {
         }
         self.notes_busy = true;
         let src = self.srcmap.get(&id).cloned();
+        let have = self.playing_bytes(id);
         let (lossless, api, tx, ctx) = (self.prefer_lossless, self.api.clone(), self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
             let m = if split {
                 stems::load(id).ok().map(|s| crate::notes::from_stems(&s, on))
             } else {
-                crate::fetch_audio(&api, id, lossless, false, src).ok().and_then(crate::notes::from_bytes)
+                let bytes = match have {
+                    Some(b) => Ok(b.to_vec()),
+                    None => crate::fetch_audio(&api, id, lossless, false, src),
+                };
+                bytes.ok().and_then(crate::notes::from_bytes)
             };
             let _ = tx.send(Msg::Notes(id, mask, m));
             ctx.request_repaint();
@@ -1436,6 +1457,7 @@ impl App {
             }
             self.register_all();
             self.liked.extend(self.store.hearts.iter().map(|e| e.id));
+            crate::meta::load(&self.store.meta);
             // (a song taken out of everything on the other computer leaves no saved copy behind here)
             self.drop_unused_copies(&cache::ids());
             // (the day's notes read again, in case they came over too)
@@ -1835,7 +1857,6 @@ impl App {
                         self.keep_all(list.iter().map(|e| e.id).collect());
                         self.yt_results = list;
                         self.yt_title = name;
-                        self.yt_open = true;
                         self.yt_cur = Some(url);
                     }
                     Err(e) => {
@@ -1929,6 +1950,7 @@ impl App {
                 }
             }
             Msg::YtTool(r) => {
+                crate::sources::ytdlp_changed();
                 self.yt_busy = false;
                 match r {
                     Ok(p) => self.yt_msg = format!("YT-DLP READY: {}", p.display()),
@@ -2990,8 +3012,14 @@ impl App {
                 self.tuning_busy = true;
                 self.set_note("CHECKING THE TUNING...");
                 let (tx, ctx, id) = (self.tx.clone(), self.ctx.clone(), t.id);
+                // (the song as the player has it, not fetched again)
+                let have = self.playing_bytes(id);
                 std::thread::spawn(move || {
-                    let r = crate::fetch_audio(&api, id, lossless, false, src).map(crate::tuning::detect);
+                    let bytes = match have {
+                        Some(b) => Ok(b.to_vec()),
+                        None => crate::fetch_audio(&api, id, lossless, false, src),
+                    };
+                    let r = bytes.map(crate::tuning::detect);
                     let _ = tx.send(Msg::Tuning(id, r));
                     ctx.request_repaint();
                 });
@@ -2999,6 +3027,7 @@ impl App {
             Action::SetMode(m) => self.set_mode(m),
             Action::QuitApp => {
                 self.flush_practice();
+                self.capture_last();
                 self.save_settings();
                 self.store.save();
                 std::process::exit(0);

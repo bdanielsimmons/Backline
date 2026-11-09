@@ -1631,12 +1631,65 @@ impl App {
                 self.dirty = true;
             }
         });
+        // the songs, made again only when what they come from changes (not every frame: thousands of them)
+        let filter = self.lib_filter.trim().to_string();
+        let key = (
+            self.lib_page.as_ref().map_or(0, |p| std::sync::Arc::as_ptr(p) as usize ^ p.tracks.len().rotate_left(40)),
+            self.store.hearts.len(),
+            self.serial,
+            (self.mine_stems, self.go_offline, self.offline),
+            self.mine_off.join(","),
+            filter.clone(),
+        );
+        if self.mine_cache.as_ref().map_or(true, |c| c.0 != key) {
+            let built = self.mine_tracks(&filter);
+            self.mine_cache = Some((key, std::sync::Arc::new(built)));
+        }
+        let Some((_, m)) = self.mine_cache.clone() else { return };
+        let (tracks, all, waiting, unnamed) = (&m.0, m.1, m.2, m.3);
+        if self.mine_stems && unnamed > 0 {
+            dim_line(ui, &format!("{} MORE SPLIT SONGS SHOW HERE ONCE YOU PLAY THEM AGAIN", unnamed), 1.0, pal().dim);
+        }
+        if self.mine_stems && all == 0 {
+            para(ui, "No songs split yet. Play a song, open PRACTICE > STEMS and press SPLIT THIS TRACK.", pal().ink2);
+            return;
+        }
+        if self.go_offline {
+            dim_line(ui, "OFFLINE MODE: ONLY THE SONGS ON THIS COMPUTER", 1.0, pal().dim);
+        }
+        ui.add_space(4.0);
+        if waiting {
+            dim_line(ui, "YOUR TIDAL LIKES SHOW ONCE TIDAL > MY LIBRARY HAS LOADED", 1.0, pal().dim);
+        }
+        if all == 0 {
+            para(ui, "Nothing here yet. Click the heart on any song and it shows up here. That works for Tidal, your files, SoundCloud and YouTube.", pal().ink2);
+            return;
+        }
+        self.filter_box(ui, "Filter by title, artist or album");
+        if !filter.is_empty() {
+            title_line(ui, &format!("{} of {} songs match", tracks.len(), all), 2.0, pal().ink2);
+            if tracks.is_empty() {
+                title_line(ui, "No songs match.", 2.0, pal().ink2);
+                return;
+            }
+        } else {
+            title_line(ui, &format!("{} songs", tracks.len()), 2.0, pal().ink2);
+        }
+        crate::play_buttons(ui, tracks, acts, false);
+        ui.add_space(4.0);
+        let playing = self.cur_track().map(|t| t.id);
+        crate::tracks_list(ui, tracks, playing, &self.liked, None, acts);
+        ui.add_space(20.0);
+    }
+
+    /// MY TRACKS' songs (the sources ticked, or the songs split into stems), filtered: (the songs shown, how many
+    /// before the filter, still waiting for Tidal's, split songs not known by name yet).
+    fn mine_tracks(&self, filter: &str) -> (Vec<Track>, usize, bool, usize) {
         let shows = |key: &str| !self.mine_off.iter().any(|k| k == key);
         let mut tracks: Vec<Track>;
-        let mut waiting = false;
+        let (mut waiting, mut unnamed) = (false, 0);
         if self.mine_stems {
             // every split song this PC knows by name (one split before songs were remembered gets its name when played)
-            let mut unnamed = 0;
             tracks = Vec::new();
             for id in stems::split_ids() {
                 match self.store.songs.get(&id) {
@@ -1645,14 +1698,7 @@ impl App {
                     None => unnamed += 1,
                 }
             }
-            tracks.sort_by(|a, b| a.artists_text().to_lowercase().cmp(&b.artists_text().to_lowercase()).then(a.title.cmp(&b.title)));
-            if unnamed > 0 {
-                dim_line(ui, &format!("{} MORE SPLIT SONGS SHOW HERE ONCE YOU PLAY THEM AGAIN", unnamed), 1.0, pal().dim);
-            }
-            if tracks.is_empty() {
-                para(ui, "No songs split yet. Play a song, open PRACTICE > STEMS and press SPLIT THIS TRACK.", pal().ink2);
-                return;
-            }
+            tracks.sort_by_cached_key(|t| (t.artists_text().to_lowercase(), t.title.clone()));
         } else {
             tracks = self.store.hearts.iter().filter(|e| shows(&e.kind)).map(|e| e.to_track()).collect();
         }
@@ -1665,35 +1711,13 @@ impl App {
         // offline mode: only what is on this computer (your files, and the songs kept)
         if self.go_offline {
             tracks.retain(|t| cache::has(t.id) || matches!(self.srcmap.get(&t.id), Some(crate::Src::File(_))));
-            dim_line(ui, "OFFLINE MODE: ONLY THE SONGS ON THIS COMPUTER", 1.0, pal().dim);
         }
-        ui.add_space(4.0);
-        if waiting {
-            dim_line(ui, "YOUR TIDAL LIKES SHOW ONCE TIDAL > MY LIBRARY HAS LOADED", 1.0, pal().dim);
-        }
-        if tracks.is_empty() {
-            para(ui, "Nothing here yet. Click the heart on any song and it shows up here. That works for Tidal, your files, SoundCloud and YouTube.", pal().ink2);
-            return;
-        }
-        self.filter_box(ui, "Filter by title, artist or album");
-        let filter = self.lib_filter.trim().to_string();
         let all = tracks.len();
         if !filter.is_empty() {
-            let keep = crate::filtered(&filter, &tracks, |t| vec![t.title.clone(), t.artists_text(), t.album.clone()], 3);
+            let keep = crate::filtered(filter, &tracks, |t| vec![t.title.clone(), t.artists_text(), t.album.clone()], 3);
             tracks = keep.into_iter().map(|i| tracks[i].clone()).collect();
-            title_line(ui, &format!("{} of {} songs match", tracks.len(), all), 2.0, pal().ink2);
-            if tracks.is_empty() {
-                title_line(ui, "No songs match.", 2.0, pal().ink2);
-                return;
-            }
-        } else {
-            title_line(ui, &format!("{} songs", tracks.len()), 2.0, pal().ink2);
         }
-        crate::play_buttons(ui, &tracks, acts, false);
-        ui.add_space(4.0);
-        let playing = self.cur_track().map(|t| t.id);
-        crate::tracks_list(ui, &tracks, playing, &self.liked, None, acts);
-        ui.add_space(20.0);
+        (tracks, all, waiting, unnamed)
     }
 
     /// "Pick up where you left off" in one press.
@@ -1973,7 +1997,6 @@ impl App {
             self.yt_cur = Some(l.url.clone());
             self.yt_title = l.name.clone();
             self.yt_results = l.shown();
-            self.yt_open = true;
         }
         self.list_ask = None;
     }

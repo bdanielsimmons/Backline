@@ -166,14 +166,18 @@ pub fn start_tagging(cover: impl Fn(&Track) -> Option<Vec<u8>> + Send + 'static)
                     false
                 }
             };
-            let got = if up_to_date {
+            // (a file that couldn't take its details before, the same size still: not copied and tried again)
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let refused = untaggable().lock().map(|u| u.contains(&(id, size))).unwrap_or(false);
+            let got = if up_to_date || refused {
                 has_now.map(|h| h.0)
             } else {
                 let w = want.unwrap_or_default();
                 match write_tags(&path, &w, pic) {
                     Ok(()) => read_tags(&path, id).map(|h| h.0),
                     Err(e) => {
-                        crate::api::log(&format!("track {}: could not write its details: {}", id, e));
+                        crate::api::log(&format!("track {}: could not write its details: {} (not tried again)", id, e));
+                        mark_untaggable(id, size);
                         has_now.map(|h| h.0)
                     }
                 }
@@ -183,6 +187,32 @@ pub fn start_tagging(cover: impl Fn(&Track) -> Option<Vec<u8>> + Send + 'static)
             }
         }
     });
+}
+
+/// Stored songs whose details couldn't be written (id, file size), kept in untaggable.txt: not tried again at every
+/// start (each try copies the whole file first).
+fn untaggable() -> &'static Mutex<HashSet<(i64, u64)>> {
+    static U: OnceLock<Mutex<HashSet<(i64, u64)>>> = OnceLock::new();
+    U.get_or_init(|| {
+        let text = std::fs::read_to_string(crate::api::config_dir().join("untaggable.txt")).unwrap_or_default();
+        let set = text
+            .lines()
+            .filter_map(|l| {
+                let (a, b) = l.split_once(' ')?;
+                Some((a.parse().ok()?, b.parse().ok()?))
+            })
+            .collect();
+        Mutex::new(set)
+    })
+}
+
+fn mark_untaggable(id: i64, size: u64) {
+    if let Ok(mut u) = untaggable().lock() {
+        if u.insert((id, size)) {
+            let text: String = u.iter().map(|(i, s)| format!("{} {}\n", i, s)).collect();
+            let _ = std::fs::write(crate::api::config_dir().join("untaggable.txt"), text);
+        }
+    }
 }
 
 /// A stored file's details as a song (the cover: the picture inside it), and whether it has a cover picture.

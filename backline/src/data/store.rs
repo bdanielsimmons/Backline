@@ -747,7 +747,9 @@ impl Store {
         s
     }
 
-    pub fn save(&self) {
+    pub fn save(&mut self) {
+        // (the songs' tempo, key and tuning as they are now: kept in one table while Backline runs)
+        self.meta = crate::meta::saved();
         let dir = crate::api::config_dir();
         let _ = std::fs::create_dir_all(&dir);
         if let Ok(t) = serde_json::to_string(self) {

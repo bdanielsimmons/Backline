@@ -586,10 +586,7 @@ impl App {
                 "EARLIER"
             }
         };
-        let recent = self.store.recent.clone();
-        for v in recent.iter().map(|r| &r.0) {
-            self.register(v);
-        }
+        let recent = &self.store.recent;
         let playing = self.cur_track().map(|t| t.id);
         let mut i = 0;
         while i < recent.len() {

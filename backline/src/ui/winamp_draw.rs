@@ -788,12 +788,6 @@ pub(crate) fn chrome_on() -> bool {
     CHROME_ON.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Whether text should take the skin's playlist font (a skin is worn and its font is ready).
-#[allow(dead_code)]
-pub(crate) fn text_override() -> bool {
-    chrome_on() && PIX.with(|c| c.borrow().is_some())
-}
-
 /// A label written in capitals ("PICK ONE...", "RHYTHM CHANGES"), as it reads in an ordinary font: a short one in
 /// Title Case, a longer one as a sentence. Words with a digit (chords, times) and abbreviations stay as they are;
 /// text that has any lower case already is left alone.

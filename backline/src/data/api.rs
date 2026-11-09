@@ -265,8 +265,6 @@ pub struct Page {
     pub image: String,
     pub tracks: Vec<Track>,
     pub rows: Vec<(String, Vec<Card>)>,
-    #[allow(dead_code)]
-    pub rows_first: bool,
     /// The "Your Library" page (shown with MY TRACKS / LISTS / ALBUMS / ARTISTS tabs).
     pub library: bool,
     /// an artist's page: the picture is shown round
@@ -829,8 +827,9 @@ impl Api {
 
     pub fn my_playlists(&self) -> Res<Vec<Card>> {
         let uid = self.uid();
-        if let Ok(v) = self.get(&format!("/users/{}/playlistsAndFavoritePlaylists", uid), &[("limit", "100")]) {
-            let c = cards_from(arr(&v["items"]));
+        // (Tidal gives at most 50 at a time: a page at a time; asking for more is turned down)
+        if let Ok(items) = self.paged50(&format!("/users/{}/playlistsAndFavoritePlaylists", uid)) {
+            let c = cards_from(&items);
             if !c.is_empty() {
                 return Ok(c);
             }
@@ -838,13 +837,30 @@ impl Api {
         let mut out: Vec<Card> = Vec::new();
         let mut last_err = String::new();
         for p in ["playlists", "favorites/playlists"] {
-            match self.get(&format!("/users/{}/{}", uid, p), &[("limit", "100")]) {
-                Ok(v) => out.extend(cards_from(arr(&v["items"]))),
+            match self.paged50(&format!("/users/{}/{}", uid, p)) {
+                Ok(items) => out.extend(cards_from(&items)),
                 Err(e) => last_err = e,
             }
         }
         if out.is_empty() && !last_err.is_empty() {
             return Err(last_err);
+        }
+        Ok(out)
+    }
+
+    /// Every item of a list Tidal gives 50 at a time (up to 500).
+    fn paged50(&self, path: &str) -> Res<Vec<Value>> {
+        let mut out: Vec<Value> = Vec::new();
+        for page in 0..10 {
+            let off = (page * 50).to_string();
+            let v = self.get(path, &[("limit", "50"), ("offset", off.as_str())])?;
+            let items = arr(&v["items"]).to_vec();
+            let n = items.len();
+            out.extend(items);
+            let total = v["totalNumberOfItems"].as_u64().unwrap_or(0) as usize;
+            if n < 50 || (total > 0 && out.len() >= total) {
+                break;
+            }
         }
         Ok(out)
     }
@@ -1172,8 +1188,43 @@ impl Api {
         Ok((tracks_from(raw), total, raw.len()))
     }
 
-    pub fn library(&self) -> Res<Page> {
+    /// Your library's lists: your playlists (made and kept), albums and artists (what couldn't be read in `errs`).
+    fn library_rows(&self, errs: &mut Vec<String>) -> Vec<(String, Vec<Card>)> {
         let uid = self.uid();
+        let mut rows = Vec::new();
+        match self.my_playlists() {
+            Ok(pl) => {
+                if !pl.is_empty() {
+                    rows.push(("Playlists".to_string(), pl));
+                }
+            }
+            Err(e) => errs.push(e),
+        }
+        for (kind, name) in [("albums", "Albums"), ("artists", "Artists")] {
+            if let Ok(items) = self.paged(&format!("/users/{}/favorites/{}", uid, kind), &[], 1000) {
+                let c = cards_from(&items);
+                if !c.is_empty() {
+                    rows.push((name.to_string(), c));
+                }
+            }
+        }
+        rows
+    }
+
+    /// A quick look at what changed in your library elsewhere (your phone, the web): the newest liked songs (a
+    /// hundred) with how many there are in all, and your playlists, albums and artists. A few requests, not the
+    /// whole library.
+    pub fn library_head(&self) -> Res<(Vec<Track>, usize, Vec<(String, Vec<Card>)>)> {
+        let (tracks, total, _) = self.fav_tracks(0)?;
+        let mut errs = Vec::new();
+        let rows = self.library_rows(&mut errs);
+        if let (true, Some(e)) = (rows.is_empty(), errs.into_iter().next()) {
+            return Err(e);
+        }
+        Ok((tracks, total, rows))
+    }
+
+    pub fn library(&self) -> Res<Page> {
         let mut p = Page { title: "Your Library".to_string(), library: true, ..Default::default() };
         let mut errs: Vec<String> = Vec::new();
         match self.fav_tracks(0) {
@@ -1183,26 +1234,7 @@ impl Api {
             }
             Err(e) => errs.push(e),
         }
-        match self.my_playlists() {
-            Ok(pl) => {
-                if !pl.is_empty() {
-                    p.rows.push(("Playlists".to_string(), pl));
-                }
-            }
-            Err(e) => errs.push(e),
-        }
-        if let Ok(items) = self.paged(&format!("/users/{}/favorites/albums", uid), &[], 1000) {
-            let c = cards_from(&items);
-            if !c.is_empty() {
-                p.rows.push(("Albums".to_string(), c));
-            }
-        }
-        if let Ok(items) = self.paged(&format!("/users/{}/favorites/artists", uid), &[], 1000) {
-            let c = cards_from(&items);
-            if !c.is_empty() {
-                p.rows.push(("Artists".to_string(), c));
-            }
-        }
+        p.rows = self.library_rows(&mut errs);
         if let Ok(c) = self.followed_new() {
             if !c.is_empty() {
                 p.rows.push((NEW_FROM_FOLLOWED.to_string(), c));

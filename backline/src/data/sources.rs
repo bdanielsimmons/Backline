@@ -192,6 +192,28 @@ fn command(p: &Path) -> Command {
 /// yt-dlp next to the app, in the Backline folder, or anywhere on PATH. (On the Mac, its folder build first; a Mac
 /// that only has the one-file build gets the folder build in the background: `mac_folder_soon`.)
 pub fn ytdlp_path() -> Option<PathBuf> {
+    // (asked every frame on the YouTube and SoundCloud pages: looked for at most every 10 seconds, as it may start
+    // yt-dlp itself to see if it's on PATH)
+    let mut seen = YTDLP_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, p)) = seen.as_ref() {
+        if at.elapsed() < std::time::Duration::from_secs(10) {
+            return p.clone();
+        }
+    }
+    let p = find_ytdlp();
+    *seen = Some((std::time::Instant::now(), p.clone()));
+    p
+}
+
+/// Forget where yt-dlp was found (it was just downloaded): looked for again next time.
+pub fn ytdlp_changed() {
+    *YTDLP_SEEN.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Where yt-dlp was found last, and when.
+static YTDLP_SEEN: std::sync::Mutex<Option<(std::time::Instant, Option<PathBuf>)>> = std::sync::Mutex::new(None);
+
+fn find_ytdlp() -> Option<PathBuf> {
     let mut cands = vec![ytdlp_dir().join(exe_name())];
     if cfg!(target_os = "macos") {
         cands.insert(0, ytdlp_dir().join("yt-dlp_macos").join("yt-dlp_macos"));

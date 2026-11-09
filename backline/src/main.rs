@@ -192,8 +192,6 @@ const VERSION: &str = if PRACTICE { "v9 STUDIO" } else { "v9" };
 /// Built with `--no-default-features` the practice tools (files, tunes, diary, loops, timer) are left out.
 const PRACTICE: bool = cfg!(feature = "practice");
 
-#[allow(dead_code)]
-const NB: usize = 19;
 /// Points in the waveform visualizer.
 const WAVE_N: usize = 128;
 
@@ -221,6 +219,10 @@ enum Msg {
     /// an album or playlist saved to (true) or removed from your Tidal albums / playlists
     CardSaved(Card, bool, Result<(), String>),
     MoreTracks(u64, Vec<Track>),
+    /// the quick look at the library: its newest liked songs, how many in all, and its lists (or why not)
+    LibraryHead(Result<(Vec<Track>, usize, Vec<(String, Vec<Card>)>), String>),
+    /// the whole library, read again quietly
+    LibraryWhole(Page),
     /// all of them read (true), or the reading stopped (false)
     MoreTracksDone(u64, bool),
     Err(String),
@@ -1152,6 +1154,32 @@ fn cover_path(url: &str) -> std::path::PathBuf {
     api::config_dir().join("covers").join(format!("{:016x}", h))
 }
 
+/// The covers kept on disk, trimmed: past 150 MB, the ones fetched longest ago go till it's under 100 MB (they're
+/// fetched again if they're wanted).
+fn prune_covers() {
+    let Ok(rd) = std::fs::read_dir(api::config_dir().join("covers")) else { return };
+    let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let m = e.metadata().ok()?;
+            m.is_file().then(|| (m.modified().unwrap_or(std::time::UNIX_EPOCH), m.len(), e.path()))
+        })
+        .collect();
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
+    if total < 150 << 20 {
+        return;
+    }
+    files.sort_by_key(|f| f.0);
+    for (_, len, p) in files {
+        if total < 100 << 20 {
+            break;
+        }
+        if std::fs::remove_file(&p).is_ok() {
+            total -= len;
+        }
+    }
+}
+
 /// A picture, from its address: "thumb:" a row's cover (small and square), "gray:" in black and white, "file:" from a
 /// song file (or its folder), "img:" a file on this computer, else the web (kept on disk once fetched, so covers show
 /// offline too).
@@ -1466,6 +1494,22 @@ const KB_GAP: f32 = 64.0;
 static COL_W: Mutex<[f32; 3]> = Mutex::new([0.4, 0.3, 0.3]);
 /// the columns were changed (shown, hidden or resized): the settings need saving
 static COLS_CHANGED: AtomicBool = AtomicBool::new(false);
+
+/// The library's songs after a look (`newest`: Tidal's newest hundred, newest first; `total`: its count now): the
+/// newest as Tidal has them on top (new ones, and any taken out and liked again: moved up, never twice), the rest as
+/// they were. None when the count doesn't add up (some were taken out, or more came than the look sees): then it's
+/// read again whole. Also how many are new.
+fn liked_top(old: &[Track], had: usize, newest: &[Track], total: usize) -> Option<(Vec<Track>, usize)> {
+    let have: HashSet<i64> = old.iter().map(|t| t.id).collect();
+    let added = newest.iter().filter(|t| !have.contains(&t.id)).count();
+    if total != had + added {
+        return None;
+    }
+    let top: HashSet<i64> = newest.iter().map(|t| t.id).collect();
+    let mut v: Vec<Track> = newest.to_vec();
+    v.extend(old.iter().filter(|t| !top.contains(&t.id)).cloned());
+    Some((v, added))
+}
 
 /// Your liked songs as they load in the background: 0 loading, 1 all read, 2 the reading stopped (an error).
 static LIB_LOAD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
@@ -1786,7 +1830,10 @@ fn tracks_list(
     let one_album = tracks.len() > 1 && tracks.iter().all(|t| t.cover == tracks[0].cover);
     let art = row_arts_on() && !one_album;
     col_header(ui, true, art);
-    for (i, t) in tracks.iter().enumerate() {
+    // only the rows on screen (and a screen either side, so covers are asked for ahead) do any work; the rest are
+    // one stretch of room each, above and below (thousands of songs cost nothing off screen)
+    let (first, last) = row_window(ui, tracks.len(), art);
+    for (i, t) in tracks.iter().enumerate().take(last).skip(first) {
         // (a song Tidal can't stream any more, with no copy here: greyed, and it doesn't play)
         let gone = t.gone && !cache::has(t.id);
         let state = if playing_id == Some(t.id) {
@@ -1833,6 +1880,40 @@ fn tracks_list(
             });
         }
     }
+    row_room(ui, tracks.len() - last, art);
+}
+
+/// The rows of a long list worth drawing (on screen, or a screen either side), as (first, past the last); the room
+/// of the rows above them is taken here (`row_room` takes the rest's, after them). Rows are all one height.
+fn row_window(ui: &mut egui::Ui, n: usize, art: bool) -> (usize, usize) {
+    let h = row_height(ui, art);
+    let clip = ui.clip_rect();
+    let top = ui.cursor().min.y;
+    let ahead = clip.height().max(200.0);
+    let first = (((clip.min.y - ahead - top) / h).floor().max(0.0) as usize).min(n);
+    let last = ((((clip.max.y + ahead) - top) / h).ceil().max(0.0) as usize).clamp(first, n);
+    row_room(ui, first, art);
+    (first, last)
+}
+
+/// Room for `k` rows not drawn (flush, as `list_row` keeps them).
+fn row_room(ui: &mut egui::Ui, k: usize, art: bool) {
+    if k == 0 {
+        return;
+    }
+    let h = row_height(ui, art);
+    ui.allocate_space(Vec2::new(ui.available_width(), k as f32 * h));
+    let gap = ui.spacing().item_spacing.y;
+    if gap > 0.0 {
+        ui.add_space(-gap);
+    }
+}
+
+/// A track row's height, as `list_row` makes it (taller with a cover, when the cover fits the list's width).
+fn row_height(ui: &egui::Ui, art: bool) -> f32 {
+    let w = ui.available_width();
+    let covered = art && row_fit(w, true, true).art;
+    (if covered { ROW_ART_H } else { ROW_H }) * font::ui_scale()
 }
 
 /// The public link for a track: Tidal by id, YouTube / SoundCloud from the saved source. None for files.
@@ -2708,6 +2789,17 @@ struct App {
     page: Option<Arc<Page>>,
     /// your library as last loaded: MY LIBRARY shows it at once (REFRESH loads it again)
     lib_page: Option<Arc<Page>>,
+    /// when the library was last loaded or looked over, and a look going on (it's looked over again, quietly, when
+    /// you come back to it after a while: see `library_look`)
+    lib_at: Option<Instant>,
+    lib_looking: bool,
+    /// songs being kept for practice (a download each, once)
+    keeping: HashSet<i64>,
+    /// MY TRACKS' songs as last made, and what they were made from (made again when that changes)
+    #[allow(clippy::type_complexity)]
+    mine_cache: Option<((usize, usize, u64, (bool, bool, bool), String, String), Arc<(Vec<Track>, usize, bool, usize)>)>,
+    /// the window had the keyboard last frame (coming back to it looks the library over)
+    was_focused: bool,
     /// a Winamp skin being fetched and put on (its name), for the little "putting it on" panel
     wa_loading: Option<String>,
     /// the picture being looked at big (link, title, an artist's?)
@@ -2969,7 +3061,6 @@ struct App {
     /// and only the starred ones
     loops_filter: String,
     loops_sort: u8,
-    loops_fav: bool,
     palette_sel: usize,
     palette_frame: u32,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -3051,7 +3142,6 @@ struct App {
     yt_results: Vec<store::Ext>,
     /// the opened playlist's name, and whether its songs are shown (it starts folded up)
     yt_title: String,
-    yt_open: bool,
     yt_cur: Option<String>,
     offline: bool,
     new_tune: String,
@@ -3116,6 +3206,10 @@ struct App {
     acc: f32,
     acc_at: Instant,
     last_cap: Instant,
+    /// the queue kept with where you are last time (its address: the same queue isn't made again)
+    last_q: usize,
+    /// the song and stems NOTES last tried (one that couldn't be read isn't tried again each frame)
+    notes_tried: (i64, u8),
     sec_name: String,
     pending_seek: Option<f32>,
     /// LOOPS shows every song with a loop (else just this week's)
@@ -3287,7 +3381,6 @@ struct App {
     pn_ex: u8,
     pn_string: u8,
     /// which box counts as box 1 (0: the one with its root on the 6th string, first finger)
-    pn_first: u8,
     /// NUMBERING, kept for each tab by where position 1's root sits (empty: the usual one)
     pn_num: String,
     /// SCALES: the family the scale list shows (empty: the scale's own)
@@ -3346,7 +3439,6 @@ struct App {
     pf_sys: u8,
     pf_pos: u8,
     pf_label: u8,
-    pf_first: u8,
     pf_stars: Vec<String>,
     /// what SCALES plays: 0 this position up and down, 1 every position in turn, 2.. a pattern (3rds, 4ths...)
     pf_play: u8,
@@ -3719,6 +3811,11 @@ impl App {
             login_err: String::new(),
             page: None,
             lib_page: None,
+            lib_at: None,
+            lib_looking: false,
+            keeping: HashSet::new(),
+            mine_cache: None,
+            was_focused: true,
             art_preview: None,
             wa_loading: None,
             back: Vec::new(),
@@ -3904,7 +4001,6 @@ impl App {
             diary_reading: true,
             loops_filter: String::new(),
             loops_sort: 0,
-            loops_fav: false,
             palette_sel: 0,
             palette_frame: 0,
             menu_keep: None,
@@ -3959,7 +4055,6 @@ impl App {
             lib_filter: String::new(),
             yt_results: Vec::new(),
             yt_title: String::new(),
-            yt_open: false,
             yt_cur: None,
             offline: false,
             new_tune: String::new(),
@@ -4012,6 +4107,8 @@ impl App {
             acc: 0.0,
             acc_at: Instant::now(),
             last_cap: Instant::now(),
+            last_q: 0,
+            notes_tried: (0, 0),
             sec_name: String::new(),
             pending_seek: None,
             loops_all: false,
@@ -4134,7 +4231,6 @@ impl App {
             pn_label: 0,
             pn_ex: 0,
             pn_string: 5,
-            pn_first: 0,
             pn_num: String::new(),
             pf_fam: String::new(),
             pf_range: 0,
@@ -4176,7 +4272,6 @@ impl App {
             pf_sys: 0,
             pf_pos: 0,
             pf_label: 0,
-            pf_first: 255,
             pf_stars: Vec::new(),
             pf_play: 0,
             cm_tab: 0,
@@ -4380,6 +4475,8 @@ impl App {
         std::thread::spawn(|| {
             let _ = std::fs::remove_dir_all(peer_files::for_now_dir());
         });
+        // the covers kept on disk, trimmed when there are too many
+        std::thread::spawn(prune_covers);
         // SYNC with your other computer, when it's on: what comes in arrives as messages
         {
             let (tx, ctx) = (app.tx.clone(), app.ctx.clone());
@@ -4659,7 +4756,6 @@ impl App {
         }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
-        app.pn_first = st["pn_first"].as_u64().unwrap_or(0).min(4) as u8;
         app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
         app.name_kept = st["name_kept"]
             .as_array()
@@ -4667,7 +4763,6 @@ impl App {
             .unwrap_or_default();
         app.pf_num = st["pf_num"].as_str().unwrap_or("").to_string();
         app.ar_num = st["ar_num"].as_str().unwrap_or("").to_string();
-        app.pf_first = st["pf_first"].as_u64().unwrap_or(255).min(255) as u8;
         if let Some(a) = st["pf_stars"].as_array() {
             app.pf_stars = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
         }
@@ -4683,7 +4778,6 @@ impl App {
             s => s.min(2) as u8,
         };
         app.loops_show = st["loops_show"].as_u64().unwrap_or(0).min(2) as u8;
-        app.loops_fav = st["loops_fav"].as_bool().unwrap_or(false);
         app.peer_play = st["peer_play"].as_u64().unwrap_or(0).min(2) as u8;
         app.my_a = st["my_a"].as_f64().map(|a| a as f32).filter(|a| (380.0..=500.0).contains(a)).unwrap_or(440.0);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
@@ -5218,7 +5312,6 @@ impl App {
         let v = serde_json::json!({
             "skin": SKIN.load(Ordering::Relaxed),
             "volume": self.volume,
-            "lossless": self.prefer_lossless,
             "spec": self.show_spec,
             "vis_preset": visuals::save_name(self.vis_preset),
             "vis_np": self.vis_np,
@@ -5264,7 +5357,6 @@ impl App {
             "winamp": self.wa_worn,
             "wa_recent": self.wa_recent,
             "wa_favs": self.wa_favs,
-            "plain": self.wa_worn.is_none(),
             "art_border": self.art_border,
             "cap_size": self.cap_size,
             "cap_dark": self.cap_dark,
@@ -5290,18 +5382,15 @@ impl App {
             "eq_zoom": self.eq_zoom,
             "wa_guide": self.wa_guide,
             "go_offline": self.go_offline,
-            "pn_first": self.pn_first,
             "pn_num": self.pn_num,
             "name_kept": self.name_kept,
             "pf_num": self.pf_num,
             "ar_num": self.ar_num,
-            "pf_first": self.pf_first,
             "pf_stars": self.pf_stars,
             "diary_span": self.diary_span,
             "diary_reading": self.diary_reading,
             "loops_sort": self.loops_sort,
             "loops_show": self.loops_show,
-            "loops_fav": self.loops_fav,
             "pomo_sound": self.pomo_sound,
             "timer_more": serde_json::to_value(&self.tm).unwrap_or_default(),
             "pomo_focus": self.pomo_focus,
@@ -5323,7 +5412,11 @@ impl App {
         });
         let dir = api::config_dir();
         let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(dir.join("settings.json"), v.to_string());
+        // (written whole: a stop in the middle never leaves half a file)
+        let tmp = dir.join("settings.json.tmp");
+        if std::fs::write(&tmp, v.to_string()).is_ok() {
+            let _ = std::fs::rename(&tmp, dir.join("settings.json"));
+        }
         self.dirty = false;
         self.last_save = Instant::now();
     }
@@ -5370,6 +5463,7 @@ impl App {
             }
         }
         if let Some(t) = self.cur_track().filter(|t| !self.is_demo(t.id)) {
+            let before = self.loops.get(&t.id).copied();
             match both {
                 Some(ab) => {
                     self.loops.insert(t.id, ab);
@@ -5378,8 +5472,11 @@ impl App {
                     self.loops.remove(&t.id);
                 }
             }
+            // (saved only when it changed: this runs at every song's start)
+            if self.loops.get(&t.id).copied() != before {
+                self.dirty = true;
+            }
         }
-        self.dirty = true;
     }
 
     fn track_len(&self) -> f32 {
@@ -5512,6 +5609,89 @@ impl App {
                 Err(e) => tx.send(Msg::Err(e)),
             };
             ctx.request_repaint();
+        });
+    }
+
+    /// Look the library over, quietly, when it was loaded or looked at more than a few minutes ago: what changed on
+    /// your phone or the web (a song liked, a playlist made) comes in without reloading anything. Called on coming back
+    /// to the window and on opening the library or one of its tabs; never on a timer.
+    fn library_look(&mut self) {
+        const STALE: Duration = Duration::from_secs(180);
+        let stale = self.lib_at.is_some_and(|t| t.elapsed() > STALE);
+        if !stale || self.lib_looking || self.lib_page.is_none() || self.auth != Auth::In || self.offline || self.net_down {
+            return;
+        }
+        if self.tour_play.is_some() || tour::demo_kind().is_some() {
+            return;
+        }
+        self.lib_looking = true;
+        self.lib_at = Some(Instant::now());
+        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::LibraryHead(api.library_head()));
+            ctx.request_repaint();
+        });
+    }
+
+    /// What the look found, put in every copy of the library page (shown, kept, back, forward) without a reload: the
+    /// lists as they are now, and the songs liked since at the top. Songs taken out elsewhere (fewer than it adds up
+    /// to) read the whole library again, in the background.
+    fn library_merge(&mut self, newest: Vec<Track>, total: usize, rows: Vec<(String, Vec<Card>)>) {
+        let Some(lib) = self.lib_page.clone() else { return };
+        let Some((songs, added)) = liked_top(&lib.tracks, lib.total.max(lib.tracks.len()), &newest, total) else {
+            crate::api::log(&format!("library changed elsewhere ({} now, had {}): reading it again", total, lib.total));
+            self.load_quietly();
+            return;
+        };
+        // (the songs in the same order as before: nothing to change there)
+        let same_order = songs.len() == lib.tracks.len() && songs.iter().zip(lib.tracks.iter()).all(|(a, b)| a.id == b.id);
+        let lists_same = rows.iter().all(|(n, c)| lib.rows.iter().any(|(m, d)| m == n && d.len() == c.len() && d.iter().zip(c).all(|(a, b)| a.id == b.id && a.title == b.title)));
+        if same_order && lists_same && rows.len() == lib.rows.iter().filter(|r| r.0 != api::NEW_FROM_FOLLOWED).count() {
+            return;
+        }
+        crate::api::log(&format!(
+            "library changed elsewhere: {} new song(s){}, lists {}",
+            added,
+            if same_order || added > 0 { "" } else { ", some moved up" },
+            if lists_same { "the same" } else { "changed" }
+        ));
+        self.liked.extend(newest.iter().map(|t| t.id));
+        let songs = Arc::new(songs);
+        let pages = self.page.iter_mut().chain(self.lib_page.iter_mut()).chain(self.back.iter_mut()).chain(self.fwd.iter_mut());
+        for p in pages.filter(|p| p.library) {
+            let pg = Arc::make_mut(p);
+            if !same_order {
+                pg.tracks = songs.as_ref().clone();
+                pg.total = total;
+            }
+            // the lists as they are now (NEW FROM ARTISTS YOU FOLLOW stays as it was)
+            let followed: Vec<(String, Vec<Card>)> = pg.rows.drain(..).filter(|r| r.0 == api::NEW_FROM_FOLLOWED).collect();
+            pg.rows = rows.clone();
+            pg.rows.extend(followed);
+        }
+        // (the playlists the menus offer are read again when next wanted)
+        self.tidal_lists = None;
+    }
+
+    /// The whole library read again in the background, put in place of the old one once it's all in (no reload to
+    /// see, no counting up again).
+    fn load_quietly(&mut self) {
+        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+        self.lib_looking = true;
+        std::thread::spawn(move || {
+            let r = api.library().map(|mut p| {
+                while p.tracks.len() < p.total {
+                    match api.fav_tracks(p.tracks.len()) {
+                        Ok((t, _, raw)) if raw > 0 => p.tracks.extend(t),
+                        _ => break,
+                    }
+                }
+                p
+            });
+            if let Ok(p) = r {
+                let _ = tx.send(Msg::LibraryWhole(p));
+                ctx.request_repaint();
+            }
         });
     }
 
@@ -5666,6 +5846,7 @@ impl App {
                     if p.library {
                         self.liked.extend(p.tracks.iter().map(|t| t.id));
                         self.lib_gen += 1;
+                        self.lib_at = Some(Instant::now());
                         if p.total > p.tracks.len() {
                             self.spawn_more_tracks(p.tracks.len(), p.total, self.lib_gen);
                         } else {
@@ -5712,6 +5893,24 @@ impl App {
                         self.liked.insert(id);
                     }
                     self.set_err(format!("LIKE FAILED: {}", e));
+                }
+                Msg::LibraryWhole(p) => {
+                    self.lib_looking = false;
+                    self.lib_gen += 1;
+                    self.liked.extend(p.tracks.iter().map(|t| t.id));
+                    LIB_LOAD.store(1, Ordering::Relaxed);
+                    let fresh = Arc::new(p);
+                    let pages = self.page.iter_mut().chain(self.lib_page.iter_mut()).chain(self.back.iter_mut()).chain(self.fwd.iter_mut());
+                    for p in pages.filter(|p| p.library) {
+                        *p = fresh.clone();
+                    }
+                    self.tidal_lists = None;
+                }
+                Msg::LibraryHead(r) => {
+                    self.lib_looking = false;
+                    if let Ok((newest, total, rows)) = r {
+                        self.library_merge(newest, total, rows);
+                    }
                 }
                 Msg::MoreTracksDone(g, ok) => {
                     if g == self.lib_gen {
@@ -5938,12 +6137,30 @@ impl App {
         if cache::has(id) || matches!(self.srcmap.get(&id), Some(Src::File(_))) || self.is_demo(id) {
             return;
         }
+        // (one at a time per song: a bookmark after a bookmark doesn't start a second download)
+        if !self.keeping.insert(id) {
+            return;
+        }
         let lossless = self.prefer_lossless;
         let src = self.srcmap.get(&id).cloned();
         let api = self.api.clone();
-        std::thread::spawn(move || {
-            let _ = fetch_audio(&api, id, lossless, true, src);
+        let have = self.playing_bytes(id);
+        std::thread::spawn(move || match have {
+            Some(b) => {
+                cache::put(id, &b);
+            }
+            None => {
+                let _ = fetch_audio(&api, id, lossless, true, src);
+            }
         });
+    }
+
+    /// The playing song's audio as the player has it, when `id` is that song (so it isn't fetched again).
+    pub(crate) fn playing_bytes(&self, id: i64) -> Option<Arc<Vec<u8>>> {
+        if self.cur_track().map(|t| t.id) != Some(id) || self.buffering || self.stopped {
+            return None;
+        }
+        self.player.viz.lock().ok()?.song.as_ref().map(|s| s.1.clone())
     }
 
     /// The songs you queued by hand (PLAY NEXT / ADD TO QUEUE) still ahead of the one playing, in their order, for a
@@ -6325,10 +6542,11 @@ impl App {
             Action::Library => {
                 self.sec = Sec::Tidal;
                 match self.lib_page.clone() {
-                    // already loaded: shown straight away, no waiting
+                    // already loaded: shown straight away, no waiting (and looked over, quietly, if it's been a while)
                     Some(p) => {
                         self.page = Some(p);
                         self.serial += 1;
+                        self.library_look();
                     }
                     None => self.load(false, |a| a.library()),
                 }
@@ -6345,6 +6563,7 @@ impl App {
             Action::Tab(t) => {
                 self.lib_tab = t;
                 self.serial += 1; // scroll back to the top
+                self.library_look();
             }
             Action::Search(q) => {
                 if !q.trim().is_empty() {
@@ -6739,10 +6958,12 @@ impl App {
                     } else {
                         self.player.send(Cmd::Pause);
                         self.paused = true;
+                        self.capture_last();
                     }
                 }
             }
             Action::StopBtn => {
+                self.capture_last();
                 self.play_gen += 1;
                 self.player.send(Cmd::Stop);
                 self.stopped = true;
@@ -7291,6 +7512,12 @@ impl eframe::App for App {
         }
         ART_TEX.with(|t| *t.borrow_mut() = ready);
         self.sync_pl_menu();
+        // back to the window after a while: the library looked over, quietly (what changed on your phone comes in)
+        let focused = ctx.input(|i| i.focused);
+        if focused && !self.was_focused {
+            self.library_look();
+        }
+        self.was_focused = focused;
         // the visuals' own window, while it is open (it draws on a thread of its own)
         self.pop_frame(ctx);
         let mut acts: Vec<Action> = Vec::new();
@@ -7929,12 +8156,17 @@ impl eframe::App for App {
         // (out of sight, a playing song needs no clock or spectrum drawn: the player says when it ends)
         let seen = onscreen::seen();
         let busy = self.cur.is_some() && !self.stopped && !self.paused && seen;
-        let wait = Duration::from_millis(if self.art_view && seen {
+        // (fast only while something moves and can be seen, or the band or the metronome plays: they keep time with
+        // the frames; out of sight and still, hardly at all: whatever comes in from the network asks for its own
+        // redraw)
+        let wait = Duration::from_millis(if self.art_view && busy {
             16
-        } else if busy || self.search_focus || self.band_on || self.mt.on {
+        } else if busy || self.band_on || self.mt.on || (seen && self.search_focus) {
             33
-        } else {
+        } else if seen {
             250
+        } else {
+            1000
         });
         ctx.request_repaint_after(wait);
     }
@@ -8156,6 +8388,30 @@ mod tests {
         let x: Vec<f32> = (0..4000).map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / rate).sin()).collect();
         assert!((goertzel(&x, 440.0, rate) - 1.0).abs() < 0.05, "a full-scale 440 Hz tone reads about 1");
         assert!(goertzel(&x, 1000.0, rate) < 0.05, "and nothing at 1 kHz");
+    }
+
+    #[test]
+    fn songs_liked_elsewhere_come_in_without_a_reload() {
+        let songs = |ids: &[i64]| ids.iter().map(|&i| track(i)).collect::<Vec<_>>();
+        let ids = |v: &[Track]| v.iter().map(|t| t.id).collect::<Vec<_>>();
+        // the library, newest first (the look sees the newest two)
+        let old = songs(&[5, 4, 3, 2, 1]);
+        // nothing new
+        let (v, n) = liked_top(&old, 5, &songs(&[5, 4]), 5).unwrap();
+        assert_eq!((ids(&v), n), (vec![5, 4, 3, 2, 1], 0));
+        // two liked on the phone: on top
+        let (v, n) = liked_top(&old, 5, &songs(&[9, 8]), 7).unwrap();
+        assert_eq!((ids(&v), n), (vec![9, 8, 5, 4, 3, 2, 1], 2));
+        // the first song ever liked, taken out and liked again: on top, and only there (not twice)
+        let (v, n) = liked_top(&old, 5, &songs(&[1, 5]), 5).unwrap();
+        assert_eq!((ids(&v), n), (vec![1, 5, 4, 3, 2], 0));
+        // liked again and a new one together: both on top in Tidal's order
+        let (v, n) = liked_top(&old, 5, &songs(&[9, 1]), 6).unwrap();
+        assert_eq!((ids(&v), n), (vec![9, 1, 5, 4, 3, 2], 1));
+        // one taken out (the count doesn't add up): read again whole
+        assert!(liked_top(&old, 5, &songs(&[9, 5]), 5).is_none());
+        // more new than the look sees: read again whole
+        assert!(liked_top(&old, 5, &songs(&[9, 8]), 8).is_none());
     }
 
     #[test]
