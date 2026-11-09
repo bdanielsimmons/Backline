@@ -1288,7 +1288,7 @@ impl App {
             }
         });
         // space starts and pauses (when no text box has the keyboard)
-        if act.is_none() && self.ed.id == 0 && ui.input(|i| i.key_pressed(egui::Key::Space)) {
+        if act.is_none() && self.ed.id == 0 && !self.panel_open() && ui.input(|i| i.key_pressed(egui::Key::Space)) {
             act = Some(0);
         }
         match act {

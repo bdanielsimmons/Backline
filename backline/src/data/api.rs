@@ -109,6 +109,7 @@ fn load_tracks(file: &str) -> Vec<Track> {
                 .map(|a| a.iter().map(|x| (x[0].as_i64().unwrap_or(0), x[1].as_str().unwrap_or_default().to_string())).collect())
                 .unwrap_or_default(),
             qid: 0,
+            gone: false,
         })
         .filter(|t| t.id != 0)
         .collect()
@@ -153,6 +154,9 @@ pub struct Track {
     /// a copy you added to the queue (Play next / Add to queue) has its own number, so it can leave the queue
     /// once played without taking the playlist's own copy with it; 0 for everything else
     pub qid: u64,
+    /// a Tidal song Tidal can't stream any more (still in your lists: shown greyed, and skipped unless a copy is kept
+    /// on this computer)
+    pub gone: bool,
 }
 
 impl Track {
@@ -394,6 +398,7 @@ fn parse_track(v: &Value) -> Option<Track> {
         cover: t["album"]["cover"].as_str().unwrap_or("").to_string(),
         duration: t["duration"].as_f64().unwrap_or(0.0) as f32,
         qid: 0,
+        gone: t["allowStreaming"].as_bool() == Some(false) || t["streamReady"].as_bool() == Some(false),
     })
 }
 
@@ -1738,6 +1743,10 @@ mod tests {
             "artists": [{"name": "Bill Evans"}], "album": {"title": "x"}}});
         let t = parse_track(&wrapped).unwrap();
         assert_eq!((t.title.as_str(), t.artist.as_str()), ("Blue in Green (Take 2)", "Bill Evans"));
+        assert!(!t.gone, "streams unless Tidal says it doesn't");
+        // a song Tidal took down stays, marked as gone
+        let gone = json!({"id": 3, "title": "Flamenco Sketches", "album": {"title": "x"}, "allowStreaming": false, "streamReady": false});
+        assert!(parse_track(&gone).unwrap().gone);
     }
 
     #[test]

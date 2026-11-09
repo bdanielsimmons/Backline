@@ -258,7 +258,7 @@ impl App {
         // Esc shuts the open panel (a click elsewhere leaves it open: you play along with it; its X and its pill close it)
         if panel.is_some() {
             let _ = (tpill, mpill, corner);
-            let esc = self.ed.id == 0 && ctx.input(|i| i.key_pressed(egui::Key::Escape));
+            let esc = self.ed.id == 0 && !self.panel_open() && ctx.input(|i| i.key_pressed(egui::Key::Escape));
             if esc {
                 acts.push(if self.timer_open { Action::TimerPanel } else { Action::MetroPanel });
             }

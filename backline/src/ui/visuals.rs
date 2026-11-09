@@ -1299,7 +1299,7 @@ impl App {
         }
         let n = PRESETS.len();
         // (the arrow keys move through the song here too, as everywhere: the visuals change with < and > on screen)
-        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        let esc = !self.panel_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if esc || resp.double_clicked() {
             self.vis_set_full(false, false);
             return;

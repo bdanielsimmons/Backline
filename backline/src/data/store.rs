@@ -299,6 +299,7 @@ impl Version {
             cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
             qid: 0,
+            gone: false,
         }
     }
 }
@@ -520,6 +521,7 @@ impl Ext {
             cover: file_cover(&self.kind, &self.src, &self.cover),
             duration: self.dur,
             qid: 0,
+            gone: false,
         }
     }
 

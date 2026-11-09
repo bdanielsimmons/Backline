@@ -971,20 +971,18 @@ fn paint_page(p: &egui::Painter, r: Rect, s: f32, txt: &[String; 3]) {
     }
 }
 
-/// The page for a period of ALL NOTES ("2026", "2026-11" or "2026-11-05"), with how many days of notes it has; a
-/// page with nothing on it when there are no notes to show.
+/// The page for a period of ALL NOTES ("2026", "2026-11" or "2026-11-05"), with how many days of notes it has (`empty`:
+/// none).
 fn page_words(key: &str, empty: bool, n: usize) -> [String; 3] {
-    if empty {
-        return ["NOTES".into(), "NONE".into(), String::new()];
-    }
-    let days = format!("{} {}", n, if n == 1 { "DAY" } else { "DAYS" });
+    let days = if empty { "NO NOTES".to_string() } else { format!("{} {}", n, if n == 1 { "DAY" } else { "DAYS" }) };
     match key.len() {
         4 => ["YEAR".into(), key.to_string(), days],
         7 => [key[..4].to_string(), title_case(MONTH_NAMES[key[5..7].parse::<usize>().unwrap_or(1).clamp(1, 12) - 1]), days],
         _ => {
             let d = store::parse_date(key).unwrap_or(0);
             let (y, m, dd) = store::civil_from_days(d);
-            [format!("{} {}", &MONTH_NAMES[m as usize - 1][..3], y), dd.to_string(), store::weekday(d).to_string()]
+            let under = if empty { format!("{}  NO NOTES", store::weekday(d)) } else { store::weekday(d).to_string() };
+            [format!("{} {}", &MONTH_NAMES[m as usize - 1][..3], y), dd.to_string(), under]
         }
     }
 }
@@ -1003,7 +1001,7 @@ fn period_name(key: &str) -> String {
         _ => {
             let d = store::parse_date(key).unwrap_or(0);
             let (_, m, dd) = store::civil_from_days(d);
-            format!("{} {} {}", store::weekday(d), &MONTH_NAMES[m as usize - 1][..3], dd)
+            format!("{} {} {}", title_case(store::weekday(d)), title_case(&MONTH_NAMES[m as usize - 1][..3]), dd)
         }
     }
 }
@@ -4384,13 +4382,14 @@ impl App {
     }
 
     /// ALL NOTES, a page of its own: BACK (or Esc, or the DIARY tab) to the diary; a search; ALL, STARRED and your tags
-    /// (the five used most, the rest behind ...); a year, a month or a day at a time, a desk calendar's page turned
-    /// with < and > to the one before or after that has notes; the days as cards (a click opens one, its star stars it,
-    /// a tag on it shows that tag's days, a tune named on it opens the tune's page).
+    /// (the five used most, the rest behind ...); a year, a month or a day at a time, a desk calendar's page on the
+    /// diary's own day, turned by the calendar with < and > (TODAY back; a click on the page goes in: year to months,
+    /// month to days, a day to the diary; a page without notes points to the nearest either side); the days as cards (a
+    /// click opens one, its star stars it, a tag on it shows that tag's days, a tune named on it opens the tune's page).
     fn all_notes_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
         let back = ui.horizontal(|ui| retro_btn(ui, "< BACK", false).tip("Back to the diary (Esc).").clicked()).inner;
-        let esc = !self.fullscreen && !self.art_view && self.ed.id == 0 && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        let esc = !self.fullscreen && !self.art_view && self.ed.id == 0 && !self.panel_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if back || esc {
             self.diary_all = 0;
             ui.ctx().request_repaint();
@@ -4465,7 +4464,8 @@ impl App {
             ui.ctx().request_repaint();
         }
 
-        // the period: a year, a month or a day, turned to the one before or after that has notes
+        // the period: a year, a month or a day, on the diary's own day (where the diary is when you go back), turned
+        // by the calendar with < and > (a page without notes too: it says so, with the nearest notes either side)
         let mode = self.notes_mode.min(2);
         let key = |d: i64| -> String {
             let s = store::date_str(d);
@@ -4475,30 +4475,18 @@ impl App {
                 _ => s,
             }
         };
-        let mut keys: Vec<String> = Vec::new();
-        for &(d, _) in &days {
-            let k = key(d);
-            if keys.last() != Some(&k) {
-                keys.push(k);
-            }
+        let today = store::today_days();
+        if self.diary_sel == 0 {
+            self.diary_sel = today;
         }
-        if self.notes_at == 0 {
-            self.notes_at = store::today_days();
-        }
-        let mut cur = key(self.notes_at);
-        if !keys.is_empty() && !keys.contains(&cur) {
-            // (nothing there: the nearest before it that has notes, else the oldest)
-            cur = keys.iter().find(|k| **k <= cur).cloned().unwrap_or_else(|| keys[keys.len() - 1].clone());
-            if let Some(&(d, _)) = days.iter().find(|&&(d, _)| key(d) == cur) {
-                self.notes_at = d;
-            }
-        }
-        let older = keys.iter().find(|k| **k < cur).cloned();
-        let newer = keys.iter().filter(|k| **k > cur).last().cloned();
+        let cur = key(self.diary_sel);
         let in_p: Vec<(i64, usize)> = days.iter().copied().filter(|&(d, _)| key(d) == cur).collect();
-        let words = page_words(&cur, days.is_empty(), in_p.len());
+        // the nearest days with notes (that fit) before and after this page
+        let near_old = days.iter().map(|&(d, _)| d).find(|&d| key(d) < cur);
+        let near_new = days.iter().map(|&(d, _)| d).filter(|&d| key(d) > cur).last();
+        let words = page_words(&cur, in_p.is_empty(), in_p.len());
         let now = ui.input(|i| i.time);
-        let mut go: Option<(String, i8)> = None;
+        let mut go: Option<(i64, i8)> = None;
         ui.horizontal_wrapped(|ui| {
             for (k, name) in ["YEAR", "MONTH", "DAY"].iter().enumerate() {
                 let tip = ["A year at a time.", "A month at a time.", "A day at a time."][k];
@@ -4509,11 +4497,13 @@ impl App {
             }
         });
         ui.add_space(4.0);
+        let mut deeper = false;
         ui.horizontal(|ui| {
-            for (label, to, dir) in [("<", &older, -1i8), (">", &newer, 1i8)] {
+            for (label, dir) in [("<", -1i8), (">", 1i8)] {
                 if dir > 0 {
-                    // the calendar's page, turning when it changes
-                    let (pr, _) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::hover());
+                    // the calendar's page, turning when it changes; a click goes in (a year to its months, a month to
+                    // its days, a day to the diary)
+                    let (pr, presp) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::click());
                     let (s, shown) = match &self.notes_flip {
                         Some((t0, _, old)) => {
                             let t = ((now - t0) / 0.3) as f32;
@@ -4526,29 +4516,40 @@ impl App {
                         None => (1.0, words.clone()),
                     };
                     paint_page(ui.painter(), pr, s.max(0.02), &shown);
-                }
-                let r = ui
-                    .scope(|ui| {
-                        if to.is_none() {
-                            ui.set_opacity(0.35);
-                        }
-                        retro_btn_w(ui, label, 34.0, false)
-                    })
-                    .inner;
-                if let Some(k) = to {
-                    let tip = format!("{}: {}", if dir < 0 { "Earlier" } else { "Later" }, period_name(k));
-                    if r.tip(tip).clicked() {
-                        go = Some((k.clone(), dir));
+                    let tip = ["Show this year's months.", "Show this month's days.", "Open this day in the diary."][mode as usize];
+                    if presp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked() {
+                        deeper = true;
                     }
                 }
+                let to = period_step(self.diary_sel, mode, dir);
+                let tip = format!("{}: {}", if dir < 0 { "Earlier" } else { "Later" }, period_name(&key(to)));
+                if retro_btn_w(ui, label, 34.0, false).tip(tip).clicked() {
+                    go = Some((to, dir));
+                }
+            }
+            if key(today) != cur && retro_btn(ui, "TODAY", false).tip("Back to today.").clicked() {
+                go = Some((today, if today < self.diary_sel { -1 } else { 1 }));
             }
         });
-        if let Some((k, dir)) = go {
-            if let Some(&(d, _)) = days.iter().find(|&&(d, _)| key(d) == k) {
-                self.notes_at = d;
-                self.notes_flip = Some((now, dir, words.clone()));
-                self.diary_all = SKIM;
+        if deeper {
+            if mode == 2 {
+                self.open_diary_day(self.diary_sel, acts);
+                ui.ctx().request_repaint();
+                return;
             }
+            self.notes_mode = mode + 1;
+            self.diary_all = SKIM;
+            ui.ctx().request_repaint();
+        }
+        let turn_to = |app: &mut App, d: i64, dir: i8| {
+            app.diary_sel = d;
+            let (y, m, _) = store::civil_from_days(d);
+            app.diary_ym = (y, m);
+            app.notes_flip = Some((now, dir, words.clone()));
+            app.diary_all = SKIM;
+        };
+        if let Some((d, dir)) = go {
+            turn_to(self, d, dir);
             ui.ctx().request_repaint();
         }
         // the cards come in as the page turns
@@ -4569,10 +4570,38 @@ impl App {
         }
         ui.add_space(6.0);
 
-        // the list: a year by its months (a month's name opens it), a month's days, or the one day
-        if days.is_empty() {
-            let what = if find.is_empty() { "NO NOTES HERE".to_string() } else { format!("NO NOTES MATCH \"{}\"", self.notes_q.trim()) };
+        // the list: a year by its months (a month's name opens it), a month's days, or the one day; a page without
+        // notes says so, with the way to the nearest notes either side (and, a day, to write some)
+        if in_p.is_empty() {
+            let when = period_name(&cur);
+            let what = match (find.is_empty() && self.notes_filter.is_none(), mode) {
+                (true, 2) => format!("No notes on {}", when),
+                (true, _) => format!("No notes in {}", when),
+                (false, _) if !find.is_empty() => format!("No notes match \"{}\" in {}", self.notes_q.trim(), when),
+                (false, _) => format!("None in {}", when),
+            };
             dim_line(ui, &what, 2.0, pal().ink2);
+            ui.add_space(4.0);
+            let mut jump: Option<(i64, i8)> = None;
+            ui.horizontal_wrapped(|ui| {
+                if let Some(d) = near_old {
+                    if retro_btn(ui, &format!("< {}", period_name(&store::date_str(d))), false).tip("The notes before this.").clicked() {
+                        jump = Some((d, -1));
+                    }
+                }
+                if let Some(d) = near_new {
+                    if retro_btn(ui, &format!("{} >", period_name(&store::date_str(d))), false).tip("The notes after this.").clicked() {
+                        jump = Some((d, 1));
+                    }
+                }
+                if mode == 2 && retro_btn(ui, "WRITE ONE", false).tip("Open this day in the diary, to write its notes.").clicked() {
+                    self.open_diary_day(self.diary_sel, acts);
+                }
+            });
+            if let Some((d, dir)) = jump {
+                turn_to(self, d, dir);
+                ui.ctx().request_repaint();
+            }
             return;
         }
         let mut asked: Option<CardClick> = None;
@@ -4609,7 +4638,9 @@ impl App {
         }
         if let Some(d) = month_open {
             self.notes_mode = 1;
-            self.notes_at = d;
+            self.diary_sel = d;
+            let (y, m, _) = store::civil_from_days(d);
+            self.diary_ym = (y, m);
             ui.ctx().request_repaint();
         }
         match asked {
@@ -4735,7 +4766,6 @@ impl App {
                 }
                 if retro_btn(ui, "ALL NOTES", false).tip("Search your notes, by year, month or day.").clicked() {
                     self.diary_all = SKIM;
-                    self.notes_at = self.diary_sel;
                 }
             }
             // a star for the day (once it has notes)
@@ -6885,6 +6915,23 @@ fn noted_days(days: &[store::Day]) -> Vec<i64> {
     v
 }
 
+/// The day a year, a month (`mode` 0, 1) or a day (2) before (`dir` -1) or after `d`: the same day of the month,
+/// or the month's last when it's shorter (Jan 31 to Feb 28).
+fn period_step(d: i64, mode: u8, dir: i8) -> i64 {
+    let (y, m, dd) = store::civil_from_days(d);
+    let (y, m) = match mode {
+        0 => (y + dir as i32, m),
+        1 => {
+            let k = y * 12 + (m as i32 - 1) + dir as i32;
+            (k.div_euclid(12), (k.rem_euclid(12) + 1) as u32)
+        }
+        _ => return d + dir as i64,
+    };
+    let next = if m == 12 { store::days_from_civil(y + 1, 1, 1) } else { store::days_from_civil(y, m + 1, 1) };
+    let last = (next - store::days_from_civil(y, m, 1)) as u32;
+    store::days_from_civil(y, m, dd.min(last))
+}
+
 /// The nearest day with notes after `from` (`later`), or before it.
 fn note_step(noted: &[i64], from: i64, later: bool) -> Option<i64> {
     if later {
@@ -6958,6 +7005,14 @@ mod summary_tests {
         assert_eq!(note_step(&noted, at("2026-11-01"), true), Some(at("2026-11-05")));
         assert_eq!(note_step(&noted, at("2026-11-05"), true), None);
         assert_eq!(note_step(&noted, at("2026-10-28"), false), None);
+        // the calendar's steps: a day, a month (the day kept, or the month's last), a year
+        assert_eq!(period_step(at("2026-11-08"), 2, -1), at("2026-11-07"));
+        assert_eq!(period_step(at("2026-11-08"), 1, -1), at("2026-10-08"));
+        assert_eq!(period_step(at("2026-01-31"), 1, 1), at("2026-02-28"));
+        assert_eq!(period_step(at("2026-12-15"), 1, 1), at("2027-01-15"));
+        assert_eq!(period_step(at("2026-01-10"), 1, -1), at("2025-12-10"));
+        assert_eq!(period_step(at("2028-02-29"), 0, 1), at("2029-02-28"));
+        assert_eq!(period_step(at("2026-11-08"), 0, -1), at("2025-11-08"));
         assert_eq!(note_preview("Two\nlines"), "Two lines");
         assert!(note_preview(&"word ".repeat(100)).ends_with("...") && note_preview(&"word ".repeat(100)).len() < 170);
     }

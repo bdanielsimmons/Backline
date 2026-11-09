@@ -221,6 +221,8 @@ enum Msg {
     /// an album or playlist saved to (true) or removed from your Tidal albums / playlists
     CardSaved(Card, bool, Result<(), String>),
     MoreTracks(u64, Vec<Track>),
+    /// all of them read (true), or the reading stopped (false)
+    MoreTracksDone(u64, bool),
     Err(String),
     Audio(u64, i64, Vec<u8>),
     PlayErr(u64, String),
@@ -1465,6 +1467,9 @@ static COL_W: Mutex<[f32; 3]> = Mutex::new([0.4, 0.3, 0.3]);
 /// the columns were changed (shown, hidden or resized): the settings need saving
 static COLS_CHANGED: AtomicBool = AtomicBool::new(false);
 
+/// Your liked songs as they load in the background: 0 loading, 1 all read, 2 the reading stopped (an error).
+static LIB_LOAD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 /// How a track row (and the header over it) fits a list `w` wide.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct RowFit {
@@ -1782,7 +1787,15 @@ fn tracks_list(
     let art = row_arts_on() && !one_album;
     col_header(ui, true, art);
     for (i, t) in tracks.iter().enumerate() {
-        let state = if playing_id == Some(t.id) { RowState::Playing } else { RowState::Normal };
+        // (a song Tidal can't stream any more, with no copy here: greyed, and it doesn't play)
+        let gone = t.gone && !cache::has(t.id);
+        let state = if playing_id == Some(t.id) {
+            RowState::Playing
+        } else if gone {
+            RowState::Played
+        } else {
+            RowState::Normal
+        };
         row_heart(liked.contains(&t.id));
         row_stems(t.id);
         if art {
@@ -1802,7 +1815,8 @@ fn tracks_list(
             acts.push(Action::ToggleLike(t.clone()));
         }
         if let Some(r) = r {
-            if r.clicked() {
+            let r = if gone { r.on_hover_text("No longer available on Tidal.") } else { r };
+            if r.clicked() && !gone {
                 acts.push(Action::Play(tracks.to_vec(), i));
             }
             r.context_menu(|ui| {
@@ -2337,12 +2351,35 @@ fn page_view(
                     format!("{} of {} songs match", tracks.len(), all.len())
                 } else if crate::api::OFFLINE.load(Ordering::Relaxed) {
                     format!("Offline: {} of {} songs are on this computer", commas(all.len()), commas(liked_total))
-                } else if page.total > page.tracks.len() {
-                    format!("{} of {} songs loaded", commas(page.tracks.len()), commas(page.total))
+                } else if page.total > page.tracks.len() && LIB_LOAD.load(Ordering::Relaxed) == 0 {
+                    format!("Loading your songs: {} of {}", commas(page.tracks.len()), commas(page.total))
                 } else {
                     format!("{} songs", commas(page.tracks.len()))
                 };
                 title_line(ui, &sub, 2.0, pal().ink2);
+                // all read: the songs Tidal can't play any more (greyed), and why there may be fewer than Tidal counts
+                // (or that the reading stopped)
+                if filter.trim().is_empty() && !crate::api::OFFLINE.load(Ordering::Relaxed) {
+                    let state = LIB_LOAD.load(Ordering::Relaxed);
+                    let gone = page.tracks.iter().filter(|t| t.gone && !cache::has(t.id)).count();
+                    let gap = page.total.saturating_sub(page.tracks.len());
+                    let mut why: Vec<String> = Vec::new();
+                    if gone > 0 && state != 0 {
+                        why.push(format!("{} no longer on Tidal, greyed out.", commas(gone)));
+                    }
+                    match state {
+                        1 if gap > 0 => why.push(format!(
+                            "Tidal counts {}: the other {} are videos or entries it can't play, so they're left out.",
+                            commas(page.total),
+                            commas(gap)
+                        )),
+                        2 if gap > 0 => why.push(format!("{} more couldn't be loaded just now. Refresh tries again.", commas(gap))),
+                        _ => {}
+                    }
+                    if !why.is_empty() {
+                        para(ui, &why.join(" "), pal().ink2);
+                    }
+                }
                 ui.add_space(4.0);
                 play_buttons(ui, tracks, acts, true);
                 ui.add_space(8.0);
@@ -3479,7 +3516,6 @@ struct App {
     notes_q: String,
     notes_filter: Option<String>,
     notes_mode: u8,
-    notes_at: i64,
     notes_tags_all: bool,
     notes_flip: Option<(f64, i8, [String; 3])>,
     /// how many days fit the search and the filter (for ALL NOTES' heading)
@@ -4249,7 +4285,6 @@ impl App {
             notes_q: String::new(),
             notes_filter: None,
             notes_mode: 1,
-            notes_at: 0,
             notes_tags_all: false,
             notes_flip: None,
             notes_fit: 0,
@@ -5391,6 +5426,27 @@ impl App {
         self.ctx.request_repaint();
     }
 
+    /// A panel is open over the app (a question, a window to fill in, help, preferences, the tour...): what's behind
+    /// it doesn't take keys or the mouse's side buttons till it closes.
+    pub(crate) fn panel_open(&self) -> bool {
+        self.show_help
+            || self.show_prefs
+            || self.palette_open
+            || self.tour.is_some()
+            || self.credits.is_some()
+            || self.viz_panel.is_some()
+            || self.artist_pick.is_some()
+            || self.new_pl_dlg.is_some()
+            || self.pl_picker.is_some()
+            || self.pl_dupe.is_some()
+            || self.peer_ask.is_some()
+            || self.edit_info.is_some()
+            || self.takes_open
+            || self.news.is_some()
+            || self.pack_in.is_some()
+            || self.share_view.is_some()
+    }
+
     /// The name of the page these songs are the songs of (a radio, a mix, an album); empty when they're not.
     fn list_name(&self, tracks: &[Track]) -> String {
         match &self.page {
@@ -5448,8 +5504,10 @@ impl App {
     /// Fetch the rest of the liked songs in the background (the first 100 arrive with the page).
     fn spawn_more_tracks(&self, start: usize, total: usize, gen: u64) {
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+        LIB_LOAD.store(if start < total { 0 } else { 1 }, Ordering::Relaxed);
         std::thread::spawn(move || {
             let mut off = start;
+            let mut ok = true;
             while off < total {
                 match api.fav_tracks(off) {
                     Ok((t, _total, raw)) => {
@@ -5462,10 +5520,13 @@ impl App {
                     }
                     Err(e) => {
                         crate::api::log(&format!("liked songs: stopped at {} ({})", off, e));
+                        ok = false;
                         break;
                     }
                 }
             }
+            let _ = tx.send(Msg::MoreTracksDone(gen, ok));
+            ctx.request_repaint();
         });
     }
 
@@ -5593,6 +5654,8 @@ impl App {
                         self.lib_gen += 1;
                         if p.total > p.tracks.len() {
                             self.spawn_more_tracks(p.tracks.len(), p.total, self.lib_gen);
+                        } else {
+                            LIB_LOAD.store(1, Ordering::Relaxed);
                         }
                     }
                     if push {
@@ -5636,6 +5699,11 @@ impl App {
                     }
                     self.set_err(format!("LIKE FAILED: {}", e));
                 }
+                Msg::MoreTracksDone(g, ok) => {
+                    if g == self.lib_gen {
+                        LIB_LOAD.store(if ok { 1 } else { 2 }, Ordering::Relaxed);
+                    }
+                }
                 Msg::MoreTracks(g, v) => {
                     if g == self.lib_gen {
                         self.liked.extend(v.iter().map(|t| t.id));
@@ -5645,18 +5713,12 @@ impl App {
                             push_tracks(p, &v);
                             done = true;
                         }
-                        if let Some(p) = self.page.as_mut().filter(|_| !done) {
-                            if p.library {
-                                push_tracks(p, &v);
-                                done = true;
-                            }
-                        }
+                        // every copy of the library page (the one shown, the one kept, and those back and forward), so
+                        // going back to it never shows fewer songs than have come in
                         if !done {
-                            for b in self.back.iter_mut() {
-                                if b.library {
-                                    push_tracks(b, &v);
-                                    break;
-                                }
+                            let pages = self.page.iter_mut().chain(self.lib_page.iter_mut()).chain(self.back.iter_mut()).chain(self.fwd.iter_mut());
+                            for p in pages.filter(|p| p.library) {
+                                push_tracks(p, &v);
                             }
                         }
                     }
@@ -5909,6 +5971,15 @@ impl App {
             }
         }
         let Some(t) = self.queue.get(i).cloned() else { return };
+        // a song Tidal can't stream any more, with no copy here: on to the next one
+        if t.gone && !cache::has(t.id) {
+            if let Some(k) = (i + 1..self.queue.len()).find(|&k| !(self.queue[k].gone && !cache::has(self.queue[k].id))) {
+                self.play_index(k);
+            } else {
+                self.set_note("NO LONGER AVAILABLE ON TIDAL");
+            }
+            return;
+        }
         // a file of yours that was deleted or moved: out of the lists, and on to the next song
         if let Some(Src::File(p)) = self.srcmap.get(&t.id) {
             if !p.exists() {
@@ -7330,16 +7401,10 @@ impl eframe::App for App {
         } else {
             // Keyboard: Space = play/pause, arrows = seek, classic Winamp keys Z X C V B,
             // A = art viewer, G = black & white, L = lyrics, F / F11 = fullscreen, Esc = back.
-            if !self.search_focus
-                && self.ed.id == 0
-                && !self.show_help
-                && self.credits.is_none()
-                && self.viz_panel.is_none()
-                && self.artist_pick.is_none()
-                && !self.show_prefs
-                && !self.palette_open
-                && self.tour.is_none()
-            {
+            // (a panel open: the keys and the mouse's side buttons are its own; only the keyboard's media keys and the
+            // pop-out visuals' buttons, which don't come this way, still reach the player)
+            let panel = self.panel_open();
+            if !self.search_focus && self.ed.id == 0 && !panel {
                 let kp = |k: egui::Key| ctx.input(|i| i.key_pressed(k));
                 for cmd in self.key_commands(ctx) {
                     self.run_cmd(cmd, &mut acts);
@@ -7352,13 +7417,14 @@ impl eframe::App for App {
                     }
                 }
             }
-            if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+            if !panel && ctx.input(|i| i.key_pressed(egui::Key::F11)) {
                 acts.push(Action::ToggleFullscreen);
             }
             // the mouse's side buttons: back closes the album view, otherwise both walk the page history
             let (m_back, m_fwd) = ctx.input(|i| {
                 (i.pointer.button_pressed(egui::PointerButton::Extra1), i.pointer.button_pressed(egui::PointerButton::Extra2))
             });
+            let (m_back, m_fwd) = (m_back && !panel, m_fwd && !panel);
             if m_back && self.art_view {
                 acts.push(Action::ToggleArt);
             } else if m_back {
