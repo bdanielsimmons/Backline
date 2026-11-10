@@ -2968,8 +2968,16 @@ impl App {
                 }
                 // named after what it was started from (a radio, a mix), or what was typed; the name can be changed
                 let typed = self.new_pl.trim().to_string();
-                let name = if typed.is_empty() { self.queue_from.clone() } else { typed };
+                let name = if typed.is_empty() { self.queue_from.clone() } else { typed.clone() };
                 let tracks = self.queue.to_vec();
+                // songs you added by hand on top of a list you were playing (one liked song started all of My
+                // Tracks): asked which you meant, just yours or the whole queue
+                let mine: Vec<Track> =
+                    tracks.iter().filter(|t| t.qid != 0 && self.q_added.contains(&t.qid)).cloned().collect();
+                if !mine.is_empty() && mine.len() < tracks.len() {
+                    self.queue_save = Some(crate::new_playlist::QueueSave { typed, from: name, mine, all: tracks });
+                    return;
+                }
                 self.apply(Action::PlaylistNewFrom(name, tracks, false));
             }
             Action::PlaylistRemove(pi, ti) => {

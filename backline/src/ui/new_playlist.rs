@@ -60,6 +60,48 @@ fn dupe_words(d: &PlDupe) -> (&'static str, String) {
     ("ALREADY IN THIS PLAYLIST", format!("{} is already in {}.", what, list))
 }
 
+/// The queue about to be saved, when it holds songs you added and the rest of a list you were playing.
+#[derive(Clone)]
+pub(crate) struct QueueSave {
+    /// the name typed in LISTS (may be empty), and the name of what the queue was started from
+    pub typed: String,
+    pub from: String,
+    /// the songs you added yourself, and the whole queue
+    pub mine: Vec<Track>,
+    pub all: Vec<Track>,
+}
+
+/// The heading before a whole list goes in the queue.
+fn queue_all_head(n: &str, next: bool) -> String {
+    if next {
+        format!("PLAY ALL {} SONGS NEXT?", n)
+    } else {
+        format!("ADD ALL {} SONGS TO THE QUEUE?", n)
+    }
+}
+
+/// How a song's menu is opened here (a Mac's mouse often has one button).
+fn right_click_words() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "right-click (or Control-click)"
+    } else {
+        "right-click"
+    }
+}
+
+/// The lines over the choice: how many you added, how many came with the list.
+fn queue_save_words(mine: usize, all: usize, from: &str) -> (String, String) {
+    let rest = all.saturating_sub(mine);
+    let added = if mine == 1 { "You added 1 song yourself.".to_string() } else { format!("You added {} songs yourself.", mine) };
+    let list = if from.trim().is_empty() { "the list you were playing".to_string() } else { from.trim().to_string() };
+    let came = if rest == 1 {
+        format!("The other one came from {}.", list)
+    } else {
+        format!("The other {} came from {}.", crate::commas(rest), list)
+    };
+    (added, came)
+}
+
 /// What a new playlist starts with, in a line ("Starts with ...", "100 songs, starting with ...").
 fn starts_with(tracks: &[Track], lp: Option<&(f32, f32, String)>) -> Option<String> {
     let t = tracks.first()?;
@@ -264,6 +306,73 @@ impl App {
             self.pl_dupe = None;
         } else if cancel {
             self.pl_dupe = None;
+        }
+    }
+
+    /// The question before a long list goes in the queue: ADD ALL (Enter) or CANCEL (Esc). One song goes in from its
+    /// own menu; this button is for the whole list.
+    pub(crate) fn queue_ask_panel(&mut self, ctx: &egui::Context) {
+        let Some((name, tracks, next)) = self.queue_ask.clone() else { return };
+        let (mut yes, mut no) = ctx.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+        let n = crate::commas(tracks.len());
+        panel(ctx, "queue_ask", 460.0, |ui| {
+            title_line(ui, &queue_all_head(&n, next), 3.0, pal().ink);
+            ui.add_space(4.0);
+            para(ui, "That's every song in this list.", pal().ink2);
+            para(ui, &format!("To add one song, {} it and pick Add to queue.", right_click_words()), pal().ink2);
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if retro_btn_w(ui, "ADD ALL", 110.0, true).clicked() {
+                    yes = true;
+                }
+                if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
+                    no = true;
+                }
+            });
+        });
+        if yes {
+            let _ = self.tx.send(crate::Msg::CardTracks(name, Ok(tracks), next));
+            ctx.request_repaint();
+            self.queue_ask = None;
+        } else if no {
+            self.queue_ask = None;
+        }
+    }
+
+    /// Saving the queue when it holds songs you added and the rest of a list you were playing: JUST THE SONGS YOU
+    /// ADDED (Enter), THE WHOLE QUEUE, or CANCEL (Esc).
+    pub(crate) fn queue_save_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let Some(q) = self.queue_save.clone() else { return };
+        let (mut mine, mut cancel) = ctx.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+        let mut all = false;
+        let (m, a) = (q.mine.len(), q.all.len());
+        panel(ctx, "queue_save", 480.0, |ui| {
+            title_line(ui, "SAVE THE QUEUE AS A PLAYLIST", 3.0, pal().ink);
+            ui.add_space(4.0);
+            let (added, came) = queue_save_words(m, a, &q.from);
+            para(ui, &added, pal().ink2);
+            para(ui, &came, pal().ink2);
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                let just = if m == 1 { "MY 1 SONG".to_string() } else { format!("MY {} SONGS", m) };
+                if retro_btn(ui, &just, true).tip("Just the songs you added yourself.").clicked() {
+                    mine = true;
+                }
+                if retro_btn(ui, &format!("ALL {} SONGS", crate::commas(a)), false).tip("The whole queue.").clicked() {
+                    all = true;
+                }
+                if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if mine || all {
+            self.queue_save = None;
+            // (just yours: no list's name on it, unless one was typed)
+            let (name, tracks) = if mine { (q.typed, q.mine) } else { (q.from, q.all) };
+            acts.push(Action::PlaylistNewFrom(name, tracks, false));
+        } else if cancel {
+            self.queue_save = None;
         }
     }
 
@@ -478,6 +587,16 @@ mod tests {
         assert_eq!(line, "Your loop \"head\" of Blue Monk is already in Shed.");
         let (_, line) = dupe_words(&PlDupe::Tidal("u".into(), "Quiet".into(), t));
         assert_eq!(line, "\"Blue Monk\" is already in Quiet.");
+    }
+
+    #[test]
+    fn saving_the_queue_says_which_songs_are_yours() {
+        let (a, b) = queue_save_words(3, 5431, "My Tracks");
+        assert_eq!(format!("{} {}", a, b), "You added 3 songs yourself. The other 5,428 came from My Tracks.");
+        let (a, b) = queue_save_words(1, 2, "");
+        assert_eq!(format!("{} {}", a, b), "You added 1 song yourself. The other one came from the list you were playing.");
+        assert_eq!(queue_all_head("5,431", false), "ADD ALL 5,431 SONGS TO THE QUEUE?");
+        assert_eq!(queue_all_head("200", true), "PLAY ALL 200 SONGS NEXT?");
     }
 }
 

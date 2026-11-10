@@ -2077,10 +2077,10 @@ fn play_buttons_save(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>
         if ibtn(ui, &IC_SHUF, "SHUFFLE", false).clicked() {
             acts.push(Action::PlayShuffled(tracks.to_vec()));
         }
-        if retro_btn(ui, "PLAY NEXT", false).tip("Plays all of these right after the current song.").clicked() {
+        if retro_btn(ui, "PLAY ALL NEXT", false).tip("Plays all of these right after the current song.").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
         }
-        if retro_btn(ui, "ADD TO QUEUE", false).tip("Adds all of these to the end of the queue.").clicked() {
+        if retro_btn(ui, "ADD ALL TO QUEUE", false).tip("Adds all of these to the end of the queue.").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
         if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Reload your library from Tidal.").clicked() {
@@ -2136,7 +2136,9 @@ fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refre
         if icon(ui, "shuffle", "Shuffle").clicked() {
             acts.push(Action::PlayShuffled(tracks.to_vec()));
         }
-        if icon(ui, "queue", "Add to queue").clicked() {
+        // (all of them: one song goes in from its own right-click menu)
+        let all_n = format!("Add all {} to the queue", commas(tracks.len()));
+        if icon(ui, "queue", &all_n).clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
         // save as a playlist: a plus in a ring, its two choices under it (on Tidal, in Backline)
@@ -2168,10 +2170,10 @@ fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refre
         }
         egui::popup_below_widget(ui, id, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
             ui.set_min_width(170.0 * sc);
-            if menu_item(ui, "Play next") {
+            if menu_item(ui, "Play all next") {
                 acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
             }
-            if menu_item(ui, "Add to queue") {
+            if menu_item(ui, "Add all to queue") {
                 acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
             }
             if refresh && menu_item(ui, "Refresh from Tidal") {
@@ -2185,8 +2187,11 @@ fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refre
     ui.add_space(4.0);
 }
 
+/// A list longer than this is asked about before all of it goes in the queue (an album or a playlist isn't).
+const QUEUE_ASK_OVER: usize = 100;
+
 /// A count with commas between the thousands: 5,428.
-fn commas(n: usize) -> String {
+pub(crate) fn commas(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
@@ -3102,6 +3107,10 @@ struct App {
     toast: Option<(String, f64)>,
     /// a song about to go in a playlist it's in already: asked about first
     pl_dupe: Option<new_playlist::PlDupe>,
+    /// a whole long list about to go in the queue (its name, its songs, next or at the end): asked about first
+    queue_ask: Option<(String, Vec<Track>, bool)>,
+    /// saving the queue as a playlist when it holds songs you added and a list you were playing: which one
+    queue_save: Option<new_playlist::QueueSave>,
     /// ADD TO PLAYLIST, while it's open; what's typed to find a playlist; the side picked last (Tidal or Backline)
     pl_picker: Option<new_playlist::Picker>,
     pl_find: String,
@@ -4026,6 +4035,8 @@ impl App {
             queue_from: String::new(),
             toast: None,
             pl_dupe: None,
+            queue_ask: None,
+            queue_save: None,
             pl_picker: None,
             pl_find: String::new(),
             pl_last_tidal: true,
@@ -5210,6 +5221,22 @@ impl App {
                 let t = Track { id: 9001, title: "Walking uP".into(), artist: "Doobie Powell".into(), ..Default::default() };
                 app.pl_dupe = Some(new_playlist::PlDupe::Backline(0, "Quiet Wave radio".into(), t, None));
             }
+            // a whole long list about to go in the queue; saving a queue that holds songs you added and a list
+            Ok(w @ ("queueask" | "queuesave")) => {
+                app.sec = Sec::Files;
+                let t = |k: i64| Track { id: 9000 + k, title: format!("Song {}", k), ..Default::default() };
+                let all: Vec<Track> = (0..5431).map(t).collect();
+                if w == "queueask" {
+                    app.queue_ask = Some(("THIS LIST".into(), all, false));
+                } else {
+                    app.queue_save = Some(new_playlist::QueueSave {
+                        typed: String::new(),
+                        from: "My Tracks".into(),
+                        mine: all[..3].to_vec(),
+                        all,
+                    });
+                }
+            }
             Ok("slonimsky") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 0;
@@ -5540,6 +5567,8 @@ impl App {
             || self.new_pl_dlg.is_some()
             || self.pl_picker.is_some()
             || self.pl_dupe.is_some()
+            || self.queue_ask.is_some()
+            || self.queue_save.is_some()
             || self.peer_ask.is_some()
             || self.edit_info.is_some()
             || self.takes_open
@@ -6873,7 +6902,12 @@ impl App {
                 });
             }
             Action::QueueTracks(name, tracks, next) => {
-                let _ = self.tx.send(Msg::CardTracks(name, Ok(tracks), next));
+                // (a long list - all of My Tracks - is asked about first: one song is queued from its own menu)
+                if tracks.len() > QUEUE_ASK_OVER {
+                    self.queue_ask = Some((name, tracks, next));
+                } else {
+                    let _ = self.tx.send(Msg::CardTracks(name, Ok(tracks), next));
+                }
                 self.ctx.request_repaint();
             }
             Action::Enqueue(mut t) => {
@@ -7400,7 +7434,35 @@ fn panel_frame() -> egui::Frame {
     egui::Frame::none().fill(pal().app_bg).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 30.0, bottom: 14.0 })
 }
 
+/// Control-click is a right-click (a Mac's way, for a mouse or trackpad with one button): the press and its release
+/// both go to the right button. `held`: a press was turned, so its release is too.
+fn ctrl_click_is_right_click(events: &mut [egui::Event], held: &mut bool) {
+    for e in events.iter_mut() {
+        if let egui::Event::PointerButton { button, pressed, modifiers, .. } = e {
+            if *button != egui::PointerButton::Primary {
+                continue;
+            }
+            if *pressed && modifiers.ctrl && !modifiers.mac_cmd {
+                *button = egui::PointerButton::Secondary;
+                *held = true;
+            } else if !*pressed && *held {
+                *button = egui::PointerButton::Secondary;
+                *held = false;
+            }
+        }
+    }
+}
+
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if cfg!(target_os = "macos") {
+            static HELD: AtomicBool = AtomicBool::new(false);
+            let mut held = HELD.load(Ordering::Relaxed);
+            ctrl_click_is_right_click(&mut raw.events, &mut held);
+            HELD.store(held, Ordering::Relaxed);
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // a test copy can picture itself (BACKLINE_SHOT=file.png, after BACKLINE_SHOT_AT seconds): for checking layouts
         // when no one is at the screen
@@ -8075,6 +8137,8 @@ impl eframe::App for App {
         self.picker_panel(ctx, &mut acts);
         self.peer_ask_panel(ctx);
         self.dupe_panel(ctx, &mut acts);
+        self.queue_ask_panel(ctx);
+        self.queue_save_panel(ctx, &mut acts);
         self.edit_info_panel(ctx);
         self.takes_panel(ctx);
         self.skin_loading_panel(ctx);
@@ -8378,6 +8442,36 @@ mod tests {
         let x: Vec<f32> = (0..4000).map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / rate).sin()).collect();
         assert!((goertzel(&x, 440.0, rate) - 1.0).abs() < 0.05, "a full-scale 440 Hz tone reads about 1");
         assert!(goertzel(&x, 1000.0, rate) < 0.05, "and nothing at 1 kHz");
+    }
+
+    #[test]
+    fn control_click_opens_the_right_click_menu() {
+        let ev = |pressed: bool, ctrl: bool, cmd: bool| egui::Event::PointerButton {
+            pos: Pos2::ZERO,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers { ctrl, mac_cmd: cmd, command: cmd, ..Default::default() },
+        };
+        let button = |e: &egui::Event| match e {
+            egui::Event::PointerButton { button, .. } => *button,
+            _ => unreachable!(),
+        };
+        let mut held = false;
+        // a Control-click, let go after Control is: both ends on the right button
+        let mut evs = vec![ev(true, true, false), ev(false, false, false)];
+        ctrl_click_is_right_click(&mut evs, &mut held);
+        assert_eq!(evs.iter().map(button).collect::<Vec<_>>(), [egui::PointerButton::Secondary; 2]);
+        assert!(!held);
+        // a plain click, and a Command-click, stay clicks
+        let mut evs = vec![ev(true, false, false), ev(false, false, false), ev(true, true, true), ev(false, true, true)];
+        ctrl_click_is_right_click(&mut evs, &mut held);
+        assert!(evs.iter().all(|e| button(e) == egui::PointerButton::Primary));
+        // the press in one frame, the release in the next
+        let mut a = vec![ev(true, true, false)];
+        ctrl_click_is_right_click(&mut a, &mut held);
+        let mut b = vec![ev(false, false, false)];
+        ctrl_click_is_right_click(&mut b, &mut held);
+        assert_eq!(button(&b[0]), egui::PointerButton::Secondary);
     }
 
     #[test]
