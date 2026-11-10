@@ -2,6 +2,17 @@
 
 use super::*;
 
+/// The side list's (and Now Playing's) shade in a skin's library: between the list's colour and the window's
+/// ground, so it sits a step apart from the page in any skin.
+pub(crate) fn side_tone() -> Color32 {
+    pal().lcd.lerp_to_gamma(pal().app_bg, 0.55)
+}
+
+/// A fine line between parts of one surface: the text colour, faint (it shows on light and dark skins alike).
+pub(crate) fn divider() -> Color32 {
+    pal().ink2.gamma_multiply(0.22)
+}
+
 /// A small rounded tag on a picture, its bottom-left corner at `at`.
 fn tag(p: &egui::Painter, at: Pos2, text: &str, bg: Color32, fg: Color32) {
     let sc = crate::font::ui_scale();
@@ -1069,10 +1080,9 @@ impl App {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Now Playing  (A)");
         let p = ui.painter().clone();
-        inset(&p, bar, pal().lcd);
-        if resp.hovered() {
-            p.rect_filled(bar.shrink(2.0), 0.0, pal().row_sel);
-        }
+        // the window's foot: a shade apart from the page, a fine line over it
+        p.rect_filled(bar, 0.0, if resp.hovered() { side_tone().lerp_to_gamma(pal().row_sel, 0.5) } else { side_tone() });
+        p.line_segment([bar.left_top(), bar.right_top()], Stroke::new(1.0_f32, divider()));
         let cover = Rect::from_min_size(bar.min + Vec2::new(6.0, 6.0), Vec2::splat(bar.height() - 12.0));
         if tr.cover.is_empty() {
             crate::paint_page_art(ui, &mut self.images, "", cover, false);
@@ -1181,14 +1191,27 @@ impl App {
         }
         // a skin worn: the places down a list at the side (as Spotify has them), the page beside it
         if self.wa_art.is_some() && !self.mini && crate::winamp_ui::chrome_on() {
-            // (the page margin all round: nothing touches the window's edges)
-            let all = crate::page_rect(ui.max_rect());
+            // one surface inside the frame, as Spotify's and Tidal's are: the places down the side a shade apart and
+            // split off by a fine line, the page straight on the list's colour, Now Playing along the foot - no
+            // boxes inside boxes
+            let all = crate::frame_body(ui.max_rect());
+            let p = ui.painter().clone();
+            p.rect_filled(all, 0.0, pal().lcd);
+            // (the places get the window's whole height; Now Playing is the page's foot)
             let sw = (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0));
             let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
+            p.rect_filled(side, 0.0, side_tone());
+            p.line_segment([side.right_top(), side.right_bottom()], Stroke::new(1.0_f32, divider()));
             self.side_nav(ui, side, acts);
             tour::mark("TABS", side);
             tour::mark("APPMENU", side);
-            let main = Rect::from_min_max(Pos2::new(side.max.x + crate::PAGE_PAD, all.min.y), all.max);
+            let mut rest = Rect::from_min_max(Pos2::new(side.max.x, all.min.y), all.max);
+            if let Some(tr) = self.cur_track().filter(|_| all.height() > 300.0) {
+                let bar = Rect::from_min_max(Pos2::new(rest.min.x, rest.max.y - 64.0 * font::ui_scale()), rest.max);
+                rest.max.y = bar.min.y;
+                self.now_bar(ui, bar, &tr, acts);
+            }
+            let main = rest.shrink2(Vec2::new(20.0, 14.0));
             let mut body = ui.new_child(egui::UiBuilder::new().max_rect(main).layout(egui::Layout::top_down(Align::Min)));
             self.library_body(&mut body, acts, false);
             ui.allocate_rect(all, Sense::hover());
@@ -1207,7 +1230,6 @@ impl App {
     fn side_nav(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let sc = font::ui_scale();
-        p.rect_filled(r, 6.0, pal().lcd);
         // the brand at the top
         let gem = Rect::from_min_size(r.min + Vec2::new(12.0, 12.0), Vec2::splat(22.0 * sc));
         crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
@@ -1595,8 +1617,10 @@ impl App {
         // list well: down to the page's foot (PAGE_PAD above the frame), so its own border shows and the last row
         // ends inside it instead of running into the frame
         let mut avail = ui.available_rect_before_wrap();
+        // (a skin worn, the library one surface: no well, and Now Playing is the window's own foot)
+        let flat = !tabs && crate::winamp_ui::chrome_on();
         // with a skin and a song: the now-playing bar along the foot (click it for NOW PLAYING)
-        if self.wa_art.is_some() && !self.mini && avail.height() > 200.0 {
+        if self.wa_art.is_some() && !self.mini && avail.height() > 200.0 && !flat {
             if let Some(tr) = self.cur_track() {
                 let bar = Rect::from_min_max(Pos2::new(avail.min.x, avail.max.y - 52.0), avail.max);
                 avail.max.y = bar.min.y - 6.0;
@@ -1606,8 +1630,16 @@ impl App {
         if avail.height() < 30.0 {
             return;
         }
-        inset(ui.painter(), avail, pal().lcd);
-        let area = if crate::winamp_ui::chrome_on() { avail.shrink2(Vec2::new(12.0, 8.0)) } else { avail.shrink(thick(3.0)) };
+        let area = if flat {
+            avail
+        } else {
+            inset(ui.painter(), avail, pal().lcd);
+            if crate::winamp_ui::chrome_on() {
+                avail.shrink2(Vec2::new(12.0, 8.0))
+            } else {
+                avail.shrink(thick(3.0))
+            }
+        };
         let page = self.page.clone();
         let serial = self.serial;
         let loading = self.loading;

@@ -174,6 +174,9 @@ impl App {
             if ui.interact(bar, tid.with("drag"), Sense::drag()).drag_started() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
+        } else {
+            // the full window with no system title bar: the deck's is part of the app's
+            crate::app_bar_strip(ui, Rect::from_min_size(pl.o, Vec2::new(275.0, 14.0) * pl.s), tid.with("app_bar"));
         }
         // (in the full window the middle one is the skin's own button below, which goes fullscreen)
         {

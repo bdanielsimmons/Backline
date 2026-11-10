@@ -234,7 +234,7 @@ pub(crate) fn wa_text(t: &WaTex, p: &egui::Painter, pl: Place, x: f32, y: f32, s
 // With a skin on, every Backline window wears the skin's own frame (the pieces of its playlist window) and its
 // title in the skin's font. Kept here for the free function that draws window frames.
 thread_local! {
-    static CHROME: std::cell::RefCell<Option<((egui::TextureHandle, Vec2), Option<(egui::TextureHandle, Vec2)>)>> =
+    static CHROME: std::cell::RefCell<Option<((egui::TextureHandle, Vec2), Option<(egui::TextureHandle, Vec2)>, Option<Color32>)>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -243,7 +243,7 @@ static CHROME_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 
 /// Use this skin's frames for every window (None: Backline's own again).
 pub(crate) fn set_chrome(t: Option<&WaTex>) {
-    let v = t.and_then(|t| Some((t.sheets.get("pledit")?.clone(), t.sheets.get("text").cloned())));
+    let v = t.and_then(|t| Some((t.sheets.get("pledit")?.clone(), t.sheets.get("text").cloned(), t.text_bg)));
     CHROME_ON.store(v.is_some(), std::sync::atomic::Ordering::Relaxed);
     CHROME.with(|c| *c.borrow_mut() = v);
 }
@@ -269,7 +269,7 @@ pub(crate) fn title_band_rect(strip: Rect, side_w: f32) -> Rect {
 pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &str) -> bool {
     CHROME.with(|c| {
         let c = c.borrow();
-        let Some(((tex, size), text)) = c.as_ref() else { return false };
+        let Some(((tex, size), text, text_bg)) = c.as_ref() else { return false };
         let piece = |p: &egui::Painter, tex: &egui::TextureHandle, size: Vec2, src: (f32, f32, f32, f32), dst: Rect| {
             const E: f32 = 0.02;
             let uv = Rect::from_min_max(
@@ -331,21 +331,44 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             x += tw;
         }
         bottom_edge(p, outer, bot.min.y);
-        // the title on a dark plate in light text, so it reads over any decoration in any skin; the plate keeps the
-        // same gaps in the band as the window's controls
+        // the window's name in the skin's own font on the font's own band, as the deck writes its song title (the
+        // pair the skin was drawn for, so it reads); the band keeps the same gaps in the strip as the window's
+        // controls. A skin with no font of its own: light letters on a dark band
         let plate_h = (band.height() - 2.0 * TITLE_GAP).max(8.0);
-        let size = plate_h * 0.6;
         let label = title.to_uppercase();
-        let tw2 = sans_width(&label, size);
-        let at = Pos2::new(outer.min.x + tw + 6.0, band.center().y);
-        p.rect_filled(
-            Rect::from_center_size(Pos2::new(at.x + tw2 / 2.0, band.center().y), Vec2::new(tw2 + 10.0, plate_h)),
-            2.0,
-            Color32::from_black_alpha(190),
-        );
-        sans_text(p, at, Align::Min, &label, size, outer.width() * 0.5, Color32::from_gray(235));
+        let x0 = outer.min.x + tw + 6.0;
+        match (text, text_bg) {
+            (Some((ttex, tsize)), Some(bg)) => {
+                // whole skin pixels, as tall as the band allows (the deck's own size at most)
+                let g = ((plate_h - 4.0) / 6.0).floor().max(1.0);
+                let n = label.chars().count() as f32;
+                let plate = Rect::from_min_size(
+                    Pos2::new(x0, band.center().y - (6.0 * g + 4.0) / 2.0),
+                    Vec2::new(n * 5.0 * g + 4.0 * g, 6.0 * g + 4.0),
+                );
+                p.rect_filled(plate, 2.0, *bg);
+                for (i, ch) in label.chars().enumerate() {
+                    let (row, col) = glyph(ch);
+                    let dst = Rect::from_min_size(
+                        Pos2::new(plate.min.x + 2.0 * g + i as f32 * 5.0 * g, plate.min.y + 2.0),
+                        Vec2::new(5.0 * g, 6.0 * g),
+                    );
+                    piece(p, ttex, *tsize, (col as f32 * 5.0, row as f32 * 6.0, 5.0, 6.0), dst);
+                }
+            }
+            _ => {
+                let size = plate_h * 0.6;
+                let tw2 = sans_width(&label, size);
+                let at = Pos2::new(x0, band.center().y);
+                p.rect_filled(
+                    Rect::from_center_size(Pos2::new(at.x + tw2 / 2.0, band.center().y), Vec2::new(tw2 + 10.0, plate_h)),
+                    2.0,
+                    Color32::from_black_alpha(190),
+                );
+                sans_text(p, at, Align::Min, &label, size, outer.width() * 0.5, Color32::from_gray(235));
+            }
+        }
         round_corners(p, outer, true);
-        let _ = text;
         true
     })
 }

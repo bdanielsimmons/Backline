@@ -317,6 +317,12 @@ pub(crate) fn window_deco(ui: &egui::Ui, inner: Rect, title: &str) {
     let u = thick(2.0);
     let outer = frame_outer(inner);
     tour::note(title, outer);
+    // (the title strip moves the window when it's the app's title bar; the strip's own controls, drawn after, win)
+    crate::app_bar_strip(
+        ui,
+        Rect::from_min_max(outer.min, Pos2::new(outer.max.x, frame_body(inner).min.y)),
+        ui.id().with(("app_bar", title)),
+    );
     // a worn Winamp skin dresses every window in its own frame
     if winamp_ui::draw_frame(p, outer, frame_body(inner), title) {
         return;
