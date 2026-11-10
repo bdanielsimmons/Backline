@@ -146,23 +146,30 @@ pub fn file_art(path: &Path) -> Option<Vec<u8>> {
 }
 
 /// Show a file in the system's file browser, selected.
-pub fn reveal(path: &str) {
+pub fn reveal(path: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let path = path.replace('/', "\\");
-        let _ = std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path)).spawn();
+        std::process::Command::new("explorer").raw_arg(explorer_select(path)).spawn().map(|_| ())
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+        std::process::Command::new("open").arg("-R").arg(path).spawn().map(|_| ())
     }
     #[cfg(all(not(windows), not(target_os = "macos")))]
     {
-        if let Some(d) = Path::new(path).parent() {
-            let _ = std::process::Command::new("xdg-open").arg(d).spawn();
-        }
+        let d = Path::new(path).parent().unwrap_or(Path::new(path));
+        std::process::Command::new("xdg-open").arg(d).spawn().map(|_| ())
     }
+}
+
+/// What Explorer is given to open a file's folder with the file picked: /select,"D:\Music\a song.mp3" -
+/// backslashes, no long-path prefix, the path alone in quotes (the whole thing quoted, Explorer ignores it and opens
+/// Documents).
+pub fn explorer_select(path: &str) -> String {
+    let p = path.replace('/', "\\");
+    let p = p.strip_prefix(r"\\?\").unwrap_or(&p);
+    format!("/select,\"{}\"", p)
 }
 
 // ------------------------------------------------------------------ YouTube
@@ -1133,6 +1140,12 @@ pub fn find_chart(name: &str) -> Result<(String, String, String), (String, Vec<S
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explorer_is_given_the_path_in_quotes() {
+        assert_eq!(super::explorer_select("D:/Music/My Song (live).mp3"), r#"/select,"D:\Music\My Song (live).mp3""#);
+        assert_eq!(super::explorer_select(r"\\?\C:\Users\me\a b.wav"), r#"/select,"C:\Users\me\a b.wav""#);
+    }
+
     /// Fetching a YouTube song logs how long each part took (run by hand: BACKLINE_HOME with yt-dlp in its bin folder).
     #[test]
     #[ignore]

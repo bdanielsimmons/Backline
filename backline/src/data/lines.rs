@@ -99,18 +99,7 @@ pub fn add_book(from: &std::path::Path) -> Result<usize, String> {
 /// Show the pattern book file in the system's file browser (selected, on Windows and macOS), to copy or share it.
 pub fn show_book_file() {
     let f = book_path();
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", f.display())).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg("-R").arg(&f).spawn();
-    }
-    #[cfg(all(not(windows), not(target_os = "macos")))]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(crate::api::config_dir()).spawn();
-    }
+    let _ = crate::sources::reveal(&f.to_string_lossy());
 }
 
 // ------------------------------------------------------------------ Slonimsky's own system (with no book)

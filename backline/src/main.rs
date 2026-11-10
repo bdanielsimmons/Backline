@@ -3221,6 +3221,8 @@ struct App {
     clip_edit: Option<(i64, usize)>,
     /// a bookmark being renamed or given a note on the LOOPS page: (song, which one); its words in clip_name/clip_note
     mark_edit: Option<(i64, usize)>,
+    /// where that loop's or bookmark's editor is open: the practice panel (true) or the LOOPS page
+    edit_in_practice: bool,
     clip_name: String,
     clip_note: String,
     clip_group: String,
@@ -4119,6 +4121,7 @@ impl App {
             loops_pick: None,
             clip_edit: None,
             mark_edit: None,
+            edit_in_practice: false,
             clip_name: String::new(),
             clip_note: String::new(),
             clip_group: String::new(),
@@ -4929,6 +4932,19 @@ impl App {
         }
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
+            // the practice panel, the playing song's second loop open to edit (its note box)
+            Ok("loopnote") => {
+                app.practice = true;
+                if let Some(id) = app.queue.first().map(|t| t.id) {
+                    if let Some(s) = app.store.sections.get(&id).and_then(|l| l.get(1)).cloned() {
+                        app.clip_edit = Some((id, 1));
+                        app.edit_in_practice = true;
+                        app.clip_name = s.name;
+                        app.clip_note = s.note;
+                        app.clip_group = s.group;
+                    }
+                }
+            }
             // pick up the last song where it was left (as CONTINUE does)
             Ok("continue") => app.apply(Action::Continue),
             Ok("zoom") => {
@@ -4990,14 +5006,16 @@ impl App {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
             }
-            // the LOOPS page on the song with the most bookmarks, the first one's name and note being edited
+            // the LOOPS page on the song with the most bookmarks, the second one's name and note being edited
             Ok("loopmarks") => {
                 app.sec = Sec::Loops;
                 app.loops_all = true;
                 app.loops_pick = app.store.marks.iter().max_by_key(|(id, l)| (l.len(), **id)).map(|(id, _)| *id);
-                if let Some(id) = app.loops_pick {
-                    app.mark_edit = Some((id, 0));
-                    app.clip_name = app.store.marks[&id][0].name.clone();
+                if let Some(m) = app.loops_pick.and_then(|id| Some((id, app.store.marks[&id].get(1)?.clone()))) {
+                    app.mark_edit = Some((m.0, 1));
+                    app.clip_name = m.1.name;
+                    app.clip_note = format!("{}
+Second line: comp lighter here.", m.1.note);
                 }
             }
             Ok("moves") => {

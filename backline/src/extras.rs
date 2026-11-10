@@ -996,13 +996,8 @@ impl App {
             });
             return;
         };
-        #[cfg(windows)]
-        let r = std::process::Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
-        #[cfg(target_os = "macos")]
-        let r = std::process::Command::new("open").arg("-R").arg(&path).spawn();
-        #[cfg(not(any(windows, target_os = "macos")))]
-        let r = std::process::Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).spawn();
-        if let Err(e) = r {
+        // (a path with spaces has to reach Explorer as /select,"path": quoted whole, Explorer opens Documents)
+        if let Err(e) = crate::sources::reveal(&path.to_string_lossy()) {
             self.set_err(format!("Couldn't open the file manager: {}", e));
         }
     }
@@ -3741,7 +3736,7 @@ impl App {
                         })
                         .map(|_| {
                             // show it in Explorer, so it is easy to find later
-                            sources::reveal(&path.to_string_lossy());
+                            let _ = sources::reveal(&path.to_string_lossy());
                             path.display().to_string()
                         });
                     let _ = tx.send(Msg::Exported(r));
