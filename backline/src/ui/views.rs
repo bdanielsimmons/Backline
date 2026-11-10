@@ -389,7 +389,7 @@ impl App {
         crate::tour::mark("APPMENU", Rect::from_min_max(Pos2::new(r.min.x, top), Pos2::new(r.max.x, ui.cursor().min.y)));
         if side {
             // the BACKLINE tab's own pages
-            let items = [(Sec::Tidal, "SKINS & SETTINGS"), (Sec::Tidal, "WINAMP SKINS"), (Sec::Tidal, "LOG")];
+            let items = [(Sec::Tidal, "SETTINGS"), (Sec::Tidal, "SKINS"), (Sec::Tidal, "LOG")];
             let cur = match self.side {
                 Some(Side::Skins) => 1,
                 Some(Side::Log) => 2,
@@ -1746,13 +1746,6 @@ impl App {
         ui.add_space(20.0);
     }
 
-}
-
-/// A long list opened in place, kept in a box of its own: at most about a third of the window tall, with its own
-/// scroll, so opening it never pushes the rest of the page out of the way.
-pub(crate) fn contained<R>(ui: &mut egui::Ui, id: impl std::hash::Hash, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let max = (ui.ctx().screen_rect().height() * 0.35).clamp(160.0, 380.0);
-    egui::ScrollArea::vertical().id_salt(id).max_height(max).auto_shrink([false, true]).show(ui, add).inner
 }
 
 /// The parts of the app a note can be about: a note written "Area: what changed" shows its area as a tag.

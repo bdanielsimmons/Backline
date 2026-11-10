@@ -14,6 +14,39 @@ pub(crate) fn divider() -> Color32 {
 }
 
 /// A small rounded tag on a picture, its bottom-left corner at `at`.
+/// A Backline look's card on the Skins page: its deck (in the look's own panel color until drawn), its name under it,
+/// ringed and tagged when worn. True when clicked.
+fn look_card(ui: &mut egui::Ui, tex: Option<egui::TextureId>, base: Color32, name: &str, cw: f32, on: bool, tip: &str) -> bool {
+    let sc = crate::font::ui_scale();
+    let ch = cw * 116.0 / 275.0;
+    let name_h = 26.0 * sc;
+    let (cell, r) = ui.allocate_exact_size(Vec2::new(cw, ch + name_h), Sense::click());
+    if !ui.is_rect_visible(cell) {
+        return false;
+    }
+    let shot = Rect::from_min_size(cell.min, Vec2::new(cw, ch));
+    let p = ui.painter().clone();
+    match tex {
+        Some(id) => {
+            egui::Image::new(egui::load::SizedTexture::new(id, shot.size())).paint_at(ui, shot);
+        }
+        None => {
+            p.rect_filled(shot, 4.0, base);
+        }
+    }
+    let hover = r.hovered();
+    if on {
+        p.rect_stroke(shot.expand(2.0), 4.0, Stroke::new(2.0_f32, pal().bar_txt));
+        p.rect_stroke(shot.expand(5.0), 6.0, Stroke::new(3.0_f32, pal().bar_txt.gamma_multiply(0.25)));
+        tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Wearing", pal().bar_txt, pal().display);
+    } else if hover {
+        p.rect_stroke(shot.expand(1.5), 4.0, Stroke::new(1.5_f32, pal().ink2));
+    }
+    let label = crate::font::fit(name, 1.5, cw);
+    crate::font::ptext(&p, Pos2::new(cell.min.x + 2.0, cell.max.y - name_h / 2.0 + 2.0), Align::Min, &label, 1.5, if on { pal().ink } else { pal().ink2 });
+    r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked()
+}
+
 fn tag(p: &egui::Painter, at: Pos2, text: &str, bg: Color32, fg: Color32) {
     let sc = crate::font::ui_scale();
     let w = crate::font::text_w(text, 1.0) + 16.0 * sc;
@@ -463,100 +496,68 @@ impl App {
         }
     }
 
-    /// The skins, one section under another: BACKLINE (Backline's own looks and your Custom one) and WINAMP (the one
-    /// you wear, the ones worn lately, and the way to the browser). The one worn is marked.
-    fn skin_lists(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+    /// The skin worn, in little (its deck, or the museum's picture of it) with its name, and the ways to change it:
+    /// the Skins page, and your own colors.
+    fn skin_now(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let sc = crate::font::ui_scale();
         let worn = self.wa_worn.clone();
         let custom = crate::custom_worn(worn.as_ref());
-        let ours = crate::backline_look(worn.as_ref()) && !custom;
-        let museum = worn.clone().filter(|w| !crate::backline_look(Some(w)));
+        let ours = crate::backline_look(worn.as_ref()) || worn.is_none();
         let cur = SKIN.load(Ordering::Relaxed) % LOOKS.len();
-        ui.add_space(6.0);
-        // folded up: its name and the look worn from it; open to pick another
-        let worn_here = if custom { Some("CUSTOM") } else { ours.then(|| SKIN_NAMES[cur]) };
-        let head = format!(
-            "{} {}",
-            if self.skins_open[0] { "-" } else { "+" },
-            crate::font::as_label(&format!(
-                "Backline skins{}",
-                worn_here.map(|n| format!("  ·  {}", crate::winamp_ui::display_case(n))).unwrap_or_default()
-            ))
-        );
-        if menu_item(ui, &head) {
-            self.skins_open[0] = !self.skins_open[0];
-        }
-        if self.skins_open[0] {
-            // in a box of its own, so opening it doesn't push the page away
-            crate::views::contained(ui, ("skin_list", 0), |ui| {
-                for (n, name) in SKIN_NAMES.iter().enumerate() {
-                    if menu_item(ui, &format!("{}{}", if ours && n == cur { "> " } else { "  " }, name)) {
-                        acts.push(Action::Look(n));
+        let name = if custom {
+            "Custom".to_string()
+        } else if ours {
+            crate::winamp_ui::display_case(SKIN_NAMES[cur]).to_string()
+        } else {
+            worn.as_ref().map(|w| w.1.clone()).unwrap_or_default()
+        };
+        let kind = if ours { "Backline look" } else { "Winamp skin" };
+        egui::Frame::none()
+            .fill(pal().row_alt)
+            .stroke(Stroke::new(1.0_f32, pal().groove))
+            .rounding(10.0)
+            .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(14.0, 6.0);
+                    // the deck as worn: Backline's looks drawn here, a Winamp skin's from the museum
+                    let tex = if custom {
+                        crate::looks::custom_deck(ui.ctx(), &self.custom)
+                    } else if ours {
+                        crate::looks::look_deck(ui.ctx(), cur)
+                    } else {
+                        worn.as_ref().and_then(|w| self.images.get(&crate::winamp::shot_url(&w.0)))
+                    };
+                    let th = (80.0 * sc).min(ui.available_width() * 0.5 * 116.0 / 275.0).max(30.0);
+                    let size = if ours { Vec2::new(th * 275.0 / 116.0, th) } else { Vec2::new(th * 275.0 / 348.0, th) };
+                    let (r, _) = ui.allocate_exact_size(size, Sense::hover());
+                    match tex {
+                        Some(id) => {
+                            egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
+                        }
+                        None => {
+                            ui.painter().rect_filled(r, 3.0, pal().display);
+                        }
                     }
-                }
-                if menu_item(ui, &format!("{}CUSTOM...", if custom { "> " } else { "  " })) {
-                    acts.push(Action::EditLook);
-                }
-            });
-        }
-        ui.add_space(6.0);
-        let head = format!(
-            "{} {}",
-            if self.skins_open[2] { "-" } else { "+" },
-            crate::font::as_label(&format!(
-                "Winamp skins{}",
-                museum.as_ref().map(|w| format!("  ·  {}", w.1)).unwrap_or_default()
-            ))
-        );
-        if menu_item(ui, &head) {
-            self.skins_open[2] = !self.skins_open[2];
-        }
-        if self.skins_open[2] {
-            // two groups, each folding open: your favourites, and the ones worn lately (X takes one off: a favourite
-            // out of your favourites, the others off the list)
-            let favs: Vec<(String, String)> = self.wa_favs.clone();
-            let mut recent: Vec<(String, String)> = Vec::new();
-            if let Some(w) = museum.clone().filter(|w| !favs.iter().any(|f| f.0 == w.0)) {
-                recent.push(w);
-            }
-            for r in &self.wa_recent {
-                if !recent.iter().any(|l| l.0 == r.0) && !favs.iter().any(|f| f.0 == r.0) {
-                    recent.push(r.clone());
-                }
-            }
-            for (g, (title, list, fav)) in [("FAVORITES", favs, true), ("RECENT", recent, false)].into_iter().enumerate() {
-                if list.is_empty() {
-                    continue;
-                }
-                let open = self.wa_groups_open[g];
-                if menu_item(ui, &format!("    {} {}  ({})", if open { "-" } else { "+" }, title, list.len())) {
-                    self.wa_groups_open[g] = !open;
-                }
-                if !open {
-                    continue;
-                }
-                for (md5, name) in list {
-                    let on = museum.as_ref().is_some_and(|w| w.0 == md5);
-                    ui.horizontal(|ui| {
-                        ui.add_space(24.0);
-                        let tip = if fav { "Remove from favorites" } else { "Remove from this list" };
-                        if retro_btn_w(ui, "X", 24.0, false).tip(tip).clicked() {
-                            acts.push(if fav { Action::WaFav(md5.clone(), name.clone()) } else { Action::WaForget(md5.clone()) });
-                        }
-                        if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) && !on {
-                            acts.push(Action::WaApply(crate::winamp::WaSkin {
-                                md5: md5.clone(),
-                                name: name.clone(),
-                                shot: String::new(),
-                                download: String::new(),
-                            }));
-                        }
+                    ui.vertical(|ui| {
+                        let nw = ui.available_width().max(60.0);
+                        crate::views::dim_line(ui, kind, 1.0, pal().ink2);
+                        let (r, _) = ui.allocate_exact_size(Vec2::new(nw, 26.0 * sc), Sense::hover());
+                        crate::font::ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &name, 2.4, nw - 8.0, pal().ink);
                     });
-                }
-            }
-            if menu_item(ui, "  BROWSE WINAMP SKINS...") {
-                acts.push(Action::WaOpen);
-            }
-        }
+                });
+                // the ways to change it, under it (they wrap on a narrow page, never off the edge)
+                ui.add_space(8.0);
+                ui.horizontal_wrapped(|ui| {
+                    if retro_btn(ui, "Change Skin", false).tip("All the skins: Backline's own looks and Winamp skins, each shown.").clicked() {
+                        acts.push(Action::WaOpen);
+                    }
+                    if retro_btn(ui, "Your Own Colors", false).tip("Make a look of your own: pick its colors.").clicked() {
+                        acts.push(Action::EditLook);
+                    }
+                });
+            });
     }
 
     /// The BACKLINE tab: the skins, then everything about the app itself (preferences, help and tours, where
@@ -593,9 +594,9 @@ impl App {
                 }
             });
             ui.add_space(14.0);
-            title_line(ui, "SKINS", 3.0, pal().ink);
+            title_line(ui, "SKIN", 3.0, pal().ink);
             ui.add_space(6.0);
-            self.skin_lists(ui, acts);
+            self.skin_now(ui, acts);
             ui.add_space(20.0);
         });
     }
@@ -638,14 +639,100 @@ impl App {
         ui.add_space(20.0);
     }
 
+    /// SKINS: every skin on one page, a switch at the top between Backline's own looks (each shown as its deck) and
+    /// skins made for Winamp (the museum's, your favorites, the ones worn lately).
+    pub(crate) fn skins_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        ui.add_space(6.0);
+        title_line(ui, "SKINS", 3.0, pal().ink);
+        ui.add_space(4.0);
+        let tips = ["Backline's own looks, and your own colors.".to_string(), "Skins made for Winamp.".to_string()];
+        if let Some(k) = crate::widgets::segments_tips(ui, &["Backline", "Winamp"], self.skins_side as usize, &tips) {
+            self.skins_side = k as u8;
+            if k == 1 && self.wa_list.is_empty() && !self.wa_busy {
+                acts.push(Action::WaSearch);
+            }
+        }
+        ui.add_space(8.0);
+        if self.skins_side == 1 {
+            self.winamp_view(ui, acts);
+        } else {
+            self.looks_view(ui, acts);
+        }
+    }
+
+    /// Backline's looks, each as its own deck, in groups (dark, light, high contrast), then your own colors. A click
+    /// wears one.
+    fn looks_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let sc = crate::font::ui_scale();
+        let worn = self.wa_worn.clone();
+        let custom = crate::custom_worn(worn.as_ref());
+        let ours = crate::backline_look(worn.as_ref()) || worn.is_none();
+        let cur = SKIN.load(Ordering::Relaxed) % LOOKS.len();
+        para(
+            ui,
+            if ours { "Backline's own looks. Click one to wear it." } else { "You're wearing a Winamp skin. Click a look to wear it instead." },
+            pal().ink2,
+        );
+        ui.add_space(6.0);
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            // cards as wide as the row allows, 200 at least
+            let gap = 16.0 * sc;
+            let seen = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width()) - 4.0;
+            let per_row = ((seen + gap) / (200.0 * sc + gap)).floor().max(1.0) as usize;
+            let cw = ((seen - gap * (per_row - 1) as f32) / per_row as f32).min(330.0 * sc);
+            let high = |n: usize| LOOKS[n].name.starts_with("HIGH CONTRAST");
+            let light = |n: usize| crate::winamp::lum(LOOKS[n].panel) > 0.45;
+            let groups: [(&str, Vec<usize>); 3] = [
+                ("DARK", (0..LOOKS.len()).filter(|&n| !high(n) && !light(n)).collect()),
+                ("LIGHT", (0..LOOKS.len()).filter(|&n| !high(n) && light(n)).collect()),
+                ("HIGH CONTRAST", (0..LOOKS.len()).filter(|&n| high(n)).collect()),
+            ];
+            for (head, looks) in groups {
+                dim_line(ui, head, 1.0, pal().ink2);
+                ui.add_space(4.0);
+                for row in looks.chunks(per_row) {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = gap;
+                        for &n in row {
+                            let on = ours && !custom && n == cur;
+                            let tex = crate::looks::look_deck(ui.ctx(), n);
+                            let name = crate::winamp_ui::display_case(SKIN_NAMES[n]);
+                            if look_card(ui, tex, LOOKS[n].panel, &name, cw, on, &format!("{}. Click to wear it.", name)) && !on {
+                                acts.push(Action::Look(n));
+                            }
+                        }
+                    });
+                    ui.add_space(gap * 0.75);
+                }
+                ui.add_space(4.0);
+            }
+            dim_line(ui, "YOUR OWN", 1.0, pal().ink2);
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                let tex = crate::looks::custom_deck(ui.ctx(), &self.custom);
+                let tip = "Your own colors: pick a background, an accent, and the display and text if you like.";
+                if look_card(ui, tex, self.custom.background, "Custom", cw, custom, tip) {
+                    acts.push(Action::EditLook);
+                }
+                ui.vertical(|ui| {
+                    ui.set_width((seen - cw - gap).clamp(0.0, 360.0 * sc));
+                    para(ui, "Pick your own colors. The rest of the look follows them, so it stays easy to read.", pal().ink2);
+                    if retro_btn(ui, "Choose Colors", false).tip(tip).clicked() {
+                        acts.push(Action::EditLook);
+                    }
+                });
+            });
+            ui.add_space(20.0);
+        });
+    }
+
     /// Winamp skins from the Skin Museum: the one you wear (keep it, or back to Backline's look), then BROWSE (search
     /// the museum, its best when nothing's typed, more as you scroll), FAVORITES and RECENT, each a grid of
     /// screenshots. A click shows the skin big first (`wa_preview_panel`); WEAR IT puts it on.
     pub(crate) fn winamp_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let sc = crate::font::ui_scale();
-        ui.add_space(6.0);
-        title_line(ui, "WINAMP SKINS", 3.0, pal().ink);
-        para(ui, "From the Winamp Skin Museum.", pal().ink2);
+        para(ui, "Skins made for Winamp, from the Winamp Skin Museum. Click one to see it big.", pal().ink2);
         self.wa_wearing(ui, acts);
         ui.add_space(8.0);
         let tabs = [
@@ -1016,11 +1103,8 @@ impl App {
             }
             done = true;
         }
-        // the Winamp skin worn (or the way in to them): opens the skin browser
-        let wa_label = match &self.wa_worn {
-            Some((md5, name)) if !md5.starts_with("gen:") => format!("> WINAMP: {}", name.to_uppercase()),
-            _ => "> WINAMP SKINS".to_string(),
-        };
+        // the way to the Skins page
+        let wa_label = "> All Skins".to_string();
         if menu_item(ui, &wa_label) && self.side != Some(Side::Skins) {
             acts.push(Action::WaOpen);
         }
@@ -1257,7 +1341,7 @@ impl App {
         }
         let foot = [
             ("gear", "Settings", self.side == Some(Side::Backline), 20u8),
-            ("skins", "Winamp Skins", self.side == Some(Side::Skins), 21),
+            ("skins", "Skins", self.side == Some(Side::Skins), 21),
             ("log", "Log", self.side == Some(Side::Log), 22),
         ];
         let top = gem.max.y + 14.0;
@@ -1630,7 +1714,7 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, if crate::winamp_ui::chrome_on() { GAP } else { 0.0 });
             match side {
                 Some(Side::Log) => return self.log_view(ui, acts),
-                Some(Side::Skins) => return self.winamp_view(ui, acts),
+                Some(Side::Skins) => return self.skins_view(ui, acts),
                 Some(Side::Backline) => return self.backline_page(ui, acts),
                 None => {}
             }

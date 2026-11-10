@@ -217,12 +217,21 @@ pub(crate) fn spawn_thumb_pool(api: Api, tx: Sender<Msg>, ctx: egui::Context) ->
 
 /// Texture for a cover, optionally the black-and-white version (falls back to colour while it loads).
 pub(crate) fn art_tex(images: &mut Images, url: &str, gray: bool) -> Option<egui::TextureId> {
-    if gray {
-        if let Some(id) = images.get(&format!("gray:{}", url)) {
+    // (the Greyscale look: every cover in grey)
+    if gray || crate::skin::mono() {
+        if let Some(id) = images.get(&gray_url(url)) {
             return Some(id);
         }
     }
     images.get(url)
+}
+
+/// A picture's address in grey ("thumb:gray:..." for a row's small cover, as `picture` reads them).
+pub(crate) fn gray_url(url: &str) -> String {
+    match url.strip_prefix("thumb:") {
+        Some(rest) => format!("thumb:gray:{}", rest),
+        None => format!("gray:{}", url),
+    }
 }
 
 pub(crate) fn paint_art_g(ui: &egui::Ui, images: &mut Images, url: &str, rect: Rect, round: f32, gray: bool) {

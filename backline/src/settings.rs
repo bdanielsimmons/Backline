@@ -183,23 +183,22 @@ impl App {
             app.pl_font = (f as usize).min(winamp_ui::PL_FONTS.len() - 1);
         }
         app.eq_auto = st["eq_auto"].as_bool().unwrap_or(false);
-        // your Custom look's colours
+        // your Custom look's colors (its display and writing, when they're yours)
         let rgb = |v: &serde_json::Value| {
             let a = v.as_array()?;
             Some(Color32::from_rgb(a.first()?.as_u64()? as u8, a.get(1)?.as_u64()? as u8, a.get(2)?.as_u64()? as u8))
         };
         if let (Some(b), Some(a)) = (rgb(&st["custom_look"][0]), rgb(&st["custom_look"][1])) {
-            app.custom_cols = (b, a);
+            app.custom = skin::CustomLook { background: b, accent: a, display: rgb(&st["custom_look"][2]), text: rgb(&st["custom_look"][3]) };
         }
-        app.look_custom = st["look_custom"].as_bool().unwrap_or(false);
-        // the skin worn last time, put on before the first frame so the window opens already wearing it: one of
+        app.look_custom = st["look_custom"].as_bool().unwrap_or(false);        // the skin worn last time, put on before the first frame so the window opens already wearing it: one of
         // Backline's looks, your Custom one, or a Winamp skin (from its saved file; gone, Backline's look instead)
         let worn = (st["winamp"][0].as_str(), st["winamp"][1].as_str());
         let n = SKIN.load(Ordering::Relaxed) % LOOKS.len();
         match worn {
             (Some(looks::CUSTOM_MD5), _) => {
-                let s = winamp::WaSkin { md5: looks::CUSTOM_MD5.into(), name: "CUSTOM".into(), shot: String::new(), download: String::new() };
-                app.wear_skin(genskin::wear(&app.custom_pal()).map(|(p, art)| (s, p, art)), false);
+                let r = app.custom_skin();
+                app.wear_skin(r, false);
             }
             (Some(md5), Some(name)) if !md5.starts_with("gen:") => {
                 let s = winamp::WaSkin { md5: md5.to_string(), name: name.to_string(), shot: String::new(), download: String::new() };
@@ -213,6 +212,7 @@ impl App {
             }
             _ => {
                 let s = app.gen_skin(n);
+                skin::set_mono(Some(n));
                 app.wear_skin(genskin::wear(&PALS[n]).map(|(p, art)| (s, p, art)), false);
             }
         }
@@ -385,11 +385,12 @@ impl App {
 
     pub(crate) fn save_settings(&mut self) {
         let v = serde_json::json!({
-            "look": SKIN.load(Ordering::Relaxed),
-            "look_custom": self.look_custom,
-            "custom_look": [
-                [self.custom_cols.0.r(), self.custom_cols.0.g(), self.custom_cols.0.b()],
-                [self.custom_cols.1.r(), self.custom_cols.1.g(), self.custom_cols.1.b()]
+            "look_name": SKIN_NAMES[SKIN.load(Ordering::Relaxed) % LOOKS.len()],
+            "look_custom": self.look_custom,            "custom_look": [
+                [self.custom.background.r(), self.custom.background.g(), self.custom.background.b()],
+                [self.custom.accent.r(), self.custom.accent.g(), self.custom.accent.b()],
+                self.custom.display.map(|c| vec![c.r(), c.g(), c.b()]),
+                self.custom.text.map(|c| vec![c.r(), c.g(), c.b()])
             ],
             "volume": self.volume,
             "spec": self.show_spec,

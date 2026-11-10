@@ -183,6 +183,12 @@ impl App {
         match r {
             Ok((s, p, art)) => {
                 crate::skin::set_custom(Some(p));
+                // Backline's own looks: every window's frame flat, in the playlist side's own colour
+                let flat = s.md5.starts_with("gen:").then(|| art.sheets.iter().find(|x| x.0 == "pledit")).flatten().and_then(|x| {
+                    let i = (50 * x.1[0] + 5) * 4;
+                    x.2.get(i..i + 3).map(|c| egui::Color32::from_rgb(c[0], c[1], c[2]))
+                });
+                crate::winamp_ui::set_flat(flat);
                 self.wa_art = Some(crate::winamp_ui::WaTex::new(&self.ctx, art));
                 // a Winamp skin you just put on shows where its buttons are for a moment (some hide them in the
                 // picture); Backline's own looks are plain, so not those

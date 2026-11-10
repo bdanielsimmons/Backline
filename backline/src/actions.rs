@@ -177,6 +177,7 @@ impl App {
                 self.side = if self.side == Some(Side::Skins) { None } else { Some(Side::Skins) };
                 if self.side == Some(Side::Skins) {
                     self.show_eq = false;
+                    self.skins_side = if crate::backline_look(self.wa_worn.as_ref()) || self.wa_worn.is_none() { 0 } else { 1 };
                     if self.wa_list.is_empty() && !self.wa_busy {
                         self.apply(Action::WaSearch);
                     }

@@ -883,7 +883,7 @@ impl App {
                             self.wa_list = list;
                         }
                     }
-                    Err(e) => self.set_err(format!("WINAMP SKINS: {}", e)),
+                    Err(e) => self.set_err(format!("SKINS: {}", e)),
                 }
             }
             Msg::WaSkin(r) => self.wear_skin(r, true),

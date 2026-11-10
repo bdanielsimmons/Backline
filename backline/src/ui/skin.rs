@@ -48,30 +48,46 @@ const fn look(name: &'static str, panel: Color32, display: Color32, accent: Colo
     Look { name, panel, display, accent }
 }
 
-/// Backline's looks, around the colour wheel: dark ones, then paper ones, then the two for the eyes. (Graphite,
-/// Midnight and High Contrast are the old Dark, Sleek Light and High Contrast Dark, exactly.)
-pub(crate) const LOOKS: [Look; 14] = [
+/// Backline's looks: the neutral ones, then around the colour wheel, then paper ones, then the two for the eyes.
+/// (Graphite, Midnight, Blue Hour and High Contrast are the old Dark, Sleek Light, Sleek Dark and High Contrast Dark,
+/// exactly.) Greyscale is calm on purpose: no colour anywhere, the covers in grey too (`mono`).
+pub(crate) const LOOKS: [Look; 29] = [
     look("GRAPHITE", c(43, 43, 44), c(13, 13, 13), c(169, 172, 176)),
+    look("GREYSCALE", c(64, 64, 64), c(30, 30, 30), c(196, 196, 196)),
+    look("STORM", c(40, 44, 52), c(12, 14, 18), c(255, 214, 90)),
+    look("SLATE", c(52, 60, 70), c(16, 20, 26), c(170, 190, 215)),
+    look("CLASSIC", c(52, 52, 68), c(0, 0, 0), c(0, 226, 0)),
     look("MIDNIGHT", c(36, 45, 67), c(10, 14, 22), c(206, 212, 228)),
+    look("BLUE HOUR", c(40, 48, 69), c(12, 15, 23), c(120, 160, 255)),
     look("COBALT", c(30, 44, 86), c(8, 14, 32), c(110, 170, 255)),
     look("DUSK", c(52, 40, 78), c(16, 11, 28), c(196, 164, 255)),
+    look("ORCHID", c(60, 30, 62), c(18, 8, 20), c(238, 140, 255)),
     look("NEON", c(34, 24, 44), c(10, 6, 16), c(255, 92, 214)),
     look("ROSEWOOD", c(72, 38, 50), c(24, 10, 16), c(255, 150, 182)),
+    look("CRIMSON", c(70, 24, 30), c(22, 6, 8), c(255, 96, 96)),
     look("EMBER", c(70, 40, 28), c(24, 11, 6), c(255, 146, 74)),
+    look("COFFEE", c(56, 42, 34), c(18, 12, 8), c(222, 180, 140)),
     look("AMBER", c(60, 48, 30), c(20, 14, 4), c(255, 190, 70)),
+    look("OLIVE", c(58, 58, 36), c(18, 18, 8), c(214, 206, 120)),
+    look("FOREST", c(30, 50, 34), c(8, 18, 10), c(230, 200, 90)),
     look("MOSS", c(38, 56, 40), c(10, 20, 12), c(140, 226, 140)),
     look("SEA GLASS", c(26, 58, 62), c(6, 20, 22), c(104, 228, 214)),
     look("PAPER", c(228, 220, 204), c(247, 243, 233), c(52, 74, 140)),
+    look("SAND", c(232, 220, 196), c(250, 244, 232), c(150, 84, 30)),
+    look("SAKURA", c(240, 222, 228), c(252, 244, 246), c(196, 48, 104)),
+    look("LAVENDER", c(226, 220, 240), c(248, 246, 253), c(96, 64, 170)),
     look("DAYLIGHT", c(208, 216, 226), c(245, 248, 252), c(0, 96, 180)),
+    look("ARCTIC", c(214, 228, 236), c(246, 251, 253), c(0, 120, 150)),
+    look("SPRING", c(214, 236, 224), c(245, 252, 248), c(0, 128, 80)),
     look("HIGH CONTRAST", c(29, 29, 29), c(8, 8, 8), c(255, 255, 0)),
     look("HIGH CONTRAST LIGHT", c(230, 230, 230), c(255, 255, 255), c(0, 0, 0)),
 ];
 
 /// The looks' names, in order.
-pub(crate) const SKIN_NAMES: [&str; 14] = {
-    let mut out = [""; 14];
+pub(crate) const SKIN_NAMES: [&str; LOOKS.len()] = {
+    let mut out = [""; LOOKS.len()];
     let mut i = 0;
-    while i < 14 {
+    while i < LOOKS.len() {
         out[i] = LOOKS[i].name;
         i += 1;
     }
@@ -81,12 +97,41 @@ pub(crate) const SKIN_NAMES: [&str; 14] = {
 /// The look first worn (the very first run).
 pub(crate) const FIRST_LOOK: usize = 0;
 
+/// A look by its name (as kept in the settings: the list can grow and change order).
+pub(crate) fn look_named(name: &str) -> Option<usize> {
+    LOOKS.iter().position(|l| l.name.eq_ignore_ascii_case(name.trim()))
+}
+
+/// Where a look kept by number goes: 9.356 kept the number in its list of fourteen.
+pub(crate) fn look_from_356(n: usize) -> usize {
+    const AT_356: [&str; 14] = [
+        "GRAPHITE", "MIDNIGHT", "COBALT", "DUSK", "NEON", "ROSEWOOD", "EMBER", "AMBER", "MOSS", "SEA GLASS", "PAPER",
+        "DAYLIGHT", "HIGH CONTRAST", "HIGH CONTRAST LIGHT",
+    ];
+    AT_356.get(n).and_then(|name| look_named(name)).unwrap_or(FIRST_LOOK)
+}
+
 /// Where a look kept by an older version (the seventeen palettes before 9.356) went.
 pub(crate) fn look_from_old(old: usize) -> usize {
     // olive, aqua, dark, amber, paper, plum, slate, clay, aero glass, sleek dark, sleek light, neon, sunset, ocean,
     // citrus, high contrast dark, high contrast light
-    const TO: [usize; 17] = [8, 9, 0, 7, 10, 3, 0, 6, 9, 2, 1, 4, 5, 9, 8, 12, 13];
-    TO.get(old).copied().unwrap_or(FIRST_LOOK)
+    const TO: [&str; 17] = [
+        "OLIVE", "SEA GLASS", "GRAPHITE", "AMBER", "PAPER", "DUSK", "SLATE", "EMBER", "SEA GLASS", "BLUE HOUR", "MIDNIGHT",
+        "NEON", "ROSEWOOD", "SEA GLASS", "MOSS", "HIGH CONTRAST", "HIGH CONTRAST LIGHT",
+    ];
+    TO.get(old).and_then(|name| look_named(name)).unwrap_or(FIRST_LOOK)
+}
+
+/// Greyscale worn: nothing in colour, the covers in grey too (and hearts).
+static MONO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn mono() -> bool {
+    MONO.load(Ordering::Relaxed)
+}
+
+/// Set as a look goes on: whether it's the calm grey one.
+pub(crate) fn set_mono(look: Option<usize>) {
+    MONO.store(look.is_some_and(|n| LOOKS.get(n).is_some_and(|l| l.name == "GREYSCALE")), Ordering::Relaxed);
 }
 
 /// A whole palette from a look's three colours (what's worn before its skin is: the skin then gives its own).
@@ -119,19 +164,56 @@ pub(crate) fn look_pal(panel: Color32, display: Color32, accent: Color32) -> Pal
     }
 }
 
-/// Your Custom look from the two colours you pick (Background, Accent), kept in step with the built-in ones: the
-/// background eased to a panel dark enough for light writing (or, picked light, a paper one for dark writing), the
-/// display a deeper (or paler) shade of it; the accent is lit to read on the display when the skin is drawn.
-pub(crate) fn custom_look(background: Color32, accent: Color32) -> (Color32, Color32, Color32) {
-    let (h, s, v) = rgb_to_hsv(background);
-    if lum(background) > 0.45 {
-        // paper: light, a hint of the colour
-        let panel = hsv_to_rgb(h, (s * 0.35).min(0.18), v.max(0.86));
-        (panel, hsv_to_rgb(h, (s * 0.15).min(0.06), 0.97), accent)
-    } else {
-        // dark: the colour kept, deep enough that the writing on it reads
-        let panel = hsv_to_rgb(h, s.min(0.6), v.clamp(0.13, 0.32));
-        (panel, hsv_to_rgb(h, s.min(0.7), (v * 0.34).clamp(0.03, 0.11)), accent)
+/// Your Custom look: its background and accent, and its display and writing when you've picked them (else worked out
+/// from the background). Kept in step with the built-in looks: the background eased to a panel dark enough for light
+/// writing (or, picked light, a paper one for dark writing); the writing always reads on the display.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct CustomLook {
+    pub(crate) background: Color32,
+    pub(crate) accent: Color32,
+    pub(crate) display: Option<Color32>,
+    pub(crate) text: Option<Color32>,
+}
+
+impl Default for CustomLook {
+    fn default() -> CustomLook {
+        CustomLook { background: c(36, 45, 67), accent: c(110, 170, 255), display: None, text: None }
+    }
+}
+
+impl CustomLook {
+    /// Starting from one of Backline's looks.
+    pub(crate) fn from_look(n: usize) -> CustomLook {
+        let l = &LOOKS[n % LOOKS.len()];
+        CustomLook { background: l.panel, accent: l.accent, display: Some(l.display), text: None }
+    }
+
+    /// The panel, display and accent it is worn with, and its writing (None: as a built-in look's).
+    pub(crate) fn colors(&self) -> (Color32, Color32, Color32, Option<Color32>) {
+        let (h, s, v) = rgb_to_hsv(self.background);
+        let light = lum(self.background) > 0.45;
+        let panel = if light {
+            // paper: light, a hint of the colour
+            hsv_to_rgb(h, (s * 0.35).min(0.18), v.max(0.86))
+        } else {
+            // dark: the colour kept, deep enough that the writing on it reads (as dark as you like: black is black)
+            hsv_to_rgb(h, s.min(0.6), v.min(0.32))
+        };
+        let display = self.display.unwrap_or_else(|| {
+            if light {
+                hsv_to_rgb(h, (s * 0.15).min(0.06), 0.97)
+            } else {
+                hsv_to_rgb(h, s.min(0.7), (v * 0.34).clamp(0.03, 0.11))
+            }
+        });
+        let text = self.text.map(|t| crate::winamp::readable(t, display, 4.5));
+        (panel, display, self.accent, text)
+    }
+
+    /// Its palette (what's worn before its skin is).
+    pub(crate) fn pal(&self) -> Pal {
+        let (panel, display, accent, _) = self.colors();
+        look_pal(panel, display, accent)
     }
 }
 
@@ -367,13 +449,17 @@ mod contrast_tests {
 
     #[test]
     fn a_custom_look_stays_in_step() {
-        // any two colours make a look whose writing reads, light or dark
+        // any colours make a look whose writing reads, light or dark, with or without its own display and writing
         for bg in [c(255, 0, 0), c(0, 0, 0), c(255, 255, 255), c(128, 128, 128), c(30, 200, 90), c(250, 240, 180)] {
             for accent in [c(255, 255, 0), c(0, 0, 0), c(20, 20, 200), c(255, 255, 255)] {
-                let (panel, display, accent) = custom_look(bg, accent);
-                let (p, _) = crate::genskin::wear(&look_pal(panel, display, accent)).expect("skin");
-                let p = readable(p, true);
-                assert!(contrast(p.ink, p.display) >= 4.5 && contrast(p.ink, p.panel) >= 4.5, "{:?} {:?}", bg, accent);
+                for (display, text) in [(None, None), (Some(c(40, 40, 40)), Some(c(60, 60, 60))), (Some(c(250, 250, 250)), None)] {
+                    let look = CustomLook { background: bg, accent, display, text };
+                    let (_, display, _, text) = look.colors();
+                    let (p, _) = crate::genskin::wear_with(&look.pal(), text).expect("skin");
+                    let p = readable(p, true);
+                    assert!(contrast(p.ink, p.display) >= 4.5, "{:?} {:?} {:?}", bg, accent, display);
+                    assert!(contrast(p.ink, p.panel) >= 4.5, "{:?} {:?} panel", bg, accent);
+                }
             }
         }
     }
@@ -381,9 +467,14 @@ mod contrast_tests {
     #[test]
     fn an_old_look_finds_its_new_one() {
         assert_eq!(SKIN_NAMES[look_from_old(10)], "MIDNIGHT");
+        assert_eq!(SKIN_NAMES[look_from_old(9)], "BLUE HOUR");
         assert_eq!(SKIN_NAMES[look_from_old(2)], "GRAPHITE");
         assert_eq!(SKIN_NAMES[look_from_old(16)], "HIGH CONTRAST LIGHT");
         assert_eq!(look_from_old(99), FIRST_LOOK);
+        // 9.356 kept a number in its own list of fourteen
+        assert_eq!(SKIN_NAMES[look_from_356(13)], "HIGH CONTRAST LIGHT");
+        assert_eq!(SKIN_NAMES[look_from_356(1)], "MIDNIGHT");
+        assert_eq!(look_named("sea glass").map(|n| SKIN_NAMES[n]), Some("SEA GLASS"));
     }
 }
 

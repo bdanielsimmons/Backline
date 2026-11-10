@@ -19,6 +19,39 @@ pub(crate) struct SpotSong {
     pub(crate) total: u32,
     /// the day its newest loop was saved
     pub(crate) newest: String,
+    /// the last day it was practiced, played or looped (days since 1970; 0: never dated)
+    pub(crate) last: i64,
+}
+
+/// ALL's headings, as a game library has them: Recent (the last week), then each month (this year's by name, older
+/// ones with their year), then Earlier (songs never dated).
+pub(crate) fn when_heading(day: i64, today: i64) -> String {
+    const MONTHS: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    if day <= 0 {
+        return "Earlier".to_string();
+    }
+    if day >= today - 6 {
+        return "Recent".to_string();
+    }
+    let (y, m, _) = store::civil_from_days(day);
+    let (this_year, _, _) = store::civil_from_days(today);
+    let name = MONTHS[(m as usize).clamp(1, 12) - 1];
+    if y == this_year {
+        name.to_string()
+    } else {
+        format!("{} {}", name, y)
+    }
+}
+
+/// A heading over ALL's songs: the month (or Recent), and how many songs are under it.
+fn when_head(ui: &mut egui::Ui, head: &str, n: usize) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+    let p = ui.painter();
+    let y = r.center().y - 2.0;
+    ptext(p, Pos2::new(r.min.x + 10.0, y), Align::Min, head, 2.0, pal().ink);
+    ptext(p, Pos2::new(r.max.x - 10.0, y + 1.0), Align::Max, &format!("{} {}", n, if n == 1 { "song" } else { "songs" }), 1.2, pal().ink2);
+    p.line_segment([Pos2::new(r.min.x + 10.0, r.max.y - 3.0), Pos2::new(r.max.x - 10.0, r.max.y - 3.0)], Stroke::new(2.0_f32, pal().ink2.gamma_multiply(0.6)));
 }
 
 /// A song's waveform as kept on disk (50 peaks a second), read once and kept for the LOOPS page.
@@ -390,7 +423,12 @@ impl App {
                 ui.set_width(lw);
                 self.loops_controls(ui, acts);
                 ui.add_space(6.0);
-                egui::ScrollArea::vertical().id_salt("loops_songs").auto_shrink([false, false]).show(ui, |ui| {
+                // (a test copy can open the list scrolled down: BACKLINE_SCROLL=points)
+                let mut sa = egui::ScrollArea::vertical().id_salt("loops_songs").auto_shrink([false, false]);
+                if let Some(y) = std::env::var("BACKLINE_SCROLL").ok().and_then(|s| s.parse::<f32>().ok()) {
+                    sa = sa.vertical_scroll_offset(y);
+                }
+                sa.show(ui, |ui| {
                     self.loops_songs(ui, &data, pick);
                     ui.add_space(20.0);
                 });
@@ -514,6 +552,20 @@ impl App {
         let spent_on = |id: i64, s: &store::Section| {
             spent.get(&(id, (s.a * 10.0).round() as i32, (s.b * 10.0).round() as i32)).copied().unwrap_or(0)
         };
+        // the last day each song was practiced (the diary) or played (what you played lately), for ALL's months
+        let mut touched: HashMap<i64, i64> = HashMap::new();
+        for d in &self.store.days {
+            if let Some(n) = store::parse_date(&d.date) {
+                for id in d.songs.keys() {
+                    let e = touched.entry(*id).or_insert(0);
+                    *e = (*e).max(n);
+                }
+            }
+        }
+        for (v, at) in &self.store.recent {
+            let e = touched.entry(v.id).or_insert(0);
+            *e = (*e).max((*at / 86_400) as i64);
+        }
         let (show_loops, show_marks) = (self.loops_show != 2, self.loops_show != 1);
         // the songs: practised this week, or with a loop saved this week (ALL: every song with a loop or bookmark)
         let mut ids: Vec<i64> = week.keys().copied().collect();
@@ -561,12 +613,17 @@ impl App {
             let mins = week.get(id).copied().unwrap_or(0);
             let total = loops.iter().map(|l| l.2).sum::<u32>() + mins;
             let newest = loops.iter().map(|l| l.1.saved.clone()).max().unwrap_or_default();
-            songs.push(SpotSong { id: *id, v, loops, marks, mins, total, newest });
+            // (any loop of the song's counts, also one the filter hides)
+            let saved = self.store.sections.get(id).into_iter().flatten().filter_map(|s| store::parse_date(&s.saved)).max().unwrap_or(0);
+            let last = touched.get(id).copied().unwrap_or(0).max(saved);
+            songs.push(SpotSong { id: *id, v, loops, marks, mins, total, newest, last });
         }
         let name_of = |s: &SpotSong| s.v.as_ref().map(|v| v.title.to_lowercase()).unwrap_or_default();
         match self.loops_sort {
             1 => songs.sort_by(|a, b| name_of(a).cmp(&name_of(b)).then(a.id.cmp(&b.id))),
             2 => songs.sort_by(|a, b| b.total.cmp(&a.total).then(a.id.cmp(&b.id))),
+            // ALL, most recent first: the newest touched on top, under the months' headings
+            _ if self.loops_all => songs.sort_by(|a, b| b.last.cmp(&a.last).then(b.newest.cmp(&a.newest)).then(a.id.cmp(&b.id))),
             _ => songs.sort_by(|a, b| b.mins.cmp(&a.mins).then(b.newest.cmp(&a.newest)).then(a.id.cmp(&b.id))),
         }
         SpotData { songs }
@@ -602,7 +659,19 @@ impl App {
             para(ui, msg, pal().ink2);
             return;
         }
-        for s in &data.songs {
+        // ALL, most recent first: under headings, Recent, then each month, with how many songs are under each
+        let months = self.loops_all && self.loops_sort == 0 && self.loops_mode != 2;
+        let today = store::today_days();
+        let heads: Vec<String> = if months { data.songs.iter().map(|s| when_heading(s.last, today)).collect() } else { Vec::new() };
+        for (k, s) in data.songs.iter().enumerate() {
+            if months && (k == 0 || heads[k] != heads[k - 1]) {
+                let n = heads[k..].iter().take_while(|h| **h == heads[k]).count();
+                if k > 0 {
+                    ui.add_space(16.0);
+                }
+                when_head(ui, &heads[k], n);
+                ui.add_space(4.0);
+            }
             let (title, artist) = match &s.v {
                 Some(v) => (v.title.clone(), v.artist.clone()),
                 None => ("Unknown song".to_string(), String::new()),
@@ -960,5 +1029,22 @@ impl App {
                 self.store_dirty = true;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn months_as_headings() {
+        let today = store::days_from_civil(2026, 11, 10);
+        assert_eq!(when_heading(today, today), "Recent");
+        assert_eq!(when_heading(today - 6, today), "Recent");
+        assert_eq!(when_heading(store::days_from_civil(2026, 11, 2), today), "November");
+        assert_eq!(when_heading(store::days_from_civil(2026, 10, 31), today), "October");
+        assert_eq!(when_heading(store::days_from_civil(2026, 1, 1), today), "January");
+        assert_eq!(when_heading(store::days_from_civil(2025, 12, 31), today), "December 2025");
+        assert_eq!(when_heading(0, today), "Earlier");
     }
 }

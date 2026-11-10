@@ -241,6 +241,78 @@ thread_local! {
 /// Whether a skin's frames are on, for every thread (a window drawn on a thread of its own reads it too).
 static CHROME_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Backline's own looks: every window's frame one flat colour (the panel's, as the deck and the playlist are), no
+/// edges or corners of its own, so the docked windows read as one window. Packed RGBA; 0: a Winamp skin's own frames.
+static FLAT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Frames in one flat colour (Backline's looks), or the skin's own pieces (None).
+pub(crate) fn set_flat(c: Option<Color32>) {
+    FLAT.store(c.map_or(0, |c| u32::from_be_bytes(c.to_array()) | 1), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The flat frames' colour, when Backline's own look is worn.
+pub(crate) fn flat_frame() -> Option<Color32> {
+    let v = FLAT.load(std::sync::atomic::Ordering::Relaxed);
+    (v != 0).then(|| {
+        let [r, g, b, _] = v.to_be_bytes();
+        Color32::from_rgb(r, g, b)
+    })
+}
+
+/// The border's lines for a frame of colour `face`: its dark edge, its light line and its shade (as Backline's looks
+/// shade their art).
+fn border_cols(face: Color32) -> (Color32, Color32, Color32) {
+    let mix = |c: Color32, to: u8, t: f32| {
+        let m = |v: u8| (v as f32 + (to as f32 - v as f32) * t).round() as u8;
+        Color32::from_rgb(m(c.r()), m(c.g()), m(c.b()))
+    };
+    let lum = (0.2126 * face.r() as f32 + 0.7152 * face.g() as f32 + 0.0722 * face.b() as f32) / 255.0;
+    if lum > 0.4 {
+        (mix(face, 0, 0.62), mix(face, 255, 0.45), mix(face, 0, 0.14))
+    } else {
+        (Color32::from_gray(6), mix(face, 255, 0.14), mix(face, 0, 0.35))
+    }
+}
+
+/// Strips `w` wide inside `r` along its sides (left, top, right, bottom: the ones that are true).
+fn strips(p: &egui::Painter, r: Rect, w: f32, sides: [bool; 4], c: Color32) {
+    if sides[0] {
+        p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.min.x + w, r.max.y)), 0.0, c);
+    }
+    if sides[1] {
+        p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + w)), 0.0, c);
+    }
+    if sides[2] {
+        p.rect_filled(Rect::from_min_max(Pos2::new(r.max.x - w, r.min.y), r.max), 0.0, c);
+    }
+    if sides[3] {
+        p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x, r.max.y - w), r.max), 0.0, c);
+    }
+}
+
+/// Backline's looks: a window's border as one ring of lines carried round its corners (they nest, so every corner
+/// meets): a dark edge and a light line all round the window, and a shade and a dark line round what it holds
+/// (`inside`; None for the player, its panel is its inside). Two windows side by side: their rings side by side, each
+/// whole (the owner's pick over one frame with shared bars). `px`: one of the skin's pixels.
+pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>, px: f32) {
+    let Some(face) = flat_frame() else { return };
+    let (edge, hi, lo) = border_cols(face);
+    let ppp = p.ctx().pixels_per_point();
+    let w = ((px * ppp).round().max(1.0)) / ppp;
+    // on whole screen pixels, so two windows' lines meet with nothing between them
+    let snap = |r: Rect| {
+        let s = |v: f32| (v * ppp).round() / ppp;
+        Rect::from_min_max(Pos2::new(s(r.min.x), s(r.min.y)), Pos2::new(s(r.max.x), s(r.max.y)))
+    };
+    let (outer, inside) = (snap(outer), inside.map(snap));
+    strips(p, outer, w, [true; 4], edge);
+    strips(p, outer.shrink(w), w, [true; 4], hi);
+    if let Some(inside) = inside {
+        strips(p, inside.expand(2.0 * w), w, [true; 4], lo);
+        strips(p, inside.expand(w), w, [true; 4], edge);
+    }
+}
+
 /// Use this skin's frames for every window (None: Backline's own again).
 pub(crate) fn set_chrome(t: Option<&WaTex>) {
     let v = t.and_then(|t| Some((t.sheets.get("pledit")?.clone(), t.sheets.get("text").cloned(), t.text_bg)));
@@ -325,6 +397,18 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
         let tw = 25.0 * k;
         let top = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, inner.min.y));
         let band = title_band_rect(top, inner.min.x - outer.min.x);
+        if let Some(face) = flat_frame() {
+            // Backline's look: the frame one flat colour all round, nothing at its corners
+            for r in [
+                top,
+                Rect::from_min_max(Pos2::new(outer.min.x, inner.min.y), Pos2::new(inner.min.x, outer.max.y)),
+                Rect::from_min_max(Pos2::new(inner.max.x, inner.min.y), Pos2::new(outer.max.x, outer.max.y)),
+                Rect::from_min_max(Pos2::new(inner.min.x, inner.max.y), Pos2::new(inner.max.x, outer.max.y)),
+            ] {
+                p.rect_filled(r, 0.0, face);
+            }
+            border_ring(p, outer, Some(inner), k);
+        } else {
         // one 25-pixel column of the title bar at `x`: its top rows, the stretched band, its bottom rows
         let bar = |p: &egui::Painter, sx: f32, x: f32| {
             let mid = 20.0 - BAR_CAP_TOP - BAR_CAP_BOTTOM;
@@ -372,6 +456,7 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             x += tw;
         }
         bottom_edge(p, outer, bot.min.y);
+        }
         // the window's name in the skin's own font on the font's own band, as the deck writes its song title (the
         // pair the skin was drawn for, so it reads); the band keeps the same gaps in the strip as the window's
         // controls. A skin with no font of its own: light letters on a dark band
@@ -432,6 +517,10 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
 /// Round a window's top (or bottom) corners: outside each quarter circle the app's background again, a dark edge
 /// along the curve - so windows end softly and meet cleanly.
 pub(crate) fn round_corners(p: &egui::Painter, outer: Rect, top: bool) {
+    // (Backline's looks: the windows are one, no corners between them)
+    if flat_frame().is_some() {
+        return;
+    }
     let r = 7.0_f32;
     let bg = crate::pal().app_bg;
     let cy = if top { outer.min.y + r } else { outer.max.y - r };

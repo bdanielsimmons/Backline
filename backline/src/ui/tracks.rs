@@ -445,7 +445,8 @@ pub(crate) fn draw_heart(ui: &egui::Ui, r: Rect, liked: bool, row_hot: bool, id:
     let resp = ui.interact(r, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let resp = resp.tip(if liked { "Remove from My Tracks" } else { "Add to My Tracks" });
     let col = if liked {
-        Color32::from_rgb(235, 70, 90)
+        // (the Greyscale look: no colour, the heart too)
+        if crate::skin::mono() { pal().ink } else { Color32::from_rgb(235, 70, 90) }
     } else if resp.hovered() {
         pal().ink
     } else if row_hot {

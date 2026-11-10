@@ -1613,10 +1613,8 @@ struct App {
     take_ask: Option<i64>,
     /// key and BPM being typed in the edit info panel
     edit_kb: (String, String),
-    /// which skin groups are open on the BACKLINE page (ORIGINAL, RETRO ORIGINAL, WINAMP)
-    skins_open: [bool; 3],
-    /// under WINAMP in the skin list: FAVOURITES and WORN LATELY folded open or not
-    wa_groups_open: [bool; 2],
+    /// the Skins page's side: 0 Backline's own looks, 1 Winamp skins
+    skins_side: u8,
     neck_zoom: f32,
     ghost_alpha: f32,
     /// the analyzer's reading: the one picked (click), the one hovered
@@ -1755,8 +1753,8 @@ struct App {
     wa_guide: bool,
     /// thin outlines round a skin's real buttons while the pointer is over the player (off: the skin as drawn)
     wa_outline: bool,
-    /// your Custom look's two colours (background, accent), and whether it's the look you wore last
-    custom_cols: (Color32, Color32),
+    /// your Custom look's colors, and whether it's the look you wore last
+    custom: skin::CustomLook,
     look_custom: bool,
     /// the Custom look's editor, while open
     look_edit: Option<looks::LookEdit>,
@@ -1836,12 +1834,14 @@ pub(crate) fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: O
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> App {
         let st = load_settings();
-        // the look worn last (an older version's "skin" number: where that palette went)
-        let look = match (st["look"].as_u64(), st["skin"].as_u64()) {
-            (Some(n), _) => n as usize % LOOKS.len(),
-            (None, Some(old)) => look_from_old(old as usize),
-            _ => FIRST_LOOK,
-        };
+        // the look worn last, by its name (the one worn, or the one kept); an older version's number: where it went
+        let worn_look = st["winamp"][1].as_str().filter(|_| st["winamp"][0].as_str() == Some(looks::LOOK_MD5));
+        let look = worn_look
+            .and_then(look_named)
+            .or_else(|| st["look_name"].as_str().and_then(look_named))
+            .or_else(|| st["look"].as_u64().map(|n| skin::look_from_356(n as usize)))
+            .or_else(|| st["skin"].as_u64().map(|old| look_from_old(old as usize)))
+            .unwrap_or(FIRST_LOOK);
         SKIN.store(look, Ordering::Relaxed);
         font::set_ppp(cc.egui_ctx.pixels_per_point());
         let font_tex = font::init(&cc.egui_ctx);
@@ -2404,8 +2404,7 @@ impl App {
             prog_new: String::new(),
             prac_chart: None,
             seq_play: None,
-            skins_open: [false; 3],
-            wa_groups_open: [true, false],
+            skins_side: 0,
             edit_info: None,
             edit_kb: (String::new(), String::new()),
             edit_extra: (String::new(), String::new()),
@@ -2514,7 +2513,7 @@ impl App {
             wa_map_until: 0.0,
             wa_guide: false,
             wa_outline: false,
-            custom_cols: (Color32::from_rgb(36, 45, 67), Color32::from_rgb(110, 170, 255)),
+            custom: skin::CustomLook::default(),
             look_custom: false,
             look_edit: None,
             deco_now: None,
@@ -3536,7 +3535,7 @@ impl eframe::App for App {
         let mut ready: HashMap<String, Option<egui::TextureId>> = HashMap::new();
         for u in wants {
             if !ready.contains_key(&u) {
-                match self.images.get(&u) {
+                match crate::art_tex(&mut self.images, &u, false) {
                     Some(id) => {
                         ready.insert(u, Some(id));
                     }
@@ -3791,10 +3790,6 @@ impl eframe::App for App {
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
         self.look_panel(ctx);
-        // away from the Settings page, its skin lists fold shut again: next time they show as one line each
-        if self.side != Some(Side::Backline) {
-            self.skins_open = [false; 3];
-        }
         // the first time in: once you've chosen Tidal or not, straight into the tour
         if !self.tour_seen && (self.auth == Auth::In || self.offline) && self.frames >= 10 && self.tour.is_none() {
             self.tour_seen = true;

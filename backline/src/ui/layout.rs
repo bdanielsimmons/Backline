@@ -334,7 +334,9 @@ impl App {
 
 // ------------------------------------------------------------------- update
 pub(crate) fn panel_frame() -> egui::Frame {
-    egui::Frame::none().fill(pal().app_bg).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 30.0, bottom: 14.0 })
+    // (Backline's looks: what shows between the windows is their frame's own colour, so they read as one)
+    let fill = crate::winamp_ui::flat_frame().unwrap_or(pal().app_bg);
+    egui::Frame::none().fill(fill).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 30.0, bottom: 14.0 })
 }
 
 /// The skin's column while practising is never narrower than this (points): the practice panel's tabs fit in it.

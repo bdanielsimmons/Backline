@@ -145,8 +145,8 @@ fn text_w(s: &str) -> i32 {
 
 /// A panel: a soft vertical sheen.
 fn panel(p: &mut Pic, t: &Th, x: i32, y: i32, w: i32, h: i32) {
-    p.grad(x, y, w, h, t.face_hi, t.face_lo);
-    p.fill(x, y, w, 1, lighter(t.face_hi, 0.1));
+    // one flat colour, as every window's frame is: the windows read as one window, no seams where they meet
+    p.fill(x, y, w, h, t.face);
 }
 
 /// A sunken display box.
@@ -189,8 +189,7 @@ fn label_button(p: &mut Pic, t: &Th, x: i32, y: i32, w: i32, h: i32, down: bool,
 
 /// A title strip with `title` in the middle.
 fn title_strip(p: &mut Pic, t: &Th, x: i32, y: i32, w: i32, h: i32, title: &str) {
-    p.grad(x, y, w, h, lighter(t.face_hi, 0.08), t.face_lo);
-    p.fill(x, y + h - 1, w, 1, mix(t.face_lo, t.accent, 0.35));
+    p.fill(x, y, w, h, t.face);
     // the title on the display's colours, as every window's name is written (Library, Practice)
     let tw = text_w(title);
     let tx = x + (w - tw) / 2;
@@ -363,7 +362,6 @@ fn titlebar(t: &Th) -> Pic {
 fn main_window(t: &Th) -> Pic {
     let mut p = Pic::new(275, 116, t.face);
     panel(&mut p, t, 0, 0, 275, 116);
-    p.outline(0, 0, 275, 116, t.edge);
     // the clock and visualizer display, the title marquee, and the bitrate boxes
     lcd_box(&mut p, t, 21, 23, 84, 38);
     p.fill(72, 30, 2, 2, t.display_ink);
@@ -518,7 +516,6 @@ fn posbar(t: &Th) -> Pic {
 fn eqmain(t: &Th) -> Pic {
     let mut p = Pic::new(275, 315, t.face);
     panel(&mut p, t, 0, 0, 275, 116);
-    p.outline(0, 0, 275, 116, t.edge);
     // labels: the dB scale, PREAMP and the bands
     p.text(56, 39, "+12", t.face_ink);
     p.text(61, 66, "0", t.face_ink);
@@ -578,46 +575,24 @@ fn pledit(t: &Th) -> Pic {
     // the title bar: corners, the title piece and the plain tile, focused (top row) and not (second row)
     for row in [0, 21] {
         let lit = row == 0;
-        let strip = |p: &mut Pic, x: i32, w: i32| {
-            p.grad(x, row, w, 20, if lit { lighter(t.face_hi, 0.08) } else { t.face }, t.face_lo);
-            p.fill(x, row + 19, w, 1, if lit { mix(t.face_lo, t.accent, 0.35) } else { t.edge });
-        };
+        let _ = lit;
+        let strip = |p: &mut Pic, x: i32, w: i32| p.fill(x, row, w, 20, t.face);
         strip(&mut p, 0, 25);
-        p.fill(0, row, 1, 20, t.edge);
-        p.fill(0, row, 25, 1, t.edge);
         strip(&mut p, 26, 100);
-        p.fill(26, row, 100, 1, t.edge);
         let title = "PLAYLIST";
         let tx = 26 + (100 - text_w(title)) / 2;
         p.fill(tx - 4, row + 4, text_w(title) + 8, 12, t.display);
         p.text(tx, row + 7, title, t.display_ink);
         strip(&mut p, 127, 25);
-        p.fill(127, row, 25, 1, t.edge);
         strip(&mut p, 153, 25);
-        p.fill(177, row, 1, 20, t.edge);
-        p.fill(153, row, 25, 1, t.edge);
         tiny_button(&mut p, t, 153 + 4, row + 3, &PIC_SHADE, false);
         tiny_button(&mut p, t, 153 + 14, row + 3, &PIC_CLOSE, false);
     }
     // the sides: left (12 wide), right (20 wide, with the scroll groove)
-    let side = |p: &mut Pic, x: i32, w: i32| {
-        for i in 0..w {
-            let f = i as f32 / (w - 1).max(1) as f32;
-            p.fill(x + i, 42, 1, 29, mix(t.face_hi, t.face_lo, f));
-        }
-    };
-    side(&mut p, 0, 12);
-    p.fill(0, 42, 1, 29, t.edge);
-    p.fill(1, 42, 1, 29, t.face_hi);
-    p.fill(10, 42, 1, 29, t.face_lo);
-    p.fill(11, 42, 1, 29, t.edge);
-    side(&mut p, 31, 20);
-    p.fill(31, 42, 1, 29, t.edge);
+    // (flat, as the title strips: the frame is one colour all round)
+    p.fill(0, 42, 12, 29, t.face);
+    p.fill(31, 42, 20, 29, t.face);
     p.fill(36, 42, 8, 29, t.display);
-    p.fill(35, 42, 1, 29, t.face_lo);
-    p.fill(44, 42, 1, 29, t.face_hi);
-    p.fill(49, 42, 1, 29, t.face_lo);
-    p.fill(50, 42, 1, 29, t.edge);
     // the scroll handle, normal and pressed
     button(&mut p, t, 52, 53, 8, 18, false);
     button(&mut p, t, 61, 53, 8, 18, true);
@@ -627,19 +602,13 @@ fn pledit(t: &Th) -> Pic {
         }
     }
     // the bottom: the plain tile (its last rows also edge every other window), then the two end pieces
-    let bottom = |p: &mut Pic, x: i32, y: i32, w: i32| {
-        p.grad(x, y, w, 38, t.face_hi, t.face_lo);
-        p.fill(x, y + 36, w, 1, t.face_lo);
-        p.fill(x, y + 37, w, 1, t.edge);
-    };
+    let bottom = |p: &mut Pic, x: i32, y: i32, w: i32| p.fill(x, y, w, 38, t.face);
     bottom(&mut p, 179, 0, 25);
     bottom(&mut p, 0, 72, 125);
-    p.fill(0, 72, 1, 38, t.edge);
     for (i, label) in ["ADD", "REM", "SEL", "MISC"].iter().enumerate() {
         label_button(&mut p, t, 14 + i as i32 * 29, 72 + 8, 22, 18, false, label, None);
     }
     bottom(&mut p, 126, 72, 150);
-    p.fill(275, 72, 1, 38, t.edge);
     // running time, the mini clock, the mini transport and LIST
     lcd_box(&mut p, t, 126 + 5, 72 + 8, 78, 9);
     lcd_box(&mut p, t, 126 + 64, 72 + 21, 27, 9);
@@ -675,7 +644,8 @@ fn hex(c: Color32) -> String {
 }
 
 /// A complete skin (.wsz) from a look `p` (its panels, display and accent).
-pub fn make(p: &Pal) -> Vec<u8> {
+/// `text`: the lists' writing (your Custom look's), else the display's accent softened.
+pub fn make(p: &Pal, text: Option<Color32>) -> Vec<u8> {
     let t = theme(p);
     let mut files: Vec<(&str, Vec<u8>)> = vec![
         ("main.bmp", main_window(&t).bmp()),
@@ -694,7 +664,8 @@ pub fn make(p: &Pal) -> Vec<u8> {
     ];
     // the list colours: the display's (its words a little quieter than the playing song's)
     let quiet = if t.light { Color32::from_gray(40) } else { Color32::from_gray(200) };
-    let (normal, current, bg, sel) = (mix(t.display_ink, quiet, 0.5), t.display_ink, t.display, mix(t.display, t.accent, 0.3));
+    let normal = text.unwrap_or_else(|| mix(t.display_ink, quiet, 0.5));
+    let (current, bg, sel) = (t.display_ink, t.display, mix(t.display, t.accent, 0.3));
     let pl = format!(
         "[Text]\r\nNormal={}\r\nCurrent={}\r\nNormalBG={}\r\nSelectedBG={}\r\nFont={}\r\n",
         hex(normal),
@@ -740,12 +711,17 @@ pub fn borrowed(p: &Pal) -> Vec<u8> {
     if lum(glow) < 0.55 {
         glow = lighter(glow, 0.35);
     }
-    make(&crate::skin::look_pal(base, lcd, glow))
+    make(&crate::skin::look_pal(base, lcd, glow), None)
 }
 
 /// A look worn as a skin: the skin, and the palette the rest of the app reads from it (as from any downloaded skin).
 pub fn wear(p: &Pal) -> Result<(Pal, crate::winamp::Art), String> {
-    crate::winamp::load(&make(p))
+    wear_with(p, None)
+}
+
+/// A look worn with its own writing colour for the lists (your Custom look's), when it has one.
+pub fn wear_with(p: &Pal, text: Option<Color32>) -> Result<(Pal, crate::winamp::Art), String> {
+    crate::winamp::load(&make(p, text))
 }
 
 #[cfg(test)]

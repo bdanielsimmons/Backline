@@ -716,7 +716,10 @@ impl App {
         }
         // the top of the stack, rounded
         if !self.mini {
-            crate::winamp_ui::round_corners(&p, pl.r(0.0, 0.0, 275.0, 116.0), true);
+            let deck = pl.r(0.0, 0.0, 275.0, 116.0);
+            crate::winamp_ui::round_corners(&p, deck, true);
+            // (Backline's looks: its border, one with the windows round it)
+            crate::winamp_ui::border_ring(&p, deck, None, deck.width() / 275.0);
         }
         self.wa_art = Some(t);
     }
@@ -1095,6 +1098,10 @@ impl App {
         piece((0.0, 72.0, 125.0, 38.0), Rect::from_min_size(bot.min, Vec2::new(125.0, 38.0) * k));
         let br = Rect::from_min_size(Pos2::new(outer.max.x - 150.0 * k, bot.min.y), Vec2::new(150.0, 38.0) * k);
         piece((126.0, 72.0, 150.0, 38.0), br);
+        // (Backline's looks: its border, one with the windows round it)
+        if !self.mini {
+            crate::winamp_ui::border_ring(&p, outer, Some(list), k);
+        }
 
         // ---- the tracks
         let queue = self.queue.clone();
@@ -1377,12 +1384,14 @@ pub(crate) fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<
         ui.vertical(|ui| {
             ui.set_min_width(170.0);
             para(ui, "BACKLINE", pal().ink2);
-            for (n, name) in SKIN_NAMES.iter().enumerate() {
-                if menu_item(ui, &format!("{}{}", if ours && n == cur { "> " } else { "  " }, name)) {
-                    acts.push(Action::Look(n));
-                    ui.close_menu();
+            egui::ScrollArea::vertical().max_height(360.0).id_salt("look_list").show(ui, |ui| {
+                for n in 0..LOOKS.len() {
+                    if crate::looks::look_item(ui, n, ours && n == cur) {
+                        acts.push(Action::Look(n));
+                        ui.close_menu();
+                    }
                 }
-            }
+            });
             if menu_item(ui, &format!("{}CUSTOM...", if crate::custom_worn(worn) { "> " } else { "  " })) {
                 acts.push(Action::EditLook);
                 ui.close_menu();

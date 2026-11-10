@@ -99,6 +99,11 @@ impl App {
                 app.lib_tab = Tab::Recent;
             }
             Ok("loops") => app.sec = Sec::Loops,
+            // LOOPS > ALL: every song, under the months' headings
+            Ok("loopsall") => {
+                app.sec = Sec::Loops;
+                app.loops_all = true;
+            }
             // the LOOPS page open on the song with the most loops
             Ok("loopsong") => {
                 app.sec = Sec::Loops;
@@ -252,6 +257,10 @@ Second line: comp lighter here.", m.1.note);
             Ok(w @ ("skins" | "skinpreview")) => {
                 app.apply(Action::WaOpen);
                 app.wa_tab = std::env::var("BACKLINE_WA_TAB").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+                // (BACKLINE_SKINS_SIDE=0 Backline's looks, 1 Winamp skins)
+                if let Some(k) = std::env::var("BACKLINE_SKINS_SIDE").ok().and_then(|v| v.parse().ok()) {
+                    app.skins_side = k;
+                }
                 if w == "skinpreview" {
                     app.wa_preview = app.wa_worn.clone().map(|(md5, name)| winamp::WaSkin {
                         shot: winamp::shot_url(&md5),
