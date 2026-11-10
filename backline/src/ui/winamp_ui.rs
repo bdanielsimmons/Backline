@@ -653,15 +653,17 @@ impl App {
                 p.rect_stroke(front, 0.0, ink);
             }
         }
-        // where the buttons are - some skins hide them in their picture, or paint ones that do nothing: thin
-        // outlines round every real one while the pointer is over the player (the skin as drawn otherwise), and
-        // their names too for a moment after a skin is put on, while Alt is held, or with the Button Guide on
+        // where the buttons are - some skins hide them in their picture, or paint ones that do nothing: their
+        // outlines and names for a moment after a skin is put on, while Alt is held, or with the Button Guide on;
+        // thin outlines alone while the pointer is over the player, if Button Outlines is on (most skins read fine
+        // as drawn, so it's a choice)
         {
             let deck = Rect::from_min_size(pl.o, Vec2::new(275.0, 116.0) * pl.s);
             let (now, alt) = ui.input(|i| (i.time, i.modifiers.alt));
             let over = ui.rect_contains_pointer(deck);
+            let outline = over && self.wa_outline;
             let named = self.wa_guide || now < self.wa_map_until || (alt && over);
-            let a = ui.ctx().animate_bool_with_time(id.with("button_map"), named || over, 0.15);
+            let a = ui.ctx().animate_bool_with_time(id.with("button_map"), named || outline, 0.15);
             let names = ui.ctx().animate_bool_with_time(id.with("button_names"), named, 0.3);
             if a > 0.0 {
                 if now < self.wa_map_until {

@@ -3708,6 +3708,8 @@ struct App {
     wa_map_until: f64,
     /// the skinned deck's guide (each button outlined and named) stays on
     wa_guide: bool,
+    /// thin outlines round a skin's real buttons while the pointer is over the player (off: the skin as drawn)
+    wa_outline: bool,
     /// the queue hidden (the PL button), the player taking the whole column
     queue_hidden: bool,
     /// where each floating window sits (outer rectangle), by name
@@ -4462,6 +4464,7 @@ impl App {
             eq_naming: false,
             wa_map_until: 0.0,
             wa_guide: false,
+            wa_outline: false,
             queue_hidden: false,
             wa_pl_top: 0.0,
             pl_font: 0,
@@ -4767,6 +4770,7 @@ impl App {
         }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
         app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
+        app.wa_outline = st["wa_outline"].as_bool().unwrap_or(false);
         app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
         app.name_kept = st["name_kept"]
             .as_array()
@@ -5446,6 +5450,7 @@ Second line: comp lighter here.", m.1.note);
             "deck_zoom": self.deck_zoom,
             "eq_zoom": self.eq_zoom,
             "wa_guide": self.wa_guide,
+            "wa_outline": self.wa_outline,
             "go_offline": self.go_offline,
             "pn_num": self.pn_num,
             "name_kept": self.name_kept,

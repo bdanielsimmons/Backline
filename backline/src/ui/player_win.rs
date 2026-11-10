@@ -883,6 +883,10 @@ impl App {
                                 self.wa_guide = !self.wa_guide;
                                 self.dirty = true;
                             }
+                            if menu_item(ui, &format!("Button Outlines When Pointing{}", on(self.wa_outline))) {
+                                self.wa_outline = !self.wa_outline;
+                                self.dirty = true;
+                            }
                         }
                         _ => {
                             if menu_item(ui, "Now Playing  (A)") {

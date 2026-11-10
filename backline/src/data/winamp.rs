@@ -455,6 +455,54 @@ fn faint_eqpl(sheets: &[(String, [usize; 2], Vec<u8>)]) -> Option<Color32> {
             return Some(ink);
         }
     }
+    // each button the same as the picture around it, edge to edge (a slice of a photo, as Jackie Chan's are):
+    // nothing shows where it starts. A real button has an edge - a frame, a bevel, a change of colour
+    let seam = |sx: usize, mx: usize| -> f32 {
+        let (mut d, mut n) = (0i32, 0i32);
+        let pairs = (0..23)
+            .flat_map(|x| [((sx + x, 61), (mx + x, 57)), ((sx + x, 72), (mx + x, 70))])
+            .chain((0..12).flat_map(|y| [((sx, 61 + y), (mx - 1, 58 + y)), ((sx + 22, 61 + y), (mx + 23, 58 + y))]));
+        for ((ax, ay), (bx, by)) in pairs {
+            if let (Some(a), Some(b)) = (px(shuf, ax, ay), px(main, bx, by)) {
+                d += (0..3).map(|k| (a[k] as i32 - b[k] as i32).abs()).sum::<i32>();
+                n += 1;
+            }
+        }
+        if n == 0 {
+            999.0
+        } else {
+            d as f32 / n as f32
+        }
+    };
+    // ...and that never changes when it's switched on (a real one lights up, its letters if nothing else)
+    let same_on = |sx: usize| -> bool {
+        let (mut d, mut n) = (0i32, 0i32);
+        for y in 0..12 {
+            for x in 0..23 {
+                if let (Some(a), Some(b)) = (px(shuf, sx + x, 61 + y), px(shuf, sx + x, 73 + y)) {
+                    d += (0..3).map(|k| (a[k] as i32 - b[k] as i32).abs()).sum::<i32>();
+                    n += 1;
+                }
+            }
+        }
+        n == 0 || d / n < 10
+    };
+    // ...and that is a piece of a picture, not a label printed on the window (letters on a plain ground use few
+    // colours; a photograph's pixels are nearly all different)
+    let photo = |sx: usize| -> bool {
+        let mut seen = std::collections::HashSet::new();
+        for y in 0..12 {
+            for x in 0..23 {
+                if let Some(c) = px(shuf, sx + x, 61 + y) {
+                    seen.insert([c[0] / 4, c[1] / 4, c[2] / 4]);
+                }
+            }
+        }
+        seen.len() * 2 > 23 * 12
+    };
+    if seam(0, 219) < 24.0 && seam(23, 242) < 24.0 && same_on(0) && same_on(23) && (photo(0) || photo(23)) {
+        return Some(ink);
+    }
     None
 }
 
@@ -697,6 +745,7 @@ mod tests {
                         println!("KNOB {:?} vol {:?} bal {:?}", e.file_name(), art.vol_knob, art.bal_knob);
                     }
                     if art.eqpl_ink.is_some() {
+                        println!("EQPL {:?}", e.file_name());
                         *knobs.entry("EQ/PL buttons outlined".to_string()).or_insert(0) += 1;
                     }
                     let have: Vec<&str> = art.sheets.iter().map(|s| s.0.as_str()).collect();

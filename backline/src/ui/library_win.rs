@@ -888,11 +888,10 @@ impl App {
         let h = (348.0_f32 * 2.0).min(screen.height() - 240.0).max(240.0);
         let w = h * 275.0 / 348.0;
         let tex = self.images.get(&s.shot);
-        crate::credits::panel(ctx, "wa_preview", w + 60.0, |ui| {
+        crate::credits::panel(ctx, "wa_preview", w + 24.0, |ui| {
             title_line(ui, &crate::font::as_label(&s.name), 3.0, pal().ink);
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
+            {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
                 match tex {
                     Some(id) => {
@@ -903,7 +902,7 @@ impl App {
                         crate::font::ptext(ui.painter(), r.center(), Align::Center, "Loading the picture...", 1.5, pal().ink2);
                     }
                 }
-            });
+            }
             ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
                 if retro_btn(ui, if worn { "WEARING IT" } else { "WEAR IT" }, true).tip("Put this skin on  (Enter)").clicked() {
@@ -1008,6 +1007,10 @@ impl App {
             }
             if menu_item(ui, if self.wa_guide { "Button Guide  (on)" } else { "Button Guide (name each button)" }) {
                 self.wa_guide = !self.wa_guide;
+                self.dirty = true;
+            }
+            if menu_item(ui, if self.wa_outline { "Button Outlines  (on)" } else { "Button Outlines (when pointing)" }) {
+                self.wa_outline = !self.wa_outline;
                 self.dirty = true;
             }
             ui.add_space(4.0);

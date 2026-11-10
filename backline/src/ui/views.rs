@@ -2806,6 +2806,14 @@ impl App {
         );
         let me = crate::update::build();
         let mut close = false;
+        let mut go_on = false;
+        // (what was playing before the update: carried on from here, as the Continue bar behind this would)
+        let resume = self
+            .store
+            .last
+            .as_ref()
+            .filter(|_| crate::PRACTICE && (self.cur.is_none() || self.stopped))
+            .map(|l| (l.version.title.clone(), l.version.artist.clone(), crate::fmt_time(l.pos)));
         egui::Area::new(egui::Id::new("news_panel"))
             .order(egui::Order::Tooltip)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
@@ -2851,16 +2859,30 @@ impl App {
                             }
                         });
                         ui.add_space(6.0);
-                        if retro_btn(ui, "GOT IT", false).clicked() {
-                            close = true;
-                        }
+                        ui.horizontal_wrapped(|ui| {
+                            if let Some((title, artist, at)) = &resume {
+                                let who = if artist.is_empty() { String::new() } else { format!(" by {}", artist) };
+                                if retro_btn(ui, &format!("Continue: {}{}", title, who), true)
+                                    .tip(format!("Play it again from {}, where it was.", at))
+                                    .clicked()
+                                {
+                                    go_on = true;
+                                }
+                            }
+                            if retro_btn(ui, "GOT IT", resume.is_none()).clicked() {
+                                close = true;
+                            }
+                        });
                     },
                 );
             });
-        if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if go_on || close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.news = None;
             self.seen_build = crate::update::build();
             self.dirty = true;
+        }
+        if go_on {
+            self.apply(Action::Continue);
         }
     }
 
