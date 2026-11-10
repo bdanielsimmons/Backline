@@ -1,4 +1,5 @@
-//! Skins: the seventeen palettes, which look each one belongs to, and the colour helpers the whole UI draws with.
+//! Skins: Backline's own looks (each three colours: its panels, its display, its accent; or your Custom one), the
+//! palette worked out from them, and the colour helpers the whole UI draws with.
 
 use super::*;
 
@@ -6,13 +7,16 @@ use super::*;
 #[derive(Clone, Copy)]
 pub(crate) struct Pal {
     pub(crate) app_bg: Color32,
-    pub(crate) trim: Color32,
-    pub(crate) beige: Color32,
-    pub(crate) beige_lt: Color32,
-    pub(crate) beige_dk: Color32,
-    pub(crate) beige_h: Color32,
-    pub(crate) lcd: Color32,
-    pub(crate) lcd_ghost: Color32,
+    /// the accent: lit writing on the edge colour (column heads), a look's own accent
+    pub(crate) accent: Color32,
+    /// the panels (menus, frames, the library's side), lighter and darker shades, and the hover tone
+    pub(crate) panel: Color32,
+    pub(crate) panel_lt: Color32,
+    pub(crate) panel_dk: Color32,
+    pub(crate) panel_hover: Color32,
+    /// the display: lists and boxes (a playlist's colour), and a faint mark on it
+    pub(crate) display: Color32,
+    pub(crate) display_ghost: Color32,
     pub(crate) groove: Color32,
     pub(crate) sel: Color32,
     pub(crate) ink: Color32,
@@ -31,423 +35,109 @@ pub(crate) const fn c(r: u8, g: u8, b: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-pub(crate) const SKIN_NAMES: [&str; 17] = [
-    "OLIVE",
-    "AQUA",
-    "DARK",
-    "AMBER",
-    "PAPER",
-    "PLUM",
-    "SLATE",
-    "CLAY",
-    "AERO GLASS",
-    "SLEEK DARK",
-    "SLEEK LIGHT",
-    "NEON",
-    "SUNSET",
-    "OCEAN",
-    "CITRUS",
-    "HIGH CONTRAST DARK",
-    "HIGH CONTRAST LIGHT",
+/// One of Backline's own looks: its panels' colour, its display's (the lists wear it too) and the accent that lights
+/// the display, the sliders and the playing song. Everything else is worked out from these (`look_pal`, genskin).
+pub(crate) struct Look {
+    pub(crate) name: &'static str,
+    pub(crate) panel: Color32,
+    pub(crate) display: Color32,
+    pub(crate) accent: Color32,
+}
+
+const fn look(name: &'static str, panel: Color32, display: Color32, accent: Color32) -> Look {
+    Look { name, panel, display, accent }
+}
+
+/// Backline's looks, around the colour wheel: dark ones, then paper ones, then the two for the eyes. (Graphite,
+/// Midnight and High Contrast are the old Dark, Sleek Light and High Contrast Dark, exactly.)
+pub(crate) const LOOKS: [Look; 14] = [
+    look("GRAPHITE", c(43, 43, 44), c(13, 13, 13), c(169, 172, 176)),
+    look("MIDNIGHT", c(36, 45, 67), c(10, 14, 22), c(206, 212, 228)),
+    look("COBALT", c(30, 44, 86), c(8, 14, 32), c(110, 170, 255)),
+    look("DUSK", c(52, 40, 78), c(16, 11, 28), c(196, 164, 255)),
+    look("NEON", c(34, 24, 44), c(10, 6, 16), c(255, 92, 214)),
+    look("ROSEWOOD", c(72, 38, 50), c(24, 10, 16), c(255, 150, 182)),
+    look("EMBER", c(70, 40, 28), c(24, 11, 6), c(255, 146, 74)),
+    look("AMBER", c(60, 48, 30), c(20, 14, 4), c(255, 190, 70)),
+    look("MOSS", c(38, 56, 40), c(10, 20, 12), c(140, 226, 140)),
+    look("SEA GLASS", c(26, 58, 62), c(6, 20, 22), c(104, 228, 214)),
+    look("PAPER", c(228, 220, 204), c(247, 243, 233), c(52, 74, 140)),
+    look("DAYLIGHT", c(208, 216, 226), c(245, 248, 252), c(0, 96, 180)),
+    look("HIGH CONTRAST", c(29, 29, 29), c(8, 8, 8), c(255, 255, 0)),
+    look("HIGH CONTRAST LIGHT", c(230, 230, 230), c(255, 255, 255), c(0, 0, 0)),
 ];
 
-pub(crate) static PALS: [Pal; 17] = [
-    // OLIVE: the classic beige/olive player
+/// The looks' names, in order.
+pub(crate) const SKIN_NAMES: [&str; 14] = {
+    let mut out = [""; 14];
+    let mut i = 0;
+    while i < 14 {
+        out[i] = LOOKS[i].name;
+        i += 1;
+    }
+    out
+};
+
+/// The look first worn (the very first run).
+pub(crate) const FIRST_LOOK: usize = 0;
+
+/// Where a look kept by an older version (the seventeen palettes before 9.356) went.
+pub(crate) fn look_from_old(old: usize) -> usize {
+    // olive, aqua, dark, amber, paper, plum, slate, clay, aero glass, sleek dark, sleek light, neon, sunset, ocean,
+    // citrus, high contrast dark, high contrast light
+    const TO: [usize; 17] = [8, 9, 0, 7, 10, 3, 0, 6, 9, 2, 1, 4, 5, 9, 8, 12, 13];
+    TO.get(old).copied().unwrap_or(FIRST_LOOK)
+}
+
+/// A whole palette from a look's three colours (what's worn before its skin is: the skin then gives its own).
+pub(crate) fn look_pal(panel: Color32, display: Color32, accent: Color32) -> Pal {
+    let light = lum(display) > 0.5;
+    let lt = |x: Color32, t: f32| x.lerp_to_gamma(Color32::WHITE, t);
+    let dk = |x: Color32, t: f32| x.lerp_to_gamma(Color32::BLACK, t);
+    let ink = if light { c(22, 22, 26) } else { c(226, 229, 236) };
     Pal {
-        app_bg: c(8, 8, 10),
-        trim: c(186, 184, 136),
-        beige: c(201, 199, 160),
-        beige_lt: c(226, 224, 188),
-        beige_dk: c(160, 157, 118),
-        beige_h: c(213, 211, 174),
-        lcd: c(212, 210, 172),
-        lcd_ghost: c(190, 188, 150),
-        groove: c(120, 118, 84),
-        sel: c(184, 181, 142),
-        ink: c(12, 12, 8),
-        ink2: c(55, 55, 38),
-        dim: c(80, 78, 58),
-        red: c(150, 30, 20),
-        btn_face: c(150, 146, 92),
-        btn_hi: c(190, 186, 128),
-        row_alt: c(203, 201, 163),
-        row_sel: c(70, 70, 50),
-        bar_txt: c(226, 224, 188),
-        edge: c(12, 12, 8),
-    },
-    // AQUA: glassy sky blue
-    Pal {
-        app_bg: c(4, 16, 28),
-        trim: c(150, 215, 235),
-        beige: c(170, 210, 228),
-        beige_lt: c(226, 246, 253),
-        beige_dk: c(110, 160, 186),
-        beige_h: c(190, 226, 240),
-        lcd: c(200, 236, 238),
-        lcd_ghost: c(176, 214, 218),
-        groove: c(92, 138, 162),
-        sel: c(150, 200, 222),
-        ink: c(6, 24, 34),
-        ink2: c(24, 62, 81),
-        dim: c(55, 87, 101),
-        red: c(153, 34, 34),
-        btn_face: c(70, 150, 190),
-        btn_hi: c(110, 190, 225),
-        row_alt: c(188, 224, 230),
-        row_sel: c(22, 70, 100),
-        bar_txt: c(226, 246, 252),
-        edge: c(2, 12, 20),
-    },
-    // DARK: graphite with green phosphor
-    Pal {
-        app_bg: c(6, 7, 8),
-        trim: c(122, 127, 133),
-        beige: c(62, 65, 70),
-        beige_lt: c(96, 100, 106),
-        beige_dk: c(38, 40, 44),
-        beige_h: c(76, 80, 86),
-        lcd: c(16, 24, 18),
-        lcd_ghost: c(24, 36, 27),
-        groove: c(30, 32, 35),
-        sel: c(50, 66, 54),
-        ink: c(126, 255, 150),
-        ink2: c(136, 235, 156),
-        dim: c(136, 191, 148),
-        red: c(255, 152, 141),
-        btn_face: c(88, 92, 98),
-        btn_hi: c(118, 122, 130),
-        row_alt: c(20, 30, 22),
-        row_sel: c(36, 100, 56),
-        bar_txt: c(252, 254, 252),
-        edge: c(0, 0, 0),
-    },
-    // AMBER: bronze with amber phosphor
-    Pal {
-        app_bg: c(8, 6, 4),
-        trim: c(154, 118, 68),
-        beige: c(74, 62, 46),
-        beige_lt: c(112, 94, 68),
-        beige_dk: c(44, 36, 26),
-        beige_h: c(88, 74, 54),
-        lcd: c(24, 16, 6),
-        lcd_ghost: c(38, 26, 10),
-        groove: c(36, 28, 18),
-        sel: c(70, 52, 28),
-        ink: c(255, 184, 64),
-        ink2: c(246, 177, 74),
-        dim: c(215, 169, 96),
-        red: c(255, 149, 132),
-        btn_face: c(110, 92, 60),
-        btn_hi: c(140, 118, 80),
-        row_alt: c(32, 22, 10),
-        row_sel: c(120, 76, 16),
-        bar_txt: c(255, 249, 236),
-        edge: c(0, 0, 0),
-    },
-    // PAPER: warm white with ink-blue type
-    Pal {
-        app_bg: c(40, 38, 34),
-        trim: c(142, 135, 123),
-        beige: c(236, 230, 214),
-        beige_lt: c(252, 249, 240),
-        beige_dk: c(196, 188, 168),
-        beige_h: c(244, 239, 226),
-        lcd: c(250, 247, 238),
-        lcd_ghost: c(234, 229, 214),
-        groove: c(150, 142, 124),
-        sel: c(214, 206, 186),
-        ink: c(24, 34, 72),
-        ink2: c(60, 73, 114),
-        dim: c(96, 97, 112),
-        red: c(176, 36, 36),
-        btn_face: c(120, 134, 176),
-        btn_hi: c(150, 164, 204),
-        row_alt: c(240, 235, 221),
-        row_sel: c(40, 56, 110),
-        bar_txt: c(246, 244, 236),
-        edge: c(24, 22, 20),
-    },
-    // PLUM: dusky purple with pink phosphor
-    Pal {
-        app_bg: c(10, 6, 14),
-        trim: c(150, 110, 170),
-        beige: c(82, 62, 96),
-        beige_lt: c(124, 98, 140),
-        beige_dk: c(50, 36, 62),
-        beige_h: c(98, 76, 114),
-        lcd: c(28, 16, 34),
-        lcd_ghost: c(40, 26, 48),
-        groove: c(44, 30, 54),
-        sel: c(84, 54, 100),
-        ink: c(255, 221, 242),
-        ink2: c(246, 212, 232),
-        dim: c(203, 178, 194),
-        red: c(255, 161, 154),
-        btn_face: c(132, 96, 150),
-        btn_hi: c(160, 124, 180),
-        row_alt: c(36, 22, 44),
-        row_sel: c(130, 50, 100),
-        bar_txt: c(255, 233, 245),
-        edge: c(2, 0, 4),
-    },
-    // SLATE: cool grey-blue steel
-    Pal {
-        app_bg: c(8, 10, 14),
-        trim: c(140, 156, 176),
-        beige: c(168, 182, 200),
-        beige_lt: c(196, 208, 222),
-        beige_dk: c(120, 134, 154),
-        beige_h: c(182, 196, 212),
-        lcd: c(204, 214, 225),
-        lcd_ghost: c(168, 182, 196),
-        groove: c(86, 100, 120),
-        sel: c(146, 162, 184),
-        ink: c(10, 18, 30),
-        ink2: c(29, 41, 61),
-        dim: c(54, 66, 86),
-        red: c(131, 24, 24),
-        btn_face: c(96, 112, 136),
-        btn_hi: c(130, 148, 172),
-        row_alt: c(178, 190, 206),
-        row_sel: c(30, 52, 88),
-        bar_txt: c(230, 238, 246),
-        edge: c(4, 8, 14),
-    },
-    // CLAY: terracotta and sand
-    Pal {
-        app_bg: c(12, 7, 5),
-        trim: c(196, 130, 92),
-        beige: c(222, 178, 140),
-        beige_lt: c(244, 214, 182),
-        beige_dk: c(176, 128, 96),
-        beige_h: c(232, 192, 156),
-        lcd: c(240, 212, 180),
-        lcd_ghost: c(224, 192, 158),
-        groove: c(142, 98, 70),
-        sel: c(204, 152, 116),
-        ink: c(13, 4, 2),
-        ink2: c(77, 32, 21),
-        dim: c(93, 64, 48),
-        red: c(139, 20, 13),
-        btn_face: c(186, 98, 62),
-        btn_hi: c(214, 128, 88),
-        row_alt: c(228, 188, 152),
-        row_sel: c(120, 44, 24),
-        bar_txt: c(250, 228, 204),
-        edge: c(20, 8, 4),
-    },
-    // AERO GLASS: sky blue, glossy glass and grass green (Windows XP / Vista era)
-    Pal {
-        app_bg: c(18, 60, 110),
-        trim: c(185, 224, 245),
-        beige: c(226, 240, 252),
-        beige_lt: c(252, 254, 255),
-        beige_dk: c(150, 186, 218),
-        beige_h: c(240, 248, 255),
-        lcd: c(238, 250, 255),
-        lcd_ghost: c(214, 236, 248),
-        groove: c(150, 184, 212),
-        sel: c(188, 222, 246),
-        ink: c(14, 40, 72),
-        ink2: c(38, 81, 119),
-        dim: c(77, 106, 133),
-        red: c(189, 52, 43),
-        btn_face: c(46, 150, 210),
-        btn_hi: c(96, 206, 120),
-        row_alt: c(232, 244, 254),
-        row_sel: c(34, 124, 196),
-        bar_txt: c(255, 255, 255),
-        edge: c(36, 92, 142),
-    },
-    // SLEEK DARK: charcoal with one blue accent
-    Pal {
-        app_bg: c(12, 13, 17),
-        trim: c(140, 148, 168),
-        beige: c(28, 30, 37),
-        beige_lt: c(52, 56, 68),
-        beige_dk: c(20, 21, 27),
-        beige_h: c(42, 45, 55),
-        lcd: c(18, 19, 25),
-        lcd_ghost: c(26, 28, 36),
-        groove: c(44, 47, 58),
-        sel: c(40, 52, 84),
-        ink: c(236, 238, 245),
-        ink2: c(168, 173, 187),
-        dim: c(142, 146, 158),
-        red: c(255, 92, 102),
-        btn_face: c(70, 122, 255),
-        btn_hi: c(120, 160, 255),
-        row_alt: c(32, 34, 42),
-        row_sel: c(50, 94, 220),
-        bar_txt: c(255, 255, 255),
-        edge: c(10, 10, 14),
-    },
-    // SLEEK LIGHT: soft white with the same blue accent
-    Pal {
-        app_bg: c(226, 229, 237),
-        trim: c(206, 212, 228),
-        beige: c(248, 249, 252),
-        beige_lt: c(255, 255, 255),
-        beige_dk: c(212, 216, 228),
-        beige_h: c(238, 241, 249),
-        lcd: c(238, 241, 247),
-        lcd_ghost: c(226, 230, 240),
-        groove: c(206, 211, 224),
-        sel: c(216, 227, 252),
-        ink: c(22, 25, 34),
-        ink2: c(74, 81, 96),
-        dim: c(97, 102, 113),
-        red: c(194, 50, 61),
-        btn_face: c(48, 100, 240),
-        btn_hi: c(92, 142, 255),
-        row_alt: c(242, 244, 250),
-        row_sel: c(48, 100, 240),
-        bar_txt: c(255, 255, 255),
-        edge: c(44, 50, 70),
-    },
-    // NEON: synthwave - cyan and hot pink on deep violet
-    Pal {
-        app_bg: c(8, 4, 16),
-        trim: c(150, 90, 200),
-        beige: c(40, 20, 64),
-        beige_lt: c(80, 44, 120),
-        beige_dk: c(24, 10, 40),
-        beige_h: c(56, 30, 88),
-        lcd: c(12, 6, 24),
-        lcd_ghost: c(28, 15, 48),
-        groove: c(30, 16, 50),
-        sel: c(62, 22, 92),
-        ink: c(0, 240, 255),
-        ink2: c(255, 120, 225),
-        dim: c(190, 160, 235),
-        red: c(255, 70, 180),
-        btn_face: c(70, 36, 110),
-        btn_hi: c(110, 60, 160),
-        row_alt: c(18, 9, 34),
-        row_sel: c(170, 0, 135),
-        bar_txt: c(255, 255, 255),
-        edge: c(0, 0, 0),
-    },
-    // SUNSET: amber and coral on dark plum
-    Pal {
-        app_bg: c(14, 6, 8),
-        trim: c(220, 120, 90),
-        beige: c(64, 26, 34),
-        beige_lt: c(104, 48, 56),
-        beige_dk: c(40, 14, 20),
-        beige_h: c(82, 36, 44),
-        lcd: c(24, 10, 14),
-        lcd_ghost: c(42, 19, 25),
-        groove: c(46, 20, 26),
-        sel: c(92, 34, 40),
-        ink: c(255, 195, 115),
-        ink2: c(255, 150, 125),
-        dim: c(225, 170, 158),
-        red: c(255, 100, 95),
-        btn_face: c(110, 44, 52),
-        btn_hi: c(150, 70, 76),
-        row_alt: c(32, 13, 18),
-        row_sel: c(185, 62, 34),
-        bar_txt: c(255, 255, 255),
-        edge: c(0, 0, 0),
-    },
-    // OCEAN: aquamarine and sky blue on deep navy, with an orange buoy for the accent
-    Pal {
-        app_bg: c(2, 10, 18),
-        trim: c(90, 190, 210),
-        beige: c(16, 46, 66),
-        beige_lt: c(34, 80, 108),
-        beige_dk: c(8, 28, 42),
-        beige_h: c(24, 62, 86),
-        lcd: c(4, 20, 32),
-        lcd_ghost: c(11, 35, 53),
-        groove: c(14, 38, 56),
-        sel: c(16, 70, 90),
-        ink: c(120, 255, 220),
-        ink2: c(150, 215, 255),
-        dim: c(160, 205, 215),
-        red: c(255, 175, 85),
-        btn_face: c(24, 80, 110),
-        btn_hi: c(44, 120, 150),
-        row_alt: c(6, 26, 40),
-        row_sel: c(0, 110, 130),
-        bar_txt: c(255, 255, 255),
-        edge: c(0, 0, 0),
-    },
-    // CITRUS: lime and lemon on dark green, with a tangerine accent
-    Pal {
-        app_bg: c(6, 12, 4),
-        trim: c(170, 220, 90),
-        beige: c(34, 52, 20),
-        beige_lt: c(64, 90, 40),
-        beige_dk: c(20, 32, 10),
-        beige_h: c(46, 68, 28),
-        lcd: c(10, 20, 6),
-        lcd_ghost: c(23, 38, 15),
-        groove: c(26, 40, 16),
-        sel: c(50, 80, 20),
-        ink: c(215, 255, 100),
-        ink2: c(255, 232, 100),
-        dim: c(185, 212, 155),
-        red: c(255, 135, 65),
-        btn_face: c(60, 90, 30),
-        btn_hi: c(90, 130, 50),
-        row_alt: c(14, 26, 8),
-        row_sel: c(56, 100, 0),
-        bar_txt: c(255, 255, 255),
-        edge: c(0, 0, 0),
-    },
-    // HIGH CONTRAST DARK, after the classic high-contrast desktop themes: white text on black, yellow for the second
-    // line of text and window titles, green for hints and lines, cyan for loops, accents and button edges (with
-    // magenta shadows), the playing song in yellow on purple. Every text colour clears WCAG AAA (7:1) on black.
-    Pal {
-        app_bg: c(0, 0, 0),
-        trim: c(255, 255, 0),
-        beige: c(0, 0, 0),
-        beige_lt: c(26, 235, 255),
-        beige_dk: c(210, 0, 210),
-        beige_h: c(46, 0, 70),
-        lcd: c(0, 0, 0),
-        lcd_ghost: c(44, 0, 66),
-        groove: c(63, 242, 63),
-        sel: c(0, 70, 90),
-        ink: c(255, 255, 255),
-        ink2: c(255, 255, 0),
-        dim: c(63, 242, 63),
-        red: c(26, 235, 255),
-        btn_face: c(0, 0, 0),
-        btn_hi: c(0, 70, 90),
-        row_alt: c(0, 10, 34),
-        row_sel: c(96, 0, 160),
-        bar_txt: c(255, 255, 0),
-        edge: c(0, 0, 0),
-    },
-    // HIGH CONTRAST LIGHT, the same idea on white: black text, navy for the second line and lines, deep green for
-    // hints, burnt orange for loops and accents, purple shadows, yellow window titles, the playing song in white on
-    // purple.
-    Pal {
-        app_bg: c(255, 255, 255),
-        trim: c(255, 230, 0),
-        beige: c(255, 255, 255),
-        beige_lt: c(255, 255, 255),
-        beige_dk: c(110, 0, 170),
-        beige_h: c(255, 238, 200),
-        lcd: c(255, 255, 255),
-        lcd_ghost: c(214, 204, 242),
-        groove: c(0, 0, 159),
-        sel: c(255, 230, 160),
-        ink: c(0, 0, 0),
-        ink2: c(0, 0, 159),
-        dim: c(0, 90, 0),
-        red: c(140, 52, 0),
-        btn_face: c(255, 255, 255),
-        btn_hi: c(255, 238, 200),
-        row_alt: c(234, 241, 255),
-        row_sel: c(55, 0, 110),
-        bar_txt: c(255, 255, 255),
-        edge: c(0, 0, 0),
-    },
-];
+        app_bg: if light { dk(panel, 0.12) } else { dk(display, 0.4) },
+        accent,
+        panel,
+        panel_lt: lt(panel, 0.1),
+        panel_dk: dk(panel, 0.2),
+        panel_hover: lt(panel, 0.05),
+        display,
+        display_ghost: display.lerp_to_gamma(accent, 0.12),
+        groove: dk(panel, 0.35),
+        sel: display.lerp_to_gamma(accent, 0.25),
+        ink,
+        ink2: ink.lerp_to_gamma(display, 0.25),
+        dim: ink.lerp_to_gamma(display, 0.45),
+        red: c(220, 70, 60),
+        btn_face: lt(panel, 0.08),
+        btn_hi: lt(panel, 0.22),
+        row_alt: display.lerp_to_gamma(panel, 0.2),
+        row_sel: display.lerp_to_gamma(accent, 0.35),
+        bar_txt: ink,
+        edge: if light { dk(panel, 0.6) } else { c(6, 6, 6) },
+    }
+}
+
+/// Your Custom look from the two colours you pick (Background, Accent), kept in step with the built-in ones: the
+/// background eased to a panel dark enough for light writing (or, picked light, a paper one for dark writing), the
+/// display a deeper (or paler) shade of it; the accent is lit to read on the display when the skin is drawn.
+pub(crate) fn custom_look(background: Color32, accent: Color32) -> (Color32, Color32, Color32) {
+    let (h, s, v) = rgb_to_hsv(background);
+    if lum(background) > 0.45 {
+        // paper: light, a hint of the colour
+        let panel = hsv_to_rgb(h, (s * 0.35).min(0.18), v.max(0.86));
+        (panel, hsv_to_rgb(h, (s * 0.15).min(0.06), 0.97), accent)
+    } else {
+        // dark: the colour kept, deep enough that the writing on it reads
+        let panel = hsv_to_rgb(h, s.min(0.6), v.clamp(0.13, 0.32));
+        (panel, hsv_to_rgb(h, s.min(0.7), (v * 0.34).clamp(0.03, 0.11)), accent)
+    }
+}
+
+/// The looks' palettes, in order (worked out once).
+pub(crate) static PALS: std::sync::LazyLock<Vec<Pal>> =
+    std::sync::LazyLock::new(|| LOOKS.iter().map(|l| look_pal(l.panel, l.display, l.accent)).collect());
 
 pub(crate) static SKIN: AtomicUsize = AtomicUsize::new(0);
 
@@ -513,7 +203,7 @@ pub(crate) fn readable(mut p: Pal, app_bg_too: bool) -> Pal {
     // which side the skin is on comes from its list background, never from its text: a dark skin stays dark (and a
     // light one light) whatever colour its text is. Text that can't read on that side - deep red, blue or purple on
     // dark - is lifted (or deepened) itself, rather than the backgrounds flipping to white.
-    let dark = lum(p.lcd) < 0.5;
+    let dark = lum(p.display) < 0.5;
     let far = if dark { Color32::BLACK } else { Color32::WHITE };
     let toward = if dark { Color32::WHITE } else { Color32::BLACK };
     for (fg, min) in [(&mut p.ink, 5.5f32), (&mut p.bar_txt, 5.0), (&mut p.ink2, 4.0), (&mut p.dim, 3.0)] {
@@ -530,11 +220,11 @@ pub(crate) fn readable(mut p: Pal, app_bg_too: bool) -> Pal {
         p.app_bg = push(p.app_bg, p.ink, 4.5, light_ink);
     }
     for bg in [
-        &mut p.lcd,
-        &mut p.beige,
-        &mut p.beige_lt,
-        &mut p.beige_dk,
-        &mut p.beige_h,
+        &mut p.display,
+        &mut p.panel,
+        &mut p.panel_lt,
+        &mut p.panel_dk,
+        &mut p.panel_hover,
         &mut p.btn_face,
         &mut p.row_alt,
         &mut p.sel,
@@ -543,7 +233,7 @@ pub(crate) fn readable(mut p: Pal, app_bg_too: bool) -> Pal {
         *bg = push(*bg, p.ink, 4.5, light_ink);
     }
     for (fg, min) in [(&mut p.ink2, 3.0), (&mut p.dim, 2.2)] {
-        for bg in if app_bg_too { vec![p.app_bg, p.lcd, p.beige] } else { vec![p.lcd, p.beige] } {
+        for bg in if app_bg_too { vec![p.app_bg, p.display, p.panel] } else { vec![p.display, p.panel] } {
             *fg = push(*fg, bg, min, !light_ink);
         }
     }
@@ -556,22 +246,6 @@ pub(crate) fn set_custom(p: Option<Pal>) {
     let p = p.map(|p| readable(p, true));
     let ptr = p.map_or(std::ptr::null_mut(), |p| Box::into_raw(Box::new(p)));
     CUSTOM.store(ptr, Ordering::Release);
-}
-
-pub(crate) fn custom_on() -> bool {
-    !CUSTOM.load(Ordering::Acquire).is_null()
-}
-
-/// Look of the skin: 0 retro pixel, 1 aero glass, 2 sleek.
-pub(crate) fn style() -> u8 {
-    if custom_on() {
-        return 0; // Winamp skins are drawn the retro way
-    }
-    match SKIN.load(Ordering::Relaxed) % PALS.len() {
-        8 => 1,
-        9 | 10 => 2,
-        _ => 0,
-    }
 }
 
 /// Rounded fill (modern skins).
@@ -647,58 +321,69 @@ pub(crate) fn pal() -> &'static Pal {
 mod contrast_tests {
     use super::*;
 
+    /// A look as it is worn: its skin drawn, the palette read from it, made readable.
+    fn worn(n: usize) -> Pal {
+        let (p, _) = crate::genskin::wear(&PALS[n]).expect("skin");
+        readable(p, true)
+    }
+
     #[test]
-    fn colourful_skins_read_well() {
-        let c = contrast;
-        for i in 11..15usize {
-            let p = &PALS[i];
+    fn every_look_reads_where_text_sits() {
+        for (n, name) in SKIN_NAMES.iter().enumerate() {
+            let p = worn(n);
             for (what, fg, bg, min) in [
-                ("text on panels", p.ink, p.beige, 7.0),
-                ("text on lists", p.ink, p.lcd, 7.0),
-                ("second text", p.ink2, p.lcd, 7.0),
-                ("hints", p.dim, p.lcd, 4.5),
-                ("accent", p.red, p.lcd, 4.5),
-                ("playing row", p.bar_txt, p.row_sel, 4.5),
+                ("text on lists", p.ink, p.display, 4.5),
+                ("text on panels", p.ink, p.panel, 4.5),
                 ("button text", p.ink, p.btn_face, 4.5),
+                ("second text", p.ink2, p.display, 3.0),
+                ("playing row", p.bar_txt, p.row_sel, 4.5),
             ] {
-                assert!(c(fg, bg) >= min, "{} {}: {:.1}", SKIN_NAMES[i], what, c(fg, bg));
+                assert!(contrast(fg, bg) >= min, "{} {}: {:.1}", name, what, contrast(fg, bg));
             }
         }
-        assert_eq!(&SKIN_NAMES[15..], ["HIGH CONTRAST DARK", "HIGH CONTRAST LIGHT"]);
     }
 
     #[test]
-    fn every_builtin_reads_where_text_sits() {
-        for i in 0..PALS.len() {
-            SKIN.store(i, Ordering::Relaxed);
-            let p = pal();
-            for (what, bg) in
-                [("menus", p.beige), ("drop-downs", p.beige_lt), ("buttons", p.btn_face), ("lists", p.lcd), ("selection", p.sel)]
-            {
-                assert!(contrast(p.ink, bg) >= 4.5, "{} {}: {:.1}", SKIN_NAMES[i], what, contrast(p.ink, bg));
+    fn the_looks_are_told_apart() {
+        // no two looks share a panel and a display (the old palettes all came out the same graphite)
+        for a in 0..LOOKS.len() {
+            for b in a + 1..LOOKS.len() {
+                let d = |x: Color32, y: Color32| {
+                    (x.r() as i32 - y.r() as i32).abs() + (x.g() as i32 - y.g() as i32).abs() + (x.b() as i32 - y.b() as i32).abs()
+                };
+                let apart = d(LOOKS[a].panel, LOOKS[b].panel) + d(LOOKS[a].accent, LOOKS[b].accent);
+                assert!(apart >= 40, "{} and {} look alike", LOOKS[a].name, LOOKS[b].name);
             }
         }
-        SKIN.store(0, Ordering::Relaxed);
     }
 
     #[test]
-    fn high_contrast_skins_meet_aaa() {
-        for i in [15usize, 16] {
-            let p = &PALS[i];
-            let c = contrast;
-            for (what, fg, bg) in [
-                ("text on panels", p.ink, p.beige),
-                ("text on lists", p.ink, p.lcd),
-                ("second text", p.ink2, p.lcd),
-                ("playing row", p.bar_txt, p.row_sel),
-                ("button text", p.ink, p.btn_face),
-                ("hints", p.dim, p.lcd),
-                ("accent", p.red, p.lcd),
-                ("hovered text", p.ink, p.sel),
-            ] {
-                assert!(c(fg, bg) >= 7.0, "{} {}: {:.1}", SKIN_NAMES[i], what, c(fg, bg));
+    fn light_looks_are_light_and_dark_ones_dark() {
+        for (n, l) in LOOKS.iter().enumerate() {
+            let p = worn(n);
+            assert_eq!(lum(p.display) > 0.5, lum(l.display) > 0.5, "{}", l.name);
+        }
+    }
+
+    #[test]
+    fn a_custom_look_stays_in_step() {
+        // any two colours make a look whose writing reads, light or dark
+        for bg in [c(255, 0, 0), c(0, 0, 0), c(255, 255, 255), c(128, 128, 128), c(30, 200, 90), c(250, 240, 180)] {
+            for accent in [c(255, 255, 0), c(0, 0, 0), c(20, 20, 200), c(255, 255, 255)] {
+                let (panel, display, accent) = custom_look(bg, accent);
+                let (p, _) = crate::genskin::wear(&look_pal(panel, display, accent)).expect("skin");
+                let p = readable(p, true);
+                assert!(contrast(p.ink, p.display) >= 4.5 && contrast(p.ink, p.panel) >= 4.5, "{:?} {:?}", bg, accent);
             }
         }
+    }
+
+    #[test]
+    fn an_old_look_finds_its_new_one() {
+        assert_eq!(SKIN_NAMES[look_from_old(10)], "MIDNIGHT");
+        assert_eq!(SKIN_NAMES[look_from_old(2)], "GRAPHITE");
+        assert_eq!(SKIN_NAMES[look_from_old(16)], "HIGH CONTRAST LIGHT");
+        assert_eq!(look_from_old(99), FIRST_LOOK);
     }
 }
 
@@ -711,13 +396,13 @@ mod readable_tests {
         let grey = c(200, 200, 205);
         let p = Pal {
             app_bg: c(20, 20, 24),
-            trim: grey,
-            beige: c(245, 245, 245),
-            beige_lt: c(240, 240, 240),
-            beige_dk: c(220, 220, 220),
-            beige_h: c(230, 230, 230),
-            lcd: c(10, 10, 12),
-            lcd_ghost: grey,
+            accent: grey,
+            panel: c(245, 245, 245),
+            panel_lt: c(240, 240, 240),
+            panel_dk: c(220, 220, 220),
+            panel_hover: c(230, 230, 230),
+            display: c(10, 10, 12),
+            display_ghost: grey,
             groove: grey,
             sel: c(235, 235, 235),
             ink: c(190, 195, 215),
@@ -732,10 +417,10 @@ mod readable_tests {
             edge: grey,
         };
         let r = readable(p, true);
-        for bg in [r.app_bg, r.lcd, r.beige, r.beige_lt, r.btn_face, r.sel] {
+        for bg in [r.app_bg, r.display, r.panel, r.panel_lt, r.btn_face, r.sel] {
             assert!(contrast(r.ink, bg) >= 4.5, "{:?} on {:?}", r.ink, bg);
         }
-        assert!(contrast(r.ink2, r.app_bg) >= 3.0 && contrast(r.dim, r.lcd) >= 2.2);
+        assert!(contrast(r.ink2, r.app_bg) >= 3.0 && contrast(r.dim, r.display) >= 2.2);
         assert!(contrast(r.bar_txt, r.row_sel) >= 4.5);
     }
 }

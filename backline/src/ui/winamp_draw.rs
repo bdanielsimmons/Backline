@@ -112,7 +112,7 @@ impl WaTex {
 /// lit when on.
 pub(crate) fn plate(p: &egui::Painter, r: Rect, text: &str, lit: bool) {
     let pal = crate::skin::pal();
-    let (bg, fg) = if lit { (pal.ink, pal.lcd) } else { (pal.lcd.gamma_multiply(0.9), pal.ink) };
+    let (bg, fg) = if lit { (pal.ink, pal.display) } else { (pal.display.gamma_multiply(0.9), pal.ink) };
     p.rect_filled(r, 1.0, bg);
     p.rect_stroke(r, 1.0, Stroke::new(1.0_f32, pal.ink.gamma_multiply(0.8)));
     if !text.is_empty() {
@@ -276,6 +276,11 @@ pub(crate) fn note_strip_control(outer: Rect, left: f32) {
             }
         }
     })
+}
+
+/// Where the strip's controls began last time (the strip of the window framed by `outer`), without forgetting it.
+pub(crate) fn peek_strip_controls(outer: Rect) -> Option<f32> {
+    STRIP_CTRL.with(|s| s.borrow().iter().find(|e| e.0 == strip_key(outer)).map(|e| e.1))
 }
 
 /// Where the window's strip controls began last time (and start noting them afresh).

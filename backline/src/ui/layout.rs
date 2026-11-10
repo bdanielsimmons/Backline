@@ -14,6 +14,11 @@ impl App {
         // the library the rest
         let ppp = ctx.pixels_per_point();
         let skin_k: Option<f32> = self.wa_art.is_some().then(|| {
+            // the library hidden: the stack is the whole window (the window narrowed to it), the deck as wide as
+            // the window, never taller than half of it
+            if self.lib_hidden {
+                return (screen.width() / 275.0).min(screen.height() * 0.5 / 116.0).max(1.0);
+            }
             let by_w = ((screen.width() - 640.0) * ppp / 275.0).floor();
             let by_h = (screen.height() * 0.45 * ppp / 116.0).floor();
             // at most Winamp's double size (more on a high-density screen): beside the library, never a giant
@@ -31,7 +36,7 @@ impl App {
         // the rest), so the deck always fills it, edge to edge - never a gap beside it. (Never narrower than
         // the practice panel's tabs need.)
         let skin_k = skin_k.map(|k| {
-            if self.practice && !self.focus_mode {
+            if self.practice && !self.lib_hidden {
                 k.min((screen.height() * 0.25 / 116.0).max(PRACTICE_COL_MIN / 275.0))
             } else {
                 k
@@ -40,10 +45,7 @@ impl App {
         if let Some(k) = skin_k {
             self.stack_k = k;
         }
-        // focus with a skin: the stack keeps its place, and the big side holds the practice tools (or the
-        // song big, when just listening) instead of the lists
-        let focus_skin = self.focus_mode && skin_k.is_some();
-        let lib_w = if self.focus_mode && !focus_skin {
+        let lib_w = if self.lib_hidden {
             0.0
         } else if let Some(k) = skin_k {
             (screen.width() - 275.0 * k).max(280.0)
@@ -54,7 +56,7 @@ impl App {
         let inner_w = right_w - 28.0;
         // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)
         // (0: as tall as it can be, the playlist keeping a few songs)
-        let mut practice_h = if !self.practice || focus_skin {
+        let mut practice_h = if !self.practice {
             0.0
         } else if self.prac_h <= 0.0 {
             if skin_k.is_some() {
@@ -114,23 +116,7 @@ impl App {
         // (a skin's deck: its own height, a little room above it, resting on the playlist)
         let player_h = skin_k.map_or(138.0 * s + 44.0, |k| 116.0 * k);
 
-        if focus_skin {
-            egui::SidePanel::left("focus_side")
-                .exact_width(lib_w)
-                .resizable(false)
-                .show_separator_line(false)
-                .frame(panel_frame())
-                .show(ctx, |ui| {
-                    let r = ui.max_rect();
-                    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r));
-                    if self.practice {
-                        self.practice_ui(&mut inner, acts);
-                    } else {
-                        self.art_ui(&mut inner, acts);
-                    }
-                    ui.allocate_rect(r, Sense::hover());
-                });
-        } else if !self.focus_mode {
+        if !self.lib_hidden {
             egui::SidePanel::left("library")
                 .exact_width(lib_w)
                 .resizable(false)
@@ -185,7 +171,7 @@ impl App {
         });
         // a skin's stack: deck, equalizer and practice panel never leave the playlist less than a few songs
         // (the practice panel gives way, then the equalizer)
-        let (practice_h, eq_h) = if skin_k.is_some() && !focus_skin && !self.queue_hidden {
+        let (practice_h, eq_h) = if skin_k.is_some() && !self.queue_hidden {
             // the playlist's frame (58 skin pixels tall) and four songs
             let k = skin_k.unwrap_or(1.0);
             // (practising: two songs, the practice panel getting the rest)
@@ -220,7 +206,7 @@ impl App {
                 .frame(panel_frame())
                 .show(ctx, |ui| self.eq_dock(ui));
         }
-        if self.practice && !focus_skin {
+        if self.practice {
             egui::TopBottomPanel::bottom("practice")
                 .exact_height(practice_h)
                 .resizable(false)
@@ -281,7 +267,7 @@ impl App {
                 None => {}
             }
         }
-        if self.practice && !focus_skin {
+        if self.practice {
             let y = screen.max.y - practice_h;
             let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
             match splitter(ctx, "split_p", r, false) {
@@ -308,7 +294,7 @@ impl App {
                 None => {}
             }
         }
-        if !self.focus_mode || focus_skin {
+        if !self.lib_hidden {
             let r = Rect::from_min_size(Pos2::new(lib_w - 7.0, screen.min.y), Vec2::new(14.0, screen.height()));
             match splitter(ctx, "split_v", r, true) {
                 Some(Some(x)) if skin_k.is_some() => {

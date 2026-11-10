@@ -258,7 +258,7 @@ impl App {
                         // the border sits right on the cover's edge
                         let edge = match self.art_border {
                             1 => Some(Stroke::new(1.0_f32, Color32::from_white_alpha(30))),
-                            2 => Some(Stroke::new(2.0_f32, pal().trim.gamma_multiply(self.art_op))),
+                            2 => Some(Stroke::new(2.0_f32, pal().accent.gamma_multiply(self.art_op))),
                             _ => None,
                         };
                         if let Some(s) = edge {
@@ -319,7 +319,7 @@ impl App {
             );
             p.rect_filled(
                 plate,
-                Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }),
+                Rounding::same(if crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }),
                 plate_col,
             );
             ptext_fit(&p, Pos2::new(cx, y0), Align::Center, &tr.title, 3.0 * k, w, ink);
@@ -390,7 +390,7 @@ impl App {
             let t = ui.input(|i| i.time) as f32;
             let breath = ((t * std::f32::consts::TAU / 5.0).sin() + 1.0) / 2.0;
             let level = (breath * 4.0).round() / 4.0;
-            ptext(&p, art_zone.center(), Align::Center, "NO TRACK PLAYING", 3.0, pal().trim.gamma_multiply(0.2 + 0.8 * level));
+            ptext(&p, art_zone.center(), Align::Center, "NO TRACK PLAYING", 3.0, pal().accent.gamma_multiply(0.2 + 0.8 * level));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
         }
 
@@ -402,7 +402,7 @@ impl App {
                 Rounding::same(if crate::winamp_ui::chrome_on() { 10.0 } else { 0.0 }),
                 Color32::from_black_alpha(150),
             );
-            p.rect_stroke(ly, Rounding::same(0.0), Stroke::new(2.0_f32, pal().trim));
+            p.rect_stroke(ly, Rounding::same(0.0), Stroke::new(2.0_f32, pal().accent));
             let cp = p.with_clip_rect(ly.shrink(4.0));
             let lh = 38.0;
             let cyl = ly.center().y;
@@ -466,7 +466,7 @@ impl App {
                             } else if hover_i == Some(i) {
                                 (2.0, pal().bar_txt)
                             } else {
-                                (2.0, pal().trim.gamma_multiply(fade))
+                                (2.0, pal().accent.gamma_multiply(fade))
                             };
                             ptext_fit(&cp, Pos2::new(ly.center().x, y), Align::Center, txt, px, ly.width() - 40.0, col);
                         }
@@ -474,7 +474,7 @@ impl App {
                 }
             }
             if let Some(m) = msg {
-                ptext_fit(&cp, ly.center(), Align::Center, m, 2.0, ly.width() - 30.0, pal().trim);
+                ptext_fit(&cp, ly.center(), Align::Center, m, 2.0, ly.width() - 30.0, pal().accent);
             }
             self.lyric_scroll = scroll;
         }
@@ -538,8 +538,8 @@ impl App {
                 flag(x_at(a), "A");
             }
         }
-        ptext(&p, Pos2::new(sb.min.x, sb.max.y + 14.0), Align::Min, &fmt_time(if active { pos } else { 0.0 }), 2.0, pal().trim);
-        ptext(&p, Pos2::new(sb.max.x, sb.max.y + 14.0), Align::Max, &fmt_time(dur), 2.0, pal().trim);
+        ptext(&p, Pos2::new(sb.min.x, sb.max.y + 14.0), Align::Min, &fmt_time(if active { pos } else { 0.0 }), 2.0, pal().accent);
+        ptext(&p, Pos2::new(sb.max.x, sb.max.y + 14.0), Align::Max, &fmt_time(dur), 2.0, pal().accent);
 
         // ---- the queue, as a panel on the right (the three-lines button)
         if let Some(panel) = q_panel {
@@ -552,7 +552,7 @@ impl App {
                 egui::Frame::none()
                     .fill(pal().app_bg.gamma_multiply(0.92))
                     .stroke(Stroke::new(1.5_f32, pal().edge))
-                    .rounding(if style() != 0 { 8.0 } else { 0.0 })
+                    .rounding(0.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {
                         ui.set_min_size(panel.size() - Vec2::splat(20.0));
@@ -656,7 +656,7 @@ impl App {
                 Rect::from_min_size(Pos2::new(full.min.x + 28.0, full.min.y + 12.0), Vec2::new(full.width() - 56.0, strip_h));
             p.rect_filled(
                 strip,
-                Rounding::same(if style() != 0 || crate::winamp_ui::chrome_on() { 8.0 } else { 0.0 }),
+                Rounding::same(if crate::winamp_ui::chrome_on() { 8.0 } else { 0.0 }),
                 Color32::from_black_alpha(120),
             );
             tour::mark("ARTPRACTICE", strip);
@@ -777,7 +777,7 @@ impl App {
                         p,
                         Rect::from_center_size(r.center() + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)),
                         icon,
-                        pal().lcd,
+                        pal().display,
                     );
                 } else {
                     let col = if on {
@@ -825,7 +825,7 @@ impl App {
             if self.repeat == Repeat::One {
                 let c = Pos2::new(x0 + 1.5 * gap + 9.0, cy - 9.0);
                 ui.painter().circle_filled(c, 6.0, pal().bar_txt);
-                crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, pal().lcd));
+                crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, pal().display));
             }
             if bare(
                 "heart",

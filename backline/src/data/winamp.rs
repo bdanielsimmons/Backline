@@ -523,7 +523,7 @@ pub fn load(wsz: &[u8]) -> Result<(Pal, Art), String> {
     // this skin's colours, so a skin with no equalizer or playlist still gets whole ones that match it
     let lacks = |n: &str| !f.contains_key(&format!("{}.bmp", n)) && !(n == "numbers" && f.contains_key("nums_ex.bmp"));
     let base: HashMap<String, Vec<u8>> = if SHEETS.iter().any(|n| *n != "nums_ex" && *n != "monoster" && lacks(n)) {
-        files(&crate::genskin::make(&pal, 1)).unwrap_or_default()
+        files(&crate::genskin::borrowed(&pal)).unwrap_or_default()
     } else {
         HashMap::new()
     };
@@ -650,13 +650,13 @@ fn palette_from(f: &HashMap<String, Vec<u8>>) -> Result<Pal, String> {
     let trim = readable(mix(light, beige, 0.4), edge, 4.5);
     Ok(Pal {
         app_bg: darker(chrome, 0.8),
-        trim,
-        beige,
-        beige_lt: lighter(beige, 0.12),
-        beige_dk: darker(beige, 0.15),
-        beige_h: lighter(beige, 0.06),
-        lcd: normal_bg,
-        lcd_ghost: mix(normal_bg, normal, 0.12),
+        accent: trim,
+        panel: beige,
+        panel_lt: lighter(beige, 0.12),
+        panel_dk: darker(beige, 0.15),
+        panel_hover: lighter(beige, 0.06),
+        display: normal_bg,
+        display_ghost: mix(normal_bg, normal, 0.12),
         groove: mix(normal_bg, dark, 0.5),
         sel: mix(sel_bg, normal_bg, 0.5),
         ink,
@@ -683,12 +683,12 @@ mod tests {
         let (p, _) = load(&std::fs::read(f).unwrap()).unwrap();
         for (n, c) in [
             ("app_bg", p.app_bg),
-            ("beige", p.beige),
-            ("beige_lt", p.beige_lt),
-            ("beige_dk", p.beige_dk),
-            ("beige_h", p.beige_h),
-            ("lcd", p.lcd),
-            ("lcd_ghost", p.lcd_ghost),
+            ("beige", p.panel),
+            ("beige_lt", p.panel_lt),
+            ("beige_dk", p.panel_dk),
+            ("beige_h", p.panel_hover),
+            ("lcd", p.display),
+            ("lcd_ghost", p.display_ghost),
             ("groove", p.groove),
             ("sel", p.sel),
             ("ink", p.ink),
@@ -700,7 +700,7 @@ mod tests {
             ("row_sel", p.row_sel),
             ("bar_txt", p.bar_txt),
             ("edge", p.edge),
-            ("trim", p.trim),
+            ("accent", p.accent),
         ] {
             println!("{:10} {:?} {:.2}", n, c, lum(c));
         }
@@ -756,22 +756,22 @@ mod tests {
                         .collect();
                     // as worn: after the readability fix every big surface stays on the list's side
                     let worn = crate::skin::readable(pal, true);
-                    let dark = lum(worn.lcd) < 0.5;
+                    let dark = lum(worn.display) < 0.5;
                     // (a mid-grey panel is a skin's own choice; white behind a dark list is a flip. The space round
                     // the windows is always dark, so it isn't counted for light skins)
-                    let flipped = [worn.app_bg, worn.beige, worn.row_alt, worn.sel, worn.row_sel, worn.btn_face]
+                    let flipped = [worn.app_bg, worn.panel, worn.row_alt, worn.sel, worn.row_sel, worn.btn_face]
                         .iter()
                         .enumerate()
                         .any(|(i, c)| if dark { lum(*c) > 0.62 } else { i > 0 && lum(*c) < 0.2 });
-                    let glare = lum(worn.lcd) > 0.82 || lum(worn.beige) > 0.85 || lum(worn.app_bg) > 0.85 || flipped;
+                    let glare = lum(worn.display) > 0.82 || lum(worn.panel) > 0.85 || lum(worn.app_bg) > 0.85 || flipped;
                     if !miss.is_empty() || glare {
                         bad += 1;
                         println!(
                             "{:?}: missing {:?} lcd {:.2} panel {:.2} back {:.2}{}",
                             e.file_name(),
                             miss,
-                            lum(pal.lcd),
-                            lum(pal.beige),
+                            lum(pal.display),
+                            lum(pal.panel),
                             lum(pal.app_bg),
                             if glare { "  GLARE" } else { "" }
                         );
@@ -849,13 +849,13 @@ SelectedBG={}",
             );
             let p = palette(&wsz(&[("pledit.txt", pledit.as_bytes())])).unwrap();
             for (what, fg, back, min) in [
-                ("list text", p.ink, p.lcd, 4.5),
-                ("playing on list", p.bar_txt, p.lcd, 4.5),
+                ("list text", p.ink, p.display, 4.5),
+                ("playing on list", p.bar_txt, p.display, 4.5),
                 ("playing on selection", p.bar_txt, p.row_sel, 4.5),
-                ("panel text", p.ink, p.beige, 4.5),
+                ("panel text", p.ink, p.panel, 4.5),
                 ("button text", p.ink, p.btn_face, 4.5),
-                ("header text", p.trim, p.edge, 4.5),
-                ("second text", p.ink2, p.lcd, 3.0),
+                ("header text", p.accent, p.edge, 4.5),
+                ("second text", p.ink2, p.display, 3.0),
             ] {
                 assert!(contrast(fg, back) >= min, "{} ({}): {:.2}", what, normal, contrast(fg, back));
             }
@@ -871,11 +871,11 @@ SelectedBG={}",
             ("MySkin/VISCOLOR.TXT", b"0,0,0\n10,10,10\n240,60,20\n"),
         ]);
         let p = palette(&f).unwrap();
-        assert_eq!(p.lcd, Color32::from_rgb(16, 16, 16));
+        assert_eq!(p.display, Color32::from_rgb(16, 16, 16));
         assert_eq!(p.ink, Color32::from_rgb(0, 224, 0));
         assert_eq!(p.row_sel, Color32::from_rgb(32, 48, 128));
         assert_eq!(p.red, Color32::from_rgb(240, 60, 20), "the spectrum's top colour is the accent");
-        assert!(contrast(p.ink, p.beige) >= 4.5, "panel text stays readable");
+        assert!(contrast(p.ink, p.panel) >= 4.5, "panel text stays readable");
         assert!(palette(&wsz(&[("readme.txt", b"hi")])).is_err());
         assert!(palette(b"not a zip").is_err());
     }

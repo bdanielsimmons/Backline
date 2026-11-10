@@ -1,12 +1,11 @@
 //! Backline's drawing kit: the raised buttons, LCD boxes, tabs, check boxes, dropdowns, window decorations,
 //! seven-segment digits, the logo and the text helpers every screen is built from. Shared by the desktop app and
 //! the phone app (android/), so both look like Backline.
-#![allow(dead_code)]
 
 use crate::font::{self, fit, ptext, ptext_fit, snap, spx, text_w, thick, wrap};
 use crate::icons::*;
 use crate::skin::*;
-use crate::{tour, update, vicon, winamp_ui};
+use crate::{tour, update, winamp_ui};
 use crate::{HEAD_H, PRACTICE, ROW_H, VERSION};
 use eframe::egui::{self, Align, Color32, Pos2, Rect, Rounding, Sense, Stroke, Vec2};
 
@@ -135,90 +134,38 @@ pub(crate) fn outline(p: &egui::Painter, r: Rect, t: f32, c: Color32) {
 
 /// Sunken panel (LCD windows, groove).
 pub(crate) fn inset(p: &egui::Painter, r: Rect, fill: Color32) {
-    match style() {
-        1 => {
-            rfill(p, r, 4.0, fill);
-            rline(p, r, 4.0, 1.0, pal().beige_dk);
-            // soft shade along the top edge, like glass set into the frame
-            rfill(
-                p,
-                Rect::from_min_size(r.min + Vec2::new(2.0, 1.0), Vec2::new(r.width() - 4.0, 2.0)),
-                1.0,
-                Color32::from_black_alpha(26),
-            );
-            return;
-        }
-        2 => {
-            rfill(p, r, 6.0, fill);
-            rline(p, r, 6.0, 1.0, pal().groove);
-            return;
-        }
-        _ => {}
-    }
     let t1 = thick(1.5);
     let t2 = thick(1.0);
     fill_rect(p, r, fill);
     fill_rect(p, Rect::from_min_size(r.min, Vec2::new(r.width(), t1)), pal().edge);
     fill_rect(p, Rect::from_min_size(r.min, Vec2::new(t1, r.height())), pal().edge);
-    fill_rect(p, Rect::from_min_size(Pos2::new(r.min.x, r.max.y - t2), Vec2::new(r.width(), t2)), pal().beige_lt);
-    fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t2, r.min.y), Vec2::new(t2, r.height())), pal().beige_lt);
+    fill_rect(p, Rect::from_min_size(Pos2::new(r.min.x, r.max.y - t2), Vec2::new(r.width(), t2)), pal().panel_lt);
+    fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t2, r.min.y), Vec2::new(t2, r.height())), pal().panel_lt);
 }
 
 /// Raised bevelled button face.
 pub(crate) fn raised_h(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
-    match style() {
-        1 => {
-            // glossy glass button: gradient body, bright sheen on the top half, thin blue outline
-            let (top, bot) = if down {
-                (Color32::from_rgb(150, 196, 232), Color32::from_rgb(196, 226, 248))
-            } else if hover {
-                (Color32::from_rgb(255, 255, 255), Color32::from_rgb(190, 228, 250))
-            } else {
-                (Color32::from_rgb(250, 253, 255), Color32::from_rgb(196, 222, 244))
-            };
-            rgrad(p, r, 6.0, top, bot);
-            if !down {
-                let sheen = Rect::from_min_size(r.min + Vec2::new(2.0, 1.5), Vec2::new(r.width() - 4.0, r.height() * 0.44));
-                rfill(p, sheen, 4.0, Color32::from_white_alpha(if hover { 120 } else { 90 }));
-            }
-            rline(p, r, 6.0, 1.0, if hover { pal().btn_face } else { pal().edge });
-            return;
-        }
-        2 => {
-            let face = if down {
-                pal().sel
-            } else if hover {
-                pal().beige_lt
-            } else {
-                pal().beige_h
-            };
-            rfill(p, r, 6.0, face);
-            rline(p, r, 6.0, 1.0, if hover || down { pal().btn_face } else { pal().groove });
-            return;
-        }
-        _ => {}
-    }
     // with a skin worn: a pill, flat, a fine edge
     if winamp_ui::chrome_on() {
         let rad = (r.height() / 2.0).min(14.0);
         let fill = if down {
-            pal().beige_dk
+            pal().panel_dk
         } else if hover {
-            pal().beige
+            pal().panel
         } else {
-            pal().beige.lerp_to_gamma(pal().lcd, 0.35)
+            pal().panel.lerp_to_gamma(pal().display, 0.35)
         };
         p.rect_filled(r, rad, fill);
-        p.rect_stroke(r, rad, Stroke::new(1.0_f32, if hover { pal().beige_lt } else { pal().beige_h }));
+        p.rect_stroke(r, rad, Stroke::new(1.0_f32, if hover { pal().panel_lt } else { pal().panel_hover }));
         return;
     }
-    let (hi, lo) = if down { (pal().beige_dk, pal().beige_lt) } else { (pal().beige_lt, pal().beige_dk) };
+    let (hi, lo) = if down { (pal().panel_dk, pal().panel_lt) } else { (pal().panel_lt, pal().panel_dk) };
     let face = if down {
         pal().sel
     } else if hover {
-        pal().beige_h
+        pal().panel_hover
     } else {
-        pal().beige
+        pal().panel
     };
     let t = thick(1.0);
     fill_rect(p, r, face);
@@ -290,8 +237,6 @@ pub(crate) fn title_band(inner: Rect) -> (f32, f32) {
         let strip = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + title_h()));
         let band = winamp_ui::title_band_rect(strip, FRAME_SIDE);
         (band.center().y, band.height() - 2.0 * winamp_ui::TITLE_GAP)
-    } else if style() != 0 {
-        (outer.min.y + 14.0, 24.0)
     } else {
         (outer.min.y + 12.0, 24.0)
     }
@@ -330,12 +275,8 @@ pub(crate) fn window_deco(ui: &egui::Ui, inner: Rect, title: &str) {
     if winamp_ui::draw_frame(p, outer, frame_body(inner), title) {
         return;
     }
-    if style() != 0 {
-        modern_deco(p, outer, inner, title);
-        return;
-    }
     notch_fill(p, outer, u * 3.0, Color32::BLACK);
-    notch_fill(p, outer.shrink(u * 1.5), u * 2.0, pal().trim);
+    notch_fill(p, outer.shrink(u * 1.5), u * 2.0, pal().accent);
     notch_fill(p, outer.shrink(u * 2.5), u * 2.0, Color32::BLACK);
     notch_fill(p, outer.shrink(u * 3.5), u, pal().groove);
     notch_fill(p, outer.shrink(u * 4.0), u, Color32::BLACK);
@@ -356,15 +297,15 @@ pub(crate) fn window_deco(ui: &egui::Ui, inner: Rect, title: &str) {
     let tab = Rect::from_min_size(Pos2::new(outer.min.x + 22.0, cy - 11.0), Vec2::new(tw, 22.0));
     notch_fill(p, tab.expand(3.0), u * 2.0, Color32::BLACK);
     notch_fill(p, tab, u * 1.5, pal().edge);
-    ptext_fit(p, tab.center() + Vec2::new(iw / 2.0, 0.0), Align::Center, &label, 2.0, tw - 12.0 - iw, pal().trim);
+    ptext_fit(p, tab.center() + Vec2::new(iw / 2.0, 0.0), Align::Center, &label, 2.0, tw - 12.0 - iw, pal().accent);
     if let Some(rows) = icon {
         let o = Pos2::new((tab.min.x + 9.0).round(), (cy - rows.len() as f32).round());
         for (y, row) in rows.iter().enumerate() {
             for (x, ch) in row.chars().enumerate() {
                 // 'o' pixels get a mid tone between tab text and tab fill so they never vanish on any skin
                 let col = match ch {
-                    '#' => pal().trim,
-                    'o' => pal().trim.lerp_to_gamma(pal().edge, 0.4),
+                    '#' => pal().accent,
+                    'o' => pal().accent.lerp_to_gamma(pal().edge, 0.4),
                     _ => continue,
                 };
                 fill_rect(p, Rect::from_min_size(o + Vec2::new(x as f32 * 2.0, y as f32 * 2.0), Vec2::splat(2.0)), col);
@@ -373,53 +314,7 @@ pub(crate) fn window_deco(ui: &egui::Ui, inner: Rect, title: &str) {
     }
     // body
     fill_rect(p, inner.expand(2.0), pal().edge);
-    fill_rect(p, inner, pal().beige);
-}
-
-/// Window frame for the aero and sleek skins.
-pub(crate) fn modern_deco(p: &egui::Painter, outer: Rect, inner: Rect, title: &str) {
-    let icon: Option<&[&str]> = match title.split(' ').next().unwrap_or("") {
-        "LIBRARY" => Some(&WIN_LIBRARY),
-        "QUEUE" => Some(&WIN_QUEUE),
-        "LEAD" => Some(&WIN_SHEET),
-        "PRACTICE" => Some(&WIN_PRACTICE),
-        "PLAYER" => Some(&MARK),
-        _ => None,
-    };
-    let cy = outer.min.y + 14.0;
-    let (txt_col, icon_col) = if style() == 1 { (pal().bar_txt, pal().bar_txt) } else { (pal().ink2, pal().ink2) };
-    if style() == 1 {
-        // glass title bar over a blue frame, like an XP / Vista window
-        rfill(p, outer.translate(Vec2::new(0.0, 2.0)), 9.0, Color32::from_black_alpha(60));
-        rgrad(p, outer, 9.0, Color32::from_rgb(92, 178, 236), Color32::from_rgb(28, 108, 188));
-        let bar = Rect::from_min_size(outer.min + Vec2::new(2.0, 2.0), Vec2::new(outer.width() - 4.0, 24.0));
-        rfill(p, bar, 7.0, Color32::from_white_alpha(46));
-        rline(p, outer, 9.0, 1.0, pal().edge);
-        rfill(p, inner.expand(2.0), 3.0, pal().edge);
-        rfill(p, inner, 2.0, pal().beige);
-        // a sliver of glare across the top of the body
-        rfill(
-            p,
-            Rect::from_min_size(inner.min + Vec2::new(1.0, 1.0), Vec2::new(inner.width() - 2.0, 3.0)),
-            1.0,
-            Color32::from_white_alpha(70),
-        );
-    } else {
-        rfill(p, outer, 10.0, pal().beige_dk);
-        rline(p, outer, 10.0, 1.0, pal().groove);
-        rfill(p, inner, 6.0, pal().beige);
-        rline(p, inner, 6.0, 1.0, pal().groove);
-    }
-    let mut x = outer.min.x + 14.0;
-    if let Some(rows) = icon {
-        let k = 2.0;
-        let ir = Rect::from_center_size(Pos2::new(x + 10.0, cy), Vec2::splat(rows.len() as f32 * k));
-        if !vicon::draw(p, ir, rows, icon_col) {
-            pixmap(p, ir.min, k, rows, icon_col);
-        }
-        x += 26.0;
-    }
-    ptext(p, Pos2::new(x, cy), Align::Min, title, 2.0, txt_col);
+    fill_rect(p, inner, pal().panel);
 }
 
 pub(crate) const SEGS: [(f32, f32, f32, f32); 7] = [
@@ -452,7 +347,7 @@ pub(crate) fn seg_digit(p: &egui::Painter, o: Pos2, k: f32, d: u32, lit: bool) {
     let m = seg_mask(d);
     for (i, (x, y, w, h)) in SEGS.iter().enumerate() {
         let r = Rect::from_min_size(o + Vec2::new(x * k, y * k), Vec2::new(w * k, h * k));
-        fill_rect(p, r, pal().lcd_ghost);
+        fill_rect(p, r, pal().display_ghost);
         if lit && m[i] == 1 {
             fill_rect(p, r, pal().ink);
         }
@@ -506,10 +401,6 @@ pub(crate) fn round_btn(ui: &egui::Ui, center: Pos2, radius: f32, icon: &[&str],
 
 /// A little pixel gem with a tide line through it.
 pub(crate) fn logo_mark(p: &egui::Painter, origin: Pos2, px: f32) {
-    if style() != 0 {
-        vicon::gem(p, Rect::from_min_size(origin, Vec2::splat(px * 9.0)), pal().ink, pal().ink2);
-        return;
-    }
     for (y, row) in MARK.iter().enumerate() {
         for (x, ch) in row.chars().enumerate() {
             let col = match ch {
@@ -526,9 +417,9 @@ pub(crate) fn logo_mark(p: &egui::Painter, origin: Pos2, px: f32) {
 pub(crate) fn logo(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 52.0), Sense::hover());
     let p = ui.painter();
-    inset(p, rect, pal().lcd);
+    inset(p, rect, pal().display);
     logo_mark(p, Pos2::new(rect.min.x + 12.0, rect.center().y - 13.5), 3.0);
-    let (tsz, ty, gy) = if style() == 0 { (3.0, -8.0, 13.0) } else { (2.6, -9.0, 14.0) };
+    let (tsz, ty, gy) = (3.0, -8.0, 13.0);
     ptext(p, Pos2::new(rect.min.x + 50.0, rect.center().y + ty), Align::Min, "BACKLINE", tsz, pal().ink);
     let tag =
         if PRACTICE { "A RETRO PLAYER FOR TIDAL AND MORE - MADE FOR PRACTICE" } else { "A RETRO PLAYER FOR TIDAL AND MORE" };
@@ -606,7 +497,7 @@ pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips:
     for (a, b, y) in &runs {
         if b > a {
             let strip = Rect::from_min_max(Pos2::new(*a, *y), Pos2::new(*b, *y + h));
-            rgrad(&p, strip, 3.0, pal().lcd.lerp_to_gamma(pal().beige, 0.4), pal().lcd.lerp_to_gamma(pal().beige, 0.15));
+            rgrad(&p, strip, 3.0, pal().display.lerp_to_gamma(pal().panel, 0.4), pal().display.lerp_to_gamma(pal().panel, 0.15));
         }
     }
     for (n, (i, r)) in cells.iter().enumerate() {
@@ -618,7 +509,7 @@ pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips:
         };
         let on = *i == cur;
         if on {
-            p.rect_filled(r.shrink(1.0), 2.0, pal().lcd);
+            p.rect_filled(r.shrink(1.0), 2.0, pal().display);
             // lit: an accent line along its foot
             p.rect_filled(
                 Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.max.y - 3.0), Pos2::new(r.max.x - 4.0, r.max.y - 1.0)),
@@ -648,7 +539,7 @@ pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips:
         } else if resp.hovered() {
             pal().ink
         } else {
-            crate::winamp::readable(pal().ink2, pal().lcd.lerp_to_gamma(pal().beige, 0.3), 4.5)
+            crate::winamp::readable(pal().ink2, pal().display.lerp_to_gamma(pal().panel, 0.3), 4.5)
         };
         winamp_ui::as_title(|| ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col));
         if resp.clicked() {
@@ -704,52 +595,25 @@ pub(crate) fn tab_row_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: 
                 _ => resp,
             };
             let p = ui.painter();
-            if style() != 0 {
-                let r = Rect::from_min_max(r.min + Vec2::new(0.0, if on { 0.0 } else { 1.0 }), Pos2::new(r.max.x, r.max.y - 2.0));
-                if style() == 1 {
-                    if on || resp.hovered() {
-                        raised_h(p, r, false, on);
-                    } else {
-                        rfill(p, r, 6.0, pal().beige_dk);
-                    }
-                } else if on {
-                    rfill(p, r, 7.0, pal().btn_face);
-                } else if resp.hovered() {
-                    rfill(p, r, 7.0, pal().beige_h);
-                }
-                let col = if on && style() == 2 {
-                    pal().bar_txt
-                } else if on {
-                    pal().ink
-                } else {
-                    pal().ink2
-                };
-                ptext_fit(p, r.center(), Align::Center, name, 2.0, w - 8.0, col);
-                if resp.clicked() {
-                    hit = Some(i);
-                }
-                x += w + 3.0;
-                continue;
-            }
             // in the skin's colours (a piece of its title bar would bring its stripes through the words)
             {
                 fill_rect(
                     p,
                     r,
                     if on {
-                        pal().beige_lt
+                        pal().panel_lt
                     } else if resp.hovered() {
-                        pal().beige_h
+                        pal().panel_hover
                     } else {
-                        pal().beige_dk
+                        pal().panel_dk
                     },
                 );
                 fill_rect(p, Rect::from_min_size(r.min, Vec2::new(r.width(), t)), pal().edge);
                 fill_rect(p, Rect::from_min_size(r.min, Vec2::new(t, r.height())), pal().edge);
                 fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::new(t, r.height())), pal().edge);
                 // chipped top corners
-                fill_rect(p, Rect::from_min_size(r.min, Vec2::splat(t)), pal().beige);
-                fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::splat(t)), pal().beige);
+                fill_rect(p, Rect::from_min_size(r.min, Vec2::splat(t)), pal().panel);
+                fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t, r.min.y), Vec2::splat(t)), pal().panel);
             }
             ui_text(
                 p,
@@ -774,7 +638,7 @@ pub(crate) fn check_box(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Respon
     let w = text_w(text, 2.0) + 30.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let b = Rect::from_center_size(Pos2::new(rect.min.x + 11.0, rect.center().y), Vec2::splat(16.0));
-    inset(ui.painter(), b, pal().lcd);
+    inset(ui.painter(), b, pal().display);
     if on {
         pixmap(ui.painter(), Pos2::new(b.min.x + 3.0, b.min.y + 4.0), 2.0, &CHECK[..], pal().ink);
     }
@@ -796,7 +660,7 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
     if winamp_ui::chrome_on() && active {
         let rad = (rect.height() / 2.0).min(14.0);
         ui.painter().rect_filled(rect, rad, pal().ink);
-        winamp_ui::as_title(|| ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().lcd));
+        winamp_ui::as_title(|| ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().display));
         return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     }
     raised_h(ui.painter(), rect, down, resp.hovered());
@@ -851,7 +715,7 @@ pub(crate) fn section_header(ui: &mut egui::Ui, text: &str) {
             text,
             2.0,
             rect.width() - 16.0,
-            pal().trim,
+            pal().accent,
         );
     })
 }
@@ -971,13 +835,6 @@ pub(crate) fn dropdown_at(
     dropdown_list(ui, id, title, items, sel, min_w, fixed, &[], &[], None)
 }
 
-/// A button that always reads `face` and opens a list in headed groups (`heads` as in `dropdown_grouped`); the item
-/// at `sel` is lit, and the list opens on it. An item starting with two spaces sits indented under the one before.
-/// Returns the index chosen this frame.
-pub(crate) fn menu_list(ui: &mut egui::Ui, id: &str, face: &str, items: &[&str], sel: usize, heads: &[(usize, &str)]) -> Option<usize> {
-    dropdown_list(ui, id, "", items, sel, 0.0, false, heads, &[], Some(face))
-}
-
 /// `menu_list` at a set width `w`: a face too long for it is cut short with ...
 pub(crate) fn menu_list_w(
     ui: &mut egui::Ui,
@@ -1080,7 +937,7 @@ fn dropdown_list(
         let iw =
             items.iter().map(|it| text_w(it, 2.0) + 28.0 + indent).fold(w - 4.0, f32::max) + if full > room { 12.0 } else { 0.0 };
         let area = egui::Area::new(key.with("area")).order(egui::Order::Foreground).fixed_pos(at).show(ui.ctx(), |ui| {
-            egui::Frame::none().fill(pal().beige_lt).stroke(egui::Stroke::new(2.0_f32, pal().edge)).show(ui, |ui| {
+            egui::Frame::none().fill(pal().panel_lt).stroke(egui::Stroke::new(2.0_f32, pal().edge)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 egui::ScrollArea::vertical().max_height(h - 4.0).auto_shrink([true, true]).show(ui, |ui| {
                     for (i, it) in items.iter().enumerate() {
@@ -1144,7 +1001,7 @@ impl Tip for egui::Response {
         let y = if m.y + 24.0 + h > screen.max.y { m.y - h - 8.0 } else { m.y + 20.0 };
         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
         let p = self.ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tip")));
-        fill_rect(&p, r, pal().lcd);
+        fill_rect(&p, r, pal().display);
         outline(&p, r, 1.0, pal().ink);
         for (i, l) in lines.iter().enumerate() {
             ptext(
@@ -1173,7 +1030,7 @@ pub(crate) fn lcd_box(ui: &mut egui::Ui, text: &str, w: f32, col: Color32) {
     // never narrower than its text (a wide font or a bigger number would be cut off)
     let w = (w * font::ui_scale()).max(text_w(text, 2.0) + 16.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-    inset(ui.painter(), rect, pal().lcd);
+    inset(ui.painter(), rect, pal().display);
     ptext_fit(ui.painter(), rect.center(), Align::Center, text, 2.0, w - 12.0, col);
 }
 
@@ -1248,7 +1105,7 @@ fn note_box(ui: &mut egui::Ui, text: &str, col: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
     let rect = Rect::from_min_max(Pos2::new(rect.min.x + 4.0, rect.min.y), rect.max);
     let p = ui.painter();
-    p.rect_filled(rect, 4.0, pal().lcd.lerp_to_gamma(pal().beige, 0.3));
+    p.rect_filled(rect, 4.0, pal().display.lerp_to_gamma(pal().panel, 0.3));
     p.rect_filled(
         Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())),
         egui::Rounding { nw: 2.0, sw: 2.0, ne: 0.0, se: 0.0 },
@@ -1286,24 +1143,6 @@ pub(crate) fn wrapped(ui: &mut egui::Ui, text: &str, col: Color32) {
         }
     }
     ui.add_space(6.0);
-}
-
-/// Break a long unbroken string (a file path) into lines that fit.
-pub(crate) fn chunk(text: &str, px: f32, w: f32) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in text.chars() {
-        let mut t = cur.clone();
-        t.push(ch);
-        if text_w(&t, px) > w && !cur.is_empty() {
-            out.push(std::mem::take(&mut cur));
-        }
-        cur.push(ch);
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
 }
 
 /// Single heading line, shortened with "..." if it doesn't fit.
@@ -1417,21 +1256,21 @@ pub(crate) fn dim_line(ui: &mut egui::Ui, text: &str, px: f32, col: egui::Color3
 pub(crate) fn setup_style(ctx: &egui::Context) {
     let mut v = egui::Visuals::light();
     v.panel_fill = pal().app_bg;
-    v.window_fill = pal().beige;
+    v.window_fill = pal().panel;
     v.window_stroke = Stroke::new(1.0_f32, pal().edge);
-    let rad = if style() != 0 { 7.0 } else { 0.0 };
+    let rad = 0.0;
     v.window_rounding = Rounding::same(rad);
     v.menu_rounding = Rounding::same(rad);
-    v.extreme_bg_color = pal().lcd;
-    v.faint_bg_color = pal().beige_dk;
+    v.extreme_bg_color = pal().display;
+    v.faint_bg_color = pal().panel_dk;
     v.hyperlink_color = pal().ink;
     v.selection.bg_fill = pal().sel;
     v.selection.stroke = Stroke::new(1.0_f32, pal().edge);
     v.widgets.noninteractive.bg_stroke = Stroke::NONE;
-    v.widgets.noninteractive.bg_fill = pal().beige;
-    v.widgets.noninteractive.weak_bg_fill = pal().beige;
-    v.widgets.inactive.bg_fill = pal().beige_dk;
-    v.widgets.inactive.weak_bg_fill = pal().beige_dk;
+    v.widgets.noninteractive.bg_fill = pal().panel;
+    v.widgets.noninteractive.weak_bg_fill = pal().panel;
+    v.widgets.inactive.bg_fill = pal().panel_dk;
+    v.widgets.inactive.weak_bg_fill = pal().panel_dk;
     v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, pal().edge);
     v.widgets.hovered.bg_fill = pal().groove;
     v.widgets.hovered.weak_bg_fill = pal().groove;

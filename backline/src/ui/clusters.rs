@@ -54,7 +54,7 @@ pub(crate) fn chord_staff(
     tint: &dyn Fn(i32) -> Option<Color32>,
     sharps: bool,
 ) {
-    let paper = pal().beige_lt;
+    let paper = pal().panel_lt;
     p.rect_filled(rect, 3.0, paper);
     let g = 6.0_f32;
     let line = Stroke::new(1.0_f32, pal().ink2);

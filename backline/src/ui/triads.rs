@@ -75,7 +75,7 @@ fn steps_score(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usiz
     for (row, chunk) in steps.chunks(per).enumerate() {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 196.0), Sense::click());
         let p = ui.painter();
-        p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().beige_lt);
+        p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().panel_lt);
         let top = rect.min.y + 52.0;
         let bottom = top + 4.0 * g;
         let line = Stroke::new(1.0_f32, pal().ink2);
@@ -125,7 +125,7 @@ fn steps_score(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usiz
                 p.rect_filled(
                     Rect::from_center_size(Pos2::new(x, tab_y(s)), Vec2::new(text_w(&txt, 1.0) + 6.0, tg)),
                     0.0,
-                    pal().beige_lt,
+                    pal().panel_lt,
                 );
                 ptext(p, Pos2::new(x, tab_y(s)), Align::Center, &txt, 1.0, if changed { CL_TONE } else { pal().ink });
                 // the hammer-on or slide into it, on the strings that change
@@ -420,7 +420,7 @@ fn steps_boxes(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usiz
             let (r, resp) = ui.allocate_exact_size(Vec2::new(cw, 176.0), Sense::click());
             let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Click to hear it");
             let p = ui.painter();
-            p.rect_filled(r, 3.0, pal().beige_lt);
+            p.rect_filled(r, 3.0, pal().panel_lt);
             if lit == Some(i) {
                 p.rect_stroke(r, 3.0, egui::Stroke::new(2.0_f32, pal().red));
             }

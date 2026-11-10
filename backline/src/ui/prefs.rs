@@ -246,9 +246,9 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 let frame = egui::Frame::none()
-                    .fill(pal().beige)
+                    .fill(pal().panel)
                     .stroke(egui::Stroke::new(2.0_f32, pal().edge))
-                    .rounding(if crate::style() != 0 { 8.0 } else { 0.0 })
+                    .rounding(0.0)
                     .inner_margin(12.0);
                 frame.show(ui, |ui| {
                     ui.set_width(size.x - 24.0);

@@ -7,10 +7,10 @@ use crate::*;
 pub(crate) fn text_box(ui: &mut egui::Ui, text: &mut String, w: f32, hint: &str) -> egui::Response {
     // a rounded, flat field in the panel's lighter shade
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, 38.0), Sense::hover());
-    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 10.0, pal().beige_lt);
+    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 10.0, pal().panel_lt);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(Vec2::new(12.0, 8.0))));
     child.visuals_mut().override_text_color = Some(pal().ink);
-    child.visuals_mut().extreme_bg_color = pal().beige_lt;
+    child.visuals_mut().extreme_bg_color = pal().panel_lt;
     child.add(
         egui::TextEdit::singleline(text)
             .frame(false)
@@ -69,7 +69,7 @@ impl App {
     fn waveform(&mut self, ui: &mut egui::Ui, t: &Track) {
         let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 84.0), Sense::click_and_drag());
         let p = ui.painter().clone();
-        inset(&p, bar, pal().lcd);
+        inset(&p, bar, pal().display);
         let inn = bar.shrink2(Vec2::new(5.0, 5.0));
         let dur = t.duration.max(0.001);
         let pos = self.pos();
@@ -262,13 +262,13 @@ impl App {
             let r = Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(box_w, 124.0));
             let v = if which == 0 { self.loop_a } else { self.loop_b };
             let p = ui.painter().clone();
-            p.rect_filled(r, 10.0, pal().beige_lt);
+            p.rect_filled(r, 10.0, pal().panel_lt);
             ptext(&p, Pos2::new(r.center().x, r.min.y + 14.0), Align::Center, if which == 0 { "Start (A)" } else { "End (B)" }, 1.1, pal().ink2);
             ptext(&p, Pos2::new(r.center().x, r.min.y + 38.0), Align::Center, &v.map(fmt_t).unwrap_or_else(|| "-:--".to_string()), 2.0, pal().ink);
             // SET A / SET B: here, where the song is
             let setr = Rect::from_center_size(Pos2::new(r.center().x, r.min.y + 66.0), Vec2::new((box_w - 20.0).min(110.0), 28.0));
             p.rect_filled(setr, 14.0, pal().ink);
-            ptext(&p, setr.center(), Align::Center, if which == 0 { "Set A" } else { "Set B" }, 1.3, pal().beige);
+            ptext(&p, setr.center(), Align::Center, if which == 0 { "Set A" } else { "Set B" }, 1.3, pal().panel);
             // the top two thirds sets it where the song is; - and + along the foot nudge it a tenth
             let set = ui.interact(setr, ui.id().with(("ab_set", which)), Sense::click());
             if set.clicked() {
@@ -290,7 +290,7 @@ impl App {
                 let c = Pos2::new(r.center().x + k as f32 * 22.0, r.min.y + 102.0);
                 let nr = Rect::from_center_size(c, Vec2::new(36.0, 26.0));
                 let resp = ui.interact(nr, ui.id().with(("ab_nudge", which, k)), Sense::click());
-                p.rect_filled(nr, 13.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
+                p.rect_filled(nr, 13.0, if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel });
                 ptext(&p, c, Align::Center, d, 1.6, pal().ink);
                 if resp.clicked() {
                     let nv = (v.unwrap_or(pos) + k as f32 * 0.1).clamp(0.0, dur.max(0.1));
@@ -310,7 +310,7 @@ impl App {
         let on = self.loop_on && both;
         let resp = ui.interact(lr, ui.id().with("loop_tog"), Sense::click());
         let p = ui.painter();
-        p.rect_filled(lr, 10.0, if on { pal().row_sel } else { pal().beige });
+        p.rect_filled(lr, 10.0, if on { pal().row_sel } else { pal().panel });
         let col = if on { pal().bar_txt } else { pal().ink };
         loop_glyph(p, Pos2::new(lr.center().x, lr.min.y + 50.0), col);
         ptext(p, Pos2::new(lr.center().x, lr.min.y + 84.0), Align::Center, if on { "Loop on" } else { "Loop off" }, 1.1, col);
@@ -354,9 +354,9 @@ impl App {
             let resp = ui.interact(c, ui.id().with(("spd", k)), Sense::click());
             let val = [0u32, 50, 60, 75, 90, 100, 0][k];
             let on = val == self.speed;
-            ui.painter().rect_filled(c, 16.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+            ui.painter().rect_filled(c, 16.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
             let lab = if k == 0 || k == 6 { n.to_string() } else { n.to_string() };
-            ptext_fit(ui.painter(), c.center(), Align::Center, &lab, 1.2, cw - 8.0, if on { pal().beige } else { pal().ink });
+            ptext_fit(ui.painter(), c.center(), Align::Center, &lab, 1.2, cw - 8.0, if on { pal().panel } else { pal().ink });
             if resp.clicked() {
                 self.speed = match k {
                     0 => self.speed.saturating_sub(5).max(25),
@@ -760,7 +760,7 @@ impl App {
 /// A settings row: what it is at the left, its value (and that it can be tapped) at the right. True when tapped.
 pub(crate) fn srow(ui: &mut egui::Ui, left: &str, right: &str) -> bool {
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), Sense::click());
-    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+    ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
     let rw = text_w(right, 1.2) + 26.0;
     ptext_fit(ui.painter(), Pos2::new(r.min.x + 12.0, r.center().y), Align::Min, left, 1.3, r.width() - rw - 16.0, pal().ink);
     ptext(ui.painter(), Pos2::new(r.max.x - 22.0, r.center().y), Align::Max, right, 1.2, pal().ink2);

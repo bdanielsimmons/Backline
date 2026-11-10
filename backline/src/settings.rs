@@ -183,27 +183,37 @@ impl App {
             app.pl_font = (f as usize).min(winamp_ui::PL_FONTS.len() - 1);
         }
         app.eq_auto = st["eq_auto"].as_bool().unwrap_or(false);
-        // the skin worn last time (SLEEK unless PLAIN was picked), put on before the first frame so the window
-        // opens already wearing it, with no glimpse of the plain look
-        let gen = match st["winamp"][0].as_str() {
-            Some(m) => m.strip_prefix("gen:").and_then(|g| g.parse::<usize>().ok()),
-            None => Some(2),
+        // your Custom look's colours
+        let rgb = |v: &serde_json::Value| {
+            let a = v.as_array()?;
+            Some(Color32::from_rgb(a.first()?.as_u64()? as u8, a.get(1)?.as_u64()? as u8, a.get(2)?.as_u64()? as u8))
         };
-        if let Some(g) = gen.filter(|g| *g > 0) {
-            let n = SKIN.load(Ordering::Relaxed) % PALS.len();
-            let look = (g - 1).min(genskin::LOOKS.len() - 1);
-            let s = app.gen_skin(n, look);
-            app.wear_skin(genskin::wear(&PALS[n], look).map(|(p, art)| (s, p, art)), false);
-        } else if let (Some(md5), Some(name)) = (st["winamp"][0].as_str(), st["winamp"][1].as_str()) {
-            let s = winamp::WaSkin { md5: md5.to_string(), name: name.to_string(), shot: String::new(), download: String::new() };
-            match winamp::load_saved(&s.md5) {
-                Some(b) => app.wear_skin(winamp::load(&b).map(|(p, art)| (s, p, art)), false),
-                // that skin is gone from the disk: the ORIGINAL look instead
-                None => {
-                    let n = SKIN.load(Ordering::Relaxed) % PALS.len();
-                    let s = app.gen_skin(n, 1);
-                    app.wear_skin(genskin::wear(&PALS[n], 1).map(|(p, art)| (s, p, art)), false);
+        if let (Some(b), Some(a)) = (rgb(&st["custom_look"][0]), rgb(&st["custom_look"][1])) {
+            app.custom_cols = (b, a);
+        }
+        app.look_custom = st["look_custom"].as_bool().unwrap_or(false);
+        // the skin worn last time, put on before the first frame so the window opens already wearing it: one of
+        // Backline's looks, your Custom one, or a Winamp skin (from its saved file; gone, Backline's look instead)
+        let worn = (st["winamp"][0].as_str(), st["winamp"][1].as_str());
+        let n = SKIN.load(Ordering::Relaxed) % LOOKS.len();
+        match worn {
+            (Some(looks::CUSTOM_MD5), _) => {
+                let s = winamp::WaSkin { md5: looks::CUSTOM_MD5.into(), name: "CUSTOM".into(), shot: String::new(), download: String::new() };
+                app.wear_skin(genskin::wear(&app.custom_pal()).map(|(p, art)| (s, p, art)), false);
+            }
+            (Some(md5), Some(name)) if !md5.starts_with("gen:") => {
+                let s = winamp::WaSkin { md5: md5.to_string(), name: name.to_string(), shot: String::new(), download: String::new() };
+                match winamp::load_saved(&s.md5) {
+                    Some(b) => app.wear_skin(winamp::load(&b).map(|(p, art)| (s, p, art)), false),
+                    None => {
+                        let s = app.gen_skin(n);
+                        app.wear_skin(genskin::wear(&PALS[n]).map(|(p, art)| (s, p, art)), false);
+                    }
                 }
+            }
+            _ => {
+                let s = app.gen_skin(n);
+                app.wear_skin(genskin::wear(&PALS[n]).map(|(p, art)| (s, p, art)), false);
             }
         }
         if let Some(list) = st["eq_mine"].as_array() {
@@ -315,8 +325,9 @@ impl App {
             app.prac_h = if h <= 0.0 { 0.0 } else { (h as f32).clamp(120.0, 900.0) };
         }
         if let Some(c) = st["cols"].as_u64() {
-            // settings from before the KEY / BPM column: show it once, it can be turned off from the header
-            let new = if st["cols_v"].as_u64().unwrap_or(1) < 2 { 0b1000 } else { 0 };
+            // settings from before the KEY / BPM and SOURCE columns: shown once, they can be turned off from the header
+            let v = st["cols_v"].as_u64().unwrap_or(1);
+            let new = if v < 2 { 0b1000 } else { 0 } | if v < 3 { 0b10000 } else { 0 };
             COLS.store(c as u32 | new, Ordering::Relaxed);
         }
         if let Some(v) = st["vinyl"].as_bool() {
@@ -368,7 +379,12 @@ impl App {
 
     pub(crate) fn save_settings(&mut self) {
         let v = serde_json::json!({
-            "skin": SKIN.load(Ordering::Relaxed),
+            "look": SKIN.load(Ordering::Relaxed),
+            "look_custom": self.look_custom,
+            "custom_look": [
+                [self.custom_cols.0.r(), self.custom_cols.0.g(), self.custom_cols.0.b()],
+                [self.custom_cols.1.r(), self.custom_cols.1.g(), self.custom_cols.1.b()]
+            ],
             "volume": self.volume,
             "spec": self.show_spec,
             "vis_preset": visuals::save_name(self.vis_preset),
@@ -461,7 +477,7 @@ impl App {
             "pomo_left": self.pomo_left,
             "pomo_was": self.pomo_was,
             "cols": COLS.load(Ordering::Relaxed),
-            "cols_v": 2,
+            "cols_v": 3,
             "vinyl": VINYL.load(Ordering::Relaxed),
             "row_art": ROW_ARTS.load(Ordering::Relaxed),
             "my_a": self.my_a,

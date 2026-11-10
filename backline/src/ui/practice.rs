@@ -233,7 +233,7 @@ impl App {
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
-        inset(ui.painter(), bar, pal().lcd);
+        inset(ui.painter(), bar, pal().display);
         let mut inn = bar.shrink2(Vec2::new(5.0, 5.0));
         // (the note view's keyboard down the left)
         let keys = Rect::from_min_max(inn.min, Pos2::new(inn.min.x + 18.0, inn.max.y));
@@ -1213,11 +1213,11 @@ impl App {
                 dim_centered(ui, "STARTS AT THE SPEED SET ABOVE AND STOPS AT 100%");
                 ui.add_space(8.0);
                 centered_row(ui, "trainer_4", |ui| {
-                    if retro_btn_w(ui, "FOCUS", 76.0, self.focus_mode)
-                        .tip("Hides the lists, leaving just the player and these tools.")
+                    if retro_btn_w(ui, if self.lib_hidden { "SHOW LIBRARY" } else { "HIDE LIBRARY" }, 130.0, self.lib_hidden)
+                        .tip("Hides the library, leaving just the player and these tools.")
                         .clicked()
                     {
-                        acts.push(Action::ToggleFocus);
+                        acts.push(Action::ToggleLibrary);
                     }
                 });
             }

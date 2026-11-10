@@ -77,23 +77,6 @@ pub(crate) fn resample(src: &[f32], n: usize, k: f32) -> Vec<f32> {
         .collect()
 }
 
-/// Moving average with a window of `2 * half + 1`, repeated `passes` times (ends are clamped, not wrapped).
-pub(crate) fn smooth(src: &[f32], passes: usize, half: usize) -> Vec<f32> {
-    let n = src.len();
-    let mut cur = src.to_vec();
-    if n < 3 {
-        return cur;
-    }
-    for _ in 0..passes {
-        let prev = cur.clone();
-        for i in 0..n {
-            let (a, b) = (i.saturating_sub(half), (i + half).min(n - 1));
-            cur[i] = prev[a..=b].iter().sum::<f32>() / (b - a + 1) as f32;
-        }
-    }
-    cur
-}
-
 thread_local! {
     /// fade the drawing out toward its left and right ends (the album view's SOFT EDGES frame)
     static EDGE_FADE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -117,18 +100,6 @@ pub(crate) fn viz_draw(
     alpha: f32,
     tint: Option<(Color32, Color32)>,
 ) {
-    let modern = style() != 0;
-    // album view in a modern skin: ease neighbouring bars and wave samples into each other so it looks fluid, not blocky
-    let soft = art && modern;
-    let (bands_s, peaks_s, wave_s);
-    let (bands, peaks, wave) = if soft {
-        bands_s = smooth(bands, 1, 1);
-        peaks_s = smooth(peaks, 1, 1);
-        wave_s = smooth(wave, 2, 3);
-        (&bands_s[..], &peaks_s[..], &wave_s[..])
-    } else {
-        (bands, peaks, wave)
-    };
     let nb = bands.len().max(1);
     let a1 = (alpha * 255.0) as u8;
     let a2 = ((alpha * 2.0).min(0.9) * 255.0) as u8;
@@ -147,18 +118,16 @@ pub(crate) fn viz_draw(
             sat * 0.6 + v
         };
         let lum = |c: &Color32| rgb_to_hsv(*c).2;
-        let body_c = [pl.ink, pl.ink2, pl.trim, pl.btn_hi, pl.btn_face, pl.red, pl.lcd]
+        let body_c = [pl.ink, pl.ink2, pl.accent, pl.btn_hi, pl.btn_face, pl.red, pl.display]
             .into_iter()
             .max_by(|x, y| score(x).total_cmp(&score(y)))
             .unwrap_or(pl.ink);
-        let cap_c = [pl.beige_lt, pl.beige_h, pl.trim, pl.ink2, pl.btn_hi]
+        let cap_c = [pl.panel_lt, pl.panel_hover, pl.accent, pl.ink2, pl.btn_hi]
             .into_iter()
             .max_by(|x, y| lum(x).total_cmp(&lum(y)))
-            .unwrap_or(pl.beige_lt);
+            .unwrap_or(pl.panel_lt);
         let f = |c: Color32, a: u8| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a);
         (f(body_c, a1), f(cap_c, a2), f(body_c, a2.max(130)))
-    } else if modern {
-        (pal().btn_hi, pal().ink2, pal().btn_face)
     } else {
         (pal().ink, pal().ink2, pal().ink)
     };
@@ -174,142 +143,65 @@ pub(crate) fn viz_draw(
     if mode == 0 || mode == 2 {
         let slot = r.width() / nb as f32;
         let bw = (slot * wfrac).max(1.5);
-        let q = if modern {
-            0.0
-        } else if art {
-            6.0
-        } else {
-            2.0
-        };
-        let mut soft_mesh = egui::Mesh::default();
+        // (in steps, as a pixel display shows them: bigger ones in Now Playing)
+        let q = if art { 6.0 } else { 2.0 };
         for i in 0..nb.min(peaks.len()) {
             let x = r.min.x + i as f32 * slot + (slot - bw) / 2.0;
             let f = edge(x + bw / 2.0);
             let (body, cap) = (body.gamma_multiply(f), cap.gamma_multiply(f));
             let mut h = bands[i] * r.height();
             let mut ph = peaks[i] * r.height();
-            if q > 0.0 {
-                h = (h / q).floor() * q;
-                ph = (ph / q).floor() * q;
-            }
-            let rad = if modern { (bw * 0.35).min(3.0) } else { 0.0 };
+            h = (h / q).floor() * q;
+            ph = (ph / q).floor() * q;
             if h > 0.5 {
-                let br = Rect::from_min_size(Pos2::new(x, r.max.y - h), Vec2::new(bw, h));
-                if soft {
-                    // a gentle gradient: solid at the base, fading toward the tip
-                    let uv = egui::epaint::WHITE_UV;
-                    let (tc, bc) = (body.linear_multiply(0.22), body);
-                    let b = soft_mesh.vertices.len() as u32;
-                    for (pos, color) in
-                        [(br.left_top(), tc), (br.right_top(), tc), (br.right_bottom(), bc), (br.left_bottom(), bc)]
-                    {
-                        soft_mesh.vertices.push(egui::epaint::Vertex { pos, uv, color });
-                    }
-                    soft_mesh.indices.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
-                } else if modern {
-                    rfill(p, br, rad, body);
-                } else {
-                    fill_rect(p, br, body);
-                }
+                fill_rect(p, Rect::from_min_size(Pos2::new(x, r.max.y - h), Vec2::new(bw, h)), body);
             }
             if ph > 1.0 {
-                let pr = Rect::from_min_size(
-                    Pos2::new(x, r.max.y - ph - 2.0),
-                    Vec2::new(bw, if modern { 2.0 } else { 1.0_f32.max(q / 2.0) }),
-                );
-                if soft {
-                    rfill(p, pr, 1.0, cap.linear_multiply(0.55));
-                } else if modern {
-                    rfill(p, pr, 1.0, cap);
-                } else {
-                    fill_rect(p, pr, cap);
-                }
+                let pr = Rect::from_min_size(Pos2::new(x, r.max.y - ph - 2.0), Vec2::new(bw, 1.0_f32.max(q / 2.0)));
+                fill_rect(p, pr, cap);
             }
-        }
-        if !soft_mesh.vertices.is_empty() {
-            p.add(egui::Shape::mesh(soft_mesh));
         }
     }
     if mode >= 1 && wave.len() > 1 {
         let cy = r.center().y;
         let amp = r.height() * if mode == 1 { 0.46 } else { 0.32 };
         let n = wave.len();
-        if modern {
-            let pts: Vec<Pos2> =
-                (0..n).map(|k| Pos2::new(r.min.x + r.width() * k as f32 / (n - 1) as f32, cy - wave[k] * amp)).collect();
-            let w: f32 = if art { 3.0 } else { 1.5 };
-            // the area under the wave is lit too, fading toward the bottom like the bars do
-            let mut mesh = egui::Mesh::default();
-            let uv = egui::epaint::WHITE_UV;
-            let (ft, fb) = (body.linear_multiply(0.5), body.linear_multiply(0.08));
-            for pt in &pts {
-                let f = edge(pt.x);
-                mesh.vertices.push(egui::epaint::Vertex { pos: *pt, uv, color: ft.gamma_multiply(f) });
-                mesh.vertices.push(egui::epaint::Vertex { pos: Pos2::new(pt.x, r.max.y), uv, color: fb.gamma_multiply(f) });
-            }
-            for k in 0..(pts.len() as u32 - 1) {
-                let b = k * 2;
-                mesh.indices.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
-            }
-            p.add(egui::Shape::mesh(mesh));
-            if fading {
-                // piece by piece, so the line fades out at the ends with everything else
-                for seg in pts.windows(2) {
-                    let f = edge((seg[0].x + seg[1].x) / 2.0);
-                    p.line_segment(
-                        [seg[0], seg[1]],
-                        Stroke::new(w * 3.0, Color32::from_rgba_unmultiplied(line.r(), line.g(), line.b(), 36).gamma_multiply(f)),
-                    );
-                    p.line_segment([seg[0], seg[1]], Stroke::new(w, line.gamma_multiply(f)));
-                }
-            } else {
-                if style() == 1 || art {
-                    // soft glow under the line
-                    p.add(egui::Shape::line(
-                        pts.clone(),
-                        Stroke::new(w * 3.0, Color32::from_rgba_unmultiplied(line.r(), line.g(), line.b(), 36)),
-                    ));
-                }
-                p.add(egui::Shape::line(pts, Stroke::new(w, line)));
-            }
-        } else {
-            // pixel scope: 2-dot columns, joined vertically
-            let step = if art { 6.0 } else { 2.0 };
-            let cols = (r.width() / step).floor().max(2.0) as usize;
-            let mut prev: Option<f32> = None;
-            for c in 0..cols {
-                let f = c as f32 / (cols - 1) as f32 * (n - 1) as f32;
-                let (i0, fr) = (f.floor() as usize, f.fract());
-                let v = wave[i0] * (1.0 - fr) + wave[(i0 + 1).min(n - 1)] * fr;
-                let y = ((cy - v * amp) / 2.0).floor() * 2.0;
-                let (lo, hi) = match prev {
-                    Some(pv) => (pv.min(y), pv.max(y)),
-                    None => (y, y),
-                };
-                let f = edge(r.min.x + c as f32 * step);
-                let col = Color32::from_rgba_unmultiplied(line.r(), line.g(), line.b(), line.a()).gamma_multiply(f);
-                let body = body.gamma_multiply(f);
-                let top = y + step.min(3.0);
-                if r.max.y > top {
-                    fill_rect(
-                        p,
-                        Rect::from_min_max(
-                            Pos2::new(r.min.x + c as f32 * step, top),
-                            Pos2::new(r.min.x + c as f32 * step + step.min(4.0), r.max.y),
-                        ),
-                        body.linear_multiply(0.4),
-                    );
-                }
+        // pixel scope: 2-dot columns, joined vertically
+        let step = if art { 6.0 } else { 2.0 };
+        let cols = (r.width() / step).floor().max(2.0) as usize;
+        let mut prev: Option<f32> = None;
+        for c in 0..cols {
+            let f = c as f32 / (cols - 1) as f32 * (n - 1) as f32;
+            let (i0, fr) = (f.floor() as usize, f.fract());
+            let v = wave[i0] * (1.0 - fr) + wave[(i0 + 1).min(n - 1)] * fr;
+            let y = ((cy - v * amp) / 2.0).floor() * 2.0;
+            let (lo, hi) = match prev {
+                Some(pv) => (pv.min(y), pv.max(y)),
+                None => (y, y),
+            };
+            let f = edge(r.min.x + c as f32 * step);
+            let col = Color32::from_rgba_unmultiplied(line.r(), line.g(), line.b(), line.a()).gamma_multiply(f);
+            let body = body.gamma_multiply(f);
+            let top = y + step.min(3.0);
+            if r.max.y > top {
                 fill_rect(
                     p,
-                    Rect::from_min_size(
-                        Pos2::new(r.min.x + c as f32 * step, lo),
-                        Vec2::new(step.min(4.0), hi - lo + step.min(3.0)),
+                    Rect::from_min_max(
+                        Pos2::new(r.min.x + c as f32 * step, top),
+                        Pos2::new(r.min.x + c as f32 * step + step.min(4.0), r.max.y),
                     ),
-                    col,
+                    body.linear_multiply(0.4),
                 );
-                prev = Some(y);
             }
+            fill_rect(
+                p,
+                Rect::from_min_size(
+                    Pos2::new(r.min.x + c as f32 * step, lo),
+                    Vec2::new(step.min(4.0), hi - lo + step.min(3.0)),
+                ),
+                col,
+            );
+            prev = Some(y);
         }
     }
 }

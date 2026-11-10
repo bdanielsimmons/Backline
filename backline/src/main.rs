@@ -65,6 +65,8 @@ mod update;
 #[path = "data/winamp.rs"]
 mod winamp;
 
+#[path = "ui/frame_win.rs"]
+mod frame_win;
 #[path = "ui/fretboard.rs"]
 mod fretboard;
 #[path = "ui/widgets.rs"]
@@ -120,6 +122,8 @@ mod layout;
 mod library_win;
 #[path = "ui/lines.rs"]
 mod lines_ui;
+#[path = "ui/looks.rs"]
+mod looks;
 #[cfg(target_os = "macos")]
 #[path = "ui/macmenu.rs"]
 mod macmenu;
@@ -191,6 +195,7 @@ use icons::*;
 use app_look::*;
 use chrome::*;
 use images::*;
+use looks::{backline_look, custom_worn};
 use settings::*;
 use test_hooks::*;
 use search::*;
@@ -205,7 +210,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use viz::viz_draw;
-use winamp_ui::{gen_look, skin_menu};
+use winamp_ui::skin_menu;
 
 const EQ_PRESETS: [(&str, [f32; 10]); 4] = [
     ("FLAT", [0.0; 10]),
@@ -477,11 +482,10 @@ enum Action {
     WaSearch,
     WaMore,
     WaApply(winamp::WaSkin),
-    /// wear the palette as a Winamp skin drawn by Backline: 0 off, then one per look (genskin::LOOKS)
-    WaGen(usize),
-    /// a Backline palette in a look: 2 the sleek Winamp style (ORIGINAL); the plain pixel panels are gone, so 0 wears it
-    /// as ORIGINAL too
-    Theme(usize, usize),
+    /// wear Backline's look n (skin::LOOKS), drawn as a skin
+    Look(usize),
+    /// your Custom look: its editor (two colours), worn as you pick
+    EditLook,
     /// the opening sound: 0 off, 1 Backline's chime, 2 your file; 3 pick a file; 4 play it now
     Intro(u8),
     /// take a skin off the list of ones worn lately
@@ -528,8 +532,8 @@ enum Action {
     QueueNext(usize),
     QueueLater(usize),
     MoveQueue(usize, usize),
+    /// the next of Backline's looks
     Skin,
-    SkinSet(usize),
     Sleep,
     ToggleMini,
     TogglePin,
@@ -670,7 +674,7 @@ enum Action {
     SaveSection,
     GoSection(usize),
     DeleteSection(usize),
-    ToggleFocus,
+    ToggleLibrary,
     RemoveVersion(usize, usize),
     Pomo,
     /// hold the focus timer, or carry on with it
@@ -1202,7 +1206,10 @@ struct App {
     wave: (i64, Option<Vec<u8>>),
     /// The playing song's fine outline (a low and high per millisecond), held only while it plays.
     wave_fine: (i64, Option<Vec<[i8; 2]>>),
-    focus_mode: bool,
+    /// the library hidden: just the player's column (with a skin, the window narrowed to it)
+    lib_hidden: bool,
+    /// the window's width (and whether it filled the screen) before the library was hidden, to come back to
+    lib_shown_w: Option<(f32, bool)>,
     more: bool,
     /// stems: 0 idle, 1 downloading the tool, 2 splitting a track
     stem_busy: u8,
@@ -1744,6 +1751,11 @@ struct App {
     wa_guide: bool,
     /// thin outlines round a skin's real buttons while the pointer is over the player (off: the skin as drawn)
     wa_outline: bool,
+    /// your Custom look's two colours (background, accent), and whether it's the look you wore last
+    custom_cols: (Color32, Color32),
+    look_custom: bool,
+    /// the Custom look's editor, while open
+    look_edit: Option<looks::LookEdit>,
     /// whether the system's title bar is on (None: not set yet this window state; see `app_bar`)
     deco_now: Option<bool>,
     /// the queue hidden (the PL button), the player taking the whole column
@@ -1820,9 +1832,13 @@ pub(crate) fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: O
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> App {
         let st = load_settings();
-        if let Some(v) = st["skin"].as_u64() {
-            SKIN.store((v as usize) % PALS.len(), Ordering::Relaxed);
-        }
+        // the look worn last (an older version's "skin" number: where that palette went)
+        let look = match (st["look"].as_u64(), st["skin"].as_u64()) {
+            (Some(n), _) => n as usize % LOOKS.len(),
+            (None, Some(old)) => look_from_old(old as usize),
+            _ => FIRST_LOOK,
+        };
+        SKIN.store(look, Ordering::Relaxed);
         font::set_ppp(cc.egui_ctx.pixels_per_point());
         let font_tex = font::init(&cc.egui_ctx);
         // the installed-font list (Winamp skins name their font) is read in the background, never on screen
@@ -2113,7 +2129,8 @@ impl App {
             show_form: false,
             wave: (0, None),
             wave_fine: (0, None),
-            focus_mode: false,
+            lib_hidden: false,
+            lib_shown_w: None,
             more: false,
             stem_busy: 0,
             stem_on: [true; 4],
@@ -2491,6 +2508,9 @@ impl App {
             wa_map_until: 0.0,
             wa_guide: false,
             wa_outline: false,
+            custom_cols: (Color32::from_rgb(36, 45, 67), Color32::from_rgb(110, 170, 255)),
+            look_custom: false,
+            look_edit: None,
             deco_now: None,
             queue_hidden: false,
             wa_pl_top: 0.0,
@@ -2558,6 +2578,8 @@ impl App {
         });
         app.player.send(Cmd::Volume(app.volume * app.volume));
         app.apply_eq();
+        // the skin's bars as the window's title bar, to Windows
+        frame_win::install(cc);
         // Windows' media controls (not while recording a demo, which plays in the background); the hotkeys only
         // when they can't be had
         if tour::demo_kind().is_none() {
@@ -2757,6 +2779,7 @@ impl App {
             || self.news.is_some()
             || self.pack_in.is_some()
             || self.share_view.is_some()
+            || self.look_edit.is_some()
     }
 
     /// The name of the page these songs are the songs of (a radio, a mix, an album); empty when they're not.
@@ -3373,17 +3396,6 @@ impl App {
         };
         intro::play(file, self.intro_sound as usize, self.out_device.clone(), (self.volume * self.volume).max(0.15));
     }
-
-    /// The name card of palette `n` drawn in `look` (genskin).
-    fn gen_skin(&self, n: usize, look: usize) -> winamp::WaSkin {
-        winamp::WaSkin {
-            md5: format!("gen:{}", look + 1),
-            name: format!("{} {}", SKIN_NAMES[n], genskin::LOOKS[look]),
-            shot: String::new(),
-            download: String::new(),
-        }
-    }
-
 }
 
 /// Control-click is a right-click (a Mac's way, for a mouse or trackpad with one button): the press and its release
@@ -3489,7 +3501,7 @@ impl eframe::App for App {
         }
         font::set_ppp(ctx.pixels_per_point());
         // smooth text in the sleek looks, and wherever a skin's frames are on (in the skin's own font)
-        font::set_modern(style() != 0 || winamp_ui::chrome_on());
+        font::set_modern(winamp_ui::chrome_on());
         // the mini window's size once more, after the title bar has come off
         if let Some((at, size)) = self.mini_size_at {
             if at.elapsed() > Duration::from_millis(300) {
@@ -3768,6 +3780,7 @@ impl eframe::App for App {
         self.artist_picker(ctx, &mut acts);
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
+        self.look_panel(ctx);
         // away from the Settings page, its skin lists fold shut again: next time they show as one line each
         if self.side != Some(Side::Backline) {
             self.skins_open = [false; 3];
@@ -3778,11 +3791,10 @@ impl eframe::App for App {
             self.dirty = true;
             self.tour_start(0);
         }
-        // the very first run wears the sleek ORIGINAL look (DARK), not the retro one
+        // the very first run wears Backline's first look
         if self.first_look {
             self.first_look = false;
-            let dark = SKIN_NAMES.iter().position(|n| *n == "DARK").unwrap_or(0);
-            self.apply(Action::Theme(dark, 2));
+            self.apply(Action::Look(FIRST_LOOK));
         }
         self.tour_overlay(ctx);
         self.demo_tick(ctx);
@@ -3800,8 +3812,12 @@ impl eframe::App for App {
             if self.vis_full && !self.mini && !self.fullscreen {
                 floating_app_bar(ctx);
             }
-            edge_resize(ctx);
+            // (Windows sizes the window at its edges itself when it knows the title bar: frame_win)
+            if !frame_win::active() {
+                edge_resize(ctx);
+            }
         }
+        frame_win::end_frame(app_bar() && !self.fullscreen);
         for a in acts {
             self.apply(a);
         }
@@ -4138,10 +4154,10 @@ mod tests {
     #[test]
     fn key_and_tempo_cell() {
         meta::from_tidal(888001, Some(120), Some(12 + 9));
-        assert!(track_cells(888001, "T", "A", "B").ends_with("\tAm|120"));
+        assert!(track_cells(888001, "T", "A", "B", "tidal").ends_with("\tAm|120\tTidal"));
         meta::set_detected(888002, meta::Info { bpm: Some(95), key: Some(0), ..Default::default() });
-        assert!(track_cells(888002, "T", "A", "B").ends_with("\tC?|95"), "detected keys carry a ?");
-        assert!(track_cells(888003, "T", "A", "").ends_with("\t|"), "unknown: empty cell");
+        assert!(track_cells(888002, "T", "A", "B", "sc").ends_with("\tC?|95\tSoundCloud"), "detected keys carry a ?");
+        assert!(track_cells(888003, "T", "A", "", "file").ends_with("\t|\tFile"), "unknown: empty cell");
     }
 }
 

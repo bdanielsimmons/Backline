@@ -178,7 +178,7 @@ impl App {
         if self.ln_sheet {
             // what it's made of: the line on staves and its analysis, over the neck
             let body = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - foot));
-            ui.painter().rect_filled(body, 10.0, pal().beige_lt);
+            ui.painter().rect_filled(body, 10.0, pal().panel_lt);
             let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(body.shrink(8.0)).layout(egui::Layout::top_down(Align::Min)));
             egui::ScrollArea::vertical().id_salt("ln_made").auto_shrink([false, false]).show(&mut sub, |ui| {
                 let lit = self.ln_end.filter(|e| Instant::now() < *e).map(|e| {
@@ -372,7 +372,7 @@ impl App {
         let body = Rect::from_min_max(avail.min, Pos2::new(avail.max.x, avail.max.y - foot));
         if self.ln_sheet {
             // the notes, each named over the chord, and what the colours mean
-            ui.painter().rect_filled(body, 10.0, pal().beige_lt);
+            ui.painter().rect_filled(body, 10.0, pal().panel_lt);
             let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(body.shrink(10.0)).layout(egui::Layout::top_down(Align::Min)));
             let mut sorted = shape.clone();
             sorted.sort_by_key(|p| (p - shape_root).rem_euclid(12));
@@ -423,8 +423,8 @@ pub(crate) fn dot_neck(p: &egui::Painter, r: Rect, dots: &[((usize, u8), String,
     let sw = (r.width() - 40.0) / 5.0;
     let y0 = r.min.y + 18.0;
     let fh = (r.height() - 24.0) / frets as f32;
-    p.rect_filled(r, 10.0, pal().beige_lt);
-    let line = pal().beige_dk;
+    p.rect_filled(r, 10.0, pal().panel_lt);
+    let line = pal().panel_dk;
     for f in [3, 5, 7, 9, 15] {
         p.circle_filled(Pos2::new(x0 + 2.5 * sw, y0 + (f as f32 - 0.5) * fh), 3.0, line);
     }
@@ -516,8 +516,8 @@ fn line_neck(p: &egui::Painter, r: Rect, spots: &[(usize, u8)]) {
     let sw = (r.width() - 46.0) / 5.0;
     let y0 = r.min.y + 12.0;
     let fh = (r.height() - 18.0) / n;
-    p.rect_filled(r, 10.0, pal().beige_lt);
-    let line = pal().beige_dk;
+    p.rect_filled(r, 10.0, pal().panel_lt);
+    let line = pal().panel_dk;
     for k in 0..=(hi_f - lo_f + 1) {
         let y = y0 + k as f32 * fh;
         p.line_segment([Pos2::new(x0, y), Pos2::new(x0 + 5.0 * sw, y)], Stroke::new(1.2, line));
@@ -555,7 +555,7 @@ fn line_neck(p: &egui::Painter, r: Rect, spots: &[(usize, u8)]) {
         let txt = nums.iter().map(|n| n.to_string()).collect::<Vec<_>>().join("/");
         let w = (text_w(&txt, 0.9) + 10.0).max(rad * 2.0);
         p.rect_filled(Rect::from_center_size(c, Vec2::new(w, rad * 2.0)), rad, if first { pal().red } else { pal().ink });
-        ptext(p, c, Align::Center, &txt, 0.9, if first { pal().bar_txt } else { pal().beige_lt });
+        ptext(p, c, Align::Center, &txt, 0.9, if first { pal().bar_txt } else { pal().panel_lt });
     }
 }
 

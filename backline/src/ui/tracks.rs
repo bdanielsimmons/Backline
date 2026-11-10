@@ -104,7 +104,11 @@ pub(crate) fn list_row(
     let left_has_cells = lraw.contains('\t');
     if let Some(liked) = heart {
         let heart_w = HEART_W * font::ui_scale();
-        let slot = if left_has_cells { rect.max.x - 10.0 - fit.right } else { rect.max.x - 10.0 - rw - heart_w };
+        let slot = if left_has_cells {
+            rect.max.x - 10.0 - fit.right + if fit.src { SRC_W * font::ui_scale() } else { 0.0 }
+        } else {
+            rect.max.x - 10.0 - rw - heart_w
+        };
         let hr = Rect::from_min_size(Pos2::new(slot, rect.min.y), Vec2::new(heart_w, rect.height()));
         if draw_heart(ui, hr, liked, resp.hovered(), ui.id().with(("heart", idx, rect.min.y as i32))) {
             HEART_HIT.with(|h| h.set(true));
@@ -140,6 +144,10 @@ pub(crate) fn list_row(
                 row_text(p, Pos2::new(x, cy), Align::Min, c, (cw[i] - 12.0).max(20.0), if i == 0 { fg } else { fg2 });
                 x += cw[i];
             }
+        }
+        if let (true, Some(src)) = (fit.src, cells.get(4)) {
+            let sc = font::ui_scale();
+            row_text(p, Pos2::new(rect.max.x - 10.0 - fit.right, cy), Align::Min, src, (SRC_W - 10.0) * sc, fg2);
         }
         if let (true, Some((key, bpm))) = (fit.kb, cells.get(3).and_then(|c| c.split_once('|'))) {
             let sc = font::ui_scale();
@@ -244,18 +252,20 @@ pub(crate) fn table_header(ui: &mut egui::Ui, left: &str, mid: &str, last: &str,
     let cy = rect.center().y;
     let p = ui.painter();
     if numbered {
-        ptext(p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, "#", 2.0, pal().trim);
+        ptext(p, Pos2::new(rect.min.x + 8.0, cy), Align::Min, "#", 2.0, pal().accent);
     }
-    ptext(p, Pos2::new(rect.min.x + 8.0 + if numbered { 44.0 } else { 0.0 }, cy), Align::Min, left, 2.0, pal().trim);
-    ptext(p, Pos2::new(rect.max.x - 10.0 - TBL_W2, cy), Align::Max, mid, 2.0, pal().trim);
-    ptext(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, last, 2.0, pal().trim);
+    ptext(p, Pos2::new(rect.min.x + 8.0 + if numbered { 44.0 } else { 0.0 }, cy), Align::Min, left, 2.0, pal().accent);
+    ptext(p, Pos2::new(rect.max.x - 10.0 - TBL_W2, cy), Align::Max, mid, 2.0, pal().accent);
+    ptext(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, last, 2.0, pal().accent);
 }
 
 // ------------------------------------------------------------------ list columns
 /// Which extra columns the track lists show: bit0 artist, bit1 album, bit2 length, bit3 key and tempo
 /// (name is always shown).
-pub(crate) static COLS: AtomicU32 = AtomicU32::new(0b1101);
-pub(crate) const COL_NAMES: [&str; 4] = ["ARTIST", "ALBUM", "LENGTH", "KEY / BPM"];
+pub(crate) static COLS: AtomicU32 = AtomicU32::new(0b11101);
+pub(crate) const COL_NAMES: [&str; 5] = ["ARTIST", "ALBUM", "LENGTH", "KEY / BPM", "SOURCE"];
+/// width of the SOURCE slot (Tidal, SoundCloud, YouTube, File), left of the heart
+pub(crate) const SRC_W: f32 = 100.0;
 /// width of the KEY / BPM slot, just left of LENGTH; the BPM sits `KB_GAP` in (room for "C#m?")
 pub(crate) const KB_W: f32 = 120.0;
 pub(crate) const KB_GAP: f32 = 64.0;
@@ -307,6 +317,8 @@ pub(crate) struct RowFit {
     pub(crate) right: f32,
     /// KEY / BPM shown
     pub(crate) kb: bool,
+    /// SOURCE shown (where the song comes from), at the left of the right-hand slots
+    pub(crate) src: bool,
     /// the cover shown
     pub(crate) art: bool,
     /// the row's number shown
@@ -316,27 +328,31 @@ pub(crate) struct RowFit {
 }
 
 /// A narrow list gives way before the names get squeezed past reading: ALBUM, then ARTIST (`col_widths`), then
-/// KEY / BPM, then the covers; a very narrow one the numbers, then the hearts.
+/// SOURCE, KEY / BPM, then the covers; a very narrow one the numbers, then the hearts.
 pub(crate) fn row_fit(w: f32, numbered: bool, art: bool) -> RowFit {
     let sc = font::ui_scale();
-    let fit = |kb: bool, art: bool, num: bool, heart: bool| {
+    let fit = |src: bool, kb: bool, art: bool, num: bool, heart: bool| {
         let lead = 8.0 + if num { 44.0 * sc } else { 0.0 } + if art { ART_W * sc } else { 0.0 };
-        let right = (80.0 + if heart { HEART_W } else { 0.0 } + if kb { KB_W } else { 0.0 }) * sc;
-        RowFit { lead, avail: w - 10.0 - right - lead, right, kb, art, num, heart }
+        let right =
+            (80.0 + if heart { HEART_W } else { 0.0 } + if kb { KB_W } else { 0.0 } + if src { SRC_W } else { 0.0 }) * sc;
+        RowFit { lead, avail: w - 10.0 - right - lead, right, kb, src, art, num, heart }
     };
     let (min, least) = (110.0 * sc, 60.0 * sc);
-    let mut f = fit(col_on(3), art, numbered, true);
+    let mut f = fit(col_on(4), col_on(3), art, numbered, true);
+    if f.avail < min && f.src {
+        f = fit(false, f.kb, f.art, f.num, true);
+    }
     if f.avail < min && f.kb {
-        f = fit(false, f.art, f.num, true);
+        f = fit(false, false, f.art, f.num, true);
     }
     if f.avail < min && f.art {
-        f = fit(false, false, f.num, true);
+        f = fit(false, false, false, f.num, true);
     }
     if f.avail < least && f.num {
-        f = fit(false, false, false, true);
+        f = fit(false, false, false, false, true);
     }
     if f.avail < least {
-        f = fit(false, false, false, false);
+        f = fit(false, false, false, false, false);
     }
     f.avail = f.avail.max(40.0);
     f
@@ -497,8 +513,8 @@ pub(crate) fn cards_header(ui: &mut egui::Ui, right: &str, art: bool) {
         art_switch(ui, &p, Pos2::new(x + if shown { ART_PX * sc / 2.0 } else { 10.0 }, cy), rect.height(), "cards_head_art");
         x += col;
     }
-    ui_text(&p, Pos2::new(x, cy), Align::Min, "NAME", 2.0, 400.0, pal().trim);
-    ui_text(&p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, right, 2.0, 400.0, pal().trim);
+    ui_text(&p, Pos2::new(x, cy), Align::Min, "NAME", 2.0, 400.0, pal().accent);
+    ui_text(&p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, right, 2.0, 400.0, pal().accent);
 }
 
 /// The covers switch in a list's header: a little picture, lit when covers are on; a click turns them on or off
@@ -507,7 +523,7 @@ pub(crate) fn art_switch(ui: &egui::Ui, p: &egui::Painter, c: Pos2, h: f32, key:
     let on = row_arts_on();
     let ir = Rect::from_center_size(c, Vec2::new(24.0, h));
     let ihit = ui.interact(ir, ui.id().with(key), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let col = if ihit.hovered() { pal().ink } else if on { pal().trim } else { pal().trim.gamma_multiply(0.45) };
+    let col = if ihit.hovered() { pal().ink } else if on { pal().accent } else { pal().accent.gamma_multiply(0.45) };
     picture_icon(p, ir.center(), col);
     if ihit.tip(if on { "Covers on. Click to hide them." } else { "Covers off. Click to show them." }).clicked() {
         ROW_ARTS.store(!on, Ordering::Relaxed);
@@ -534,23 +550,27 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
         // covers on or off: a little picture, lit when they're on
         art_switch(ui, p, Pos2::new(rect.min.x + 18.0, cy), rect.height(), "col_head_art");
     }
+    if fit.src {
+        let sc = font::ui_scale();
+        ui_text(p, Pos2::new(rect.max.x - 10.0 - fit.right, cy), Align::Min, "SOURCE", 2.0, (SRC_W - 10.0) * sc, pal().accent);
+    }
     if fit.kb {
         let sc = font::ui_scale();
         let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
-        ui_text(p, Pos2::new(kx, cy), Align::Min, "KEY", 2.0, (KB_GAP - 6.0) * sc, pal().trim);
-        ui_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 2.0, 50.0 * sc, pal().trim);
+        ui_text(p, Pos2::new(kx, cy), Align::Min, "KEY", 2.0, (KB_GAP - 6.0) * sc, pal().accent);
+        ui_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 2.0, 50.0 * sc, pal().accent);
     }
     // each heading kept inside its column
-    ui_text(p, Pos2::new(tx, cy), Align::Min, "NAME", 2.0, (cw[0] - 12.0).max(20.0), pal().trim);
+    ui_text(p, Pos2::new(tx, cy), Align::Min, "NAME", 2.0, (cw[0] - 12.0).max(20.0), pal().accent);
     let mut x = tx + cw[0];
     for (i, name) in COL_NAMES[..2].iter().enumerate() {
         if cw[i + 1] > 0.0 {
-            ui_text(p, Pos2::new(x, cy), Align::Min, name, 2.0, (cw[i + 1] - 12.0).max(20.0), pal().trim);
+            ui_text(p, Pos2::new(x, cy), Align::Min, name, 2.0, (cw[i + 1] - 12.0).max(20.0), pal().accent);
             x += cw[i + 1];
         }
     }
     if col_on(2) {
-        ui_text(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, "LENGTH", 2.0, 76.0 * font::ui_scale(), pal().trim);
+        ui_text(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, "LENGTH", 2.0, 76.0 * font::ui_scale(), pal().accent);
     }
     // drag the line between two columns to share the room differently
     let vis: Vec<usize> = (0..3).filter(|&i| cw[i] > 0.0).collect();
@@ -561,7 +581,7 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
         let r =
             ui.interact(hit, ui.id().with(("col_split", k)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
         if r.hovered() || r.dragged() {
-            fill_rect(&painter, Rect::from_center_size(hit.center(), Vec2::new(2.0, rect.height() - 4.0)), pal().trim);
+            fill_rect(&painter, Rect::from_center_size(hit.center(), Vec2::new(2.0, rect.height() - 4.0)), pal().accent);
         }
         if r.dragged() {
             let mut w = COL_W.lock().unwrap();
@@ -590,12 +610,24 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     });
 }
 
-/// One track row's text, split into cells with tabs for `list_row` (the last cell is key and tempo, if known).
-pub(crate) fn track_cells(id: i64, title: &str, artist: &str, album: &str) -> String {
+/// One track row's text, split into cells with tabs for `list_row`: then key and tempo (if known), then where the song
+/// comes from (`kind`: tidal, file, yt, sc).
+pub(crate) fn track_cells(id: i64, title: &str, artist: &str, album: &str, kind: &str) -> String {
     let i = meta::get(id).unwrap_or_default();
     let key = meta::key_text(&i);
     let bpm = i.bpm.map_or(String::new(), |b| b.to_string());
-    format!("{}\t{}\t{}\t{}|{}", title, artist, album, key, bpm)
+    format!("{}\t{}\t{}\t{}|{}\t{}", title, artist, album, key, bpm, source_label(kind))
+}
+
+/// Where a song comes from, as the SOURCE column says it.
+pub(crate) fn source_label(kind: &str) -> &'static str {
+    match kind {
+        "tidal" => "Tidal",
+        "file" => "File",
+        "sc" => "SoundCloud",
+        "yt" => "YouTube",
+        _ => "",
+    }
 }
 
 // ------------------------------------------------------------------ page view
@@ -634,7 +666,7 @@ pub(crate) fn tracks_list(
             ui,
             i,
             Some(i + 1),
-            || track_cells(t.id, &t.title, &t.artists_text(), &t.album),
+            || track_cells(t.id, &t.title, &t.artists_text(), &t.album, "tidal"),
             || if col_on(2) { fmt_time(t.duration) } else { String::new() },
             state,
             false,
@@ -912,7 +944,7 @@ pub(crate) fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Act
             ui.painter(),
             Rect::from_center_size(r.center() + Vec2::new(1.5, 0.0), Vec2::splat(d * 0.42)),
             "play",
-            pal().lcd,
+            pal().display,
         );
         if resp.clicked() {
             acts.push(Action::Play(tracks.to_vec(), 0));

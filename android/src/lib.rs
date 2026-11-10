@@ -641,7 +641,7 @@ impl App {
     /// window frames, its font (Silkscreen, fetched once).
     pub(crate) fn wear(&mut self) {
         let n = SKIN.load(Ordering::Relaxed) % PALS.len();
-        match genskin::wear(&PALS[n], 1) {
+        match genskin::wear(&PALS[n]) {
             Ok((p, art)) => {
                 skin::set_custom(Some(p));
                 self.wa_art = Some(winamp_ui::WaTex::new(&self.ctx, art));
@@ -1193,7 +1193,7 @@ impl App {
             let (r, _) = ui.allocate_exact_size(Vec2::new(150.0, 30.0), Sense::hover());
             logo_mark(ui.painter(), Pos2::new(r.min.x + 2.0, r.min.y + 3.0), 2.7);
             // (on the app background, in the window titles' colour)
-            ptext(ui.painter(), Pos2::new(r.min.x + 34.0, r.center().y), Align::Min, "Backline", 2.0, pal().trim);
+            ptext(ui.painter(), Pos2::new(r.min.x + 34.0, r.center().y), Align::Min, "Backline", 2.0, pal().accent);
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 let k = SKIN.load(Ordering::Relaxed);
                 if pill(ui, "Skin", false).on_hover_text(SKIN_NAMES[k]).clicked() {
@@ -1236,7 +1236,7 @@ impl App {
         self.want_cover(&t);
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
         let p = ui.painter();
-        p.rect_filled(r, 8.0, pal().beige_lt);
+        p.rect_filled(r, 8.0, pal().panel_lt);
         let art = Rect::from_min_size(r.min + Vec2::new(6.0, 6.0), Vec2::splat(34.0));
         match self.cover.as_ref().and_then(|c| c.1.as_ref()) {
             Some(tex) => {
@@ -1276,13 +1276,13 @@ impl App {
     fn now_screen(&mut self, ui: &mut egui::Ui, r: Rect) {
         let r = r.shrink2(Vec2::new(16.0, 0.0));
         let back = Rect::from_min_size(r.min + Vec2::new(-6.0, 2.0), Vec2::splat(36.0));
-        chevron(ui.painter(), back.center(), pal().trim);
-        ptext(ui.painter(), Pos2::new(r.center().x, back.center().y), Align::Center, "Now playing", 1.3, pal().trim);
+        chevron(ui.painter(), back.center(), pal().accent);
+        ptext(ui.painter(), Pos2::new(r.center().x, back.center().y), Align::Center, "Now playing", 1.3, pal().accent);
         if ui.interact(back, ui.id().with("now_back"), Sense::click()).clicked() {
             self.tab = Tab::Player;
         }
         let Some(t) = self.cur_track().cloned() else {
-            ptext(ui.painter(), r.center(), Align::Center, "Nothing playing. Pick a song in Music.", 1.4, pal().trim);
+            ptext(ui.painter(), r.center(), Align::Center, "Nothing playing. Pick a song in Music.", 1.4, pal().accent);
             return;
         };
         // the cover
@@ -1305,11 +1305,11 @@ impl App {
         let mut y = cv.max.y + 22.0;
         ptext_fit(&p, Pos2::new(r.min.x, y), Align::Min, &t.title, 2.0, r.width(), pal().bar_txt);
         y += 22.0;
-        ptext_fit(&p, Pos2::new(r.min.x, y), Align::Min, &t.artists_text(), 1.4, r.width(), pal().trim);
+        ptext_fit(&p, Pos2::new(r.min.x, y), Align::Min, &t.artists_text(), 1.4, r.width(), pal().accent);
         y += 18.0;
         // the LCD: the song scrolling by in the pixel font, and the spectrum the full width under it
         let lcd = Rect::from_min_size(Pos2::new(r.min.x, y), Vec2::new(r.width(), 70.0));
-        p.rect_filled(lcd, 8.0, pal().lcd);
+        p.rect_filled(lcd, 8.0, pal().display);
         let pos = self.pos();
         font::set_modern(false);
         let name = Rect::from_min_size(lcd.min + Vec2::new(10.0, 6.0), Vec2::new(lcd.width() - 20.0, 18.0));
@@ -1338,12 +1338,12 @@ impl App {
         }
         let k = (pos / len).clamp(0.0, 1.0);
         let line = Rect::from_center_size(sk.center(), Vec2::new(sk.width(), 4.0));
-        p.rect_filled(line, 2.0, pal().beige_dk);
+        p.rect_filled(line, 2.0, pal().panel_dk);
         p.rect_filled(Rect::from_min_max(line.min, Pos2::new(line.min.x + line.width() * k, line.max.y)), 2.0, pal().red);
         p.circle_filled(Pos2::new(line.min.x + line.width() * k, line.center().y), 6.0, pal().bar_txt);
         let left = len - pos;
-        ptext(&p, Pos2::new(r.min.x, sk.max.y + 8.0), Align::Min, &format!("{}:{:02}", pos as u32 / 60, pos as u32 % 60), 1.1, pal().trim);
-        ptext(&p, Pos2::new(r.max.x, sk.max.y + 8.0), Align::Max, &format!("-{}:{:02}", left as u32 / 60, left as u32 % 60), 1.1, pal().trim);
+        ptext(&p, Pos2::new(r.min.x, sk.max.y + 8.0), Align::Min, &format!("{}:{:02}", pos as u32 / 60, pos as u32 % 60), 1.1, pal().accent);
+        ptext(&p, Pos2::new(r.max.x, sk.max.y + 8.0), Align::Max, &format!("-{}:{:02}", left as u32 / 60, left as u32 % 60), 1.1, pal().accent);
         y = sk.max.y + 26.0;
         // the transport: shuffle, back, play, on, repeat
         let mid = Pos2::new(r.center().x, y + 32.0);
@@ -1365,13 +1365,13 @@ impl App {
             }
         }
         let sh = mid + Vec2::new(-136.0, 0.0);
-        shuffle_glyph(&p, sh, if self.shuffle { pal().red } else { pal().trim });
+        shuffle_glyph(&p, sh, if self.shuffle { pal().red } else { pal().accent });
         if ui.interact(Rect::from_center_size(sh, Vec2::splat(44.0)), ui.id().with("now_shuf"), Sense::click()).clicked() {
             self.shuffle = !self.shuffle;
             self.set_note(if self.shuffle { "Shuffle on" } else { "Shuffle off" });
         }
         let rp = mid + Vec2::new(136.0, 0.0);
-        loop_glyph(&p, rp, if self.repeat != Repeat::Off { pal().red } else { pal().trim });
+        loop_glyph(&p, rp, if self.repeat != Repeat::Off { pal().red } else { pal().accent });
         if self.repeat == Repeat::One {
             ptext(&p, rp + Vec2::new(0.0, 1.0), Align::Center, "1", 0.8, pal().red);
         }
@@ -1392,7 +1392,7 @@ impl App {
         let chip = |ui: &mut egui::Ui, x: f32, w: f32, id: &str, on: bool| -> (Rect, bool) {
             let cr = Rect::from_min_size(Pos2::new(x, row), Vec2::new(w, 34.0));
             let resp = ui.interact(cr, ui.id().with(id), Sense::click());
-            ui.painter().rect_filled(cr, 17.0, if on || resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
+            ui.painter().rect_filled(cr, 17.0, if on || resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel });
             (cr, resp.clicked())
         };
         let mut x = r.min.x;
@@ -1445,8 +1445,8 @@ impl App {
             self.set_volume((pp.x - vr.min.x) / vr.width());
         }
         let vl = Rect::from_center_size(vr.center(), Vec2::new(vr.width(), 4.0));
-        p.rect_filled(vl, 2.0, pal().beige_dk);
-        p.rect_filled(Rect::from_min_max(vl.min, Pos2::new(vl.min.x + vl.width() * self.volume, vl.max.y)), 2.0, pal().trim);
+        p.rect_filled(vl, 2.0, pal().panel_dk);
+        p.rect_filled(Rect::from_min_max(vl.min, Pos2::new(vl.min.x + vl.width() * self.volume, vl.max.y)), 2.0, pal().accent);
         p.circle_filled(Pos2::new(vl.min.x + vl.width() * self.volume, vl.center().y), 7.0, pal().bar_txt);
         // Practice and Metronome: two even buttons, an icon and a word each
         let play = Rect::from_min_max(play.min, Pos2::new(play.max.x, row + 34.0));
@@ -1454,7 +1454,7 @@ impl App {
         for (k, (name, icon)) in [("Practice", 2), ("Metronome", 9)].iter().enumerate() {
             let br = Rect::from_min_size(Pos2::new(r.min.x + k as f32 * (bw + 10.0), play.max.y + 14.0), Vec2::new(bw, 40.0));
             let resp = ui.interact(br, ui.id().with(("now_btn", k)), Sense::click());
-            p.rect_filled(br, 20.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige });
+            p.rect_filled(br, 20.0, if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel });
             let c = Pos2::new(br.center().x - text_w(name, 1.4) / 2.0 - 4.0, br.center().y);
             if *icon == 9 {
                 metro_glyph(&p, c + Vec2::new(-8.0, 0.0), pal().ink);
@@ -1484,7 +1484,7 @@ impl App {
         if !title.is_empty() {
             ptext(ui.painter(), Pos2::new(head.min.x + 14.0, head.center().y), Align::Min, title, 2.4, pal().bar_txt);
             let g = Pos2::new(head.max.x - 26.0, head.center().y);
-            gear_glyph(ui.painter(), g, pal().trim);
+            gear_glyph(ui.painter(), g, pal().accent);
             if ui.interact(Rect::from_center_size(g, Vec2::splat(40.0)), ui.id().with("gear"), Sense::click()).clicked() {
                 self.settings_open = !self.settings_open;
             }
@@ -1510,8 +1510,8 @@ impl App {
                 let r = Rect::from_min_size(area.min + Vec2::new((n % 2) as f32 * (tw + 8.0), (n / 2) as f32 * 72.0), Vec2::new(tw, 64.0));
                 let resp = ui.interact(r, ui.id().with(("swatch", k)), Sense::click());
                 let sk = &PALS[*k];
-                ui.painter().rect_filled(r, 10.0, sk.beige);
-                ui.painter().rect_filled(Rect::from_min_size(r.min + Vec2::new(10.0, 10.0), Vec2::new(26.0, 16.0)), 4.0, sk.lcd);
+                ui.painter().rect_filled(r, 10.0, sk.panel);
+                ui.painter().rect_filled(Rect::from_min_size(r.min + Vec2::new(10.0, 10.0), Vec2::new(26.0, 16.0)), 4.0, sk.display);
                 ui.painter().circle_filled(r.min + Vec2::new(50.0, 18.0), 7.0, sk.red);
                 ptext(ui.painter(), Pos2::new(r.min.x + 12.0, r.max.y - 16.0), Align::Min, &crate::lines_ui::nice(SKIN_NAMES[*k]), 1.3, sk.ink);
                 if *k == cur {
@@ -1527,7 +1527,7 @@ impl App {
             dim(ui, "Tidal", 1.0, pal().ink2);
             let row = |ui: &mut egui::Ui, left: &str, right: &str| -> bool {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::click());
-                ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+                ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 6.0, if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
                 ptext(ui.painter(), Pos2::new(r.min.x + 12.0, r.center().y), Align::Min, left, 1.3, pal().ink);
                 ptext(ui.painter(), Pos2::new(r.max.x - 12.0, r.center().y), Align::Max, right, 1.2, pal().ink2);
                 resp.clicked()
@@ -1584,7 +1584,7 @@ impl App {
         let label = items.get(cur).copied().unwrap_or("");
         let w = text_w(label, 1.2) + 38.0;
         let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click());
-        ui.painter().rect_filled(r, 16.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+        ui.painter().rect_filled(r, 16.0, if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
         ptext(ui.painter(), Pos2::new(r.min.x + 13.0, r.center().y), Align::Min, label, 1.2, pal().ink);
         // a small down arrow
         let c = Pos2::new(r.max.x - 14.0, r.center().y);
@@ -1605,7 +1605,7 @@ impl App {
         let mut close = ctx.input(|i| i.pointer.any_click()) && !ctx.is_pointer_over_area();
         let mut chose = None;
         egui::Area::new(egui::Id::new("picker")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_BOTTOM, Vec2::ZERO).show(ctx, |ui| {
-            egui::Frame::none().fill(pal().beige).rounding(egui::Rounding { nw: 16.0, ne: 16.0, sw: 0.0, se: 0.0 }).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 14.0, bottom: 34.0 }).show(ui, |ui| {
+            egui::Frame::none().fill(pal().panel).rounding(egui::Rounding { nw: 16.0, ne: 16.0, sw: 0.0, se: 0.0 }).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 14.0, bottom: 34.0 }).show(ui, |ui| {
                 ui.set_width(screen.width() - 28.0);
                 egui::ScrollArea::vertical().id_salt("pick_scroll").max_height(screen.height() * 0.6).show(ui, |ui| {
                     for (k, it) in items.iter().enumerate() {
@@ -1613,7 +1613,7 @@ impl App {
                         if k == cur {
                             ui.painter().rect_filled(r, 8.0, pal().row_sel);
                         } else if resp.is_pointer_button_down_on() {
-                            ui.painter().rect_filled(r, 8.0, pal().beige_lt);
+                            ui.painter().rect_filled(r, 8.0, pal().panel_lt);
                         }
                         ptext(ui.painter(), Pos2::new(r.min.x + 12.0, r.center().y), Align::Min, it, 1.4, if k == cur { pal().bar_txt } else { pal().ink });
                         if resp.clicked() {
@@ -1635,7 +1635,7 @@ impl App {
     /// A screen in the flat look: the skin's panel colour, rounded, its body padded inside.
     fn flat(&mut self, ui: &mut egui::Ui, outer: Rect, body: impl FnOnce(&mut Self, &mut egui::Ui)) {
         let inner = outer.shrink2(Vec2::new(6.0, 2.0));
-        ui.painter().rect_filled(inner, 10.0, pal().beige);
+        ui.painter().rect_filled(inner, 10.0, pal().panel);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner.shrink(10.0)).layout(egui::Layout::top_down(Align::Min)));
         child.set_clip_rect(inner);
         body(self, &mut child);
@@ -1713,7 +1713,7 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 if !self.note.is_empty() {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::click());
-                    inset(ui.painter(), r, pal().lcd);
+                    inset(ui.painter(), r, pal().display);
                     let n = self.note.clone();
                     let up = n.to_uppercase();
                     let bad = up.contains("FAILED") || up.contains("CAN'T") || up.contains("COULDN'T") || up.contains("DIDN'T WORK") || up.starts_with("YOUTUBE:");
@@ -1857,8 +1857,8 @@ pub(crate) fn long_neck(p: &egui::Painter, r: Rect, c: &theory::ChordNotes, lit:
     let sw = (r.width() - 40.0) / 5.0;
     let y0 = r.min.y + 18.0;
     let fh = (r.height() - 24.0) / frets as f32;
-    p.rect_filled(r, 10.0, pal().beige_lt);
-    let line = pal().beige_dk;
+    p.rect_filled(r, 10.0, pal().panel_lt);
+    let line = pal().panel_dk;
     for f in [3, 5, 7, 9, 15] {
         p.circle_filled(Pos2::new(x0 + 2.5 * sw, y0 + (f as f32 - 0.5) * fh), 3.5, line);
     }
@@ -1918,7 +1918,7 @@ pub(crate) fn long_neck(p: &egui::Painter, r: Rect, c: &theory::ChordNotes, lit:
 /// A pill switch of a few choices filling `r`, the current one filled; returns the one tapped.
 pub(crate) fn seg_tabs(ui: &mut egui::Ui, r: Rect, items: &[&str], cur: usize, id: &str) -> Option<usize> {
     let p = ui.painter();
-    p.rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), r.height() / 2.0, pal().beige_lt);
+    p.rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), r.height() / 2.0, pal().panel_lt);
     let w = (r.width() - 6.0) / items.len() as f32;
     let mut hit = None;
     for (k, name) in items.iter().enumerate() {
@@ -1927,7 +1927,7 @@ pub(crate) fn seg_tabs(ui: &mut egui::Ui, r: Rect, items: &[&str], cur: usize, i
         if k == cur {
             ui.painter().rect_filled(c, c.height() / 2.0, pal().ink);
         }
-        ptext_fit(ui.painter(), c.center(), Align::Center, name, 1.3, w - 8.0, if k == cur { pal().beige } else { pal().ink2 });
+        ptext_fit(ui.painter(), c.center(), Align::Center, name, 1.3, w - 8.0, if k == cur { pal().panel } else { pal().ink2 });
         if resp.clicked() {
             hit = Some(k);
         }
@@ -2006,9 +2006,9 @@ pub(crate) fn pill(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Response {
 /// A pill of a given width.
 pub(crate) fn pill_w(ui: &mut egui::Ui, text: &str, w: f32, on: bool) -> egui::Response {
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w.max(32.0), 34.0), Sense::click());
-    let fill = if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt };
+    let fill = if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt };
     ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 16.0, fill);
-    ptext_fit(ui.painter(), r.center(), Align::Center, text, 1.2, r.width() - 10.0, if on { pal().beige } else { pal().ink });
+    ptext_fit(ui.painter(), r.center(), Align::Center, text, 1.2, r.width() - 10.0, if on { pal().panel } else { pal().ink });
     resp
 }
 

@@ -176,7 +176,8 @@ impl App {
             }
         } else {
             // the full window with no system title bar: the deck's is part of the app's
-            crate::app_bar_strip(ui, Rect::from_min_size(pl.o, Vec2::new(275.0, 14.0) * pl.s), tid.with("app_bar"));
+            // (between the options button and minimize: the rest of the bar is buttons)
+            crate::app_bar_strip(ui, pl.r(16.0, 0.0, 227.0, 14.0), tid.with("app_bar"));
         }
         // (in the full window the middle one is the skin's own button below, which goes fullscreen)
         {
@@ -221,7 +222,7 @@ impl App {
             let url = cover_url(&tr.cover, 320);
             // framed in the skin's colours
             raised(ui.painter(), cover.expand(4.0), false);
-            inset(ui.painter(), cover.expand(1.0), pal().lcd);
+            inset(ui.painter(), cover.expand(1.0), pal().display);
             paint_held(ui, &mut self.images, "player", &url, cover, false);
         } else {
             paint_record(ui.painter(), cover, None);
@@ -1062,7 +1063,7 @@ impl App {
         let (top, left, right, bottom) = (20.0 * k, 12.0 * k, 20.0 * k, 38.0 * k);
         let list = Rect::from_min_max(outer.min + Vec2::new(left, top), outer.max - Vec2::new(right, bottom));
         // the list's own background, in the skin's playlist colour
-        p.rect_filled(list, 0.0, pal().lcd);
+        p.rect_filled(list, 0.0, pal().display);
 
         // ---- the frame
         tiled((127.0, 0.0, 25.0, 20.0), Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + top)), true);
@@ -1358,34 +1359,28 @@ impl App {
     }
 }
 
-/// The look Backline's own palette is worn in: 0 its usual look, 1.. a Winamp skin drawn from it (genskin).
-pub(crate) fn gen_look(worn: Option<&(String, String)>) -> usize {
-    worn.and_then(|w| w.0.strip_prefix("gen:")?.parse::<usize>().ok()).unwrap_or(0)
-}
-
-/// The skins, side by side: ORIGINAL (Backline's palettes as sleek Winamp-style skins, in Silkscreen) and WINAMP
-/// (skins from the Skin Museum: the one worn, and browsing for more). The one worn is marked.
+/// The skins, side by side: BACKLINE (Backline's own looks, drawn as Winamp-style skins, and your Custom one) and
+/// WINAMP (skins from the Skin Museum: the one worn, and browsing for more). The one worn is marked.
 pub(crate) fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, String)>, recent: &[(String, String)]) {
-    let look = gen_look(worn);
-    let museum = worn.filter(|_| look == 0).map(|w| w.1.as_str());
-    let cur = SKIN.load(Ordering::Relaxed) % PALS.len();
-    // the columns wrap under each other when the space is narrow
-    // a column of Backline's own palettes in one look
-    let column = |ui: &mut egui::Ui, acts: &mut Vec<Action>, title: &str, g: usize| {
+    let ours = crate::backline_look(worn) && !crate::custom_worn(worn);
+    let museum = worn.filter(|w| !crate::backline_look(Some(w))).map(|w| w.1.as_str());
+    let cur = SKIN.load(Ordering::Relaxed) % LOOKS.len();
+    // (the columns wrap under each other when the space is narrow)
+    ui.horizontal_wrapped(|ui| {
         ui.vertical(|ui| {
             ui.set_min_width(170.0);
-            para(ui, title, pal().ink2);
+            para(ui, "BACKLINE", pal().ink2);
             for (n, name) in SKIN_NAMES.iter().enumerate() {
-                let on = n == cur && if g == 0 { worn.is_none() } else { look == g };
-                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
-                    acts.push(Action::Theme(n, g));
+                if menu_item(ui, &format!("{}{}", if ours && n == cur { "> " } else { "  " }, name)) {
+                    acts.push(Action::Look(n));
                     ui.close_menu();
                 }
             }
+            if menu_item(ui, &format!("{}CUSTOM...", if crate::custom_worn(worn) { "> " } else { "  " })) {
+                acts.push(Action::EditLook);
+                ui.close_menu();
+            }
         });
-    };
-    ui.horizontal_wrapped(|ui| {
-        column(ui, acts, "ORIGINAL", 2);
         ui.vertical(|ui| {
             ui.set_min_width(170.0);
             para(ui, "WINAMP", pal().ink2);

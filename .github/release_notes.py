@@ -4,8 +4,9 @@ Usage: release_notes.py <new tag> <previous tag or ""> <notes file to write>
 
 Every commit since the previous release becomes a line in the notes (its subject, plus any "- " points
 in its body). Unless the newest commit (the release) has a "Notes:" line in its body: then only the "- " lines
-under it are the notes, a short summary of what changes for the person using it. A body line starting with "New:" marks a big feature: it is listed first in the notes and
-added to the top of the README's What's new list, without a version number and only once (the last 10
+under it are the notes: one short line per change, "Area: what changed" (Chart, Practice, Skins, Library...), only what
+changes for the person using it, none for a release that changes nothing they'd notice. A body line starting with
+"New:" marks a big feature: it is added to the top of the README's What's new list, without a version number and only once (the last 10
 are kept).
 """
 
@@ -21,12 +22,15 @@ log = subprocess.run(
 
 changes, new = [], []
 entries = log.split("\x1e")[1:]
-# a summary written for the release replaces the list of every commit
+# a summary written for the release replaces the list of every commit (an empty one: nothing to tell, a release
+# that changes nothing you'd notice)
 summary = []
+has_notes = False
 if entries:
     body = entries[0].partition("\x1f")[2]
     lines = [l.strip() for l in body.splitlines()]
-    if "Notes:" in lines:
+    has_notes = "Notes:" in lines
+    if has_notes:
         for l in lines[lines.index("Notes:") + 1:]:
             if l.startswith("- "):
                 summary.append(l)
@@ -52,15 +56,14 @@ for entry in entries:
             lines[-1] += " " + s  # a wrapped line continues the point above it
     changes.append("\n".join(lines))
 
-if summary:
+if has_notes:
     changes = summary
     # and the big features are the ones the release names
     new = [l.strip()[4:].strip() for l in entries[0].partition("")[2].splitlines() if l.strip().lower().startswith("new:")]
 
-out = []
-if new:
-    out += ["## New", *[f"- {n}" for n in new], ""]
-out += ["## Changes", *(changes or ["- Rebuild, no code changes"]), ""]
+# the changes, one short line each ("Area: what changed"; What's New shows the area as a tag); the big features go to
+# the README's list, not again here
+out = ["## Changes", *(changes if has_notes else (changes or ["- Rebuild, no code changes"])), ""]
 out += [
     "## Downloads",
     "- **Windows:** `backline-setup.msi` installs it (Start Menu shortcut, updates itself), or run `backline-practice.exe` (everything) / `backline-simple.exe` (no practice tools) as they are",

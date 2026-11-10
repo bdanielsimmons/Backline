@@ -340,7 +340,7 @@ pub(crate) fn slide_notes(p: &egui::Painter, rect: Rect, px: f32, old: &str, new
     let face = rect.shrink(2.0);
     let inner = rect.shrink2(Vec2::new(8.0, 3.0));
     // the box's face again, over the words drawn there
-    p.rect_filled(face, 0.0, pal().lcd);
+    p.rect_filled(face, 0.0, pal().display);
     let cp = p.with_clip_rect(face);
     let dx = if later { -40.0 } else { 40.0 };
     let out = (t * 1.25).min(1.0).powi(2);
@@ -1261,7 +1261,7 @@ impl App {
         ));
         for (k, (name, val)) in tiles.iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(sr.min.x + k as f32 * (tw + 6.0), sr.min.y), Vec2::new(tw, 46.0));
-            inset(ui.painter(), r, pal().lcd);
+            inset(ui.painter(), r, pal().display);
             ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 13.0), Align::Center, name, 1.0, pal().dim);
             ptext_fit(ui.painter(), Pos2::new(r.center().x, r.min.y + 31.0), Align::Center, val, 2.0, tw - 8.0, pal().ink);
         }
@@ -1363,7 +1363,7 @@ impl App {
                 ui.interact(r, ui.id().with(("diaryday", d)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
             let level = if secs == 0 { 0 } else { 1 + (secs * 3 / busiest).min(2) };
             let face = match level {
-                0 => pal().lcd,
+                0 => pal().display,
                 1 => pal().row_alt,
                 2 => pal().ink2,
                 _ => pal().ink,
@@ -1374,7 +1374,7 @@ impl App {
             } else if d == today {
                 outline(ui.painter(), r, 1.0, pal().ink);
             }
-            let txt_col = if level >= 2 { pal().lcd } else { pal().ink };
+            let txt_col = if level >= 2 { pal().display } else { pal().ink };
             ptext(ui.painter(), Pos2::new(r.min.x + 5.0, r.min.y + 8.0), Align::Min, &format!("{}", k + 1), 1.0, txt_col);
             if secs >= 60 {
                 ptext(ui.painter(), Pos2::new(r.max.x - 4.0, r.min.y + 8.0), Align::Max, &format!("{}m", secs / 60), 1.0, txt_col);

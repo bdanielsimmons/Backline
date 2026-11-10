@@ -134,7 +134,7 @@ impl App {
                     }
                 }
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(col_w - 6.0, (col_w - 6.0) * 1.1), Sense::click());
-                ui.painter().rect_filled(r, 8.0, pal().beige_lt);
+                ui.painter().rect_filled(r, 8.0, pal().panel_lt);
                 if k == self.cf_voice {
                     ui.painter().rect_stroke(r, 8.0, Stroke::new(2.0, pal().red));
                 }
@@ -233,8 +233,8 @@ impl App {
             let r = Rect::from_min_size(rr.min + Vec2::new((pc % 6) as f32 * (cell + 4.0), (pc / 6) as f32 * 44.0), Vec2::new(cell, 40.0));
             let resp = ui.interact(r, ui.id().with(("cf_root", pc)), Sense::click());
             let on = self.cf_root == Some(pc);
-            ui.painter().rect_filled(r, 8.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
-            ptext(ui.painter(), r.center(), Align::Center, theory::note_name(pc, false), 1.5, if on { pal().beige } else { pal().ink });
+            ui.painter().rect_filled(r, 8.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
+            ptext(ui.painter(), r.center(), Align::Center, theory::note_name(pc, false), 1.5, if on { pal().panel } else { pal().ink });
             if resp.clicked() {
                 self.cf_root = Some(pc);
             }
@@ -262,8 +262,8 @@ impl App {
             for (k, (r, label)) in chips.into_iter().enumerate() {
                 let resp = ui.interact(r, ui.id().with(("cf_fam", k)), Sense::click());
                 let on = k == cur_f;
-                ui.painter().rect_filled(r, 16.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
-                ptext(ui.painter(), r.center(), Align::Center, &label, 1.2, if on { pal().beige } else { pal().ink });
+                ui.painter().rect_filled(r, 16.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
+                ptext(ui.painter(), r.center(), Align::Center, &label, 1.2, if on { pal().panel } else { pal().ink });
                 if resp.clicked() {
                     self.cf_fam = if k == 0 { None } else { Some(k - 1) };
                 }
@@ -285,8 +285,8 @@ impl App {
             let r = Rect::from_min_size(gr.min + Vec2::new((k % cols) as f32 * (gw + 4.0), (k / cols) as f32 * 44.0), Vec2::new(gw, 40.0));
             let resp = ui.interact(r, ui.id().with(("cf_chord", k)), Sense::click());
             let on = self.chord_q.trim() == name;
-            ui.painter().rect_filled(r, 8.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
-            ptext_fit(ui.painter(), r.center(), Align::Center, name, 1.4, gw - 8.0, if on { pal().beige } else { pal().ink });
+            ui.painter().rect_filled(r, 8.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
+            ptext_fit(ui.painter(), r.center(), Align::Center, name, 1.4, gw - 8.0, if on { pal().panel } else { pal().ink });
             if resp.clicked() {
                 self.chord_q = name.clone();
                 if let Some(c) = theory::chord_notes(name) {
@@ -640,7 +640,7 @@ impl App {
                     };
                     // a card: the shape's name on top, its box under it, the one picked outlined
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, w * 1.38), Sense::click());
-                    ui.painter().rect_filled(r, 10.0, pal().beige_lt);
+                    ui.painter().rect_filled(r, 10.0, pal().panel_lt);
                     if i == self.tr_sel {
                         ui.painter().rect_stroke(r, 10.0, Stroke::new(2.0, pal().red));
                     }
@@ -729,7 +729,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for (k, (name, g)) in steps.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(bw, bw * 1.3), Sense::click());
-                ui.painter().rect_filled(r, 8.0, pal().beige_lt);
+                ui.painter().rect_filled(r, 8.0, pal().panel_lt);
                 ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 12.0), Align::Center, name, 1.3, pal().ink);
                 let before = if k > 0 { Some(steps[k - 1].1) } else { None };
                 chord_box_labelled(ui.painter(), Rect::from_min_max(r.min + Vec2::new(4.0, 22.0), r.max - Vec2::new(4.0, 4.0)), g, &|m| {
@@ -808,7 +808,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for g in grips.iter().take(6) {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(bw, bw * 1.3), Sense::click());
-                ui.painter().rect_filled(r, 8.0, pal().beige_lt);
+                ui.painter().rect_filled(r, 8.0, pal().panel_lt);
                 ptext_fit(ui.painter(), Pos2::new(r.center().x, r.min.y + 12.0), Align::Center, &triad_core::grip_name(g, sp), 1.2, bw - 8.0, pal().ink);
                 chord_box_labelled(ui.painter(), Rect::from_min_max(r.min + Vec2::new(4.0, 22.0), r.max - Vec2::new(4.0, 4.0)), g, &|m| {
                     if m.rem_euclid(12) == bass.rem_euclid(12) && !pcs.contains(&m.rem_euclid(12)) {

@@ -178,7 +178,7 @@ pub fn draw(p: &egui::Painter, r: Rect, rows: &[&str], col: Color32) -> bool {
     } else if is(&IC_MOON) {
         pen.dot(0.5, 0.5, 0.4);
         // bite out of the disc, using the panel behind it
-        p.circle_filled(pen.pt(0.68, 0.36), 0.33 * s, pal().beige);
+        p.circle_filled(pen.pt(0.68, 0.36), 0.33 * s, pal().panel);
     } else if is(&WIN_LIBRARY) {
         pen.rect(0.1, 0.12, 0.3, 0.86, 0.05);
         pen.rect(0.4, 0.28, 0.6, 0.86, 0.05);

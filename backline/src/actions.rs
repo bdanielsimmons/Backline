@@ -240,26 +240,10 @@ impl App {
                     self.dirty = true;
                 }
             },
-            Action::Theme(n, g) => {
-                if g == 0 {
-                    self.apply(Action::SkinSet(n));
-                } else {
-                    SKIN.store(n % PALS.len(), Ordering::Relaxed);
-                    self.dirty = true;
-                    self.apply(Action::WaGen(g));
-                }
+            Action::Look(n) => {
+                self.wear_look(n);
             }
-            Action::WaGen(g) => {
-                if g == 0 {
-                    self.apply(Action::SkinSet(SKIN.load(Ordering::Relaxed)));
-                    return;
-                }
-                let n = SKIN.load(Ordering::Relaxed) % PALS.len();
-                let look = (g - 1).min(genskin::LOOKS.len() - 1);
-                let s = self.gen_skin(n, look);
-                let _ = self.tx.send(Msg::WaSkin(genskin::wear(&PALS[n], look).map(|(p, art)| (s, p, art))));
-                self.ctx.request_repaint();
-            }
+            Action::EditLook => self.edit_look(),
             Action::Balance(b) => {
                 self.balance = b.clamp(-100, 100);
                 self.player.ctl.set_balance(self.balance);
@@ -621,25 +605,9 @@ impl App {
                 }
                 self.refresh_prefetch();
             }
-            Action::SkinSet(n) if gen_look(self.wa_worn.as_ref()) > 0 => {
-                // in the Winamp style: draw the new palette's skin
-                let g = gen_look(self.wa_worn.as_ref());
-                SKIN.store(n % PALS.len(), Ordering::Relaxed);
-                self.dirty = true;
-                self.apply(Action::WaGen(g));
-            }
-            // (a palette is always worn in the ORIGINAL look now, the plain pixel panels are gone)
-            Action::SkinSet(n) => {
-                SKIN.store(n % PALS.len(), Ordering::Relaxed);
-                self.dirty = true;
-                self.apply(Action::WaGen(2));
-                self.set_note(&format!("SKIN: {}", SKIN_NAMES[n % PALS.len()]));
-            }
-            Action::Skin if gen_look(self.wa_worn.as_ref()) > 0 => {
-                self.apply(Action::SkinSet(SKIN.load(Ordering::Relaxed) + 1));
-            }
             Action::Skin => {
-                self.apply(Action::SkinSet(SKIN.load(Ordering::Relaxed) + 1));
+                let next = if backline_look(self.wa_worn.as_ref()) && !self.look_custom { SKIN.load(Ordering::Relaxed) + 1 } else { 0 };
+                self.wear_look(next);
             }
             Action::Sleep => {
                 const STEPS: [u32; 6] = [0, 15, 30, 45, 60, 90];
@@ -2044,13 +2012,33 @@ impl App {
             }
 
             // ---- practice tools
-            Action::ToggleFocus => {
-                self.focus_mode = !self.focus_mode;
-                // (focus mode hides the library: the chart, when there is one, takes the queue's window; leaving it,
-                // the queue's window is the queue again, the chart on its page)
+            Action::ToggleLibrary => {
+                self.lib_hidden = !self.lib_hidden;
+                // (the chart's page is in the library: while it's hidden, the chart takes the queue's window)
                 let has_chart = self.chart_tune().map(|i| !self.store.tunes[i].chart.is_empty()).unwrap_or(false);
-                self.rtab = if self.focus_mode && has_chart { 1 } else { 0 };
-                self.set_note(if self.focus_mode { "FOCUS MODE: PLAYER AND TOOLS ONLY" } else { "FULL LAYOUT" });
+                self.rtab = if self.lib_hidden && has_chart { 1 } else { 0 };
+                // with a skin, the window narrows to the player's column (the deck, playlist and practice panel
+                // standing alone, as Winamp's do), and is as wide as it was when the library comes back
+                if self.wa_art.is_some() && !self.mini && !self.fullscreen {
+                    let (inner, max) = self.ctx.input(|i| (i.viewport().inner_rect, i.viewport().maximized.unwrap_or(false)));
+                    if let Some(r) = inner {
+                        if self.lib_hidden {
+                            self.lib_shown_w = Some((r.width(), max));
+                            if max {
+                                self.ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                            }
+                            let w = (275.0 * self.stack_k).round();
+                            self.ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(w, r.height())));
+                        } else if let Some((w, was_max)) = self.lib_shown_w.take() {
+                            self.ctx.send_viewport_cmd(if was_max {
+                                egui::ViewportCommand::Maximized(true)
+                            } else {
+                                egui::ViewportCommand::InnerSize(Vec2::new(w, r.height()))
+                            });
+                        }
+                    }
+                }
+                self.set_note(if self.lib_hidden { "LIBRARY HIDDEN" } else { "LIBRARY" });
             }
             Action::Continue => {
                 let Some(l) = self.store.last.clone() else { return };

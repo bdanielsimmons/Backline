@@ -2488,12 +2488,12 @@ impl App {
             p.circle_filled(c, d / 2.0 - 3.0, face);
             p.circle_stroke(c, d / 2.0 - 1.0, Stroke::new(2.0_f32, pal().bar_txt));
             if playing {
-                p.rect_filled(Rect::from_center_size(c, Vec2::splat(d * 0.26)), 3.0, pal().lcd);
+                p.rect_filled(Rect::from_center_size(c, Vec2::splat(d * 0.26)), 3.0, pal().display);
             } else {
                 let s = d * 0.2;
                 let pts =
                     vec![Pos2::new(c.x - s * 0.7, c.y - s), Pos2::new(c.x + s * 1.1, c.y), Pos2::new(c.x - s * 0.7, c.y + s)];
-                p.add(egui::Shape::convex_polygon(pts, pal().lcd, Stroke::NONE));
+                p.add(egui::Shape::convex_polygon(pts, pal().display, Stroke::NONE));
             }
             if resp.clicked() {
                 if playing {
@@ -2538,7 +2538,7 @@ impl App {
                     let col = match self.ear.marks.get(k) {
                         Some(true) => ok_col(),
                         Some(false) => bad_col(),
-                        None => pal().beige_dk.gamma_multiply(0.6),
+                        None => pal().panel_dk.gamma_multiply(0.6),
                     };
                     ui.painter().rect_filled(cell, 2.0, col);
                 }
@@ -2897,7 +2897,7 @@ impl App {
             for (big, small) in tiles.iter() {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(tw, 62.0), Sense::hover());
                 let p = ui.painter();
-                p.rect_stroke(r.shrink(2.0), 6.0, Stroke::new(1.0_f32, pal().beige_dk));
+                p.rect_stroke(r.shrink(2.0), 6.0, Stroke::new(1.0_f32, pal().panel_dk));
                 ptext_fit(p, Pos2::new(r.center().x, r.min.y + 24.0), Align::Center, big, 3.0, r.width() - 12.0, pal().ink);
                 ptext_fit(p, Pos2::new(r.center().x, r.max.y - 13.0), Align::Center, small, 1.0, r.width() - 12.0, pal().dim);
             }
@@ -3232,8 +3232,8 @@ fn chips(ui: &mut egui::Ui, texts: &[String]) {
             let w = text_w(text, 1.5) + 24.0;
             let (r, _) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
             let p = ui.painter();
-            p.rect_filled(r, 14.0, pal().beige_dk.gamma_multiply(0.35));
-            p.rect_stroke(r, 14.0, Stroke::new(1.0_f32, pal().beige_dk));
+            p.rect_filled(r, 14.0, pal().panel_dk.gamma_multiply(0.35));
+            p.rect_stroke(r, 14.0, Stroke::new(1.0_f32, pal().panel_dk));
             ptext(p, r.center(), Align::Center, text, 1.5, pal().ink2);
         }
     });

@@ -5,7 +5,7 @@ use super::*;
 /// The side list's (and Now Playing's) shade in a skin's library: between the list's colour and the window's
 /// ground, so it sits a step apart from the page in any skin.
 pub(crate) fn side_tone() -> Color32 {
-    pal().lcd.lerp_to_gamma(pal().app_bg, 0.55)
+    pal().display.lerp_to_gamma(pal().app_bg, 0.55)
 }
 
 /// A fine line between parts of one surface: the text colour, faint (it shows on light and dark skins alike).
@@ -96,7 +96,7 @@ impl App {
                 }
                 if !self.login_err.is_empty() {
                     let er = Rect::from_center_size(c + Vec2::new(0.0, 116.0), Vec2::new(430.0, 22.0));
-                    inset(ui.painter(), er, pal().lcd);
+                    inset(ui.painter(), er, pal().display);
                     marquee(ui, er, &self.login_err, 2.0, pal().red);
                 }
             }
@@ -194,7 +194,7 @@ impl App {
                     // + : save the curve you have
                     let (card, r) = ui.allocate_exact_size(Vec2::new(card_h, card_h), Sense::click());
                     let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Save as preset");
-                    inset(ui.painter(), card, if r.hovered() || self.eq_naming { pal().sel } else { pal().lcd });
+                    inset(ui.painter(), card, if r.hovered() || self.eq_naming { pal().sel } else { pal().display });
                     let c = card.center();
                     let st = Stroke::new(2.0_f32, pal().ink);
                     ui.painter().line_segment([c - Vec2::new(7.0, 0.0), c + Vec2::new(7.0, 0.0)], st);
@@ -276,7 +276,7 @@ impl App {
         let (card, r) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
         let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{} preset", name));
         let on = self.eq_on && self.eq_gains == *g;
-        inset(ui.painter(), card, if on || r.hovered() { pal().sel } else { pal().lcd });
+        inset(ui.painter(), card, if on || r.hovered() { pal().sel } else { pal().display });
         crate::ui_text(ui.painter(), Pos2::new(card.min.x + 6.0, card.min.y + 8.0), Align::Min, name, 1.0, w - 12.0, pal().ink);
         let gr = Rect::from_min_max(Pos2::new(card.min.x + 6.0, card.min.y + 15.0), card.max - Vec2::new(6.0, 5.0));
         let pts: Vec<Pos2> = (0..10)
@@ -375,7 +375,7 @@ impl App {
         let scale_w = 40.0;
         // the curve
         let (graph, _) = ui.allocate_exact_size(Vec2::new(area.width(), 46.0), Sense::hover());
-        inset(ui.painter(), graph, pal().lcd);
+        inset(ui.painter(), graph, pal().display);
         let gi = graph.shrink2(Vec2::new(10.0, 6.0));
         let gx = |i: usize| gi.min.x + scale_w + (gi.width() - scale_w) * (i as f32 + 0.5) / 10.0;
         let gy = |g: f32| gi.center().y - g / 12.0 * gi.height() * 0.5;
@@ -463,38 +463,38 @@ impl App {
         }
     }
 
-    /// The skins, one section under another: ORIGINAL (Backline's palettes as sleek Winamp-style skins) and
-    /// WINAMP (the one you wear, the ones worn lately, and the way to the browser). The one worn is marked.
+    /// The skins, one section under another: BACKLINE (Backline's own looks and your Custom one) and WINAMP (the one
+    /// you wear, the ones worn lately, and the way to the browser). The one worn is marked.
     fn skin_lists(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let look = crate::gen_look(self.wa_worn.as_ref());
-        let museum = self.wa_worn.clone().filter(|_| look == 0);
-        let cur = SKIN.load(Ordering::Relaxed) % PALS.len();
-        for (gi, (title, g)) in [(0usize, ("Backline skins", 2usize))] {
-            ui.add_space(6.0);
-            // folded up: its name and the one worn from it; open to pick another
-            let worn_here = (if g == 0 { self.wa_worn.is_none() } else { look == g }).then(|| SKIN_NAMES[cur]);
-            let head = format!(
-                "{} {}",
-                if self.skins_open[gi] { "-" } else { "+" },
-                crate::font::as_label(&format!(
-                    "{}{}",
-                    title,
-                    worn_here.map(|n| format!("  ·  {}", crate::winamp_ui::display_case(&n.to_uppercase()))).unwrap_or_default()
-                ))
-            );
-            if menu_item(ui, &head) {
-                self.skins_open[gi] = !self.skins_open[gi];
-            }
-            if !self.skins_open[gi] {
-                continue;
-            }
+        let worn = self.wa_worn.clone();
+        let custom = crate::custom_worn(worn.as_ref());
+        let ours = crate::backline_look(worn.as_ref()) && !custom;
+        let museum = worn.clone().filter(|w| !crate::backline_look(Some(w)));
+        let cur = SKIN.load(Ordering::Relaxed) % LOOKS.len();
+        ui.add_space(6.0);
+        // folded up: its name and the look worn from it; open to pick another
+        let worn_here = if custom { Some("CUSTOM") } else { ours.then(|| SKIN_NAMES[cur]) };
+        let head = format!(
+            "{} {}",
+            if self.skins_open[0] { "-" } else { "+" },
+            crate::font::as_label(&format!(
+                "Backline skins{}",
+                worn_here.map(|n| format!("  ·  {}", crate::winamp_ui::display_case(n))).unwrap_or_default()
+            ))
+        );
+        if menu_item(ui, &head) {
+            self.skins_open[0] = !self.skins_open[0];
+        }
+        if self.skins_open[0] {
             // in a box of its own, so opening it doesn't push the page away
             crate::views::contained(ui, ("skin_list", 0), |ui| {
                 for (n, name) in SKIN_NAMES.iter().enumerate() {
-                    let on = n == cur && if g == 0 { self.wa_worn.is_none() } else { look == g };
-                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
-                        acts.push(Action::Theme(n, g));
+                    if menu_item(ui, &format!("{}{}", if ours && n == cur { "> " } else { "  " }, name)) {
+                        acts.push(Action::Look(n));
                     }
+                }
+                if menu_item(ui, &format!("{}CUSTOM...", if custom { "> " } else { "  " })) {
+                    acts.push(Action::EditLook);
                 }
             });
         }
@@ -749,7 +749,7 @@ impl App {
                             egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
                         }
                         None => {
-                            ui.painter().rect_filled(r, 3.0, pal().lcd);
+                            ui.painter().rect_filled(r, 3.0, pal().display);
                         }
                     }
                     let nw = (crate::font::text_w(&name, 2.4) + 10.0).clamp(140.0, 360.0);
@@ -766,7 +766,11 @@ impl App {
                         acts.push(Action::WaFav(md5.clone(), name.clone()));
                     }
                     if retro_btn(ui, "Backline Look", false).tip("Take the skin off: Backline's own look.").clicked() {
-                        acts.push(Action::Theme(crate::skin::SKIN.load(std::sync::atomic::Ordering::Relaxed) % crate::skin::PALS.len(), 2));
+                        acts.push(if self.look_custom {
+                            Action::EditLook
+                        } else {
+                            Action::Look(crate::skin::SKIN.load(std::sync::atomic::Ordering::Relaxed))
+                        });
                     }
                 });
             });
@@ -781,7 +785,7 @@ impl App {
         let w = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width()) - 6.0;
         let (pill, _) = ui.allocate_exact_size(Vec2::new(w.max(160.0), h), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(pill, h / 2.0, pal().lcd);
+        p.rect_filled(pill, h / 2.0, pal().display);
         let focused = self.ed.id == crate::tools::F_WINAMP;
         p.rect_stroke(pill, h / 2.0, Stroke::new(1.0_f32, if focused { pal().ink2 } else { pal().groove.gamma_multiply(1.6) }));
         let ir = Rect::from_center_size(Pos2::new(pill.min.x + 18.0 * sc, pill.center().y), Vec2::splat(16.0 * sc));
@@ -826,7 +830,7 @@ impl App {
                 egui::Image::new(egui::load::SizedTexture::new(id, shot.size())).paint_at(ui, shot);
             }
             None => {
-                p.rect_filled(shot, 4.0, pal().lcd);
+                p.rect_filled(shot, 4.0, pal().display);
             }
         }
         let hover = r.hovered();
@@ -837,11 +841,11 @@ impl App {
             p.rect_stroke(shot.expand(1.5), 4.0, Stroke::new(1.5_f32, pal().ink2));
         }
         if on {
-            tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Wearing", pal().bar_txt, pal().lcd);
+            tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Wearing", pal().bar_txt, pal().display);
         }
         if self.wa_loading.as_deref() == Some(s.name.as_str()) {
             p.rect_filled(shot, 4.0, Color32::from_black_alpha(140));
-            tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Putting it on...", pal().ink, pal().lcd);
+            tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Putting it on...", pal().ink, pal().display);
         }
         // the star: on the pointer, or always on a favorite
         let star = Rect::from_min_size(Pos2::new(shot.max.x - 34.0 * sc, shot.min.y + 6.0 * sc), Vec2::splat(28.0 * sc));
@@ -909,7 +913,7 @@ impl App {
                         egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
                     }
                     None => {
-                        ui.painter().rect_filled(r, 4.0, pal().lcd);
+                        ui.painter().rect_filled(r, 4.0, pal().display);
                         crate::font::ptext(ui.painter(), r.center(), Align::Center, "Loading the picture...", 1.5, pal().ink2);
                     }
                 }
@@ -967,8 +971,8 @@ impl App {
             {
                 acts.push(Action::TogglePractice);
             }
-            if PRACTICE && menu_item(ui, if self.focus_mode { "Focus  (on)" } else { "Focus (hide the lists)" }) {
-                acts.push(Action::ToggleFocus);
+            if menu_item(ui, if self.lib_hidden { "Show Library" } else { "Hide Library" }) {
+                acts.push(Action::ToggleLibrary);
             }
             if menu_item(ui, if self.wa_guide { "Button Guide  (on)" } else { "Button Guide (name each button)" }) {
                 self.wa_guide = !self.wa_guide;
@@ -1088,7 +1092,7 @@ impl App {
             if n == 2 {
                 p.circle_filled(c, d / 2.0 + if h.hovered() { 1.0 } else { 0.0 }, pal().ink);
                 let off = if playing { 0.0 } else { 1.5 };
-                crate::vicon::named(&p, Rect::from_center_size(c + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)), icon, pal().lcd);
+                crate::vicon::named(&p, Rect::from_center_size(c + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)), icon, pal().display);
             } else {
                 let lit = (n == 0 && self.shuffle) || (n == 4 && rep_on);
                 let col = if lit {
@@ -1152,7 +1156,7 @@ impl App {
             // boxes inside boxes
             let all = crate::frame_body(ui.max_rect());
             let p = ui.painter().clone();
-            p.rect_filled(all, 0.0, pal().lcd);
+            p.rect_filled(all, 0.0, pal().display);
             // (the places get the window's whole height; Now Playing is the page's foot)
             let sw = (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0));
             let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
@@ -1248,7 +1252,7 @@ impl App {
             let resp =
                 ui.interact(rr, ui.id().with(("side_nav", key)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
             if on {
-                p.rect_filled(rr, 5.0, pal().beige.lerp_to_gamma(pal().lcd, 0.3));
+                p.rect_filled(rr, 5.0, pal().panel.lerp_to_gamma(pal().display, 0.3));
                 p.rect_filled(Rect::from_min_size(rr.min, Vec2::new(3.0, rr.height())), 1.5, pal().bar_txt);
             } else if resp.hovered() {
                 p.rect_filled(rr, 5.0, Color32::from_white_alpha(10));
@@ -1280,7 +1284,7 @@ impl App {
         let mut y = (r.max.y - 8.0 - foot.len() as f32 * rh).max(y + rh * 0.5);
         p.line_segment(
             [Pos2::new(r.min.x + 12.0, y - 6.0), Pos2::new(r.max.x - 12.0, y - 6.0)],
-            Stroke::new(1.0_f32, pal().beige_dk),
+            Stroke::new(1.0_f32, pal().panel_dk),
         );
         for it in foot {
             row(y, it, &mut hit);
@@ -1331,8 +1335,8 @@ impl App {
         let h = 30.0 * font::ui_scale();
         let area = Rect::from_min_max(Pos2::new(r.min.x + 10.0, y), Pos2::new(r.max.x - 10.0, y + h));
         let p = ui.painter().clone();
-        p.rect_filled(area, h / 2.0, pal().beige.lerp_to_gamma(pal().lcd, 0.35));
-        p.rect_stroke(area, h / 2.0, Stroke::new(1.0_f32, pal().beige_h));
+        p.rect_filled(area, h / 2.0, pal().panel.lerp_to_gamma(pal().display, 0.35));
+        p.rect_stroke(area, h / 2.0, Stroke::new(1.0_f32, pal().panel_hover));
         let half = area.width() / 2.0;
         for (k, (icon, word, on)) in
             [("headphones", "LISTEN", !self.practice), ("wave", "PRACTICE", self.practice)].into_iter().enumerate()
@@ -1351,7 +1355,7 @@ impl App {
             } else if resp.hovered() {
                 p.rect_filled(cell, cell.height() / 2.0, Color32::from_white_alpha(14));
             }
-            let col = if on { pal().lcd } else { pal().ink2 };
+            let col = if on { pal().display } else { pal().ink2 };
             let tw = text_w(word, 1.4);
             let x0 = cell.center().x - (tw + 18.0) / 2.0;
             crate::vicon::named(&p, Rect::from_center_size(Pos2::new(x0 + 7.0, cell.center().y), Vec2::splat(12.0)), icon, col);
@@ -1392,7 +1396,7 @@ impl App {
             1,
         )];
         if PRACTICE {
-            items.push(("focus", self.focus_mode, "Focus: just the player, your tools and the chart.".into(), 2));
+            items.push(("focus", self.lib_hidden, "Hide the library: just the player and your tools.".into(), 2));
         }
         items.push(("mini", false, "Mini player.".into(), 4));
         items.push(("pin", self.pinned, "Always on top".into(), 5));
@@ -1432,7 +1436,7 @@ impl App {
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .tip(tip);
             if on {
-                p.rect_filled(b, 5.0, pal().beige.lerp_to_gamma(pal().lcd, 0.3));
+                p.rect_filled(b, 5.0, pal().panel.lerp_to_gamma(pal().display, 0.3));
             } else if h.hovered() {
                 p.rect_filled(b, 5.0, Color32::from_white_alpha(10));
             }
@@ -1450,7 +1454,7 @@ impl App {
             if h.clicked() {
                 match key {
                     1 => acts.push(Action::GoOffline(!self.go_offline)),
-                    2 => acts.push(Action::ToggleFocus),
+                    2 => acts.push(Action::ToggleLibrary),
                     3 => acts.push(Action::TogglePractice),
                     4 => acts.push(Action::ToggleMini),
                     5 => acts.push(Action::TogglePin),
@@ -1555,7 +1559,7 @@ impl App {
         // persistent error line
         if self.status_err && !self.status.is_empty() {
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::click());
-            inset(ui.painter(), rect, pal().lcd);
+            inset(ui.painter(), rect, pal().display);
             marquee(ui, rect, &self.status, 2.0, pal().red);
             if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 acts.push(Action::ClearStatus);
@@ -1587,7 +1591,7 @@ impl App {
         let area = if flat {
             avail
         } else {
-            inset(ui.painter(), avail, pal().lcd);
+            inset(ui.painter(), avail, pal().display);
             if crate::winamp_ui::chrome_on() {
                 avail.shrink2(Vec2::new(12.0, 8.0))
             } else {
@@ -1746,7 +1750,7 @@ impl App {
         p.rect_filled(r.translate(Vec2::new(0.0, 3.0)), h / 2.0, egui::Color32::from_black_alpha((110.0 * a) as u8));
         p.rect_filled(r, h / 2.0, pal().bar_txt.gamma_multiply(a));
         // a tick, then the words
-        let ink = pal().lcd.gamma_multiply(a);
+        let ink = pal().display.gamma_multiply(a);
         let c = Pos2::new(r.min.x + 20.0 * sc, r.center().y);
         let s = egui::Stroke::new(2.2 * sc, ink);
         p.line_segment([c + Vec2::new(-5.0, 0.0) * sc, c + Vec2::new(-1.5, 3.5) * sc], s);

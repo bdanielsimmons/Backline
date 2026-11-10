@@ -382,7 +382,7 @@ pub(crate) fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String
     let (lines, hoff, voff) = offsets(&chars, ed.cur, focused);
     let p = ui.painter();
     if !FIELD_BARE.with(|b| b.get()) {
-        inset(p, rect, pal().lcd);
+        inset(p, rect, pal().display);
         if focused {
             outline(p, rect, 1.0, pal().ink2);
         }
@@ -421,7 +421,7 @@ pub(crate) fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String
                     let band = Rect::from_min_max(Pos2::new(x0, y - lh / 2.0), Pos2::new(x1, y + lh / 2.0));
                     let bp = cp.with_clip_rect(band.intersect(inner));
                     if lk.mark || lk.link || lk.tag {
-                        fill_rect(&bp, band, pal().lcd);
+                        fill_rect(&bp, band, pal().display);
                         ptext(&bp, at, Align::Min, &line, px, if lk.mark { pal().dim } else { link_col() });
                     }
                     if lk.bold || lk.head {
@@ -450,7 +450,7 @@ pub(crate) fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String
             fill_rect(&cp, band, pal().ink);
             // the line again in the field's colour, seen only inside the band
             let line: String = chars[*s..(*e).min(chars.len())].iter().collect();
-            ptext(&cp.with_clip_rect(band.intersect(inner)), Pos2::new(inner.min.x - hoff, y), Align::Min, &line, px, pal().lcd);
+            ptext(&cp.with_clip_rect(band.intersect(inner)), Pos2::new(inner.min.x - hoff, y), Align::Min, &line, px, pal().display);
         }
     }
     if focused && (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0 {

@@ -13,6 +13,21 @@ impl App {
         if std::env::var_os("BACKLINE_OPEN").is_some() {
             app.side = None;
         }
+        // (BACKLINE_LOOK=<n>: wearing Backline's look n; "custom": your Custom one, its editor open)
+        match std::env::var("BACKLINE_LOOK").as_deref() {
+            Ok("custom") => app.edit_look(),
+            Ok(n) => {
+                if let Ok(n) = n.parse::<usize>() {
+                    app.wear_look(n);
+                }
+            }
+            _ => {}
+        }
+        // (BACKLINE_HIDELIB=1: the library hidden; give it a narrow BACKLINE_SIZE, as the window narrows to the player's
+        // column)
+        if std::env::var_os("BACKLINE_HIDELIB").is_some() {
+            app.lib_hidden = true;
+        }
         // (BACKLINE_PRACTICE=1: in practice mode, whatever page it opens on)
         if std::env::var_os("BACKLINE_PRACTICE").is_some() {
             app.practice = true;

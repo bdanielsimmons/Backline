@@ -8,7 +8,7 @@ use super::*;
 
 /// Links in notes: a blue that reads on the box's face, dark or light.
 pub(crate) fn link_col() -> Color32 {
-    let l = pal().lcd;
+    let l = pal().display;
     let lum = 0.3 * l.r() as f32 + 0.59 * l.g() as f32 + 0.11 * l.b() as f32;
     if lum < 110.0 {
         Color32::from_rgb(120, 175, 255)
@@ -341,7 +341,7 @@ pub(crate) fn notes_box(
     let tag = pc.filter(|p| p.look.tag).map(|p| p.text.to_lowercase());
     let tune = pc.and_then(|p| p.tune);
     let p = ui.painter();
-    inset(p, r, pal().lcd);
+    inset(p, r, pal().display);
     draw_notes(&p.with_clip_rect(r.shrink(2.0)), o, w - 16.0, &laid, 1.0, hit.map(|h| h.0), "");
     let resp = if let Some(u) = &url {
         resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(u)

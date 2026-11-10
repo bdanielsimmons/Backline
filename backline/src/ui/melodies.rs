@@ -1258,7 +1258,7 @@ impl App {
         };
         let beats = span(tune, from, to);
         let mut close = false;
-        egui::Frame::none().fill(pal().beige).stroke(Stroke::new(1.0_f32, pal().ink2)).inner_margin(6.0).show(ui, |ui| {
+        egui::Frame::none().fill(pal().panel).stroke(Stroke::new(1.0_f32, pal().ink2)).inner_margin(6.0).show(ui, |ui| {
             // the title, and what to do with it - always in sight
             ui.horizontal_wrapped(|ui| {
                 let header = match (saved, picked_mark) {
@@ -1839,7 +1839,7 @@ impl App {
                 continue;
             }
             let p = ui.painter();
-            p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().beige_lt);
+            p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().panel_lt);
             let top = rect.min.y + 2.0;
             let body_top = top + marks_h;
             let names_y = body_top + 10.0 * sc;
@@ -2129,7 +2129,7 @@ impl App {
                                 p.rect_filled(
                                     Rect::from_center_size(c, Vec2::new(crate::font::text_w(&txt, 1.0) + 3.0, tg * 0.9)),
                                     0.0,
-                                    pal().beige_lt,
+                                    pal().panel_lt,
                                 );
                                 ptext(p, c, Align::Center, &txt, 1.0, if n[3] == 1 { pal().dim } else { ink });
                             }

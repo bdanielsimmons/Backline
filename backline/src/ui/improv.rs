@@ -1523,7 +1523,7 @@ pub(crate) fn neck_view(ui: &mut egui::Ui, dots: &[NeckDot], lit: Option<Spot>) 
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 190.0), Sense::hover());
     let neck = Rect::from_min_max(rect.min + Vec2::new(34.0, 10.0), rect.max - Vec2::new(8.0, 26.0));
     let p = ui.painter();
-    p.rect_filled(neck, 2.0, pal().lcd);
+    p.rect_filled(neck, 2.0, pal().display);
     // the neck runs to the 17th fret, or further when a position climbs higher (up to the 24th)
     let top = dots.iter().map(|d| d.spot.1).max().unwrap_or(0).clamp(TOP_FRET, 24);
     let frets = top as f32;
@@ -1555,7 +1555,7 @@ pub(crate) fn neck_view(ui: &mut egui::Ui, dots: &[NeckDot], lit: Option<Spot>) 
         let c = Pos2::new(x_of(d.spot.1), y_of(d.spot.0));
         let col = d.col.gamma_multiply(d.strength);
         if d.ring {
-            p.circle_filled(c, r * 0.8, pal().lcd);
+            p.circle_filled(c, r * 0.8, pal().display);
             p.circle_stroke(c, r * 0.8, Stroke::new(1.5_f32, col));
             ptext(p, c, Align::Center, &d.text, 1.0, col);
         } else if d.root {

@@ -786,7 +786,7 @@ fn draw_score_at(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], t
     for (ri, row) in rows.iter().enumerate() {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(w, block_h * parts.len() as f32), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().beige_lt);
+        p.rect_filled(rect.shrink2(Vec2::new(0.0, 2.0)), 3.0, pal().panel_lt);
         let line = Stroke::new(1.0_f32, pal().ink2);
         let ink = pal().ink;
         let natural_w: f32 = row.iter().map(|b| shared(*b)).sum();
@@ -1097,7 +1097,7 @@ fn draw_score_at(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], t
                             p.rect_filled(
                                 Rect::from_center_size(Pos2::new(cx, tab_y(sf.0)), Vec2::new(text_w(&txt, 1.0) + 6.0, 9.0)),
                                 0.0,
-                                pal().beige_lt,
+                                pal().panel_lt,
                             );
                             ptext(p, Pos2::new(cx, tab_y(sf.0)), Align::Center, &txt, 1.0, col);
                         }
@@ -1308,7 +1308,7 @@ fn position_map(ui: &mut egui::Ui, tonic: i32, pos: u8, sharps: bool) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 130.0), Sense::hover());
     let neck = Rect::from_min_max(rect.min + Vec2::new(30.0, 8.0), rect.max - Vec2::new(8.0, 22.0));
     let p = ui.painter();
-    p.rect_filled(neck, 2.0, pal().lcd);
+    p.rect_filled(neck, 2.0, pal().display);
     let fw = neck.width() / n;
     let sh = neck.height() / 6.0;
     for f in 0..=(hi - lo + 1) {

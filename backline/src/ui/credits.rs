@@ -24,9 +24,9 @@ pub(crate) fn panel(ctx: &egui::Context, id: &str, width: f32, body: impl FnOnce
         ctx,
         |ui| {
             egui::Frame::none()
-                .fill(pal().beige)
+                .fill(pal().panel)
                 .stroke(egui::Stroke::new(2.0_f32, pal().edge))
-                .rounding(if crate::style() != 0 { 8.0 } else { 0.0 })
+                .rounding(0.0)
                 .inner_margin(12.0)
                 .show(ui, |ui| {
                     ui.set_width(w - 24.0);
@@ -143,7 +143,7 @@ impl App {
                 crate::inset(ui.painter(), pv, pal().edge);
                 self.skin_viz_preview(ui.painter(), pv.shrink(6.0), &vb, &vp, &vw, c.mode);
             } else if which == 0 {
-                crate::inset(ui.painter(), pv, pal().lcd);
+                crate::inset(ui.painter(), pv, pal().display);
                 crate::viz_draw(ui.painter(), pv.shrink(6.0), &vb, &vp, &vw, c.mode, c.w, false, 1.0, self.viz_tint(c.color));
             } else {
                 ui.painter().rect_filled(pv, 0.0, pal().app_bg);
@@ -265,9 +265,9 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 egui::Frame::none()
-                    .fill(pal().beige)
+                    .fill(pal().panel)
                     .stroke(egui::Stroke::new(2.0_f32, pal().edge))
-                    .rounding(if crate::style() != 0 { 8.0 } else { 0.0 })
+                    .rounding(0.0)
                     .inner_margin(12.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {

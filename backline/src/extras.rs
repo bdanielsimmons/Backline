@@ -193,7 +193,8 @@ impl App {
                 self.apply_pl_font();
                 crate::setup_style(&self.ctx);
                 if announce {
-                    self.set_note(&format!("WINAMP SKIN: {}", s.name.to_uppercase()));
+                    let what = if s.md5.starts_with("gen:") { "LOOK" } else { "WINAMP SKIN" };
+                    self.set_note(&format!("{}: {}", what, s.name.to_uppercase()));
                 }
                 if !s.md5.starts_with("gen:") {
                     // remembered among the recent ones, newest first
@@ -320,7 +321,7 @@ impl App {
     /// Show the lead sheet: its own page in the library, so Back returns to where you were and the queue's window
     /// stays the queue. In focus mode (no library) it takes the queue's window, as a tab beside the queue.
     pub(crate) fn open_chart(&mut self) {
-        if self.focus_mode {
+        if self.lib_hidden {
             self.rtab = 1;
             return;
         }
@@ -333,7 +334,7 @@ impl App {
 
     /// The queue's window shows the lead sheet (focus mode only: elsewhere the chart has its page).
     pub(crate) fn chart_in_queue(&self) -> bool {
-        crate::PRACTICE && self.focus_mode && self.rtab == 1
+        crate::PRACTICE && self.lib_hidden && self.rtab == 1
     }
 
     /// Put the lead sheet on the song playing: its tune when it is in one, else its changes looked up.

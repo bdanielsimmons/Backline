@@ -763,7 +763,7 @@ impl App {
             for (name, val) in &tiles {
                 let w = text_w(name, 1.0).max(text_w(val, 2.0)) + 20.0;
                 let (r, _) = ui.allocate_exact_size(Vec2::new(w, 44.0), Sense::hover());
-                inset(ui.painter(), r, pal().lcd);
+                inset(ui.painter(), r, pal().display);
                 ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 12.0), Align::Center, name, 1.0, pal().dim);
                 ptext(ui.painter(), Pos2::new(r.center().x, r.min.y + 30.0), Align::Center, val, 2.0, pal().ink);
             }
@@ -792,7 +792,7 @@ impl App {
                 continue;
             }
             let m = mins.get(&d).copied().unwrap_or(0);
-            let face = if m == 0 { pal().lcd } else { block_col("project").gamma_multiply(0.35 + 0.65 * m as f32 / busiest as f32) };
+            let face = if m == 0 { pal().display } else { block_col("project").gamma_multiply(0.35 + 0.65 * m as f32 / busiest as f32) };
             ui.painter().rect_filled(r, 3.0, face);
             if d == today {
                 ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5_f32, pal().ink));

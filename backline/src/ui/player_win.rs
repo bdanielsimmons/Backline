@@ -59,7 +59,7 @@ impl App {
 
         // ---- LCD time
         let lcd = rc(6.0, 6.0, 100.0, 40.0);
-        inset(p, lcd, pal().lcd);
+        inset(p, lcd, pal().display);
         let icon: &[&str] = if !active {
             &STOP_S[..]
         } else if self.paused {
@@ -81,7 +81,7 @@ impl App {
 
         // ---- spectrum (click: bars / wave / both, right-click: width and sensitivity)
         let sp = rc(6.0, 50.0, 100.0, 28.0);
-        inset(p, sp, pal().lcd);
+        inset(p, sp, pal().display);
         let (vb, vp, vw) = self.viz_data(0);
         if self.viz[0].mode == 3 {
             self.vis_paint(ui, sp.shrink2(Vec2::new(3.0, 3.0)), 2);
@@ -113,7 +113,7 @@ impl App {
 
         // ---- title + status
         let tb = rc(112.0, 6.0, 182.0, 14.0);
-        inset(p, tb, pal().lcd);
+        inset(p, tb, pal().display);
         let title_txt = match &track {
             Some(t) => format!("{} - {}  ({})", t.artists_text(), t.title, fmt_time(t.duration)),
             None => format!("Backline {}: a retro player for Tidal", VERSION),
@@ -131,7 +131,7 @@ impl App {
         }
 
         let sb = rc(112.0, 22.0, 182.0, 10.0);
-        inset(p, sb, pal().lcd);
+        inset(p, sb, pal().display);
         let (stxt, scol): (String, Color32) = if !self.status.is_empty() {
             (self.status.clone(), if self.status_err { pal().red } else { pal().ink })
         } else if self.buffering {
@@ -157,7 +157,7 @@ impl App {
         let stream = |s: String| if active && !s.is_empty() { format!("\nStream: {}", s) } else { String::new() };
         // (stream quality lives on the title bar now, so tempo and key share the row)
         let kb = rc(112.0, 34.0, 66.0, 12.0);
-        inset(p, kb, pal().lcd);
+        inset(p, kb, pal().display);
         let kb_txt = info.bpm.map_or("--- BPM".to_string(), |b| format!("{} BPM", b));
         ptext_fit(p, kb.center(), Align::Center, &kb_txt, px_sm, kb.width() - 6.0, pal().ink);
         let kb_tip = match info.bpm {
@@ -167,7 +167,7 @@ impl App {
         ui.interact(kb, ui.id().with("bpm"), Sense::hover())
             .tip(kb_tip + &stream(if self.kbps > 0 { format!("{} kbps", self.kbps) } else { String::new() }));
         let kh = rc(182.0, 34.0, 68.0, 12.0);
-        inset(p, kh, pal().lcd);
+        inset(p, kh, pal().display);
         let kh_txt = if info.key.is_some() { meta::key_text(&info) } else { "KEY --".to_string() };
         ptext_fit(p, kh.center(), Align::Center, &kh_txt, px_sm, kh.width() - 6.0, pal().ink);
         let kh_tip = match info.key {
@@ -208,7 +208,7 @@ impl App {
                 Pos2::new(snap(hb.center().x - 3.5 * hpx), snap(hb.center().y - 3.0 * hpx)),
                 hpx,
                 &HEART[..],
-                if is_liked { pal().red } else { pal().beige_dk },
+                if is_liked { pal().red } else { pal().panel_dk },
             );
             if hr.clicked() {
                 if let Some(t) = &track {
@@ -438,7 +438,7 @@ impl App {
             .interact(strip, ui.id().with("strip"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Click to open the folder where tracks are saved on this computer.");
-        inset(p, strip, pal().lcd);
+        inset(p, strip, pal().display);
         let (dtxt, dcol): (String, Color32) = match &track {
             None => (format!("TRACKS ARE SAVED TO: {}", cache::dir().display()), pal().ink2),
             Some(t) => {
@@ -499,7 +499,7 @@ impl App {
 
         // ---- list well
         let well = Rect::from_min_max(full.min, Pos2::new(full.max.x, full.max.y - foot_h));
-        inset(ui.painter(), well, pal().lcd);
+        inset(ui.painter(), well, pal().display);
         let area = well.shrink(thick(3.0));
 
         enum QItem {
@@ -669,7 +669,7 @@ impl App {
                     acts.push(Action::PlaylistFromQueue);
                 }
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(340.0), bh()), Sense::hover());
-                inset(ui.painter(), rect, pal().lcd);
+                inset(ui.painter(), rect, pal().display);
                 let n = queue.len();
                 ptext_fit(
                     ui.painter(),
@@ -793,11 +793,11 @@ impl App {
                     }
                 }
                 "FOCUS" => {
-                    if chip(ui, r, "FOCUS", self.focus_mode, "c_focus")
-                        .tip("Hide the lists and keep the player, your tools and the chart.")
+                    if chip(ui, r, "LIBRARY", !self.lib_hidden, "c_focus")
+                        .tip("Show or hide the library (the player and your tools stay).")
                         .clicked()
                     {
-                        acts.push(Action::ToggleFocus);
+                        acts.push(Action::ToggleLibrary);
                     }
                 }
                 "OFFLINE" => {
@@ -820,7 +820,7 @@ impl App {
                     } else {
                         "Show labels on this skin's buttons."
                     });
-                    guide_icon(ui.painter(), r, if self.wa_guide { pal().lcd } else { pal().ink });
+                    guide_icon(ui.painter(), r, if self.wa_guide { pal().display } else { pal().ink });
                     if gc.clicked() {
                         self.wa_guide = !self.wa_guide;
                         self.dirty = true;
@@ -867,8 +867,8 @@ impl App {
                             }
                         }
                         "FOCUS" => {
-                            if menu_item(ui, &format!("Focus{}", on(self.focus_mode))) {
-                                acts.push(Action::ToggleFocus);
+                            if menu_item(ui, if self.lib_hidden { "Show Library" } else { "Hide Library" }) {
+                                acts.push(Action::ToggleLibrary);
                             }
                         }
                         "OFFLINE" => {

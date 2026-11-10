@@ -136,7 +136,7 @@ fn sub_tabs(ui: &mut egui::Ui, items: &[(Sec, &str)], cur: usize) -> Option<usiz
             // a small raised button each, a gap between; the one you are on pressed in and lit
             let b = r.shrink2(Vec2::new(2.0, 1.0));
             if on {
-                crate::inset(ui.painter(), b, pal().lcd);
+                crate::inset(ui.painter(), b, pal().display);
             } else {
                 crate::raised_h(ui.painter(), b, resp.is_pointer_button_down_on(), resp.hovered());
             }
@@ -697,7 +697,7 @@ impl App {
     /// Called at the top of the queue window: in focus mode (no library, so no Chart page), the QUEUE / CHART chips
     /// in the window's title strip (`ui`, the panel's), the lead sheet on its page (`page`).
     pub(crate) fn right_header(&mut self, ui: &mut egui::Ui, page: &mut egui::Ui, acts: &mut Vec<Action>) -> bool {
-        if !PRACTICE || !self.focus_mode {
+        if !PRACTICE || !self.lib_hidden {
             return false;
         }
         self.right_tabs(ui, acts);
@@ -749,7 +749,7 @@ impl App {
                 ui,
                 i,
                 Some(i + 1),
-                || track_cells(e.id, &e.title, &e.artist, ""),
+                || track_cells(e.id, &e.title, &e.artist, "", &e.kind),
                 || {
                     if e.dur == 0.0 && e.cover.is_empty() && (which == 2 || which == 3 || which == 6) {
                         "(loading info)".to_string()
@@ -1271,34 +1271,26 @@ impl App {
                         title_line(ui, "WHAT'S NEW", 3.0, pal().ink);
                         egui::ScrollArea::vertical().max_height((screen.height() * 0.45).max(160.0)).show(ui, |ui| {
                             ui.set_width(w - 16.0);
-                            for (tag, body) in &notes {
+                            // the areas' tags in one column, as wide as the widest shown, so the words line up
+                            let all: Vec<(&String, Vec<(Option<String>, String)>)> =
+                                notes.iter().map(|(t, b)| (t, news_lines(b))).collect();
+                            let tag_w = all
+                                .iter()
+                                .flat_map(|(_, l)| l.iter().filter_map(|(a, _)| a.as_ref()))
+                                .map(|a| crate::font::text_w(&a.to_uppercase(), NEWS_TAG_PX) + 16.0)
+                                .fold(0.0_f32, f32::max);
+                            for (tag, lines) in all {
+                                // a version that changed nothing you'd notice isn't listed
+                                if lines.is_empty() {
+                                    continue;
+                                }
                                 let this = tag.rsplit('.').next().and_then(|n| n.parse::<u64>().ok()) == Some(me);
                                 section_header(
                                     ui,
                                     &format!("{}{}", tag.to_uppercase(), if this { "  (THIS VERSION)" } else { "" }),
                                 );
-                                for line in body.lines() {
-                                    // the notes are written for GitHub; here, only what changes for you: one line a
-                                    // change (the details under each, the headings and the download instructions are
-                                    // left out)
-                                    if line.trim().trim_start_matches('#').trim().eq_ignore_ascii_case("downloads") {
-                                        break;
-                                    }
-                                    if line.trim_start().starts_with('#')
-                                        || (line.starts_with(char::is_whitespace) && line.trim_start().starts_with("- "))
-                                    {
-                                        continue;
-                                    }
-                                    let l = line.trim().trim_start_matches('#').trim().replace('`', "");
-                                    if l.is_empty() || l.starts_with("**Full Changelog") || l.starts_with("<!--") {
-                                        continue;
-                                    }
-                                    let l = l.replace("**", "");
-                                    let (text, col) = match l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")) {
-                                        Some(b) => (format!("  - {}", b), pal().ink2),
-                                        None => (l.to_string(), pal().ink),
-                                    };
-                                    crate::wrapped(ui, &text, col);
+                                for (area, text) in &lines {
+                                    news_line(ui, area.as_deref(), text, tag_w);
                                 }
                                 ui.add_space(6.0);
                             }
@@ -1708,7 +1700,7 @@ impl App {
                 ui,
                 k,
                 Some(k + 1),
-                || track_cells(v.id, &title, &v.artist, &v.album),
+                || track_cells(v.id, &title, &v.artist, &v.album, &v.kind),
                 || if col_on(2) { fmt_time(len) } else { String::new() },
                 state,
                 false,
@@ -1763,9 +1755,93 @@ pub(crate) fn contained<R>(ui: &mut egui::Ui, id: impl std::hash::Hash, add: imp
     egui::ScrollArea::vertical().id_salt(id).max_height(max).auto_shrink([false, true]).show(ui, add).inner
 }
 
+/// The parts of the app a note can be about: a note written "Area: what changed" shows its area as a tag.
+const NEWS_AREAS: [&str; 25] = [
+    "App", "Library", "Player", "Playlist", "Queue", "Practice", "Chart", "Now Playing", "Visuals", "Skins", "Looks", "Window",
+    "Tunes", "Loops", "Diary", "Lines", "Chords", "Ear Training", "Reading", "Settings", "Sync", "Files", "Tidal",
+    "Mac", "Mini Player",
+];
+
+/// A release's notes as What's New shows them: one line a change, (area, words), from the notes written for GitHub
+/// (the details under each, the headings and the download instructions left out).
+pub(crate) fn news_lines(body: &str) -> Vec<(Option<String>, String)> {
+    let mut out = Vec::new();
+    for line in body.lines() {
+        if line.trim().trim_start_matches('#').trim().eq_ignore_ascii_case("downloads") {
+            break;
+        }
+        if line.trim_start().starts_with('#') || (line.starts_with(char::is_whitespace) && line.trim_start().starts_with("- ")) {
+            continue;
+        }
+        let l = line.trim().replace(['`'], "").replace("**", "");
+        if l.is_empty() || l.starts_with("Full Changelog") || l.starts_with("<!--") {
+            continue;
+        }
+        let l = l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")).unwrap_or(&l).trim();
+        let l = l.strip_prefix("New: ").unwrap_or(l);
+        let area = NEWS_AREAS.iter().find(|a| l.strip_prefix(**a).is_some_and(|r| r.starts_with(": ")));
+        match area {
+            Some(a) => out.push((Some(a.to_string()), l[a.len() + 2..].to_string())),
+            None => out.push((None, l.to_string())),
+        }
+    }
+    out
+}
+
+/// The size of an area's tag in What's New.
+const NEWS_TAG_PX: f32 = 1.25;
+
+/// One change in What's New: its area as a tag in a column `tag_w` wide (so the words line up), then the words.
+fn news_line(ui: &mut egui::Ui, area: Option<&str>, text: &str, tag_w: f32) {
+    // (each change starts with a capital, whatever its note)
+    let mut cs = text.chars();
+    let text = cs.next().map(|c| c.to_uppercase().chain(cs).collect::<String>()).unwrap_or_default();
+    ui.horizontal_top(|ui| {
+        if tag_w > 0.0 {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(tag_w, 24.0), Sense::hover());
+            if let Some(a) = area {
+                let w = crate::font::text_w(&a.to_uppercase(), NEWS_TAG_PX) + 14.0;
+                let pill = Rect::from_min_size(Pos2::new(r.min.x, r.min.y + 3.0), Vec2::new(w, 19.0));
+                ui.painter().rect_filled(pill, 9.5, pal().display.lerp_to_gamma(pal().accent, 0.22));
+                crate::font::keep_caps(|| {
+                    ptext_fit(ui.painter(), pill.center(), Align::Center, &a.to_uppercase(), NEWS_TAG_PX, w - 8.0, pal().ink)
+                });
+            }
+        }
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            crate::wrapped(ui, &text, pal().ink2);
+        });
+    });
+}
+
 #[cfg(test)]
 mod summary_tests {
     use super::*;
+
+    #[test]
+    fn whats_new_reads_a_change_list() {
+        let body = "## Changes
+- Chart: a page of its own
+- New: Skins: fourteen looks
+- A line with no area
+  - a detail
+
+## Downloads
+- **Windows:** the installer
+";
+        let l = news_lines(body);
+        assert_eq!(l.len(), 3);
+        assert_eq!(l[0], (Some("Chart".to_string()), "a page of its own".to_string()));
+        assert_eq!(l[1], (Some("Skins".to_string()), "fourteen looks".to_string()));
+        assert_eq!(l[2], (None, "A line with no area".to_string()));
+        // a release that changed nothing you'd notice has no lines (and isn't listed)
+        assert!(news_lines("## Changes
+
+## Downloads
+- **Windows:** x
+").is_empty());
+    }
 
     #[test]
     fn a_loop_with_a_note_gets_a_line_of_its_own() {
@@ -1896,7 +1972,7 @@ fn divider(ui: &mut egui::Ui) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(9.0, h), Sense::hover());
     ui.painter().line_segment(
         [Pos2::new(r.center().x, r.min.y + 4.0), Pos2::new(r.center().x, r.max.y - 4.0)],
-        egui::Stroke::new(1.0_f32, pal().beige_lt),
+        egui::Stroke::new(1.0_f32, pal().panel_lt),
     );
 }
 

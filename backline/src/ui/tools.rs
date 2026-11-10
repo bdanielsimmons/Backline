@@ -835,7 +835,7 @@ impl App {
             label(ui, "VOL", 36.0);
             let (r, resp) =
                 ui.allocate_exact_size(Vec2::new((ui.available_width() - 8.0).clamp(80.0, 180.0), bh()), Sense::click_and_drag());
-            inset(ui.painter(), r, pal().lcd);
+            inset(ui.painter(), r, pal().display);
             let inner = r.shrink(4.0);
             let fill = Rect::from_min_size(inner.min, Vec2::new(inner.width() * self.mt_vol, inner.height()));
             ui.painter().rect_filled(fill, if crate::winamp_ui::chrome_on() { 3.0 } else { 0.0 }, pal().ink2);
@@ -960,7 +960,7 @@ impl App {
     /// A swinging pendulum in `rect`; its tip flashes on the beat.
     fn pendulum(&self, ui: &egui::Ui, rect: Rect) {
         let (_, frac, muted) = self.metro_pos();
-        inset(ui.painter(), rect, pal().lcd);
+        inset(ui.painter(), rect, pal().display);
         let p = ui.painter();
         let k = rect.height() / 132.0;
         let pivot = Pos2::new(rect.center().x, rect.max.y - 14.0 * k);
@@ -981,7 +981,7 @@ impl App {
         };
         // two faint afterimages so the motion reads as smooth
         if let Some(e) = phase {
-            for (back, col) in [(0.16f32, pal().lcd_ghost), (0.08, pal().groove)] {
+            for (back, col) in [(0.16f32, pal().display_ghost), (0.08, pal().groove)] {
                 let _ = rod(0.62 * (std::f32::consts::PI * (e - back)).cos(), col);
             }
         }
@@ -990,7 +990,7 @@ impl App {
         fill_rect(p, Rect::from_center_size(weight, Vec2::new(14.0 * k, 10.0 * k)), pal().ink);
         let hit = if self.mt.on && !muted { (1.0 - frac / 0.35).clamp(0.0, 1.0) } else { 0.0 };
         p.circle_filled(tip, 6.0 * k + 1.0, pal().ink);
-        p.circle_filled(tip, 4.0 * k + 0.5, mix(pal().lcd, pal().red, hit));
+        p.circle_filled(tip, 4.0 * k + 0.5, mix(pal().display, pal().red, hit));
         fill_rect(p, Rect::from_center_size(pivot, Vec2::new(30.0 * k, 8.0 * k)), pal().ink);
     }
 
@@ -1034,7 +1034,7 @@ impl App {
                 .tip("Click to change this beat's volume: loud, normal, quiet or silent.");
             let p = ui.painter();
             let well = Rect::from_min_max(Pos2::new(x, top), Pos2::new(x + bw, base));
-            p.rect_filled(well, round, pal().lcd);
+            p.rect_filled(well, round, pal().display);
             let full = well.height() - 4.0;
             let fh = [0.0, 0.34, 0.67, 1.0][lvl] * full;
             if lvl == 0 {
@@ -1279,11 +1279,11 @@ impl App {
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         let p = ui.painter();
         let col = if self.chart_lock { pal().bar_txt } else { pal().ink2 };
-        p.rect_filled(r, r.height() / 2.0, if self.chart_lock { pal().lcd } else { pal().beige.lerp_to_gamma(pal().lcd, 0.35) });
+        p.rect_filled(r, r.height() / 2.0, if self.chart_lock { pal().display } else { pal().panel.lerp_to_gamma(pal().display, 0.35) });
         p.rect_stroke(
             r,
             r.height() / 2.0,
-            egui::Stroke::new(1.0_f32, if self.chart_lock { pal().bar_txt } else { pal().beige_h }),
+            egui::Stroke::new(1.0_f32, if self.chart_lock { pal().bar_txt } else { pal().panel_hover }),
         );
         crate::vicon::named(
             p,
@@ -1584,7 +1584,7 @@ impl App {
                     let p = ui.painter();
                     let now = now_bar == Some(idx);
                     let picked = self.chart_sel.is_some_and(|(a, b)| a <= idx && idx <= b);
-                    inset(p, cell, if now { pal().sel } else { pal().lcd });
+                    inset(p, cell, if now { pal().sel } else { pal().display });
                     if picked {
                         p.rect_filled(cell.shrink(2.0), 2.0, pal().bar_txt.gamma_multiply(0.18));
                         outline(p, cell, 1.0, pal().bar_txt);
@@ -1703,7 +1703,7 @@ impl App {
                         let lw = text_w(&bar.label, 2.0) + 10.0;
                         let tag = Rect::from_min_size(cell.min + Vec2::new(14.0, 4.0), Vec2::new(lw, 16.0));
                         fill_rect(p, tag, pal().edge);
-                        ptext(p, tag.center(), Align::Center, &bar.label, 2.0, pal().trim);
+                        ptext(p, tag.center(), Align::Center, &bar.label, 2.0, pal().accent);
                         top = 6.0;
                     }
                     if !bar.marks.is_empty() {
@@ -1783,7 +1783,7 @@ impl App {
                 .order(egui::Order::Foreground)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ui.ctx(), |ui| {
-                    egui::Frame::none().fill(pal().beige).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(12.0).show(
+                    egui::Frame::none().fill(pal().panel).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(12.0).show(
                         ui,
                         |ui| {
                             ui.set_width(420.0);
@@ -1938,11 +1938,11 @@ fn panel_title(p: &egui::Painter, r: Rect, text: &str) {
 fn pill_face(p: &egui::Painter, r: Rect, open: bool, hot: bool) {
     if crate::winamp_ui::chrome_on() {
         let fill = if open {
-            pal().lcd
+            pal().display
         } else if hot {
-            pal().lcd.lerp_to_gamma(pal().beige, 0.25)
+            pal().display.lerp_to_gamma(pal().panel, 0.25)
         } else {
-            pal().lcd.lerp_to_gamma(pal().beige, 0.4)
+            pal().display.lerp_to_gamma(pal().panel, 0.4)
         };
         p.rect_filled(r, r.height() / 2.0, fill);
         p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0_f32, if open { pal().bar_txt } else { pal().edge }));
@@ -1976,7 +1976,7 @@ fn ibutton(ui: &mut egui::Ui, icon: &str, tip: &str, lit: bool) -> egui::Respons
     let p = ui.painter();
     let col = if crate::winamp_ui::chrome_on() {
         if lit {
-            p.circle_filled(r.center(), s / 2.0, pal().lcd);
+            p.circle_filled(r.center(), s / 2.0, pal().display);
         } else if hot {
             p.circle_filled(r.center(), s / 2.0, Color32::from_white_alpha(14));
         }
@@ -2003,7 +2003,7 @@ fn icon_pill(ui: &mut egui::Ui, icon: &str, text: &str, w: f32, on: bool) -> egu
     let p = ui.painter();
     let fg = if crate::winamp_ui::chrome_on() && on {
         p.rect_filled(r, (h / 2.0).min(14.0), pal().ink);
-        pal().lcd
+        pal().display
     } else {
         crate::raised_h(p, r, on || resp.is_pointer_button_down_on(), resp.hovered());
         pal().ink
@@ -2060,7 +2060,7 @@ fn popup(ui: &mut egui::Ui, id: &str, anchor: &egui::Response, w: f32, up: bool,
         |ui| {
             ui.set_clip_rect(clip);
             egui::Frame::none()
-                .fill(pal().beige_lt)
+                .fill(pal().panel_lt)
                 .stroke(egui::Stroke::new(if chrome { 1.0_f32 } else { 2.0 }, pal().edge))
                 .rounding(if chrome { 10.0 } else { 0.0 })
                 .inner_margin(10.0)

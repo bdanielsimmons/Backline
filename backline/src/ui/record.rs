@@ -87,7 +87,7 @@ impl App {
                 .unwrap_or(0.0);
             let (r, _) = ui.allocate_exact_size(Vec2::new(160.0, bh()), Sense::hover());
             let bar = r.shrink2(Vec2::new(0.0, 6.0));
-            ui.painter().rect_filled(bar, 2.0, pal().lcd);
+            ui.painter().rect_filled(bar, 2.0, pal().display);
             let w = bar.width() * peak.clamp(0.0, 1.0);
             let col = if peak > 0.9 {
                 Color32::from_rgb(230, 80, 70)
@@ -115,7 +115,7 @@ impl App {
         // ---- the sound coming in: the last eight seconds, scrolling
         let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 150.0), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(r, 2.0, pal().lcd);
+        p.rect_filled(r, 2.0, pal().display);
         let mid = r.center().y;
         p.line_segment([Pos2::new(r.min.x, mid), Pos2::new(r.max.x, mid)], Stroke::new(1.0_f32, pal().dim.gamma_multiply(0.5)));
         if let Some(b) = self.rec_buf.as_ref().and_then(|b| b.lock().ok()) {

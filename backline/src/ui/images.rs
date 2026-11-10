@@ -351,7 +351,7 @@ pub(crate) fn paint_page_art(ui: &egui::Ui, images: &mut Images, url: &str, rect
             let round = if artist { rect.width() * 0.5 } else { 0.0 };
             egui::Image::new(egui::load::SizedTexture::new(id, rect.size())).rounding(Rounding::same(round)).paint_at(ui, rect);
             if artist {
-                ui.painter().circle_stroke(rect.center(), rect.width() * 0.5, Stroke::new(2.0_f32, pal().trim));
+                ui.painter().circle_stroke(rect.center(), rect.width() * 0.5, Stroke::new(2.0_f32, pal().accent));
             }
         }
         None if url.is_empty() || images.failed(url) => paint_record(ui.painter(), rect, None),

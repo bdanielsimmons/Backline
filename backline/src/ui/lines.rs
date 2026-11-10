@@ -105,7 +105,7 @@ pub(crate) fn line_score_marked(
     }
     let (above, staff_h, below, tg) = (36.0, 4.0 * g, 34.0, 9.0_f32);
     let row_h = above + staff_h + below + 5.0 * tg + 30.0;
-    let paper = pal().beige_lt;
+    let paper = pal().panel_lt;
     for (row, chunk) in notes.chunks(per).enumerate() {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::click());
         let p = ui.painter();
@@ -960,7 +960,7 @@ fn book_marker(ui: &mut egui::Ui, layout: &[i32], seq: &str) {
         if *k == 0 {
             p.circle_filled(c, 5.5, pal().ink);
         } else {
-            p.circle_filled(c, 5.5, pal().beige_lt);
+            p.circle_filled(c, 5.5, pal().panel_lt);
             p.circle_stroke(c, 5.5, Stroke::new(1.5_f32, pal().ink));
         }
     }

@@ -21,6 +21,13 @@ pub(crate) fn app_bar_strip(ui: &egui::Ui, strip: Rect, id: egui::Id) {
     if !app_bar() {
         return;
     }
+    // (Windows is told it's the title bar, short of the strip's own controls: it then moves the window itself, with
+    // Snap, and fills the screen on a double-click; the presses below are for when it isn't)
+    let bar = match winamp_ui::peek_strip_controls(strip) {
+        Some(left) => Rect::from_min_max(strip.min, Pos2::new((left - 4.0).max(strip.min.x), strip.max.y)),
+        None => strip,
+    };
+    crate::frame_win::caption(bar, ui.ctx().pixels_per_point());
     let r = ui.interact(strip, id, Sense::click_and_drag());
     if r.double_clicked() {
         let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
@@ -115,6 +122,7 @@ pub(crate) fn window_bar(ui: &mut egui::Ui, bar: Rect, a: f32, shade: u8) {
             }
         }
         let drag = Rect::from_min_max(bar.min, Pos2::new(bar.max.x - 3.0 * bw, bar.max.y));
+        crate::frame_win::caption(drag, ui.ctx().pixels_per_point());
         if !over_button {
             let r = ui.interact(drag, egui::Id::new("float_app_bar_drag"), Sense::click_and_drag());
             if r.double_clicked() {
@@ -178,10 +186,10 @@ pub(crate) fn splitter(ctx: &egui::Context, id: &str, rect: Rect, vertical: bool
             (Rect::from_center_size(r.center(), Vec2::new(r.width(), t * 2.0)), Vec2::new(t * 6.0, t * 3.0))
         };
         if hot {
-            fill_rect(p, line, pal().trim);
+            fill_rect(p, line, pal().accent);
             let g = Rect::from_center_size(r.center(), grip + if vertical { Vec2::new(t, 0.0) } else { Vec2::new(0.0, t) });
             fill_rect(p, g.expand(t), Color32::BLACK);
-            fill_rect(p, g, pal().beige_lt);
+            fill_rect(p, g, pal().panel_lt);
             let step = if vertical { Vec2::new(0.0, t * 2.0) } else { Vec2::new(t * 2.0, 0.0) };
             for k in [-1.0f32, 0.0, 1.0] {
                 let d = Rect::from_center_size(r.center() + step * k, Vec2::splat(t));

@@ -62,7 +62,7 @@ pub(crate) fn chord_staff(
     label: &dyn Fn(i32) -> (String, Color32),
 ) {
     let p = ui.painter();
-    p.rect_filled(rect, 3.0, pal().beige_lt);
+    p.rect_filled(rect, 3.0, pal().panel_lt);
     if notes.is_empty() {
         return;
     }
@@ -146,7 +146,7 @@ pub(crate) fn chord_staff(
                 let txt = f.to_string();
                 let w = text_w(&txt, 1.5) + 4.0;
                 let c = Pos2::new(tx + 23.0, tab_y(*s));
-                p.rect_filled(Rect::from_center_size(c, Vec2::new(w, tg * 0.9)), 0.0, pal().beige_lt);
+                p.rect_filled(Rect::from_center_size(c, Vec2::new(w, tg * 0.9)), 0.0, pal().panel_lt);
                 ptext(p, c, Align::Center, &txt, 1.5, pal().ink);
             }
         }

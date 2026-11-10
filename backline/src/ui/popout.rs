@@ -363,7 +363,7 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
         if now.repeat == 2 {
             let c = pill(x).right_top() + Vec2::new(-6.0, 5.0);
             p.circle_filled(c, 6.0, crate::pal().bar_txt);
-            crate::font::keep_caps(|| crate::ptext(&p, c, Align::Center, "1", 1.0, crate::pal().lcd));
+            crate::font::keep_caps(|| crate::ptext(&p, c, Align::Center, "1", 1.0, crate::pal().display));
         }
         if rep.clicked() {
             a.asks.push(Ask::Repeat);
@@ -443,7 +443,7 @@ pub(crate) fn button(ui: &mut egui::Ui, col: Color32) -> egui::Response {
     crate::raised_h(ui.painter(), rect, down, resp.hovered());
     let c = rect.center() + Vec2::new(0.0, if down { 1.0 } else { 0.0 });
     let p = ui.painter();
-    if crate::skin::style() != 0 || crate::winamp_ui::chrome_on() {
+    if crate::winamp_ui::chrome_on() {
         let s = 21.0 * sc;
         let at = |x: f32, y: f32| c + Vec2::new((x - 0.5) * s, (y - 0.5) * s);
         p.rect_stroke(Rect::from_min_max(at(0.06, 0.16), at(0.94, 0.84)), 0.08 * s, egui::Stroke::new((s * 0.11).max(1.3), col));

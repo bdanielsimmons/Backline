@@ -112,7 +112,7 @@ impl App {
             for k in 0..beats {
                 let c = Pos2::new(dr.center().x + (k as f32 - (beats - 1) as f32 / 2.0) * gap, dr.center().y);
                 let lit = beat_now == Some(k);
-                ui.painter().circle_filled(c, if k == 0 { 9.0 } else { 7.5 }, if lit { pal().red } else { pal().beige_lt });
+                ui.painter().circle_filled(c, if k == 0 { 9.0 } else { 7.5 }, if lit { pal().red } else { pal().panel_lt });
             }
             let (br, _) = ui.allocate_exact_size(Vec2::new(w, 120.0), Sense::hover());
             ptext(ui.painter(), Pos2::new(br.center().x, br.center().y - 10.0), Align::Center, &self.mt_bpm.to_string(), 6.0, pal().ink);
@@ -129,7 +129,7 @@ impl App {
                 let c = mid + Vec2::new(dx, 0.0);
                 let r = Rect::from_center_size(c, Vec2::splat(46.0));
                 let resp = ui.interact(r, ui.id().with(("mt_step", d)), Sense::click());
-                ui.painter().circle_filled(c, 22.0, if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
+                ui.painter().circle_filled(c, 22.0, if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
                 ptext(ui.painter(), c, Align::Center, &format!("{:+}", d), 1.3, pal().ink);
                 if resp.clicked() {
                     self.mt_bpm = (self.mt_bpm as i32 + d).clamp(20, 400) as u32;
@@ -213,7 +213,7 @@ impl App {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(260.0), 34.0), Sense::click_and_drag());
                 let inner = r.shrink2(Vec2::new(8.0, 0.0));
                 let line = Rect::from_center_size(inner.center(), Vec2::new(inner.width(), 4.0));
-                ui.painter().rect_filled(line, 2.0, pal().beige_dk);
+                ui.painter().rect_filled(line, 2.0, pal().panel_dk);
                 ui.painter().rect_filled(Rect::from_min_max(line.min, Pos2::new(line.min.x + line.width() * self.mt_vol, line.max.y)), 2.0, pal().ink2);
                 ui.painter().circle_filled(Pos2::new(line.min.x + line.width() * self.mt_vol, line.center().y), 7.0, pal().ink);
                 if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
@@ -364,7 +364,7 @@ impl App {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
         let lvl = self.mt.levels[b].min(3) as usize;
         let p = ui.painter();
-        p.rect_filled(r, 8.0, pal().beige_lt);
+        p.rect_filled(r, 8.0, pal().panel_lt);
         if now_beat {
             p.rect_stroke(r, 8.0, Stroke::new(2.0, pal().red));
         }
@@ -372,7 +372,7 @@ impl App {
         for k in 0..3usize {
             let pip = Rect::from_min_size(Pos2::new(r.min.x + 6.0, r.max.y - 16.0 - k as f32 * 14.0), Vec2::new(r.width() - 12.0, 9.0));
             let lit = k < lvl;
-            p.rect_filled(pip, 4.0, if lit { if now_beat { pal().red } else { pal().ink2 } } else { pal().beige_dk });
+            p.rect_filled(pip, 4.0, if lit { if now_beat { pal().red } else { pal().ink2 } } else { pal().panel_dk });
         }
         ptext(p, Pos2::new(r.center().x, r.min.y + 12.0), Align::Center, &(b + 1).to_string(), 1.3, if now_beat { pal().red } else { pal().ink });
         resp.clicked()

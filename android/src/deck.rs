@@ -61,7 +61,7 @@ impl App {
 
         // ---- LCD time
         let lcd = rc(6.0, 6.0, 100.0, 40.0);
-        inset(p, lcd, pal().lcd);
+        inset(p, lcd, pal().display);
         let icon: &[&str] = if !active {
             &STOP_S[..]
         } else if self.paused {
@@ -83,7 +83,7 @@ impl App {
 
         // ---- spectrum (tap: bars / waveform / both)
         let sp = rc(6.0, 50.0, 100.0, 28.0);
-        inset(p, sp, pal().lcd);
+        inset(p, sp, pal().display);
         viz::viz_draw(p, sp.shrink2(Vec2::new(3.0, 3.0)), &self.bands, &self.peaks, &self.viz_wave, self.viz_mode, 1.0, false, 1.0, None);
         if ui.interact(sp, ui.id().with("spectrum"), Sense::click()).clicked() {
             self.viz_mode = (self.viz_mode + 1) % 3;
@@ -91,7 +91,7 @@ impl App {
 
         // ---- title + what is next
         let tb = rc(112.0, 6.0, 182.0, 14.0);
-        inset(p, tb, pal().lcd);
+        inset(p, tb, pal().display);
         let title_txt = match &track {
             Some(t) => format!("{} - {}  ({})", t.artists_text(), t.title, fmt_time(t.duration)),
             None => "Backline - a retro player for Tidal".to_string(),
@@ -99,7 +99,7 @@ impl App {
         marquee(ui, tb, &title_txt, px_big, pal().ink);
         widgets::TITLE_SCROLL.store((9.0 * spx(px_big)).to_bits(), Ordering::Relaxed);
         let sb = rc(112.0, 22.0, 182.0, 10.0);
-        inset(p, sb, pal().lcd);
+        inset(p, sb, pal().display);
         let next = self.cur.and_then(|i| self.queue.get(i + 1)).cloned();
         let (stxt, scol): (String, Color32) = if self.loading {
             ("LOADING...".to_string(), pal().ink2)
@@ -115,11 +115,11 @@ impl App {
         // ---- tempo and key
         let info = track.as_ref().and_then(|t| meta::get(t.id)).filter(|_| active).unwrap_or_default();
         let kb = rc(112.0, 34.0, 66.0, 12.0);
-        inset(p, kb, pal().lcd);
+        inset(p, kb, pal().display);
         let kb_txt = info.bpm.map_or("--- BPM".to_string(), |b| format!("{} BPM", b));
         ptext_fit(p, kb.center(), Align::Center, &kb_txt, px_sm, kb.width() - 6.0, pal().ink);
         let kh = rc(182.0, 34.0, 68.0, 12.0);
-        inset(p, kh, pal().lcd);
+        inset(p, kh, pal().display);
         let kh_txt = if info.key.is_some() { meta::key_text(&info) } else { "KEY --".to_string() };
         ptext_fit(p, kh.center(), Align::Center, &kh_txt, px_sm, kh.width() - 6.0, pal().ink);
 
@@ -140,7 +140,7 @@ impl App {
         let hr = ui.interact(hb, ui.id().with("heart"), Sense::click());
         raised_h(p, hb, hr.is_pointer_button_down_on(), false);
         let hpx = (0.9 * s).round().max(1.0);
-        pixmap(p, Pos2::new(snap(hb.center().x - 3.5 * hpx), snap(hb.center().y - 3.0 * hpx)), hpx, &HEART[..], if is_liked { pal().red } else { pal().beige_dk });
+        pixmap(p, Pos2::new(snap(hb.center().x - 3.5 * hpx), snap(hb.center().y - 3.0 * hpx)), hpx, &HEART[..], if is_liked { pal().red } else { pal().panel_dk });
         if hr.clicked() && tidal && self.logged_in {
             if let Some(t) = &track {
                 let (id, like) = (t.id, !is_liked);
@@ -313,7 +313,7 @@ impl App {
         }
         // ---- where the song comes from
         let strip = rc(222.0, 104.0, 72.0, 16.0);
-        inset(p, strip, pal().lcd);
+        inset(p, strip, pal().display);
         let src = match &track {
             None => "",
             Some(t) if self.yt.iter().any(|y| yt_id(&y.vid) == t.id) => "YOUTUBE",
@@ -625,7 +625,7 @@ impl App {
                     rows.push(r);
                     let p = ui.painter();
                     let held = self.q_drag.is_some_and(|d| d.0 == i);
-                    p.rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), 8.0, if held { pal().beige_dk } else { pal().beige_lt });
+                    p.rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), 8.0, if held { pal().panel_dk } else { pal().panel_lt });
                     for y in [-5.0, 0.0, 5.0] {
                         p.line_segment([Pos2::new(r.max.x - 30.0, r.center().y + y), Pos2::new(r.max.x - 12.0, r.center().y + y)], Stroke::new(1.6, pal().dim));
                     }
@@ -688,7 +688,7 @@ pub(crate) fn song_row(ui: &mut egui::Ui, i: usize, t: &Track, now: bool) -> (eg
     if now {
         p.rect_filled(full.shrink2(Vec2::new(0.0, 1.0)), 6.0, pal().row_sel);
     } else if resp.is_pointer_button_down_on() {
-        p.rect_filled(full.shrink2(Vec2::new(0.0, 1.0)), 6.0, pal().beige_lt);
+        p.rect_filled(full.shrink2(Vec2::new(0.0, 1.0)), 6.0, pal().panel_lt);
     }
     let (ink, dim) = if now { (pal().bar_txt, pal().bar_txt) } else { (pal().ink, pal().dim) };
     let cy = full.center().y;

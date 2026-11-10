@@ -341,7 +341,7 @@ pub(crate) fn neck_alpha(
     let open_w = 26.0;
     let fw = (rect.width() - open_w) / frets as f32;
     let sh = rect.height() / 6.0;
-    let wood = pal().lcd;
+    let wood = pal().display;
     p.rect_filled(Rect::from_min_max(Pos2::new(rect.min.x + open_w, rect.min.y), rect.max), 2.0, wood);
     // fret wires and the nut
     for f in 0..=frets {
@@ -353,13 +353,13 @@ pub(crate) fn neck_alpha(
     for f in [3u8, 5, 7, 9, 15] {
         if f <= frets {
             let x = rect.min.x + open_w + (f as f32 - 0.5) * fw;
-            p.circle_filled(Pos2::new(x, rect.center().y), 4.0, pal().lcd_ghost);
+            p.circle_filled(Pos2::new(x, rect.center().y), 4.0, pal().display_ghost);
         }
     }
     if 12 <= frets {
         let x = rect.min.x + open_w + 11.5 * fw;
-        p.circle_filled(Pos2::new(x, rect.min.y + sh * 2.0), 4.0, pal().lcd_ghost);
-        p.circle_filled(Pos2::new(x, rect.min.y + sh * 4.0), 4.0, pal().lcd_ghost);
+        p.circle_filled(Pos2::new(x, rect.min.y + sh * 2.0), 4.0, pal().display_ghost);
+        p.circle_filled(Pos2::new(x, rect.min.y + sh * 4.0), 4.0, pal().display_ghost);
     }
     // fret numbers
     for f in [3u8, 5, 7, 9, 12, 15] {
@@ -465,7 +465,7 @@ pub(crate) fn fret_map(
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 170.0), Sense::click());
     let neck = Rect::from_min_max(rect.min + Vec2::new(30.0, 10.0), rect.max - Vec2::new(8.0, 26.0));
     let p = ui.painter();
-    p.rect_filled(neck, 2.0, pal().lcd);
+    p.rect_filled(neck, 2.0, pal().display);
     let frets = 15.0_f32;
     let fw = neck.width() / frets;
     let sh = neck.height() / 6.0;
@@ -497,7 +497,7 @@ pub(crate) fn fret_map(
                 }
                 let c = Pos2::new(x_of(f), y_of(s));
                 let (txt, col) = label(m);
-                p.circle_filled(c, sh * 0.36, pal().lcd);
+                p.circle_filled(c, sh * 0.36, pal().display);
                 p.circle_stroke(c, sh * 0.36, Stroke::new(1.5_f32, col));
                 ptext(p, c, Align::Center, &txt, 1.0, col);
             }

@@ -38,7 +38,7 @@ impl App {
             let resp = ui.interact(r, ui.id().with(("src_icon", k)), Sense::click());
             let on = self.lib_tab == *tab;
             if on || resp.is_pointer_button_down_on() {
-                ui.painter().rect_filled(r, 20.0, pal().beige_lt);
+                ui.painter().rect_filled(r, 20.0, pal().panel_lt);
             }
             src_icon(ui.painter(), c, *icon, if on { pal().red } else { pal().ink2 });
             if resp.clicked() {
@@ -196,8 +196,8 @@ impl App {
             let r = Rect::from_min_size(area.min + Vec2::new((n % 2) as f32 * (tw + 8.0), (n / 2) as f32 * 56.0), Vec2::new(tw, 48.0));
             let resp = ui.interact(r, ui.id().with(("mt_tile", n)), Sense::click());
             let on = self.my_page == *page || (*page == 2 && self.my_page == 3);
-            ui.painter().rect_filled(r, 10.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().beige_dk } else { pal().beige_lt });
-            let col = if on { pal().beige } else { pal().ink };
+            ui.painter().rect_filled(r, 10.0, if on { pal().ink } else if resp.is_pointer_button_down_on() { pal().panel_dk } else { pal().panel_lt });
+            let col = if on { pal().panel } else { pal().ink };
             src_icon(ui.painter(), Pos2::new(r.min.x + 22.0, r.center().y), *icon, if on { col } else { pal().red });
             ptext_fit(ui.painter(), Pos2::new(r.min.x + 42.0, r.center().y), Align::Min, name, 1.3, tw - 50.0, col);
             if resp.clicked() {
@@ -357,7 +357,7 @@ impl App {
                         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::click());
                         let p = ui.painter();
                         if resp.is_pointer_button_down_on() {
-                            p.rect_filled(r, 6.0, pal().beige_lt);
+                            p.rect_filled(r, 6.0, pal().panel_lt);
                         }
                         let sw = text_w(&c.subtitle, 1.1) + 12.0;
                         ptext_fit(p, Pos2::new(r.min.x + 10.0, r.center().y), Align::Min, &c.title, 1.3, r.width() - sw - 20.0, pal().ink);
@@ -453,7 +453,7 @@ impl App {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
                 let p = ui.painter();
                 if resp.is_pointer_button_down_on() {
-                    p.rect_filled(r, 6.0, pal().beige_lt);
+                    p.rect_filled(r, 6.0, pal().panel_lt);
                 }
                 let kind = match c.kind {
                     api::Kind::Album => "Album",

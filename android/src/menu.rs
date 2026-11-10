@@ -142,7 +142,7 @@ impl App {
         }
         let tidal = t.id > 0 && !self.files.iter().any(|f| f.0.id == t.id) && !self.yt.iter().any(|y| yt_id(&y.vid) == t.id);
         egui::Area::new(egui::Id::new("song_menu")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_BOTTOM, Vec2::new(0.0, drop_px)).show(ctx, |ui| {
-            egui::Frame::none().fill(pal().beige).rounding(egui::Rounding { nw: 16.0, ne: 16.0, sw: 0.0, se: 0.0 }).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 14.0, bottom: 34.0 }).show(ui, |ui| {
+            egui::Frame::none().fill(pal().panel).rounding(egui::Rounding { nw: 16.0, ne: 16.0, sw: 0.0, se: 0.0 }).inner_margin(egui::Margin { left: 14.0, right: 14.0, top: 14.0, bottom: 34.0 }).show(ui, |ui| {
                 ui.set_width(screen.width() - 28.0);
                 ui.set_max_height(screen.height() * 0.8);
                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
@@ -446,9 +446,9 @@ fn mrow(ui: &mut egui::Ui, w: f32, icon: u8, text: &str) -> bool {
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
     let p = ui.painter();
     if resp.is_pointer_button_down_on() {
-        p.rect_filled(r, 6.0, pal().beige_lt);
+        p.rect_filled(r, 6.0, pal().panel_lt);
     }
-    p.line_segment([Pos2::new(r.min.x, r.min.y), Pos2::new(r.max.x, r.min.y)], Stroke::new(1.0, pal().beige_lt));
+    p.line_segment([Pos2::new(r.min.x, r.min.y), Pos2::new(r.max.x, r.min.y)], Stroke::new(1.0, pal().panel_lt));
     let c = Pos2::new(r.min.x + 16.0, r.center().y);
     let col = pal().ink;
     let s = Stroke::new(1.8, col);

@@ -3,7 +3,7 @@
 //! the one place that turns an action name into the action (used by the palette and the Mac menu bar).
 
 use crate::prefs::{Cmd, CMDS};
-use crate::{fill_rect, pal, ptext, ptext_fit, raised_h, retro_btn_w, rfill, style, Action, App, Tip, PRACTICE};
+use crate::{fill_rect, pal, ptext, ptext_fit, raised_h, retro_btn_w, Action, App, Tip, PRACTICE};
 use eframe::egui::{self, Align, Color32, Pos2, Sense, Vec2};
 
 /// (what you see, the action name, only in the practice build)
@@ -55,7 +55,7 @@ impl App {
             3
         } else if self.art_view {
             2
-        } else if self.focus_mode {
+        } else if self.lib_hidden {
             1
         } else {
             0
@@ -73,13 +73,13 @@ impl App {
         self.art_view = false;
         match m {
             1 => {
-                if !self.focus_mode {
-                    self.apply(Action::ToggleFocus);
+                if !self.lib_hidden {
+                    self.apply(Action::ToggleLibrary);
                 }
             }
             _ => {
-                if self.focus_mode {
-                    self.apply(Action::ToggleFocus);
+                if self.lib_hidden {
+                    self.apply(Action::ToggleLibrary);
                 }
             }
         }
@@ -119,7 +119,7 @@ impl App {
         area.anchor(egui::Align2::LEFT_BOTTOM, [10.0, -10.0]).show(ctx, |ui| {
             egui::Frame::none()
                 .fill(pal().app_bg)
-                .rounding(if style() != 0 { 8.0 } else { 0.0 })
+                .rounding(0.0)
                 .inner_margin(4.0)
                 .show(ui, |ui| self.mode_strip(ui, acts));
         });
@@ -279,15 +279,15 @@ impl App {
             .anchor(egui::Align2::CENTER_TOP, [0.0, 70.0])
             .show(ctx, |ui| {
                 let frame = egui::Frame::none()
-                    .fill(pal().beige)
+                    .fill(pal().panel)
                     .stroke(egui::Stroke::new(2.0_f32, pal().edge))
-                    .rounding(if style() != 0 { 8.0 } else { 0.0 })
+                    .rounding(0.0)
                     .inner_margin(10.0);
                 frame.show(ui, |ui| {
                     ui.set_width(w - 20.0);
                     // the typed text, with a blinking caret
                     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
-                    crate::inset(ui.painter(), r, pal().lcd);
+                    crate::inset(ui.painter(), r, pal().display);
                     let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
                     let shown = if self.palette_q.is_empty() {
                         "TYPE A COMMAND...".to_string()
@@ -303,7 +303,7 @@ impl App {
                             Pos2::new(r.min.x + 12.0 + tw, r.center().y + 11.0),
                         );
                         ui.painter().rect_filled(band, 0.0, pal().ink);
-                        col = pal().lcd;
+                        col = pal().display;
                     }
                     ptext_fit(
                         ui.painter(),
@@ -328,15 +328,11 @@ impl App {
                             self.palette_sel = k;
                         }
                         if sel {
-                            if style() != 0 {
-                                rfill(ui.painter(), r, 6.0, pal().btn_face);
-                            } else {
-                                raised_h(ui.painter(), r, false, true);
-                            }
-                        } else if style() == 0 {
-                            fill_rect(ui.painter(), r, pal().beige);
+                            raised_h(ui.painter(), r, false, true);
+                        } else {
+                            fill_rect(ui.painter(), r, pal().panel);
                         }
-                        let ink = if sel && style() == 2 { pal().bar_txt } else { pal().ink };
+                        let ink = pal().ink;
                         let key = CMDS.iter().position(|c| c.id == *id).map_or(String::new(), |i| {
                             self.binds.get(i).copied().flatten().map_or(String::new(), crate::prefs::key_label)
                         });

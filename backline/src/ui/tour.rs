@@ -736,7 +736,7 @@ impl App {
             let frame = egui::Frame::none()
                 .fill(Color32::from_rgb(20, 20, 22))
                 .stroke(egui::Stroke::new(2.0_f32, Color32::from_gray(110)))
-                .rounding(if crate::style() != 0 { 8.0 } else { 0.0 })
+                .rounding(0.0)
                 .inner_margin(14.0);
             frame.show(ui, |ui| {
                 ui.set_width(460.0_f32.min(screen.width() - 60.0));
