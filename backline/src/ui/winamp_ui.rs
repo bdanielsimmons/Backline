@@ -288,7 +288,7 @@ impl App {
             acts.push(Action::QuitApp);
         }
         // the clutter bar: Options, Always on top, song Info, Double size, Visualizer
-        if t.size("titlebar").map_or(false, |s| s.x >= 344.0) {
+        if t.size("titlebar").is_some_and(|s| s.x >= 344.0) {
             t.spr(&p, "titlebar", (304.0, 0.0, 8.0, 43.0), pl.r(10.0, 22.0, 8.0, 43.0));
             let zoomed = ui.ctx().zoom_factor() > 1.4;
             let items: [(&str, f32, f32, f32, bool, &str); 5] = [
@@ -1356,4 +1356,59 @@ impl App {
         crate::winamp_ui::round_corners(&p, outer, false);
         self.wa_art = Some(t);
     }
+}
+
+/// The look Backline's own palette is worn in: 0 its usual look, 1.. a Winamp skin drawn from it (genskin).
+pub(crate) fn gen_look(worn: Option<&(String, String)>) -> usize {
+    worn.and_then(|w| w.0.strip_prefix("gen:")?.parse::<usize>().ok()).unwrap_or(0)
+}
+
+/// The skins, side by side: ORIGINAL (Backline's palettes as sleek Winamp-style skins, in Silkscreen) and WINAMP
+/// (skins from the Skin Museum: the one worn, and browsing for more). The one worn is marked.
+pub(crate) fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<&(String, String)>, recent: &[(String, String)]) {
+    let look = gen_look(worn);
+    let museum = worn.filter(|_| look == 0).map(|w| w.1.as_str());
+    let cur = SKIN.load(Ordering::Relaxed) % PALS.len();
+    // the columns wrap under each other when the space is narrow
+    // a column of Backline's own palettes in one look
+    let column = |ui: &mut egui::Ui, acts: &mut Vec<Action>, title: &str, g: usize| {
+        ui.vertical(|ui| {
+            ui.set_min_width(170.0);
+            para(ui, title, pal().ink2);
+            for (n, name) in SKIN_NAMES.iter().enumerate() {
+                let on = n == cur && if g == 0 { worn.is_none() } else { look == g };
+                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name)) {
+                    acts.push(Action::Theme(n, g));
+                    ui.close_menu();
+                }
+            }
+        });
+    };
+    ui.horizontal_wrapped(|ui| {
+        column(ui, acts, "ORIGINAL", 2);
+        ui.vertical(|ui| {
+            ui.set_min_width(170.0);
+            para(ui, "WINAMP", pal().ink2);
+            // the ones worn lately (the one on now marked): back in a click, from the copy kept on disk
+            for (md5, name) in recent {
+                let on = museum.is_some() && worn.is_some_and(|w| &w.0 == md5);
+                ui.horizontal(|ui| {
+                    // X takes it off the list
+                    if retro_btn_w(ui, "X", 24.0, false).tip("Remove from this list").clicked() {
+                        acts.push(Action::WaForget(md5.clone()));
+                    }
+                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {
+                        let s =
+                            winamp::WaSkin { md5: md5.clone(), name: name.clone(), shot: String::new(), download: String::new() };
+                        acts.push(Action::WaApply(s));
+                        ui.close_menu();
+                    }
+                });
+            }
+            if menu_item(ui, "  BROWSE SKINS...") {
+                acts.push(Action::WaOpen);
+                ui.close_menu();
+            }
+        });
+    });
 }

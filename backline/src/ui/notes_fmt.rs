@@ -300,7 +300,7 @@ pub(crate) fn mentions(line: &[char], names: &[String]) -> Vec<(usize, usize, us
     found.sort_by(|a, b| a.0.cmp(&b.0).then((b.1 - b.0).cmp(&(a.1 - a.0))));
     let mut out: Vec<(usize, usize, usize)> = Vec::new();
     for f in found {
-        if out.last().map_or(true, |l| f.0 >= l.1) {
+        if out.last().is_none_or(|l| f.0 >= l.1) {
             out.push(f);
         }
     }
@@ -381,9 +381,7 @@ pub(crate) fn apply(text: &str, sel: (usize, usize), tool: Tool) -> (String, (us
                 .map(|l| {
                     if on {
                         l.strip_prefix(pre).unwrap_or(l).to_string()
-                    } else if l.trim().is_empty() && !one {
-                        l.to_string()
-                    } else if l.starts_with(pre) {
+                    } else if (l.trim().is_empty() && !one) || l.starts_with(pre) {
                         l.to_string()
                     } else {
                         format!("{}{}", pre, l.strip_prefix(other).unwrap_or(l))

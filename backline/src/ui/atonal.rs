@@ -247,7 +247,7 @@ impl App {
             self.at.line = 0;
             self.at.sel = None;
         }
-        let empty = self.at.file.as_ref().map_or(true, |f| f.lines.is_empty());
+        let empty = self.at.file.as_ref().is_none_or(|f| f.lines.is_empty());
         if empty {
             para(ui, "No lines of your own yet. They are kept in a file on this computer only, atonal_lines.json in Backline's folder, and are never part of Backline. Drop a file of lines on the window to add it.", pal().ink2);
             // where the file goes, on a button (the path itself is too long for the page)

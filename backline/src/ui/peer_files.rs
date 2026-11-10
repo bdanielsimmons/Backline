@@ -228,10 +228,8 @@ impl App {
     pub(crate) fn copy_end(&mut self, ok: usize) {
         let total = self.copying.total.load(Ordering::Relaxed);
         let name = peer_name().unwrap_or_default();
-        if total > 1 || (ok == 1 && !self.copying_for_now()) {
-            if ok > 0 {
-                self.toast(&format!("Copied {} song{} from {}", ok, if ok == 1 { "" } else { "s" }, name));
-            }
+        if (total > 1 || (ok == 1 && !self.copying_for_now())) && ok > 0 {
+            self.toast(&format!("Copied {} song{} from {}", ok, if ok == 1 { "" } else { "s" }, name));
         }
         self.copying.total.store(0, Ordering::Relaxed);
         self.copying.done.store(0, Ordering::Relaxed);
@@ -427,13 +425,13 @@ impl App {
                 .filter(|&(here, k)| !here && !self.peer.here.contains(&list[k].path))
                 .map(|(_, k)| list[k].path.clone())
                 .collect();
-            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(&format!("Picks every song on {} in the list as it's filtered, except those here already.", name)).clicked() {
+            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(format!("Picks every song on {} in the list as it's filtered, except those here already.", name)).clicked() {
                 self.peer.sel.extend(shown);
             }
             if !self.peer.sel.is_empty() && retro_btn(ui, "CLEAR", false).clicked() {
                 self.peer.sel.clear();
             }
-            if retro_btn(ui, "REFRESH", false).tip(&format!("Ask {} for its songs again.", name)).clicked() {
+            if retro_btn(ui, "REFRESH", false).tip(format!("Ask {} for its songs again.", name)).clicked() {
                 refresh = true;
             }
         });

@@ -275,7 +275,7 @@ impl App {
                         let since: f64 = ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(since_id, || now));
                         let slow = now - since > 1.5;
                         if !loading || slow {
-                            let spin = (loading && slow).then(|| now as f32);
+                            let spin = (loading && slow).then_some(now as f32);
                             paint_record(&p, Rect::from_center_size(center, Vec2::splat(a)), spin);
                         }
                         if loading {

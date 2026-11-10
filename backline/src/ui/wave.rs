@@ -171,6 +171,7 @@ impl Cloth {
 }
 
 /// How wide the strands spread at `x` along the cloth: pinched near the pinned edge, swinging out, then steady.
+#[allow(clippy::approx_constant)]
 fn profile(x: f32, param1: f32) -> f32 {
     let d = x - param1;
     let (cs, c) = if d < 0.0 { (1.0, 0.0) } else { ((d * 1.5708).cos(), (d / 5.0).clamp(0.0, 1.0)) };
@@ -178,6 +179,7 @@ fn profile(x: f32, param1: f32) -> f32 {
 }
 
 /// The cage's shape at (u, w) at time `t`: across, and up.
+#[allow(clippy::approx_constant)]
 fn cage_at(u: f32, w: f32, t: f32) -> (f32, f32) {
     let e = (2.0 * (u - 0.5)).exp();
     let th = (e - 1.0) / (e + 1.0);
@@ -680,7 +682,7 @@ impl Wave {
         }
         let vp = info.viewport_in_pixels();
         let (w, h) = (vp.width_px.max(16), vp.height_px.max(16));
-        if self.slots.get(&slot).map_or(true, |s| s.w != w || s.h != h) {
+        if self.slots.get(&slot).is_none_or(|s| s.w != w || s.h != h) {
             if let Some(old) = self.slots.remove(&slot) {
                 old.free(gl);
             }
@@ -799,7 +801,7 @@ impl Wave {
         // BACKLINE_WAVE_PARTS=<file>: sparkles from a file instead, eight little-endian floats each, for checks against a
         // reference frame)
         let live: Vec<f32> = match std::env::var("BACKLINE_WAVE_PARTS").ok().and_then(|f| std::fs::read(f).ok()) {
-            Some(b) => b.chunks_exact(4).take(POOL * 8).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
+            Some(b) => b.as_chunks::<4>().0.iter().take(POOL * 8).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
             None => self.sparks.live(),
         };
         let n = live.len() / 8;
@@ -985,7 +987,7 @@ impl Sparks {
                 let (a, b) = ((self.u() * 127.0) as usize, (self.u() * 127.0) as usize);
                 self.streak = ((self.rand() * 80.0) as i32 + 100, a, b);
             }
-        } else if self.tick % 2 == 0 {
+        } else if self.tick.is_multiple_of(2) {
             if su < 128 {
                 picked.push((surface(net, su, sv), su, sv));
                 self.streak = (count - 1, su + 1, sv);

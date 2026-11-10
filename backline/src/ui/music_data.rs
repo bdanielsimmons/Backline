@@ -90,7 +90,7 @@ pub(crate) fn prime_form(set: &[i32]) -> Vec<i32> {
                 k.extend(v.iter().copied());
                 k
             };
-            if best.as_ref().map_or(true, |b| key(&v) < key(b)) {
+            if best.as_ref().is_none_or(|b| key(&v) < key(b)) {
                 best = Some(v);
             }
         }

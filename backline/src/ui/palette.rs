@@ -85,11 +85,7 @@ impl App {
         }
         match m {
             2 => self.art_view = true,
-            3 => {
-                if !self.mini {
-                    self.apply(Action::ToggleMini);
-                }
-            }
+            3 if !self.mini => self.apply(Action::ToggleMini),
             _ => {}
         }
     }

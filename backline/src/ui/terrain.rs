@@ -122,14 +122,14 @@ struct Sheet {
 
 impl Sheet {
     fn new() -> Sheet {
-        let s = Sheet {
+        
+        Sheet {
             a: vec![[0.0; 4]; COLS * RING],
             b: vec![[0.0, 1.0, 0.0, 0.0]; COLS * RING],
             next: -(ROWS as i64),
             dirty: Vec::new(),
             seed: 0x2545f4914f6cdd1d,
-        };
-        s
+        }
     }
 
     fn rnd(&mut self) -> f32 {
@@ -748,7 +748,7 @@ impl Terrain {
         self.frame += 1;
         let vp = info.viewport_in_pixels();
         let (w, h) = (vp.width_px.max(16), vp.height_px.max(16));
-        if self.slots.get(&slot).map_or(true, |s| s.w != w || s.h != h) {
+        if self.slots.get(&slot).is_none_or(|s| s.w != w || s.h != h) {
             if let Some(old) = self.slots.remove(&slot) {
                 old.free(gl);
             }

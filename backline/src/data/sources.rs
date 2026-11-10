@@ -641,7 +641,7 @@ pub fn yt_list_url(s: &str) -> String {
 pub fn list_name(url: &str) -> String {
     let last = url.split('?').next().unwrap_or(url).trim_end_matches('/').rsplit('/').next().unwrap_or("playlist");
     let name: Vec<String> = last
-        .split(|c| c == '-' || c == '_')
+        .split(['-', '_'])
         .filter(|w| !w.is_empty())
         .map(|w| {
             let mut c = w.chars();

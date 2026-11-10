@@ -75,7 +75,7 @@ pub(crate) fn si_scales_for(chord: &[i32]) -> Vec<usize> {
         let s = &SI_SCALES[i].1[..SI_SCALES[i].2];
         (minor && s.contains(&4)) || (major && s.contains(&3))
     };
-    fits.sort_by_key(|i| (first.map_or(true, |f| !SI_SCALES[*i].0.starts_with(f)), clash(*i)));
+    fits.sort_by_key(|i| (first.is_none_or(|f| !SI_SCALES[*i].0.starts_with(f)), clash(*i)));
     fits
 }
 

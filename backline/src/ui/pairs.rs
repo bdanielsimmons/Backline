@@ -416,7 +416,7 @@ impl App {
         let key = format!("tpc:{}:{}:{}", title, self.tp_key, self.tp_strings);
         self.line_player(ui, acts, &notes, &key);
         let lit_i = self.seq_now("line");
-        let sharps = info.iter().flatten().next().map_or(false, |c| lines::key_sharps(c.0));
+        let sharps = info.iter().flatten().next().is_some_and(|c| lines::key_sharps(c.0));
         crate::lines_ui::line_score(ui, acts, &notes, self.ln_sub as usize, sharps, lit_i, Some(tab));
     }
 }

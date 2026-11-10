@@ -765,7 +765,7 @@ impl Chart {
             "split" => {
                 let n = self.bars[i].chords.len();
                 if n >= 2 {
-                    let rest = self.bars[i].chords.split_off((n + 1) / 2);
+                    let rest = self.bars[i].chords.split_off(n.div_ceil(2));
                     let b = Bar { chords: rest, end_rep: std::mem::take(&mut self.bars[i].end_rep), ..Default::default() };
                     self.bars.insert(i + 1, b);
                 }
@@ -838,7 +838,7 @@ fn loose_chord(tok: &str) -> Option<String> {
     let low = s.to_ascii_lowercase();
     if let Some(i) = low.find("(bass") {
         let note: String = s[i + 5..].chars().filter(|c| c.is_ascii_alphabetic() || *c == '#').collect();
-        s = format!("{}/{}", &s[..i], note.trim_start_matches(|c: char| c == ' '));
+        s = format!("{}/{}", &s[..i], note.trim_start_matches(' '));
     }
     let (root, rest) = split_root(s.split('/').next()?);
     note_index(root)?;

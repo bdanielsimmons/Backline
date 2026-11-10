@@ -125,7 +125,7 @@ impl App {
                 acts.push(Action::CopyLog);
             }
             if retro_btn(ui, "CLOSE", false).clicked() {
-                self.show_log = false;
+                self.side = None;
             }
         });
         ui.add_space(4.0);
@@ -947,52 +947,6 @@ impl App {
         }
     }
 
-    pub(crate) fn cache_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        if self.cache_at.elapsed() > Duration::from_secs(1) {
-            self.cache_stats = cache::stats();
-            self.cache_at = Instant::now();
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            if retro_btn(ui, if self.keep_cache { "SAVING: ON" } else { "SAVING: OFF" }, self.keep_cache).clicked() {
-                acts.push(Action::ToggleKeep);
-            }
-            if retro_btn(ui, "OPEN FOLDER", false).clicked() {
-                acts.push(Action::OpenCache);
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            if retro_btn(ui, "CLEAR ALL", false).clicked() {
-                acts.push(Action::ClearCache);
-            }
-            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems to free disk space.").clicked() {
-                acts.push(Action::StemClear);
-            }
-            if retro_btn(ui, "CLOSE", false).clicked() {
-                acts.push(Action::ToggleCacheView);
-            }
-        });
-        ui.add_space(10.0);
-        let w = ui.available_width() - 20.0;
-        let (n, bytes) = self.cache_stats;
-        para(ui, "TRACKS ARE SAVED IN THIS FOLDER:", pal().ink2);
-        for line in chunk(&cache::dir().display().to_string(), 2.0, w) {
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
-            ptext(ui.painter(), Pos2::new(rect.min.x + 8.0, rect.center().y), Align::Min, &line, 2.0, pal().ink);
-        }
-        ui.add_space(8.0);
-        para(ui, &format!("{} tracks stored, {} used", n, cache::fmt_size(bytes)), pal().ink);
-        para(ui, &format!("Separated stems use {}", cache::fmt_size(stems::stems_size())), pal().ink2);
-        para(
-            ui,
-            "A check mark means the track is stored on this computer. It starts instantly and plays with no internet.",
-            pal().ink2,
-        );
-        para(ui, "Looping and slow-down always play from the stored copy. Loops, speed and seeks stay on this PC. Backline never reports plays to Tidal, so your listening statistics are untouched.", pal().ink2);
-    }
-
     /// The BACKLINE menu, next to HOME and LIBRARY: skins (and Winamp skins), preferences, help, storage, the log.
     /// What the BACKLINE menu holds (also opened by a Winamp skin's own options button). True once something
     /// was picked, so the menu can close.
@@ -1045,14 +999,16 @@ impl App {
         if menu_item(ui, "Help and tours  (F1)") {
             acts.push(Action::ToggleHelp);
         }
-        if menu_item(ui, if self.show_cache { "Storage  (close)" } else { "Storage" }) {
+        if menu_item(ui, "Storage") {
             acts.push(Action::ToggleCacheView);
         }
-        if menu_item(ui, if self.show_log { "Log  (close)" } else { "Log" }) {
-            self.show_log = !self.show_log;
-            if self.show_log {
+        let log_on = self.side == Some(Side::Log);
+        if menu_item(ui, if log_on { "Log  (close)" } else { "Log" }) {
+            if log_on {
+                self.side = None;
+            } else {
+                self.side = Some(Side::Log);
                 self.show_eq = false;
-                self.show_cache = false;
             }
             done = true;
         }
@@ -1061,7 +1017,7 @@ impl App {
             Some((md5, name)) if !md5.starts_with("gen:") => format!("> WINAMP: {}", name.to_uppercase()),
             _ => "> WINAMP SKINS".to_string(),
         };
-        if menu_item(ui, &wa_label) && !self.show_winamp {
+        if menu_item(ui, &wa_label) && self.side != Some(Side::Skins) {
             acts.push(Action::WaOpen);
         }
         ui.add_space(4.0);
@@ -1239,7 +1195,7 @@ impl App {
         let gem =
             Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 6.0 + self.window_icons(ui, r, gem.max.y + 6.0, acts)));
 
-        let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
+        let side = self.side.is_some();
         let on_lib = self.page.as_ref().is_some_and(|p| p.library);
         let here = |s: Sec| !side && self.sec == s;
         // the computer this one is linked with (SYNC): its songs, under LINKED DEVICES
@@ -1277,9 +1233,9 @@ impl App {
             rows.extend([("", "Linked devices", false, 0), ("globe", name, there, 8)]);
         }
         let foot = [
-            ("gear", "Settings", side && !self.show_winamp && !self.show_log, 20u8),
-            ("skins", "Winamp Skins", self.show_winamp, 21),
-            ("log", "Log", self.show_log, 22),
+            ("gear", "Settings", self.side == Some(Side::Backline), 20u8),
+            ("skins", "Winamp Skins", self.side == Some(Side::Skins), 21),
+            ("log", "Log", self.side == Some(Side::Log), 22),
         ];
         let top = gem.max.y + 14.0;
         let heads = rows.iter().filter(|r| r.0.is_empty()).count() as f32;
@@ -1523,7 +1479,7 @@ impl App {
         }
 
         // back, forward, HOME and the search box: one row
-        let side = self.show_tl || self.show_winamp || self.show_log || self.show_cache;
+        let side = self.side.is_some();
         ui.horizontal(|ui| {
             for back in [true, false] {
                 let ok = self.can_go(back);
@@ -1581,7 +1537,7 @@ impl App {
 
         // library tabs
         let is_lib = self.sec == Sec::Tidal && self.page.as_ref().map(|p| p.library).unwrap_or(false);
-        if is_lib && !self.show_log && !self.show_cache && !self.show_winamp && !self.show_tl {
+        if is_lib && self.side.is_none() {
             const TABS: [(Tab, &str); 5] = [
                 (Tab::Tracks, "MY TRACKS"),
                 (Tab::Recent, "RECENT"),
@@ -1607,7 +1563,7 @@ impl App {
         }
         // (on Home only: the player at the foot already shows the song everywhere else)
         let home = self.sec == Sec::Tidal && !self.page.as_ref().is_some_and(|p| p.library);
-        if home && !(self.show_tl || self.show_winamp || self.show_log || self.show_cache) {
+        if home && self.side.is_none() {
             self.continue_bar(ui, acts);
         }
         ui.add_space(4.0);
@@ -1643,27 +1599,17 @@ impl App {
         let loading = self.loading;
         let tab = self.lib_tab;
         let playing_id = self.cur_track().map(|t| t.id);
-        let (show_log, show_cache, show_winamp) = (self.show_log, self.show_cache, self.show_winamp);
+        let side = self.side;
         let sec = self.sec;
         let sec_i = sec as u8;
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(area), |ui| {
             // (a skin worn: room between the things on a page; the song tables stay flush, list_row sees to that)
             ui.spacing_mut().item_spacing = Vec2::new(8.0, if crate::winamp_ui::chrome_on() { GAP } else { 0.0 });
-            if show_log {
-                self.log_view(ui, acts);
-                return;
-            }
-            if show_cache {
-                self.cache_view(ui, acts);
-                return;
-            }
-            if show_winamp {
-                self.winamp_view(ui, acts);
-                return;
-            }
-            if self.show_tl {
-                self.backline_page(ui, acts);
-                return;
+            match side {
+                Some(Side::Log) => return self.log_view(ui, acts),
+                Some(Side::Skins) => return self.winamp_view(ui, acts),
+                Some(Side::Backline) => return self.backline_page(ui, acts),
+                None => {}
             }
             if sec == Sec::Melodies {
                 ui.push_id((serial, sec_i), |ui| self.melodies_view(ui, acts));

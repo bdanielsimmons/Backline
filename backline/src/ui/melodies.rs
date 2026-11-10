@@ -576,7 +576,7 @@ fn bar_items(bar: &transcription::Bar, sharps: bool, g: f32, tab: bool) -> Vec<I
         }];
     }
     // beams: eighths and shorter, together within a beat (a dotted quarter in 6/8, 9/8, 12/8)
-    let window = if bar.time.1 == 8 && bar.time.0 % 3 == 0 { 1.5 } else { 1.0 };
+    let window = if bar.time.1 == 8 && bar.time.0.is_multiple_of(3) { 1.5 } else { 1.0 };
     let mut gid = 0;
     let mut i = 0;
     while i < items.len() {
@@ -948,7 +948,7 @@ impl App {
                 .iter()
                 .flat_map(|b| b.beats.iter())
                 .find_map(|b| b.chord.as_ref().and_then(|c| chord_root(c)))
-                .map_or(false, lines::key_sharps),
+                .is_some_and(lines::key_sharps),
         };
         // the moves Backline spots (worked out once for each tune), marked over the bars
         let path = self.cm_file.clone().unwrap_or_default();
@@ -1442,7 +1442,7 @@ impl App {
                         if resp.hovered() || picked_step {
                             p.rect_filled(r, 3.0, pal().sel.gamma_multiply(if picked_step { 0.7 } else { 0.35 }));
                         }
-                        let sounding = now.is_some_and(|n| n >= st.at && st.until.map_or(true, |u| n < u));
+                        let sounding = now.is_some_and(|n| n >= st.at && st.until.is_none_or(|u| n < u));
                         if sounding {
                             p.rect_filled(r, 3.0, pal().red.gamma_multiply(0.2));
                         }
@@ -1989,7 +1989,7 @@ impl App {
                         if show[0] {
                             ptext(
                                 p,
-                                Pos2::new(bx - 4.0 * sc, names_y + if live && i == 0 { 0.0 } else { 0.0 }),
+                                Pos2::new(bx - 4.0 * sc, names_y),
                                 Align::Min,
                                 &crate::chart::pretty_chord(&c),
                                 1.5,
@@ -2321,7 +2321,7 @@ impl App {
                     g
                 })
                 .collect();
-            let sharps = beats.iter().find_map(|b| b.chord.as_deref().and_then(chord_root)).map_or(false, lines::key_sharps);
+            let sharps = beats.iter().find_map(|b| b.chord.as_deref().and_then(chord_root)).is_some_and(lines::key_sharps);
             let bars = as_bars(&beats);
             // the beat sounding (when this move is the one playing)
             let mut now: Option<Spot> = None;

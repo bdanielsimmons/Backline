@@ -11,8 +11,8 @@ pub(crate) struct Spot {
     page: Option<Arc<Page>>,
     tab: Tab,
     tune: Option<usize>,
-    /// 0 the list itself, 1 Winamp skins, 2 the log, 3 storage, 4 the BACKLINE page
-    view: u8,
+    /// a page of Backline's own over the list (None: the list itself)
+    side: Option<Side>,
 }
 
 impl Spot {
@@ -22,7 +22,7 @@ impl Spot {
             (None, None) => true,
             _ => false,
         };
-        self.sec == o.sec && self.tab == o.tab && self.tune == o.tune && self.view == o.view && page
+        self.sec == o.sec && self.tab == o.tab && self.tune == o.tune && self.side == o.side && page
     }
 }
 
@@ -31,18 +31,7 @@ const KEEP: usize = 60;
 
 impl App {
     fn here(&self) -> Spot {
-        let view = if self.show_winamp {
-            1
-        } else if self.show_log {
-            2
-        } else if self.show_cache {
-            3
-        } else if self.show_tl {
-            4
-        } else {
-            0
-        };
-        Spot { sec: self.sec, page: self.page.clone(), tab: self.lib_tab, tune: self.tune_open, view }
+        Spot { sec: self.sec, page: self.page.clone(), tab: self.lib_tab, tune: self.tune_open, side: self.side }
     }
 
     /// Called once a frame: a new place on show is a new step (and forward is forgotten, as in a browser).
@@ -83,11 +72,8 @@ impl App {
         if self.tune_open != s.tune {
             self.apply(Action::OpenTune(s.tune));
         }
-        self.show_winamp = s.view == 1;
-        self.show_log = s.view == 2;
-        self.show_cache = s.view == 3;
-        self.show_tl = s.view == 4;
-        if self.show_winamp && self.wa_list.is_empty() && !self.wa_busy {
+        self.side = s.side;
+        if self.side == Some(Side::Skins) && self.wa_list.is_empty() && !self.wa_busy {
             self.apply(Action::WaSearch);
         }
         self.serial += 1;

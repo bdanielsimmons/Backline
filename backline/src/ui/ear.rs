@@ -1301,7 +1301,7 @@ pub(crate) fn voice_prog(key: i32, chords: &[(i32, &[i32])]) -> Vec<Vec<i32>> {
                 Some(p) => v.iter().map(|m| p.iter().map(|q| (m - q).abs()).min().unwrap_or(0)).sum::<i32>(),
                 None => (v[n - 1] - 67).abs(),
             };
-            if best.as_ref().map_or(true, |b| score < b.0) {
+            if best.as_ref().is_none_or(|b| score < b.0) {
                 best = Some((score, v));
             }
         }
@@ -2913,7 +2913,7 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     if now_ok || last_ok {
                         let next: Vec<&str> = names[level..(level + 2).min(names.len())].to_vec();
-                        if retro_btn(ui, "MORE ANSWERS", false).tip(&format!("Adds {}", next.join(" and "))).clicked() {
+                        if retro_btn(ui, "MORE ANSWERS", false).tip(format!("Adds {}", next.join(" and "))).clicked() {
                             let all = names.len();
                             let st = self.ear_stats();
                             st.level = (level + 2).min(all);
@@ -3099,7 +3099,7 @@ impl App {
                 let all = level_chords(l);
                 if ready {
                     let next: Vec<&str> = all[have..(have + 2).min(all.len())].iter().map(|c| CHORDS[*c].label).collect();
-                    if retro_btn(ui, "MORE CHORDS", false).tip(&format!("Adds {}", next.join(" and "))).clicked() {
+                    if retro_btn(ui, "MORE CHORDS", false).tip(format!("Adds {}", next.join(" and "))).clicked() {
                         set = Some((l, (have + 2).min(all.len())));
                     }
                 } else {
@@ -3107,7 +3107,7 @@ impl App {
                 }
             }
             if let Some(l) = shrink {
-                if retro_btn(ui, "FEWER CHORDS", false).tip(&format!("Back to fewer {}", LEVELS[l].to_lowercase())).clicked() {
+                if retro_btn(ui, "FEWER CHORDS", false).tip(format!("Back to fewer {}", LEVELS[l].to_lowercase())).clicked() {
                     set = Some((l, level_in_play(&o, l).saturating_sub(2).max(START)));
                 }
             }

@@ -212,7 +212,7 @@ impl App {
     /// Checks at start and every 6 hours. A downloaded update shows one bar at the top (click to restart); it also installs on the next launch.
     /// It only restarts by itself if the user turned that on in Preferences (off by default).
     pub(crate) fn update_banner(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
-        let due = self.upd_checked.map_or(true, |t| t.elapsed() > Duration::from_secs(6 * 3600));
+        let due = self.upd_checked.is_none_or(|t| t.elapsed() > Duration::from_secs(6 * 3600));
         if due && matches!(self.upd_state, 0 | 3) {
             self.start_update_check();
         }

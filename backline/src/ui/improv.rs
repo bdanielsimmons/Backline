@@ -281,7 +281,7 @@ impl App {
         let root = self.pn_root;
         let scales = family_scales(self.pn_fam, root, sharps);
         let sc_i = (self.pn_scale as usize).min(scales.len() - 1);
-        let names: Vec<String> = scales.iter().map(|s| s.name.replace("\u{266D}", "\u{266D}")).collect();
+        let names: Vec<String> = scales.iter().map(|s| s.name.clone()).collect();
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         if let Some(i) = crate::choice_line(ui, "pn_scale_i", "SCALE", &names, sc_i, 300.0) {
             self.pn_scale = i as u8;
@@ -289,7 +289,7 @@ impl App {
         }
         let sc_i = (self.pn_scale as usize).min(scales.len() - 1);
         let sc = &scales[sc_i];
-        crate::views::dim_line(ui, &sc.about.replace("\u{266D}", "\u{266D}"), 1.0, pal().ink2);
+        crate::views::dim_line(ui, &sc.about, 1.0, pal().ink2);
         if let Some(i) = crate::choice_line(
             ui,
             "pn_nps",
@@ -483,7 +483,7 @@ impl App {
                 self.pn_string = i as u8;
             }
         }
-        crate::views::dim_line(ui, &crate::font::as_label(&ex_about), 1.0, pal().ink2);
+        crate::views::dim_line(ui, &crate::font::as_label(ex_about), 1.0, pal().ink2);
         // what the line is played over: the scale's chord
         let chord: Vec<i32> = sc.chord.iter().map(|x| 48 + root.rem_euclid(12) + x).collect();
         self.ln_backing = Some((self.ln_over, chord));
@@ -895,7 +895,7 @@ impl App {
         neck_view(ui, &dots, lit);
         // ---- the piano: the chord low, the shape above it
         let mut keys: Vec<i32> = chord.iter().map(|r| 48 + root + r).collect();
-        keys.extend(sorted.iter().map(|pc| 60 + (pc - 0).rem_euclid(12) + if *pc < root { 12 } else { 0 }));
+        keys.extend(sorted.iter().map(|pc| 60 + pc.rem_euclid(12) + if *pc < root { 12 } else { 0 }));
         let pw = ui.available_width().min(720.0);
         let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 70.0), Sense::hover());
         let rel: Vec<i32> = chord.clone();
@@ -1115,7 +1115,7 @@ impl App {
                 self.pf_pos = 0;
             }
             // the star: one you use a lot, kept in MY SCALES
-            let starred = self.pf_stars.iter().any(|s| *s == self.pf_scale);
+            let starred = self.pf_stars.contains(&self.pf_scale);
             if crate::ibtn(ui, &crate::IC_STAR, "", starred)
                 .tip(if starred {
                     "Remove from MY SCALES"
@@ -1239,7 +1239,7 @@ impl App {
             let mut all = Vec::new();
             for k in 0..np {
                 let seg = up_down(&positions[nth(k)]);
-                owner.extend(std::iter::repeat(k).take(seg.len()));
+                owner.extend(std::iter::repeat_n(k, seg.len()));
                 all.extend(seg);
             }
             all
@@ -1336,7 +1336,7 @@ impl App {
         }
         if self.pf_play >= 2 {
             let pat = (self.pf_play as usize - 2).min(lines::SCALE_PATTERNS.len() - 1);
-            crate::views::dim_line(ui, &crate::font::as_label(&lines::SCALE_PATTERNS[pat].1), 1.0, pal().ink2);
+            crate::views::dim_line(ui, &crate::font::as_label(lines::SCALE_PATTERNS[pat].1), 1.0, pal().ink2);
             if let Some(i) = crate::choice_line(ui, "sc_dir", "DIRECTION", &lines::DIRECTIONS, self.sc_dir, 220.0) {
                 self.sc_dir = i;
             }
@@ -1373,7 +1373,7 @@ impl App {
             dim_line(ui, "NO READABLE CHORDS IN THESE CHANGES", 1.0, pal().dim);
             return;
         }
-        let sharps = changes.first().and_then(|c| theory::chord_notes(c)).map_or(false, |c| lines::key_sharps(c.root));
+        let sharps = changes.first().and_then(|c| theory::chord_notes(c)).is_some_and(|c| lines::key_sharps(c.root));
         let gap = 60.0 / self.band_bpm() / 2.0;
         ui.horizontal_wrapped(|ui| {
             crate::views::label(ui, &title.to_uppercase(), 240.0);

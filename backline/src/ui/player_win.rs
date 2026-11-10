@@ -462,8 +462,6 @@ impl App {
         }
     }
 
-    /// Full-window cover viewer: tilts toward the mouse, lyrics, fullscreen.
-
     pub(crate) fn playlist_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         // a worn Winamp skin draws the queue as its own playlist window
         if !self.chart_in_queue() && self.wa_art.as_ref().is_some_and(|t| t.sheets.contains_key("pledit")) {
@@ -608,7 +606,7 @@ impl App {
                                     acts.push(Action::PlayIndex(i));
                                 }
                                 let liked = self.liked.contains(&t.id);
-                                let link = track_link(&t, self.ext_of(t.id).as_ref());
+                                let link = track_link(t, self.ext_of(t.id).as_ref());
                                 let tidal = self.ext_of(t.id).is_none();
                                 r.context_menu(|ui| {
                                     if menu_item(ui, "Play Now") {
@@ -616,7 +614,7 @@ impl App {
                                         ui.close_menu();
                                     }
                                     queue_moves(ui, acts, i, cur);
-                                    crate::song_items(ui, acts, &t, liked, tidal);
+                                    crate::song_items(ui, acts, t, liked, tidal);
                                     link_item(ui, acts, link.clone());
                                     if cur != Some(i) && menu_item(ui, "Remove from Queue") {
                                         acts.push(Action::Remove(i));

@@ -285,7 +285,7 @@ pub(crate) fn resolve(i: usize, t: f32) -> usize {
         .filter(|&j| match PRESETS[j].kind {
             // (the terrain takes a while to build: never a twenty-second stop in a round)
             Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain | Kind::Wave => false,
-            _ => g.map_or(true, |g| PRESETS[j].group == g),
+            _ => g.is_none_or(|g| PRESETS[j].group == g),
         })
         .collect();
     if pool.is_empty() {
@@ -684,7 +684,7 @@ impl Gl {
         let (w, h) = (vp.width_px.max(2), vp.height_px.max(2));
         // the slot's pictures, made again when its size changes; a new preset carries on from the last one's picture
         // (the way MilkDrop blends from one into the next)
-        let fresh = self.slots.get(&slot_id).map_or(true, |s| s.w != w || s.h != h);
+        let fresh = self.slots.get(&slot_id).is_none_or(|s| s.w != w || s.h != h);
         if fresh {
             if let Some(old) = self.slots.remove(&slot_id) {
                 for i in 0..2 {

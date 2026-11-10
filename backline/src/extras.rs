@@ -1,12 +1,13 @@
 //! The logic behind the practice extras: files / YouTube sources, the tune list, the practice
-//! diary, saved sections, the speed trainer, metronome and the rest. (The drawing is in views.rs.)
+//! diary, saved sections, the speed trainer, metronome and the rest. (Their actions are carried out in actions.rs,
+//! their messages taken in by messages.rs; the drawing is in the ui/ files.)
 
 use crate::api::{self, Track};
 use crate::band;
 use crate::player::Cmd;
 use crate::sources::{self, Src};
 use crate::stems;
-use crate::store::{self, Entry, Ext, Last, Section, Tune, Version};
+use crate::store::{self, Ext, Last, Tune, Version};
 use crate::{cache, Action, App, Msg, Sec};
 use eframe::egui;
 use std::collections::HashSet;
@@ -76,7 +77,7 @@ pub fn parse_time(t: &str) -> Option<f32> {
     .filter(|v| *v >= 0.0)
 }
 
-fn knob_step(k: Knob) -> f32 {
+pub(crate) fn knob_step(k: Knob) -> f32 {
     match k {
         Knob::Focus | Knob::Shift => 5.0,
         Knob::LoopA | Knob::LoopB => 0.2,
@@ -84,7 +85,7 @@ fn knob_step(k: Knob) -> f32 {
     }
 }
 
-fn wave_path(id: i64) -> PathBuf {
+pub(crate) fn wave_path(id: i64) -> PathBuf {
     api::config_dir().join("waves").join(format!("{}.pk", id))
 }
 
@@ -94,7 +95,7 @@ pub(crate) static FILES_STAGE: std::sync::atomic::AtomicU8 = std::sync::atomic::
 /// Find the files below the given paths (folders are searched, and remembered for RESCAN).
 /// The songs in these paths (folders searched), the folders, and the playlist files among them: each one's name
 /// and its songs' ids (the songs come in with the rest).
-fn scan_paths(paths: Vec<PathBuf>) -> (Vec<Ext>, Vec<String>, Vec<(String, Vec<i64>)>) {
+pub(crate) fn scan_paths(paths: Vec<PathBuf>) -> (Vec<Ext>, Vec<String>, Vec<(String, Vec<i64>)>) {
     let mut files: Vec<PathBuf> = Vec::new();
     let mut folders: Vec<String> = Vec::new();
     let mut lists: Vec<(String, Vec<i64>)> = Vec::new();
@@ -118,7 +119,7 @@ fn scan_paths(paths: Vec<PathBuf>) -> (Vec<Ext>, Vec<String>, Vec<(String, Vec<i
 }
 
 /// Tune name from a track title: "Cherokee (Remastered 2005)" -> "Cherokee".
-fn tune_name_from(title: &str) -> String {
+pub(crate) fn tune_name_from(title: &str) -> String {
     let mut s = title.to_string();
     for sep in [" (", " [", " - ", " – "] {
         if let Some(i) = s.find(sep) {
@@ -324,8 +325,7 @@ impl App {
             return;
         }
         self.rtab = 0;
-        self.show_winamp = false;
-        self.show_tl = false;
+        self.side = None;
         if self.sec != Sec::Chart {
             self.apply(Action::Section(Sec::Chart));
         }
@@ -512,7 +512,7 @@ impl App {
     /// The loop being practised now (the song and its A-B), as a day keeps it; None when no loop is on. It is the
     /// current loop until it is cleared or another is picked: its ends moved, today's time on it goes with them
     /// (adjusting a loop doesn't make a new one).
-    fn loop_now(&mut self) -> Option<String> {
+    pub(crate) fn loop_now(&mut self) -> Option<String> {
         if !(self.practice && self.loop_on) {
             return None;
         }
@@ -543,7 +543,7 @@ impl App {
         }
     }
 
-    fn on_loops(&mut self, n: u32) {
+    pub(crate) fn on_loops(&mut self, n: u32) {
         if self.demo_playing() {
             return;
         }
@@ -561,7 +561,7 @@ impl App {
         }
     }
 
-    fn check_trainer(&mut self) {
+    pub(crate) fn check_trainer(&mut self) {
         if self.passes < self.trainer_n {
             return;
         }
@@ -618,7 +618,7 @@ impl App {
     }
 
     /// Tempo the metronome clicks at right now (beats per real minute).
-    fn metro_tempo(&self, playing: bool) -> f32 {
+    pub(crate) fn metro_tempo(&self, playing: bool) -> f32 {
         // its own tempo: the song's BPM and the band's are set apart from it
         let base = self.mt_bpm as f32 + self.mt_add;
         if self.mt.follow && self.practice && playing {
@@ -629,13 +629,13 @@ impl App {
     }
 
     /// Keep the metronome and the band going: tempo changes, speed-up drill, locking to the track.
-    fn update_metro(&mut self, playing: bool) {
+    pub(crate) fn update_metro(&mut self, playing: bool) {
         self.band_tick();
         let tid = self.cur_track().map(|t| t.id);
         let ratio = if self.practice && playing { self.speed as f32 / 100.0 } else { 1.0 };
         // the song's beats known and the song at its own speed: the clicks go into the song itself (see below)
         let in_song = self.mt.on && self.mt.sync && playing && (ratio - 1.0).abs() < 0.001
-            && self.beat.map_or(false, |b| Some(b.0) == tid)
+            && self.beat.is_some_and(|b| Some(b.0) == tid)
             && self.beat_grid.as_ref().is_some_and(|g| Some(g.0) == tid);
         if !in_song {
             self.player.ctl.set_song_clicks(None);
@@ -649,7 +649,7 @@ impl App {
             return;
         }
         // locking needs the track's beat: look for it by itself once the audio is stored
-        let sync_wanted = self.mt.sync && !tid.map_or(false, |t| self.beat_failed.contains(&t));
+        let sync_wanted = self.mt.sync && !tid.is_some_and(|t| self.beat_failed.contains(&t));
         if sync_wanted && playing && !self.beat_busy && self.beat.map(|b| b.0) != tid {
             if let Some(id) = tid {
                 let stored = cache::has(id) || matches!(self.srcmap.get(&id), Some(Src::File(_)));
@@ -658,7 +658,7 @@ impl App {
                 }
             }
         }
-        let locked = sync_wanted && playing && self.beat.map_or(false, |b| Some(b.0) == tid);
+        let locked = sync_wanted && playing && self.beat.is_some_and(|b| Some(b.0) == tid);
         if sync_wanted && !locked {
             // locking was asked for but there is nothing to lock to yet
             if self.mt_sig != 0 {
@@ -767,7 +767,7 @@ impl App {
                 if let Some((next, _)) = band::next_beat(grid, pos + 40.0) {
                     // the loop after it starts on the beat after the laid-out stretch
                     let gap = (((next - (pos + 40.0)) / ratio) * band::RATE) as usize;
-                    lead.extend(std::iter::repeat(0i16).take(gap));
+                    lead.extend(std::iter::repeat_n(0i16, gap));
                 }
                 let _ = &mut body;
             }
@@ -779,7 +779,7 @@ impl App {
     }
 
     // ------------------------------------------------------------------ band
-    fn band_sig_now(&self) -> u64 {
+    pub(crate) fn band_sig_now(&self) -> u64 {
         let bpm = (if self.bpm > 0 { self.bpm } else { self.mt_bpm }) as u64;
         let lv: u64 = self.band_levels().iter().enumerate().map(|(i, l)| ((l * 10.0).round() as u64) << (i * 5)).sum();
         // picking other bars to loop changes what the band plays
@@ -882,7 +882,7 @@ impl App {
 
     /// A file of yours moved or renamed: its id (made from its path) changes, and everything that was kept under
     /// the old one - the file entry, likes, loops, bookmarks, key and tempo, playlists, tunes, the queue - follows.
-    fn file_moved(&mut self, old: i64, new_path: &std::path::Path) -> i64 {
+    pub(crate) fn file_moved(&mut self, old: i64, new_path: &std::path::Path) -> i64 {
         let src = new_path.to_string_lossy().to_string();
         let new = store::hash_id(&format!("file:{}", src));
         if new == old {
@@ -918,10 +918,8 @@ impl App {
             fix(&mut v);
             self.store.songs.insert(new, v);
         }
-        for m in [&mut self.store.sections].into_iter() {
-            if let Some(v) = m.remove(&old) {
-                m.insert(new, v);
-            }
+        if let Some(v) = self.store.sections.remove(&old) {
+            self.store.sections.insert(new, v);
         }
         if let Some(v) = self.store.marks.remove(&old) {
             self.store.marks.insert(new, v);
@@ -954,7 +952,7 @@ impl App {
 
     /// A song off this computer: your own file goes to the Recycle Bin (and out of Backline's lists), a streamed
     /// song's saved copy is deleted (it is downloaded again when played).
-    fn delete_song(&mut self, t: &Track) {
+    pub(crate) fn delete_song(&mut self, t: &Track) {
         let name = t.title.to_uppercase();
         if let Some(Src::File(p)) = self.srcmap.get(&t.id).cloned() {
             if self.cur_track().map(|c| c.id) == Some(t.id) {
@@ -977,7 +975,7 @@ impl App {
 
     /// A file of yours that is no longer on disk: out of the file list, likes, playlists, tunes and the queue
     /// (its loops and notes stay, in case it comes back under the same path).
-    fn file_gone(&mut self, id: i64) {
+    pub(crate) fn file_gone(&mut self, id: i64) {
         crate::file_id(id, false);
         self.store.files.retain(|e| e.id != id);
         self.store.hearts.retain(|e| e.id != id);
@@ -1004,7 +1002,7 @@ impl App {
     }
 
     /// The song's file, selected in the file manager: a file of yours, or a Tidal song stored here.
-    fn show_file(&mut self, id: i64) {
+    pub(crate) fn show_file(&mut self, id: i64) {
         let path = match self.srcmap.get(&id) {
             Some(Src::File(p)) => Some(p.clone()),
             _ => cache::file_of(id),
@@ -1023,13 +1021,13 @@ impl App {
     }
 
     /// Each part's level, with a muted part at 0.
-    fn band_levels(&self) -> [f32; 3] {
+    pub(crate) fn band_levels(&self) -> [f32; 3] {
         [0, 1, 2].map(|i| if self.band_parts[i] { self.band_lv[i] } else { 0.0 })
     }
 
     /// The backing track as a file: the count-in, the chart as many times as LOOPS says (once when endless),
     /// and an ending. Asks where to save it.
-    fn band_export(&mut self) {
+    pub(crate) fn band_export(&mut self) {
         let Some(text) = self.chart_text() else {
             self.set_note("NO CHART TO EXPORT YET");
             return;
@@ -1068,7 +1066,7 @@ impl App {
         });
     }
 
-    fn band_start(&mut self) {
+    pub(crate) fn band_start(&mut self) {
         let Some(text) = self.chart_text() else {
             self.set_note("NO CHART TO PLAY YET");
             return;
@@ -1160,7 +1158,7 @@ impl App {
     }
 
     /// Restart the band when its tempo, style or parts changed; stop it after its LOOPS times through.
-    fn band_tick(&mut self) {
+    pub(crate) fn band_tick(&mut self) {
         if self.band_on && self.band_sig != self.band_sig_now() {
             self.band_start();
         }
@@ -1349,7 +1347,7 @@ impl App {
     // ------------------------------------------------------------ sources
     /// Every song you still have somewhere: your clips, liked songs, saved playlists, your playlists, tunes, the queue
     /// and the song left playing.
-    fn songs_in_use(&self) -> HashSet<i64> {
+    pub(crate) fn songs_in_use(&self) -> HashSet<i64> {
         let mut u: HashSet<i64> = HashSet::new();
         u.extend(self.store.yt.iter().chain(self.store.sc.iter()).chain(self.store.hearts.iter()).map(|e| e.id));
         for l in &self.store.lists {
@@ -1511,7 +1509,7 @@ impl App {
         });
     }
 
-    fn pick_files(&mut self, folder: bool) {
+    pub(crate) fn pick_files(&mut self, folder: bool) {
         if self.files_busy {
             return;
         }
@@ -1584,7 +1582,7 @@ impl App {
     }
 
     /// Bring an import in (from its preview) and say what it added and what it found.
-    fn take_import(&mut self, s: crate::store::Share) {
+    pub(crate) fn take_import(&mut self, s: crate::store::Share) {
         let newer = s.version > crate::store::SHARE_VERSION;
         let t = self.store.take_share(s);
         self.store_dirty = true;
@@ -1606,663 +1604,8 @@ impl App {
         self.set_note(&note);
     }
 
-    pub(crate) fn drain_extra(&mut self, m: Msg) {
-        match m {
-            Msg::CmImported(r) => match r {
-                Ok(names) => {
-                    self.cm_list = None;
-                    self.set_note(&format!(
-                        "{} TRANSCRIPTION{} IMPORTED",
-                        names.len(),
-                        if names.len() == 1 { "" } else { "S" }
-                    ));
-                }
-                Err(e) => self.set_err(format!("IMPORT: {}", e)),
-            },
-            Msg::News(r) => match r {
-                Ok(mut n) if !n.is_empty() => {
-                    let num = |t: &str| t.rsplit('.').next().and_then(|x| x.parse::<u64>().ok()).unwrap_or(0);
-                    let (seen, me) = (self.seen_build, crate::update::build());
-                    if seen > 0 && seen < me {
-                        let newer: Vec<_> = n.iter().filter(|(t, _)| num(t) > seen).cloned().collect();
-                        if !newer.is_empty() {
-                            n = newer;
-                        }
-                    } else {
-                        n.truncate(3);
-                    }
-                    self.news = Some(n);
-                }
-                Ok(_) => self.set_note("NO RELEASE NOTES FOUND"),
-                Err(e) => self.set_err(format!("WHAT'S NEW: {}", e)),
-            },
-            Msg::Outputs(default, list, bt) => {
-                let first = self.sys_output.is_empty() && self.out_list.is_empty();
-                let old_list = std::mem::replace(&mut self.out_list, list);
-                let old_bt = std::mem::replace(&mut self.out_bt, bt);
-                let old_default = std::mem::replace(&mut self.sys_output, default.clone());
-                // the first look is where things already play
-                if first || default.is_empty() {
-                    return;
-                }
-                // where it was playing, and where it plays now: the output you picked while it is there, else the
-                // system's default
-                let was = self.out_device.clone().filter(|d| old_list.contains(d)).unwrap_or(old_default);
-                let picked = self.out_device.clone().filter(|d| self.out_list.contains(d));
-                let now = picked.clone().unwrap_or_else(|| default.clone());
-                if now == was {
-                    return;
-                }
-                // Bluetooth headphones or a speaker gone (out of range, switched off): the music pauses rather than
-                // carry on out loud; anything else, it keeps playing on the new output
-                let bt_gone = !self.out_list.contains(&was) && old_bt.contains(&was);
-                if bt_gone && self.cur.is_some() && !self.stopped && !self.paused {
-                    self.apply(Action::PauseBtn);
-                }
-                let keep = self.out_device.clone();
-                self.apply(Action::SetDevice(picked));
-                self.out_device = keep;
-                if bt_gone {
-                    self.set_note(&format!("{} DISCONNECTED, SO PLAYBACK PAUSED", was.to_uppercase()));
-                } else {
-                    self.set_note(&format!("NOW PLAYING THROUGH {}", now.to_uppercase()));
-                }
-            }
-            Msg::ShareSaved(r) => match r {
-                Ok(p) => self.set_note(&format!("SAVED: {}. IMPORT IT IN BACKLINE ON THE OTHER COMPUTER", p)),
-                Err(e) => self.set_err(format!("EXPORT: {}", e)),
-            },
-            Msg::ShareIn(Ok(s)) => self.share_view = Some((true, s)),
-            Msg::SyncFiles(names) => self.sync_files(names),
-            Msg::SyncLibrary(parts) => self.sync_library(parts),
-            Msg::PackIn(Ok(p)) => {
-                if p.parts.is_empty() && p.share.is_none() {
-                    self.set_note("NOTHING NEW IN THAT PACK: YOU HAVE IT ALL ALREADY");
-                } else {
-                    self.show_prefs = false;
-                    self.pack_in = Some(p);
-                }
-            }
-            Msg::PackIn(Err(e)) => self.set_err(format!("PACK: {}", e)),
-            Msg::PackSaved(r) => match r {
-                Ok(p) => self.set_note(&format!("PACK SAVED: {}. SEND IT, AND DROP IT ON BACKLINE TO OPEN IT", p)),
-                Err(e) => self.set_err(format!("PACK: {}", e)),
-            },
-            Msg::ShareIn(Err(e)) => self.set_err(format!("IMPORT: {}", e)),
-            Msg::TidalLists(r) => {
-                self.tidal_lists_busy = false;
-                match r {
-                    Ok(l) => self.tidal_lists = Some(l),
-                    Err(e) => {
-                        self.tidal_lists = Some(Vec::new());
-                        self.set_err(format!("TIDAL PLAYLISTS: {}", e));
-                    }
-                }
-            }
-            Msg::TidalListMade(r) => match r {
-                Ok(said) => {
-                    self.toast(&said);
-                    self.tidal_lists = None;
-                    self.apply(Action::RefreshLibrary);
-                }
-                Err(e) => {
-                    self.toast = None;
-                    self.set_err(format!("TIDAL PLAYLIST: {}", e))
-                }
-            },
-            Msg::TidalListDone(r) => match r {
-                Ok(note) => self.toast(&note),
-                Err(e) => {
-                    self.toast = None;
-                    self.set_err(format!("TIDAL PLAYLIST: {}", e))
-                }
-            },
-            Msg::PeerFiles(r) => self.peer_files_in(r),
-            Msg::Copied(job, r) => self.copied(job, r),
-            Msg::CopyEnd(ok) => self.copy_end(ok),
-            Msg::TidalListDupe(uuid, name, t) => {
-                self.toast = None;
-                self.set_note("");
-                self.pl_dupe = Some(crate::new_playlist::PlDupe::Tidal(uuid, name, t));
-            }
-            Msg::TidalListRenamed(uuid, name, r) => match r {
-                Ok(()) => {
-                    // the new name everywhere it shows: your playlists, the library's LISTS, the page itself
-                    if let Some(l) = self.tidal_lists.as_mut() {
-                        for (_, n) in l.iter_mut().filter(|(u, _)| *u == uuid) {
-                            *n = name.clone();
-                        }
-                    }
-                    for p in self.page.iter_mut().chain(self.back.iter_mut()).chain(self.fwd.iter_mut()).chain(self.lib_page.iter_mut()) {
-                        let here = p.card.as_ref().is_some_and(|c| c.id == uuid);
-                        let listed = p.rows.iter().any(|(_, cs)| cs.iter().any(|c| c.id == uuid));
-                        if !here && !listed {
-                            continue;
-                        }
-                        let pg = Arc::make_mut(p);
-                        if here {
-                            pg.title = name.clone();
-                            if let Some(c) = pg.card.as_mut() {
-                                c.title = name.clone();
-                            }
-                        }
-                        for (_, cs) in pg.rows.iter_mut() {
-                            for c in cs.iter_mut().filter(|c| c.id == uuid) {
-                                c.title = name.clone();
-                            }
-                        }
-                    }
-                    self.serial += 1;
-                    self.toast(&format!("Renamed to {} on Tidal", name));
-                }
-                Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
-            },
-            Msg::TidalListRemoved(uuid, id, nth, r) => match r {
-                Ok(()) => {
-                    // out of the page, and of the same page kept for going back and forward
-                    for p in self.page.iter_mut().chain(self.back.iter_mut()).chain(self.fwd.iter_mut()) {
-                        if !p.card.as_ref().is_some_and(|c| c.id == uuid) {
-                            continue;
-                        }
-                        let pg = Arc::make_mut(p);
-                        let at: Vec<usize> = pg.tracks.iter().enumerate().filter(|(_, t)| t.id == id).map(|(k, _)| k).collect();
-                        if let Some(&k) = at.get(nth).or(at.last()) {
-                            pg.tracks.remove(k);
-                        }
-                        if let Some(n) = pg.subtitle.strip_suffix(" tracks").and_then(|n| n.parse::<usize>().ok()) {
-                            pg.subtitle = format!("{} tracks", n.saturating_sub(1));
-                        }
-                    }
-                    self.set_note("REMOVED FROM THIS PLAYLIST");
-                }
-                Err(e) => self.set_err(format!("TIDAL PLAYLIST: {}", e)),
-            },
-            Msg::Added(files, folders, lists) => {
-                self.files_busy = false;
-                let (found, picked_folder) = (files.len(), !folders.is_empty());
-                for f in folders {
-                    if !self.store.folders.contains(&f) {
-                        self.store.folders.push(f);
-                    }
-                }
-                let n = self.add_exts(files);
-                self.store_dirty = true;
-                // playlist files: each a Backline playlist (in LISTS) of its songs, in order
-                if !lists.is_empty() {
-                    let mut names = Vec::new();
-                    for (name, ids) in lists {
-                        let items: Vec<Version> = ids
-                            .iter()
-                            .filter_map(|id| self.store.files.iter().find(|e| e.id == *id))
-                            .map(|e| e.to_version())
-                            .collect();
-                        if items.is_empty() {
-                            continue;
-                        }
-                        names.push(format!("{} ({} SONGS)", name.to_uppercase(), items.len()));
-                        self.store.playlists.push(store::Playlist { name, items, ..Default::default() });
-                    }
-                    if !names.is_empty() {
-                        self.set_note(&format!("PLAYLIST ADDED TO LISTS: {}", names.join(", ")));
-                        return;
-                    }
-                }
-                // say what happened: songs added, nothing there, already here, or nothing picked
-                let note = if n > 0 {
-                    format!("ADDED {} SONG{}", n, if n == 1 { "" } else { "S" })
-                } else if found > 0 {
-                    "THOSE SONGS ARE ALREADY IN YOUR FILES".to_string()
-                } else if picked_folder {
-                    "NO MUSIC FILES IN THAT FOLDER".to_string()
-                } else {
-                    "NOTHING ADDED".to_string()
-                };
-                self.set_note(&note);
-            }
-            Msg::Scanned(files) => {
-                let n = self.add_exts(files);
-                if n > 0 {
-                    self.set_note(&format!("FOUND {} NEW FILES", n));
-                }
-            }
-            Msg::YtAdded(r) => {
-                self.yt_busy = false;
-                match r {
-                    Ok(e) => {
-                        self.yt_msg = format!("ADDED: {}", e.title);
-                        self.yt_in.clear();
-                        self.register(&e.to_version());
-                        if !self.store.yt.iter().any(|x| x.id == e.id) {
-                            self.here.insert(e.id);
-                            self.store.yt.insert(0, e);
-                            self.store_dirty = true;
-                        }
-                    }
-                    Err(e) => {
-                        api::log(&format!("youtube: {}", e));
-                        self.yt_msg = format!("ERROR: {}", api::plain(&e));
-                    }
-                }
-            }
-            Msg::YtList(url, r) => {
-                self.yt_busy = false;
-                match r {
-                    Ok((name, mut list)) => {
-                        // (the songs you took out of it stay out)
-                        if let Some(l) = self.store.lists.iter().find(|l| l.url == url) {
-                            list.retain(|e| !l.removed.contains(&e.id));
-                        }
-                        self.yt_msg.clear();
-                        self.yt_in.clear();
-                        for e in &list {
-                            self.register(&e.to_version());
-                        }
-                        // imported: kept with your playlists, and open on its own page
-                        match self.store.lists.iter_mut().find(|l| l.url == url) {
-                            Some(l) => l.items = list.clone(),
-                            None => self.store.lists.push(store::SavedList {
-                                kind: "yt".to_string(),
-                                name: name.clone(),
-                                url: url.clone(),
-                                items: list.clone(),
-                                ..Default::default()
-                            }),
-                        }
-                        self.store_dirty = true;
-                        self.keep_all(list.iter().map(|e| e.id).collect());
-                        self.yt_results = list;
-                        self.yt_title = name;
-                        self.yt_cur = Some(url);
-                    }
-                    Err(e) => {
-                        api::log(&format!("youtube playlist: {}", e));
-                        self.yt_msg = format!("ERROR: {}", api::plain(&e));
-                    }
-                }
-            }
-            Msg::ScSets(r) => {
-                self.sc_busy = false;
-                match r {
-                    Ok(list) => {
-                        self.sc_msg = format!("{} PLAYLISTS. CLICK ONE TO OPEN IT", list.len());
-                        self.sc_sets = list;
-                    }
-                    Err(e) => {
-                        api::log(&format!("soundcloud sets: {}", e));
-                        self.sc_msg = format!("ERROR: {}", api::plain(&e));
-                    }
-                }
-            }
-            Msg::Sc(r) => {
-                self.sc_busy = false;
-                match r {
-                    Ok(mut list) => {
-                        // (a saved playlist's songs you took out stay out)
-                        if let Some(l) = self.sc_cur.as_ref().and_then(|u| self.store.lists.iter().find(|l| l.url == *u)) {
-                            list.retain(|e| !l.removed.contains(&e.id));
-                        }
-                        self.sc_msg = format!("{} TRACKS", list.len());
-                        for e in &list {
-                            self.register(&e.to_version());
-                        }
-                        // the real titles, covers and lengths: four at a time, shown as they arrive
-                        let srcs: Vec<String> = list.iter().take(40).map(|e| e.src.clone()).collect();
-                        for w in 0..4 {
-                            let mine: Vec<String> = srcs.iter().skip(w).step_by(4).cloned().collect();
-                            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                            std::thread::spawn(move || {
-                                for s in mine {
-                                    if let Ok(e) = sources::yt_info(&s) {
-                                        let _ = tx.send(Msg::ScMeta(e));
-                                        ctx.request_repaint();
-                                    }
-                                }
-                            });
-                        }
-                        // a playlist (a link with several songs): kept with your playlists, on its own page
-                        if let Some(u) = self.sc_cur.clone().filter(|_| list.len() > 1) {
-                            match self.store.lists.iter_mut().find(|l| l.url == u) {
-                                Some(l) => l.items = list.clone(),
-                                None => {
-                                    let name = self
-                                        .sc_sets
-                                        .iter()
-                                        .find(|(_, x)| *x == u)
-                                        .map(|(t, _)| t.clone())
-                                        .unwrap_or_else(|| sources::list_name(&u));
-                                    self.store.lists.push(store::SavedList {
-                                        kind: "sc".to_string(),
-                                        name,
-                                        url: u,
-                                        items: list.clone(),
-                                        ..Default::default()
-                                    });
-                                }
-                            }
-                            self.store_dirty = true;
-                            self.keep_all(list.iter().map(|e| e.id).collect());
-                        }
-                        self.sc_results = list;
-                    }
-                    Err(e) => {
-                        api::log(&format!("soundcloud: {}", e));
-                        self.sc_msg = format!("ERROR: {}", api::plain(&e));
-                    }
-                }
-            }
-            Msg::ScMeta(e) => {
-                let kept = self.store.lists.iter_mut().flat_map(|l| l.items.iter_mut());
-                for slot in self.sc_results.iter_mut().chain(self.store.sc.iter_mut()).chain(kept) {
-                    if slot.id == e.id {
-                        slot.title = e.title.clone();
-                        slot.artist = e.artist.clone();
-                        slot.dur = e.dur;
-                        slot.cover = e.cover.clone();
-                    }
-                }
-                if self.store.sc.iter().chain(self.store.lists.iter().flat_map(|l| l.items.iter())).any(|x| x.id == e.id) {
-                    self.store_dirty = true;
-                }
-            }
-            Msg::YtTool(r) => {
-                crate::sources::ytdlp_changed();
-                self.yt_busy = false;
-                match r {
-                    Ok(p) => self.yt_msg = format!("YT-DLP READY: {}", p.display()),
-                    Err(e) => {
-                        api::log(&format!("yt-dlp download: {}", e));
-                        self.yt_msg = format!("ERROR: {}", api::plain(&e));
-                    }
-                }
-            }
-            Msg::Wave(id, w) => {
-                if self.wave.0 == id {
-                    self.wave.1 = w;
-                }
-            }
-            Msg::Notes(id, mask, m) => {
-                if self.notes.0 == id && self.notes.1 == mask {
-                    self.notes_busy = false;
-                    match m {
-                        Some(m) => self.notes.2 = Some(Arc::new(m)),
-                        None => self.set_err("COULDN'T ANALYZE THIS SONG'S NOTES".to_string()),
-                    }
-                }
-            }
-            Msg::WaveFine(id, f) => {
-                if self.wave_fine.0 == id {
-                    self.wave_fine.1 = Some(f);
-                }
-            }
-            Msg::Exported(r) => {
-                self.exporting = false;
-                match r {
-                    Ok(p) => self.set_note(&format!("SAVED: {}", p)),
-                    Err(e) if e == "cancelled" => {}
-                    Err(e) => self.set_err(format!("EXPORT FAILED: {}", e)),
-                }
-            }
-            Msg::Stems(id, r) => {
-                self.stem_busy = 0;
-                match r {
-                    Ok(()) => {
-                        // remembered, so MY TRACKS > WITH STEMS can name it
-                        if let Some(t) = self.queue.iter().find(|t| t.id == id).cloned() {
-                            self.remember_song(&t);
-                        }
-                        self.set_note("STEMS READY. USE THEM IN THE STEMS TAB")
-                    }
-                    Err(e) if e == "cancelled" => self.set_note("SPLIT CANCELED"),
-                    Err(e) => self.set_err(format!("STEMS FAILED: {}", e)),
-                }
-            }
-            Msg::StemTool(r) => {
-                self.stem_busy = 0;
-                match r {
-                    Ok(()) => self.set_note("STEM TOOL READY. NOW SPLIT A TRACK"),
-                    Err(e) => self.set_err(format!("STEM TOOL DOWNLOAD FAILED: {}", e)),
-                }
-            }
-            Msg::Lookup(name, info, tracks, found) => {
-                self.look_busy = false;
-                // YouTube recordings: playable from the list like any other song
-                for e in &found {
-                    self.register(&e.to_version());
-                }
-                match info {
-                    Ok(w) => {
-                        if w.writers.is_empty() {
-                            self.set_note(&format!("NO WRITER LISTED FOR {}", w.title.to_uppercase()));
-                        }
-                        self.fill_details(&name, &w);
-                    }
-                    Err(e) => self.set_note(&format!("NO WRITER INFO FOUND ({})", e)),
-                }
-                self.look_for = name;
-                self.look_tracks = tracks;
-            }
-            Msg::TuneDetails(name, r) => {
-                if let Ok(w) = r {
-                    self.fill_details(&name, &w);
-                }
-            }
-            Msg::RecordFound(key, r) => match r {
-                Ok(tracks) if !tracks.is_empty() => {
-                    *self.store.listened.entry(key.clone()).or_insert(0) += 1;
-                    self.store_dirty = true;
-                    self.apply(Action::Play(tracks, 0));
-                    self.set_note(&format!("LISTENING: {}", key.to_uppercase()));
-                }
-                Ok(_) => self.set_note(&format!("{}: NO SONGS ON TIDAL", key.to_uppercase())),
-                Err(e) => self.set_note(&e.to_uppercase()),
-            },
-            Msg::Chart(name, r) => {
-                self.chart_busy = false;
-                // a recommended tune being looked at: its chart on the lead sheet, not one of your tunes
-                if self.find_tune(&name).is_none() && self.preview_tune.as_deref() == Some(name.as_str()) {
-                    match r {
-                        Ok((chart, _, _)) => {
-                            self.prac_chart = Some((name.to_uppercase(), chart));
-                            self.chart_sel = None;
-                            self.chart_tr = 0;
-                            self.open_chart();
-                            self.chart_sugg.clear();
-                        }
-                        Err((e, _)) => self.set_note(&format!("NO CHART FOR {}: {}", name.to_uppercase(), e.to_uppercase())),
-                    }
-                    return;
-                }
-                let Some(i) = self.find_tune(&name) else { return };
-                match r {
-                    Ok((chart, key, composer)) => {
-                        let t = &mut self.store.tunes[i];
-                        t.chart = chart;
-                        if t.key.is_empty() {
-                            t.key = key;
-                        }
-                        if t.written_by.is_empty() && !composer.is_empty() {
-                            t.written_by = composer;
-                        }
-                        self.chart_sugg.clear();
-                        self.store_dirty = true;
-                        self.set_note(&format!("FOUND THE CHANGES FOR {}", name.to_uppercase()));
-                    }
-                    Err((e, sugg)) => {
-                        self.chart_sugg = sugg;
-                        self.set_note(&format!("NO CHART FOR {}: {}", name.to_uppercase(), e.to_uppercase()));
-                    }
-                }
-            }
-            Msg::UpdateFound(r) => match r {
-                Ok(Some(info)) => {
-                    if self.upd.as_ref().map_or(true, |u| u.build < info.build) {
-                        self.upd = Some(info.clone());
-                        self.upd_state = 1;
-                        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                        std::thread::spawn(move || {
-                            let _ = tx.send(Msg::UpdateStaged(crate::update::stage(&info)));
-                            ctx.request_repaint();
-                        });
-                    }
-                }
-                Ok(None) => {
-                    if crate::update::build() == 0 {
-                        self.upd_note = "Updates are off: this is a development build (no build number).".to_string();
-                    } else {
-                        // (PREFERENCES says how long ago, from this)
-                        self.upd_at = crate::unix_now();
-                        self.upd_note.clear();
-                        self.dirty = true;
-                    }
-                }
-                Err(e) => {
-                    api::log(&format!("update check: {}", e));
-                    self.upd_note = format!("Last check failed: {}", e);
-                    self.upd_state = 3;
-                }
-            },
-            Msg::Menu(id) => self.run_named(&id),
-            Msg::Credits(r) => {
-                if let Some(c) = &mut self.credits {
-                    c.1 = Some(r);
-                }
-            }
-            Msg::WaList(r, more) => {
-                self.wa_busy = false;
-                match r {
-                    Ok(list) => {
-                        self.wa_end = list.len() < 30;
-                        if more {
-                            self.wa_list.extend(list);
-                        } else {
-                            self.wa_list = list;
-                        }
-                    }
-                    Err(e) => self.set_err(format!("WINAMP SKINS: {}", e)),
-                }
-            }
-            Msg::WaSkin(r) => self.wear_skin(r, true),
-            Msg::TagsSaved(r) => match r {
-                Ok(name) => self.set_note(&format!("FILE TAGS UPDATED: {}", name)),
-                Err(e) => self.set_err(format!("RENAMED IN BACKLINE, BUT COULDN'T UPDATE THE FILE: {}", e)),
-            },
-            Msg::BandSaved(r) => match r {
-                Ok(p) => self.set_note(&format!("SAVED: {}", p)),
-                Err(e) => self.set_err(format!("COULD NOT SAVE THE BACKING TRACK: {}", e)),
-            },
-            Msg::TourSong(r) => match r {
-                Ok(path) => self.tour_put_on(path),
-                Err(e) => crate::api::log(&format!("tour song: {}", e)),
-            },
-            Msg::IntroFile(f) => {
-                if f.is_some() {
-                    self.intro_file = f;
-                    self.intro = 2;
-                    self.dirty = true;
-                    self.apply(Action::Intro(4));
-                }
-            }
-            Msg::FontReady(choice, r) => match r {
-                Ok(_) => {
-                    // kept on disk now: wear it if it is still the one wanted
-                    let _ = choice;
-                    self.apply_pl_font();
-                    self.set_note("FONT READY");
-                }
-                Err(e) => self.set_err(format!("FONT: {}", e)),
-            },
-            Msg::Meta(id, found) => {
-                crate::meta::set_detected(id, found);
-                self.store.meta = crate::meta::saved();
-                self.store_dirty = true;
-                // the playing song's tempo just heard: the count-off can use it
-                if self.bpm == 0 && self.cur_track().is_some_and(|t| t.id == id) {
-                    if let Some(b) = crate::meta::get(id).and_then(|m| m.bpm) {
-                        self.bpm = b as u32;
-                        self.sync_loop();
-                    }
-                }
-            }
-            Msg::Tuning(id, r) => {
-                self.tuning_busy = false;
-                match r {
-                    Err(e) => self.set_err(format!("TUNING CHECK FAILED: {}", e)),
-                    Ok(Some((c, conf))) if conf >= 0.04 => {
-                        self.tuning = Some((id, c, conf));
-                        // the record's A, kept with the song (PITCH shows it and matches it to yours)
-                        let hz = crate::meta::a4_of(c as f32);
-                        crate::meta::set_a4(id, Some((hz * 10.0).round() / 10.0));
-                        self.store_dirty = true;
-                        let mut how = if c.abs() <= 4 {
-                            "IT IS TUNED TO A440".to_string()
-                        } else {
-                            format!("THIS TRACK IS AT A = {:.1} HZ, {} CENTS {} OF A440", hz, c.abs(), if c > 0 { "SHARP" } else { "FLAT" })
-                        };
-                        if let Some(k) = crate::meta::get(id).and_then(|i| i.key) {
-                            how += &format!(". KEY: {}", crate::meta::key_long(k).to_uppercase());
-                        }
-                        self.set_note(&how);
-                    }
-                    _ => {
-                        self.tuning = Some((id, 0, -1.0));
-                        self.set_note("COULDN'T DETECT THE TUNING: TOO LITTLE PITCHED MUSIC");
-                    }
-                }
-            }
-            Msg::UpdateStaged(r) => match r {
-                Ok(()) => {
-                    self.upd_state = 2;
-                    self.set_note("UPDATE READY. CLICK THE BAR AT THE TOP");
-                }
-                Err(e) => {
-                    api::log(&format!("update download: {}", e));
-                    self.upd_state = 3;
-                }
-            },
-            Msg::Live(q, r) => {
-                self.chart_busy = false;
-                if q == self.live_q {
-                    match r {
-                        Ok(found) => {
-                            self.live = Some(found);
-                            self.chart_sugg.clear();
-                        }
-                        Err((_, sugg)) => self.chart_sugg = sugg,
-                    }
-                }
-            }
-            Msg::BeatsBg(id, r) => {
-                self.beat_known.insert(id, r.clone());
-                // FIND BEAT was pressed before it was ready: answer it now
-                if self.beat_wait == Some(id) {
-                    self.beat_wait = None;
-                    self.beat_busy = true;
-                    let _ = self.tx.send(Msg::Beats(id, r.clone()));
-                }
-            }
-            Msg::Beats(id, r) => {
-                self.beat_busy = false;
-                match r {
-                    Some((period, phase, grid)) => {
-                        self.beat_failed.remove(&id);
-                        self.beat = Some((id, period, phase));
-                        self.beat_grid = Some((id, grid, period));
-                        self.mt_gen += 1;
-                        self.set_note(&format!("BEAT FOUND: {:.0} BPM. NOW TURN ON LOCK TO TRACK", 60.0 / period));
-                    }
-                    None => {
-                        self.beat_failed.insert(id);
-                        self.mt_gen += 1;
-                        self.set_note("NO STEADY BEAT FOUND. USING YOUR OWN TEMPO");
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     // -------------------------------------------------------------- tunes
-    fn add_version(&mut self, i: usize, v: Version) {
+    pub(crate) fn add_version(&mut self, i: usize, v: Version) {
         if i >= self.store.tunes.len() {
             return;
         }
@@ -2280,7 +1623,7 @@ impl App {
     }
 
     /// Who wrote a tune and when, into the tune's empty fields (what you typed is kept).
-    fn fill_details(&mut self, name: &str, w: &sources::Work) {
+    pub(crate) fn fill_details(&mut self, name: &str, w: &sources::Work) {
         let Some(i) = self.find_tune(name) else { return };
         let t = &mut self.store.tunes[i];
         if t.written_by.is_empty() && !w.writers.is_empty() {
@@ -2304,7 +1647,7 @@ impl App {
 
     /// RECORD: a take starts (the player keeps what it plays, the input comes in) or stops - then you alone and you
     /// over what played are written as WAVs under takes/, and added to the tune as recordings.
-    fn rec_toggle(&mut self) {
+    pub(crate) fn rec_toggle(&mut self) {
         if self.rec_buf.is_none() {
             // the last take not listened to yet: ask first
             if self.rec_last.is_some_and(|l| !l.1) && !self.rec_ask {
@@ -2379,7 +1722,7 @@ impl App {
     }
 
     /// The last take, kept or deleted, then the new take starts.
-    fn rec_last(&mut self, keep: bool) {
+    pub(crate) fn rec_last(&mut self, keep: bool) {
         if let (false, Some((id, _))) = (keep, self.rec_last) {
             self.take_delete(id);
         }
@@ -2389,7 +1732,7 @@ impl App {
     }
 
     /// A take and its two files, gone (the player lets go of it first if it is playing).
-    fn take_delete(&mut self, id: i64) {
+    pub(crate) fn take_delete(&mut self, id: i64) {
         let Some(i) = self.store.takes.iter().position(|t| t.id == id) else { return };
         let t = self.store.takes.remove(i);
         if self.cur_track().map(|c| c.id) == Some(id) {
@@ -2403,7 +1746,7 @@ impl App {
     }
 
     /// A take played back, with the practice tools.
-    fn take_play(&mut self, id: i64, dry: bool) {
+    pub(crate) fn take_play(&mut self, id: i64, dry: bool) {
         let Some(t) = self.store.takes.iter().find(|t| t.id == id).cloned() else { return };
         if let Some(l) = self.rec_last.as_mut().filter(|l| l.0 == id) {
             l.1 = true;
@@ -2413,1579 +1756,8 @@ impl App {
         self.play_saved(&v, None);
     }
 
-    pub(crate) fn apply_extra(&mut self, a: Action) {
-        match a {
-            Action::TrainerKeys(on) => {
-                self.trainer_keys = on;
-                self.keys_done = 0;
-                self.passes = 0;
-                if on && !self.trainer {
-                    self.trainer = true;
-                    self.practice = true;
-                }
-                self.set_note(if on {
-                    "EVERY FEW PASSES THE LOOP GOES UP A 4TH, THROUGH ALL 12 KEYS"
-                } else {
-                    "EVERY FEW PASSES THE SPEED GOES UP"
-                });
-            }
-            Action::PreviewTune(name) => {
-                if let Some(i) = self.find_tune(&name) {
-                    // one of yours: its own chart
-                    self.apply(Action::OpenTune(Some(i)));
-                    self.open_chart();
-                    if self.store.tunes[i].chart.trim().is_empty() {
-                        self.apply(Action::FindChart(i, None));
-                    }
-                    return;
-                }
-                if self.chart_busy {
-                    return;
-                }
-                self.chart_busy = true;
-                self.preview_tune = Some(name.clone());
-                self.set_note(&format!("LOOKING UP {}", name.to_uppercase()));
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let r = sources::find_chart(&name);
-                    let _ = tx.send(Msg::Chart(name, r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::PlayRecord(artist, album) => {
-                let key = format!("{} - {}", artist, album);
-                self.set_note(&format!("FINDING {}", key.to_uppercase()));
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let r = api.find_album(&artist, &album);
-                    let _ = tx.send(Msg::RecordFound(key, r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::AddRecommended(name) => {
-                let i = self.new_tune_named(&name);
-                if self.prac_chart.as_ref().is_some_and(|c| c.0.eq_ignore_ascii_case(&name)) {
-                    // the chart already on show comes with it
-                    if let Some((_, c)) = self.prac_chart.take() {
-                        self.store.tunes[i].chart = c;
-                    }
-                } else if self.store.tunes[i].chart.trim().is_empty() {
-                    self.apply(Action::FindChart(i, None));
-                }
-                self.store_dirty = true;
-                self.set_note(&format!("ADDED TO YOUR TUNES: {}", name.to_uppercase()));
-            }
-            Action::SetTune(kind, name) => {
-                // picked for your set: one of your tunes now (learning), its chart looked up
-                if name.is_empty() {
-                    self.store.routine_set.remove(&kind);
-                } else {
-                    let i = self.new_tune_named(&name);
-                    if self.store.tunes[i].chart.trim().is_empty() {
-                        self.apply(Action::FindChart(i, None));
-                    }
-                    self.store.routine_set.insert(kind.clone(), self.store.tunes[i].name.clone());
-                    self.set_note(&format!("{}: {}", kind, name.to_uppercase()));
-                }
-                self.store_dirty = true;
-            }
-            Action::RoutineDone(k) => {
-                let date = store::today_str();
-                let list = self.store.routine_done.entry(date).or_default();
-                if list.contains(&k) {
-                    list.retain(|x| *x != k);
-                } else {
-                    list.push(k);
-                }
-                self.store_dirty = true;
-            }
-            Action::ShowFile(id) => self.show_file(id),
-            Action::FileGone(id) => self.file_gone(id),
-            Action::RecToggle => self.rec_toggle(),
-            Action::RecLast(keep) => self.rec_last(keep),
-            Action::RecPlay(id, dry) => self.take_play(id, dry),
-            Action::TakesPanel(open) => {
-                self.takes_open = open;
-                self.take_ask = None;
-                self.ed.id = 0;
-            }
-            Action::TakeDelete(id) => self.take_delete(id),
-            Action::Section(s) => {
-                if s.practice() {
-                    self.last_practice = s;
-                    // coming over from a music page, a practice page turns practice mode on (its panel opens); between
-                    // practice pages your Listen / Practice choice stays as you set it
-                    let from_music = !self.sec.practice();
-                    if crate::PRACTICE && !self.practice && from_music {
-                        self.practice = true;
-                        self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
-                        self.sync_loop();
-                    }
-                } else {
-                    self.last_music = s;
-                }
-                self.show_log = false;
-                self.show_eq = false;
-                self.show_cache = false;
-                self.sec = s;
-                self.serial += 1;
-                if s != Sec::Tunes {
-                    self.pick = None;
-                }
-                if s == Sec::Lists {
-                    // saved file / YouTube / SoundCloud items need their sources known before they can play
-                    let vs: Vec<Version> = self.store.playlists.iter().flat_map(|p| p.items.iter().cloned()).collect();
-                    for v in &vs {
-                        self.register(v);
-                    }
-                }
-            }
-            Action::AddFiles => self.pick_files(false),
-            Action::AddFolder => self.pick_files(true),
-            Action::Rescan => {
-                self.rescan();
-                self.set_note("SCANNING FOR NEW FILES...");
-            }
-            Action::ForgetFolder(i) => {
-                if i < self.store.folders.len() {
-                    self.store.folders.remove(i);
-                    self.store_dirty = true;
-                }
-            }
-            Action::AddYt => {
-                if self.yt_busy {
-                    return;
-                }
-                if sources::is_yt_list(&self.yt_in) {
-                    if sources::ytdlp_path().is_none() {
-                        self.yt_msg = "PRESS GET YT-DLP FIRST (ONE-TIME SETUP)".to_string();
-                        return;
-                    }
-                    self.yt_busy = true;
-                    self.yt_msg = "READING THE PLAYLIST...".to_string();
-                    let url = sources::yt_list_url(&self.yt_in);
-                    let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
-                        let r = sources::yt_list(&url);
-                        let _ = tx.send(Msg::YtList(url, r));
-                        ctx.request_repaint();
-                    });
-                    return;
-                }
-                let Some(vid) = sources::yt_video_id(&self.yt_in) else {
-                    self.yt_msg = "THAT DOESN'T LOOK LIKE A YOUTUBE LINK".to_string();
-                    return;
-                };
-                if sources::ytdlp_path().is_none() {
-                    self.yt_msg = "PRESS GET YT-DLP FIRST (ONE-TIME SETUP)".to_string();
-                    return;
-                }
-                self.yt_busy = true;
-                self.yt_msg = "READING THE VIDEO...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::YtAdded(sources::yt_info(&vid)));
-                    ctx.request_repaint();
-                });
-            }
-            Action::ScGo => {
-                if self.sc_busy {
-                    return;
-                }
-                let q = self.sc_in.trim().to_string();
-                if q.is_empty() {
-                    return;
-                }
-                if sources::ytdlp_path().is_none() {
-                    self.sc_msg = "PRESS GET YT-DLP FIRST (ONE-TIME SETUP)".to_string();
-                    return;
-                }
-                self.sc_busy = true;
-                self.sc_cur = if q.starts_with("http") { Some(q.clone()) } else { None };
-                self.sc_msg = "LOOKING...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let r = if q.starts_with("http") { sources::sc_list(&q) } else { sources::sc_search(&q) };
-                    let _ = tx.send(Msg::Sc(r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::ScSets => {
-                if self.sc_busy {
-                    return;
-                }
-                let q = self.sc_in.trim().to_string();
-                if q.is_empty() {
-                    self.sc_msg = "TYPE A USER NAME FIRST".to_string();
-                    return;
-                }
-                if sources::ytdlp_path().is_none() {
-                    self.sc_msg = "PRESS GET YT-DLP FIRST (ONE-TIME SETUP)".to_string();
-                    return;
-                }
-                self.sc_busy = true;
-                self.sc_msg = "LOOKING FOR PLAYLISTS...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::ScSets(sources::sc_sets(&q)));
-                    ctx.request_repaint();
-                });
-            }
-            Action::CopyName(name) => {
-                self.ctx.output_mut(|o| o.copied_text = name.clone());
-                self.set_note(&format!("COPIED: {}", name));
-            }
-            Action::DeleteSong(t) => self.delete_song(&t),
-            Action::CopyLink(url) => {
-                self.ctx.output_mut(|o| o.copied_text = url.clone());
-                self.set_note(&format!("LINK COPIED: {}", url.trim_start_matches("https://")));
-            }
-            Action::ScOpenSet(url) => {
-                self.sc_in = url;
-                self.apply(Action::ScGo);
-            }
-            Action::ScBrowser => {
-                use std::sync::atomic::Ordering;
-                let n = (sources::SC_BROWSER.load(Ordering::Relaxed) + 1) % 4;
-                sources::SC_BROWSER.store(n, Ordering::Relaxed);
-                self.dirty = true;
-                self.sc_msg = if n == 0 {
-                    "BROWSER LOGIN OFF".to_string()
-                } else {
-                    format!("USING YOUR {} SIGN-IN. CLOSE THAT BROWSER IF IT FAILS.", sources::SC_BROWSERS[n as usize])
-                };
-            }
-            Action::TidalListAdd(uuid, name, t, again) => {
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                let fresh = uuid.is_empty();
-                if fresh {
-                    // the new one shows in the list next time it is opened
-                    self.tidal_lists = None;
-                }
-                self.toast(&format!("Adding to {} on Tidal...", name));
-                std::thread::spawn(move || {
-                    // in it already: asked first (unless that's been asked)
-                    if !fresh && !again && api.playlist_has(&uuid, t.id).unwrap_or(false) {
-                        let _ = tx.send(Msg::TidalListDupe(uuid, name, t));
-                        ctx.request_repaint();
-                        return;
-                    }
-                    let r = if fresh { api.playlist_create(&name, "") } else { Ok(uuid) }
-                        .and_then(|u| api.playlist_add(&u, t.id, again))
-                        .map(|_| format!("Added to {} on Tidal", name));
-                    let _ = tx.send(Msg::TidalListDone(r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::CopyHere(files) => {
-                self.copying_last_for_now = false;
-                let jobs = files.into_iter().map(|file| crate::peer_files::Job { file, keep: true, play: None }).collect();
-                self.copy_songs(jobs);
-            }
-            Action::PlayFromThere(f) => {
-                // the song, as one of this computer's would be, to play once it's come over
-                let mut t = crate::sources::ext_for_file(std::path::Path::new(&f.path)).to_version().to_track();
-                if !f.title.is_empty() {
-                    t.title = f.title.clone();
-                    t.artist = f.artist.clone();
-                }
-                t.duration = f.dur;
-                self.srcmap.insert(t.id, Src::File(PathBuf::from(&f.path)));
-                self.orig_queue = None;
-                self.queue = Arc::new(vec![t.clone()]);
-                self.cur = None;
-                self.q_manual = 0;
-                self.get_from_there(&t, f.path.clone(), false);
-            }
-            Action::TidalListRename(uuid, name) => {
-                let d = crate::new_playlist::NewPl { name, tidal: true, tidal_edit: Some(uuid), ..Default::default() };
-                self.open_new_playlist(d);
-            }
-            Action::TidalListRemove(uuid, id, nth) => {
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let r = api.playlist_remove(&uuid, id, nth);
-                    let _ = tx.send(Msg::TidalListRemoved(uuid, id, nth, r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::ShareExport => self.share_view = Some((false, self.store.share())),
-            Action::PackMake => {
-                let keys: Vec<&'static str> =
-                    crate::pack::available().into_iter().map(|(k, _)| k).filter(|k| !self.pack_off.iter().any(|o| o == k)).collect();
-                let share = if self.pack_loops { serde_json::to_string_pretty(&self.store.share()).ok() } else { None };
-                if keys.is_empty() && share.is_none() {
-                    return self.set_note("SELECT AT LEAST ONE ITEM FOR THE PACK");
-                }
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let Some(path) = rfd::FileDialog::new()
-                        .set_title("Save pack")
-                        .set_file_name("Backline pack.backline")
-                        .add_filter("Backline pack", &["backline"])
-                        .save_file()
-                    else {
-                        return;
-                    };
-                    let r = crate::pack::make(&path, &keys, share).map(|_| path.to_string_lossy().to_string());
-                    let _ = tx.send(Msg::PackSaved(r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::PackOpen(folder) => {
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let picked = if folder {
-                        rfd::FileDialog::new().set_title("Pick the pack's folder").pick_folder()
-                    } else {
-                        rfd::FileDialog::new().set_title("Open a pack").add_filter("Backline pack", &["backline", "zip"]).pick_file()
-                    };
-                    let Some(path) = picked else { return };
-                    let _ = tx.send(Msg::PackIn(crate::pack::open(&path)));
-                    ctx.request_repaint();
-                });
-            }
-            Action::PackUnlock => {
-                let Some(p) = self.pack_in.take() else { return };
-                match crate::pack::unlock(&p.parts) {
-                    Ok(done) => {
-                        let on = |k: &str| p.parts.iter().any(|x| x.on && x.key == k);
-                        // what reads its file once: read it again
-                        if on("reading") {
-                            self.rd_reload();
-                        }
-                        if on("pattern") {
-                            crate::lines::reload_book();
-                        }
-                        if on("melodies") {
-                            self.cm_list = None;
-                        }
-                        if !done.is_empty() && !crate::PRACTICE {
-                            // kept in Backline's folder: the practice version, opened later, finds them there
-                            self.set_note(&format!("SAVED: {}. THEY SHOW UP IN THE PRACTICE VERSION", done.join(", ")));
-                        } else if !done.is_empty() {
-                            self.set_note(&format!("UNLOCKED: {}", done.join(", ")));
-                        }
-                        // the loops and playlists: the usual import window, to pick from
-                        if let Some(s) = p.share {
-                            self.share_view = Some((true, s));
-                        }
-                    }
-                    Err(e) => self.set_err(format!("PACK: {}", e)),
-                }
-            }
-            Action::Bookmark => {
-                if let Some(t) = self.cur_track().filter(|t| !self.is_demo(t.id)) {
-                    let at = self.pos();
-                    self.add_mark(t.id, at);
-                }
-            }
-            Action::News => {
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::News(crate::update::notes(5)));
-                    ctx.request_repaint();
-                });
-            }
-            Action::ShareTake => {
-                if let Some((true, s)) = self.share_view.take() {
-                    let s = self.share_ticked(s);
-                    self.take_import(s);
-                }
-            }
-            Action::ShareSave => {
-                let Some((false, share)) = self.share_view.take() else { return };
-                let share = self.share_ticked(share);
-                let text = match serde_json::to_string_pretty(&share) {
-                    Ok(t) => t,
-                    Err(e) => return self.set_err(format!("EXPORT: {}", e)),
-                };
-                let (y, m, d, ..) = crate::store::now_local();
-                let file = format!("Backline loops and playlists {:04}-{:02}-{:02}.backline", y, m, d);
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let Some(path) = rfd::FileDialog::new()
-                        .set_title("Export loops and playlists")
-                        .set_file_name(&file)
-                        .add_filter("Backline loops and playlists", &["backline"])
-                        .save_file()
-                    else {
-                        return;
-                    };
-                    let r = std::fs::write(&path, text).map(|_| path.to_string_lossy().to_string()).map_err(|e| e.to_string());
-                    let _ = tx.send(Msg::ShareSaved(r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::ShareImport => {
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let Some(path) = rfd::FileDialog::new()
-                        .set_title("Import loops and playlists")
-                        .add_filter("Backline loops and playlists", &["backline", "json"])
-                        .pick_file()
-                    else {
-                        return;
-                    };
-                    // a pack picked here opens as a pack
-                    if crate::pack::is_pack(&path) {
-                        let _ = tx.send(Msg::PackIn(crate::pack::open(&path)));
-                        ctx.request_repaint();
-                        return;
-                    }
-                    let r = std::fs::read_to_string(&path)
-                        .map_err(|e| e.to_string())
-                        .and_then(|t| serde_json::from_str::<crate::store::Share>(&t).map_err(|e| e.to_string()))
-                        .and_then(|s| {
-                            if s.kind == "backline-share" {
-                                Ok(s)
-                            } else {
-                                Err("that isn't a Backline loops and playlists file".to_string())
-                            }
-                        });
-                    let _ = tx.send(Msg::ShareIn(r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::PlaylistAdd(i, t, lp, again) => {
-                if i < self.store.playlists.len() {
-                    let mut v = self.version_of(&t);
-                    if let Some((a, b, name)) = lp.clone() {
-                        v.loop_ab = Some((a, b));
-                        v.loop_name = name;
-                    }
-                    let name = self.store.playlists[i].name.clone();
-                    // the same song (or the same loop of it) in it already: asked first
-                    if !again && self.store.playlists[i].items.iter().any(|x| x.same_as(&v)) {
-                        self.pl_dupe = Some(crate::new_playlist::PlDupe::Backline(i, name, t, lp));
-                    } else {
-                        self.store.playlists[i].items.push(v);
-                        self.store_dirty = true;
-                        self.toast(&format!("Added to {}", name));
-                    }
-                }
-                self.serial += 1;
-            }
-            Action::PlaylistNew(t) => {
-                let d = crate::new_playlist::NewPl {
-                    tracks: t.into_iter().collect(),
-                    name: self.new_pl.trim().to_string(),
-                    ..Default::default()
-                };
-                self.open_new_playlist(d);
-            }
-            Action::PlaylistNewFrom(name, tracks, tidal) => {
-                self.open_new_playlist(crate::new_playlist::NewPl { name, tracks, tidal, ..Default::default() });
-            }
-            Action::PlaylistPicker(track, lp) => {
-                self.pl_picker = Some(crate::new_playlist::Picker { track, lp, tidal: self.pl_last_tidal });
-                self.pl_find.clear();
-                self.ed.id = crate::tools::F_PL_FIND;
-                self.ed.cur = 0;
-                self.ed.anchor = None;
-            }
-            Action::PlaylistEdit(i) => {
-                if let Some(pl) = self.store.playlists.get(i) {
-                    let d = crate::new_playlist::NewPl {
-                        name: pl.name.clone(),
-                        desc: pl.desc.clone(),
-                        art: pl.art.clone(),
-                        edit: Some(i),
-                        ..Default::default()
-                    };
-                    self.open_new_playlist(d);
-                }
-            }
-            Action::PlaylistMake(d) => {
-                // (a Tidal playlist keeps Tidal's own cover; a cover already kept is not copied again)
-                let kept = d.edit.and_then(|i| self.store.playlists.get(i)).map_or(false, |p| p.art == d.art);
-                let art = if d.art.is_empty() || d.tidal {
-                    String::new()
-                } else if kept {
-                    d.art.clone()
-                } else {
-                    crate::new_playlist::keep_art(&d.art).unwrap_or_default()
-                };
-                if let Some(pl) = d.edit.and_then(|i| self.store.playlists.get_mut(i)) {
-                    let was = pl.name.clone();
-                    if !d.name.trim().is_empty() {
-                        pl.name = d.name.trim().to_string();
-                    }
-                    pl.desc = d.desc.trim().to_string();
-                    pl.art = art;
-                    let now = pl.name.clone();
-                    self.store_dirty = true;
-                    self.serial += 1;
-                    if now != was {
-                        self.toast(&format!("Renamed to {}", now));
-                    }
-                    return;
-                }
-                // one of your Tidal playlists, renamed
-                if let Some(uuid) = d.tidal_edit.clone() {
-                    let name = d.name.trim().to_string();
-                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
-                        let r = api.playlist_rename(&uuid, &name);
-                        let _ = tx.send(Msg::TidalListRenamed(uuid, name, r));
-                        ctx.request_repaint();
-                    });
-                    return;
-                }
-                let count = d.tracks.len();
-                let songs = if count > 1 { format!(" with {} songs", count) } else { String::new() };
-                if d.tidal {
-                    let name = d.name.trim().to_string();
-                    let desc = d.desc.trim().to_string();
-                    let ids: Vec<i64> = d.tracks.iter().map(|t| t.id).collect();
-                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                    self.tidal_lists = None;
-                    self.toast(&format!("Making {} on Tidal...", name));
-                    std::thread::spawn(move || {
-                        let r = api.playlist_create(&name, &desc).and_then(|u| {
-                            if !ids.is_empty() {
-                                api.playlist_add_all(&u, &ids, false)?;
-                            }
-                            Ok(u)
-                        });
-                        let _ = tx.send(Msg::TidalListMade(r.map(|_| format!("Made {} on Tidal{}", name, songs))));
-                        ctx.request_repaint();
-                    });
-                } else {
-                    let typed = d.name.trim().to_string();
-                    let name = if typed.is_empty() { format!("Playlist {}", self.store.playlists.len() + 1) } else { typed };
-                    let mut items: Vec<store::Version> = d.tracks.iter().map(|t| self.version_of(t)).collect();
-                    if let (Some((a, b, lname)), Some(v)) = (d.loop_ab, items.first_mut()) {
-                        v.loop_ab = Some((a, b));
-                        v.loop_name = lname;
-                    }
-                    self.store.playlists.push(store::Playlist { name: name.clone(), items, art, desc: d.desc.trim().to_string() });
-                    // made from the LISTS page: open it there; from anywhere else, stay where you are
-                    if self.sec == Sec::Lists {
-                        self.pl_open = Some(self.store.playlists.len() - 1);
-                    }
-                    self.toast(&format!("Made {} in Backline{}", name, songs));
-                    self.store_dirty = true;
-                    self.serial += 1;
-                }
-                self.new_pl.clear();
-            }
-            Action::PlaylistFromQueue => {
-                if self.queue.is_empty() {
-                    self.toast("The queue is empty");
-                    return;
-                }
-                // named after what it was started from (a radio, a mix), or what was typed; the name can be changed
-                let typed = self.new_pl.trim().to_string();
-                let name = if typed.is_empty() { self.queue_from.clone() } else { typed.clone() };
-                let tracks = self.queue.to_vec();
-                // songs you added by hand on top of a list you were playing (one liked song started all of My
-                // Tracks): asked which you meant, just yours or the whole queue
-                let mine: Vec<Track> =
-                    tracks.iter().filter(|t| t.qid != 0 && self.q_added.contains(&t.qid)).cloned().collect();
-                if !mine.is_empty() && mine.len() < tracks.len() {
-                    self.queue_save = Some(crate::new_playlist::QueueSave { typed, from: name, mine, all: tracks });
-                    return;
-                }
-                self.apply(Action::PlaylistNewFrom(name, tracks, false));
-            }
-            Action::PlaylistRemove(pi, ti) => {
-                if let Some(p) = self.store.playlists.get_mut(pi) {
-                    if ti < p.items.len() {
-                        p.items.remove(ti);
-                        self.store_dirty = true;
-                    }
-                }
-            }
-            Action::PlaylistMove(pi, ti, d) => {
-                if let Some(p) = self.store.playlists.get_mut(pi) {
-                    let to = ti as i32 + d;
-                    if to >= 0 && (to as usize) < p.items.len() {
-                        p.items.swap(ti, to as usize);
-                        self.store_dirty = true;
-                    }
-                }
-            }
-            Action::PlaylistDelete(pi) => {
-                if pi < self.store.playlists.len() {
-                    self.store.playlists.remove(pi);
-                    self.pl_open = None;
-                    self.store_dirty = true;
-                }
-            }
-            Action::PlaylistOpen(i) => {
-                self.pl_open = i;
-                self.serial += 1;
-            }
-            Action::FindTuning => {
-                let Some(t) = self.cur_track() else {
-                    self.set_note("PLAY A TRACK FIRST");
-                    return;
-                };
-                if self.tuning_busy {
-                    return;
-                }
-                // the file, the stored copy, or (not stored: storing tracks is off, or it never finished) the track
-                // fetched again to listen to
-                let src = self.srcmap.get(&t.id).cloned();
-                let (lossless, api) = (self.prefer_lossless, self.api.clone());
-                self.tuning_busy = true;
-                self.set_note("CHECKING THE TUNING...");
-                let (tx, ctx, id) = (self.tx.clone(), self.ctx.clone(), t.id);
-                // (the song as the player has it, not fetched again)
-                let have = self.playing_bytes(id);
-                std::thread::spawn(move || {
-                    let bytes = match have {
-                        Some(b) => Ok(b.to_vec()),
-                        None => crate::fetch_audio(&api, id, lossless, false, src),
-                    };
-                    let r = bytes.map(crate::tuning::detect);
-                    let _ = tx.send(Msg::Tuning(id, r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::SetMode(m) => self.set_mode(m),
-            Action::QuitApp => {
-                self.flush_practice();
-                self.capture_last();
-                self.save_settings();
-                self.store.save();
-                std::process::exit(0);
-            }
-            Action::ToggleHelp => {
-                self.show_help = !self.show_help;
-                if self.show_help {
-                    self.show_prefs = false;
-                }
-            }
-            Action::TogglePrefs => {
-                self.show_prefs = !self.show_prefs;
-                self.rebinding = None;
-                if self.show_prefs {
-                    self.show_help = false;
-                }
-            }
-            Action::ApplyUpdate => {
-                self.flush_practice();
-                // the queue and the song come back after the restart
-                self.capture_last();
-                self.save_settings();
-                self.store.save();
-                match crate::update::apply() {
-                    Ok(()) => std::process::exit(0),
-                    Err(e) => {
-                        api::log(&format!("update install: {}", e));
-                        self.set_note("UPDATE FAILED. IT WILL TRY AGAIN");
-                        self.upd_state = 3;
-                    }
-                }
-            }
-            Action::RemoveFromList(url, id) => {
-                if let Some(l) = self.store.lists.iter_mut().find(|l| l.url == url) {
-                    l.items.retain(|e| e.id != id);
-                    if !l.removed.contains(&id) {
-                        l.removed.push(id);
-                    }
-                    self.store_dirty = true;
-                }
-                self.yt_results.retain(|e| e.id != id);
-                self.sc_results.retain(|e| e.id != id);
-                // (nowhere else now: its saved copy goes too)
-                let gone = self.drop_unused_copies(&[id]);
-                self.set_note(if gone > 0 { "REMOVED FROM THIS PLAYLIST, AND ITS SAVED COPY DELETED" } else { "REMOVED FROM THIS PLAYLIST" });
-            }
-            Action::RemoveList(i) => {
-                if i < self.store.lists.len() {
-                    let l = self.store.lists.remove(i);
-                    self.store_dirty = true;
-                    // its songs' saved copies, those nowhere else
-                    let ids: Vec<i64> = l.items.iter().map(|e| e.id).collect();
-                    self.drop_unused_copies(&ids);
-                }
-            }
-            Action::YtKeep(id) => {
-                if let Some(e) = self.yt_results.iter().find(|e| e.id == id).cloned() {
-                    if !self.store.yt.iter().any(|x| x.id == id) {
-                        self.register(&e.to_version());
-                        self.here.insert(id);
-                        self.store.yt.insert(0, e);
-                        self.store_dirty = true;
-                    }
-                    self.set_note("SAVED TO MY CLIPS");
-                }
-            }
-            Action::ScKeep(id) => {
-                if let Some(e) = self.sc_results.iter().find(|e| e.id == id).cloned() {
-                    if !self.store.sc.iter().any(|x| x.id == id) {
-                        self.here.insert(id);
-                        self.store.sc.insert(0, e);
-                        self.store_dirty = true;
-                    }
-                    self.set_note("SAVED TO MY SOUNDCLOUD");
-                }
-            }
-            Action::GoOffline(on) => {
-                self.go_offline = on;
-                crate::api::OFFLINE.store(on, std::sync::atomic::Ordering::Relaxed);
-                self.dirty = true;
-                if !on {
-                    // the covers that couldn't load offline come in now
-                    self.images.retry_failed();
-                }
-                if on {
-                    // as if there were no internet: your library as kept here, only what is on this computer
-                    let _ = self.tx.send(crate::Msg::NoInternet);
-                    self.set_note("OFFLINE MODE: ONLY MUSIC ON THIS COMPUTER. GO ONLINE TO USE TIDAL");
-                } else {
-                    self.set_note("GOING ONLINE...");
-                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
-                        let _ = match api.refresh_info() {
-                            Ok(()) => tx.send(crate::Msg::LoggedIn),
-                            Err(e) if crate::api::no_internet(&e) => tx.send(crate::Msg::NoInternet),
-                            Err(e) => tx.send(crate::Msg::NeedLogin(e)),
-                        };
-                        ctx.request_repaint();
-                    });
-                }
-            }
-            Action::Offline(on) => {
-                self.offline = on;
-                self.dirty = true;
-                if on {
-                    self.sec = Sec::Files;
-                } else {
-                    self.sec = Sec::Tidal;
-                }
-                self.serial += 1;
-            }
-            Action::GetYtDlp => {
-                if self.yt_busy {
-                    return;
-                }
-                self.yt_busy = true;
-                self.yt_msg = "DOWNLOADING YT-DLP...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::YtTool(sources::ytdlp_download()));
-                    ctx.request_repaint();
-                });
-            }
-            Action::RemoveExt(id) => {
-                let file = self.store.files.iter().any(|e| e.id == id);
-                if file && !self.store.removed_files.contains(&id) {
-                    self.store.removed_files.push(id);
-                }
-                if self.cur_track().map(|c| c.id) == Some(id) {
-                    self.player.send(Cmd::Stop);
-                }
-                self.store.yt.retain(|e| e.id != id);
-                self.store.sc.retain(|e| e.id != id);
-                self.liked.remove(&id);
-                // (the file list, hearts, playlists, tunes, recent and the queue)
-                self.file_gone(id);
-                cache::remove(id);
-                self.set_note(if file { "REMOVED FROM BACKLINE (THE FILE ITSELF IS STILL ON YOUR DISK)" } else { "REMOVED, AND ITS SAVED COPY DELETED" });
-                self.store_dirty = true;
-                self.serial += 1;
-            }
-
-            // ---- tunes
-            Action::PickTune(t) => {
-                self.set_note(&format!("PICK A TUNE FOR: {}", t.title.to_uppercase()));
-                self.pick = Some(t);
-                self.sec = Sec::Tunes;
-                self.tune_open = None;
-                self.serial += 1;
-            }
-            Action::AddToTune(i, t) => {
-                let v = self.version_of(&t);
-                self.add_version(i, v);
-                self.pick = None;
-            }
-            Action::NewTuneFrom(t) => {
-                let name = tune_name_from(&t.title);
-                let i = self.new_tune_named(&name);
-                let v = self.version_of(&t);
-                self.add_version(i, v);
-                self.pick = None;
-                self.tune_open = Some(i);
-                self.chart_pick = Some(i);
-                self.chart_live = false;
-                self.sec = Sec::Tunes;
-                self.serial += 1;
-            }
-            Action::TuneDetails(i) => {
-                let Some(name) = self.store.tunes.get(i).map(|t| t.name.trim().to_string()) else { return };
-                let artist = self.store.tunes[i].versions.first().map(|v| v.artist.clone());
-                if name.is_empty() || !self.details_tried.insert(name.to_lowercase()) {
-                    return;
-                }
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let w = sources::lookup_work(&name, artist.as_deref());
-                    let _ = tx.send(Msg::TuneDetails(name, w));
-                    ctx.request_repaint();
-                });
-            }
-            Action::NewTune => {
-                let name = self.new_tune.trim().to_string();
-                if name.is_empty() {
-                    return;
-                }
-                let i = self.new_tune_named(&name);
-                self.new_tune.clear();
-                if let Some(t) = self.pick.take() {
-                    let v = self.version_of(&t);
-                    self.add_version(i, v);
-                }
-                self.tune_open = Some(i);
-                // the lead sheet shows the new tune (blank until its changes are found or typed)
-                self.chart_pick = Some(i);
-                self.chart_live = false;
-                self.serial += 1;
-            }
-            Action::OpenTune(i) => {
-                self.tune_open = i;
-                // a tune opened: the lead sheet is its again, the whole of it
-                self.chart_sel = None;
-                if i.is_some() {
-                    self.prac_chart = None;
-                }
-                // the tune's own tempo for the metronome and the band (kept with it from now on)
-                if let Some(b) = i.and_then(|i| self.tune_bpm(i)) {
-                    self.mt_bpm = b;
-                    self.mt_add = 0.0;
-                    if self.cur.is_none() || self.stopped {
-                        self.bpm = b;
-                    }
-                    if let Some(t) = i.and_then(|i| self.store.tunes.get_mut(i)) {
-                        if t.bpm == 0 {
-                            t.bpm = b;
-                            self.store_dirty = true;
-                        }
-                    }
-                }
-                if i.is_some() {
-                    self.chart_pick = i;
-                    self.chart_live = false;
-                }
-                self.edit_ver = None;
-                self.del_arm = false;
-                self.chart_edit = false;
-                self.ed.id = 0;
-                self.serial += 1;
-            }
-            Action::RemoveTune(i) => {
-                if !self.del_arm {
-                    self.del_arm = true;
-                    return;
-                }
-                self.del_arm = false;
-                if i < self.store.tunes.len() {
-                    self.store.tunes.remove(i);
-                    self.store_dirty = true;
-                }
-                self.tune_open = None;
-                self.edit_ver = None;
-                self.serial += 1;
-            }
-            Action::RemoveVersion(i, vi) => {
-                if let Some(t) = self.store.tunes.get_mut(i) {
-                    if vi < t.versions.len() {
-                        t.versions.remove(vi);
-                        self.store_dirty = true;
-                    }
-                }
-                self.edit_ver = None;
-            }
-            Action::PlayTune(i, shuffled) => {
-                let vs: Vec<Version> = match self.store.tunes.get(i) {
-                    Some(t) => t.versions.clone(),
-                    None => return,
-                };
-                if vs.is_empty() {
-                    self.set_note("NO RECORDINGS YET. ADD ONE FIRST");
-                    return;
-                }
-                for v in &vs {
-                    self.register(v);
-                }
-                let tracks: Vec<Track> = vs.iter().map(|v| v.to_track()).collect();
-                if shuffled {
-                    self.apply(Action::PlayShuffled(tracks));
-                } else {
-                    self.apply(Action::Play(tracks, 0));
-                }
-            }
-            Action::AddCurrentToTune(i) => match self.cur_track() {
-                Some(t) => {
-                    let v = self.version_of(&t);
-                    self.add_version(i, v);
-                }
-                None => self.set_note("PLAY A RECORDING FIRST"),
-            },
-            Action::FindChart(i, alt) => {
-                let Some(t) = self.store.tunes.get(i) else { return };
-                let name = t.name.clone();
-                if self.chart_busy {
-                    return;
-                }
-                self.chart_busy = true;
-                self.chart_sugg.clear();
-                let query = alt.unwrap_or_else(|| name.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Chart(name, sources::find_chart(&query)));
-                    ctx.request_repaint();
-                });
-            }
-            Action::LiveChart(title, alt) => {
-                if self.chart_busy {
-                    return;
-                }
-                self.chart_busy = true;
-                self.live_q = title.clone();
-                self.live = None;
-                self.chart_sugg.clear();
-                let query = alt.unwrap_or_else(|| title.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Live(title, sources::find_chart(&query)));
-                    ctx.request_repaint();
-                });
-            }
-            Action::SaveLive => {
-                let (Some(t), Some((chart, key, composer))) = (self.cur_track(), self.live.clone()) else { return };
-                let name = tune_name_from(&t.title);
-                let i = self.new_tune_named(&name);
-                let v = self.version_of(&t);
-                self.add_version(i, v);
-                let tu = &mut self.store.tunes[i];
-                tu.chart = chart;
-                tu.key = key;
-                if tu.written_by.is_empty() && !composer.is_empty() {
-                    tu.written_by = composer;
-                }
-                self.chart_live = false;
-                self.chart_pick = Some(i);
-                self.store_dirty = true;
-                self.set_note("SAVED TO YOUR TUNES");
-            }
-            Action::ToggleNumerals => self.chart_rn = !self.chart_rn,
-            Action::Status(i, n) => {
-                if let Some(t) = self.store.tunes.get_mut(i) {
-                    t.status = n.min(3);
-                    self.store_dirty = true;
-                }
-            }
-            Action::Knob(k, d) => {
-                let v = self.knob_val(k) + d as f32 * knob_step(k);
-                self.knob_set(k, v);
-            }
-            Action::SetKnob(k, text) if matches!(k, Knob::Beats) && text.contains('/') => {
-                // a whole meter typed in one go, like 11/17
-                let mut it = text.split('/').map(|s| s.trim().parse::<f32>().ok());
-                match (it.next().flatten(), it.next().flatten()) {
-                    (Some(b), Some(u)) => {
-                        self.knob_set(Knob::Beats, b);
-                        self.knob_set(Knob::Unit, u);
-                    }
-                    _ => self.set_note("TYPE A METER LIKE 11/17"),
-                }
-            }
-            Action::SetKnob(k, text) => {
-                let v = if matches!(k, Knob::LoopA | Knob::LoopB) {
-                    parse_time(&text)
-                } else {
-                    text.trim().trim_end_matches('%').trim().parse::<f32>().ok()
-                };
-                match v {
-                    _ if text.trim().is_empty() => {}
-                    Some(v) => self.knob_set(k, v),
-                    None => self.set_note("THAT IS NOT A NUMBER"),
-                }
-            }
-            Action::Opt(o) => self.opt(o),
-            Action::LookUp(i) => {
-                if self.look_busy {
-                    return;
-                }
-                let Some(t) = self.store.tunes.get(i) else { return };
-                let name = t.name.clone();
-                let known: Vec<String> = self
-                    .store
-                    .tunes
-                    .iter()
-                    .flat_map(|t| t.versions.iter().filter(|v| v.stars >= 3).map(|v| v.artist.clone()))
-                    .collect();
-                self.look_busy = true;
-                self.look_for = name.clone();
-                self.look_tracks.clear();
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                let want_style = self.look_style;
-                // something typed beside LOOK UP is searched instead of the tune's own name
-                let typed = self.look_q.trim().to_string();
-                let tune_name = name.clone();
-                // someone who recorded it, so a title other songs share finds the right one
-                let artist = if typed.is_empty() {
-                    self.store.tunes.get(i).and_then(|t| t.versions.first()).map(|v| v.artist.clone())
-                } else {
-                    None
-                };
-                let name = if typed.is_empty() { name } else { typed };
-                std::thread::spawn(move || {
-                    let info = sources::lookup_work(&name, artist.as_deref());
-                    // a tune in the jazz standards list is jazz (and that list knows who wrote it)
-                    let listed = sources::find_chart(&name).ok().map(|c| c.2);
-                    let style = match want_style {
-                        0 => u8::from(listed.is_some()),
-                        1 => 1,
-                        2 => 2,
-                        _ => 0,
-                    };
-                    let composer = listed.unwrap_or_else(|| info.as_ref().map(|w| w.writers.clone()).unwrap_or_default());
-                    let composer = composer.split(|c| c == ',' || c == '\n').next().unwrap_or("").replace(" (words)", "");
-                    let mut tracks = api.popular(&name, &known, style, composer.trim()).unwrap_or_default();
-                    // no Tidal (or nothing there): recordings from YouTube instead, so everyone gets suggestions
-                    let mut found = Vec::new();
-                    if tracks.is_empty() && sources::ytdlp_path().is_some() {
-                        let q = match style {
-                            1 if !composer.trim().is_empty() => format!("{} {} jazz", name, composer.trim()),
-                            1 => format!("{} jazz standard", name),
-                            2 => format!("{} gospel", name),
-                            _ => name.clone(),
-                        };
-                        if let Ok(mut list) = sources::yt_search(&q) {
-                            // recordings, not lessons or play-alongs
-                            list.retain(|e| {
-                                let t = e.title.to_lowercase();
-                                e.dur < 720.0
-                                    && !["lesson", "tutorial", "play-along", "play along", "playalong", "how to", "backing track", "tab)", "tabs"]
-                                        .iter()
-                                        .any(|w| t.contains(w))
-                            });
-                            tracks = list.iter().map(|e| (e.to_track(), 0)).collect();
-                            found = list;
-                        }
-                    }
-                    let _ = tx.send(Msg::Lookup(tune_name, info, tracks, found));
-                    ctx.request_repaint();
-                });
-            }
-
-            // ---- sections and loops
-            Action::SaveSection => {
-                let (Some(a), Some(b)) = (self.loop_a, self.loop_b) else {
-                    self.set_note("SET LOOP A AND B FIRST");
-                    return;
-                };
-                let Some(t) = self.cur_track() else { return };
-                if self.is_demo(t.id) {
-                    self.set_note("NOT DURING THE TOUR");
-                    return;
-                }
-                let typed = self.sec_name.trim().to_string();
-                let list = self.store.sections.entry(t.id).or_default();
-                // the same loop again: a new name renames it, no name just says so
-                if let Some(s) = list.iter_mut().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05) {
-                    if typed.is_empty() || typed.eq_ignore_ascii_case(&s.name) {
-                        let n = s.name.to_uppercase();
-                        self.set_note(&format!("THIS LOOP IS ALREADY SAVED AS {}", n));
-                    } else {
-                        s.name = typed.clone();
-                        self.sec_name.clear();
-                        self.store_dirty = true;
-                        self.set_note(&format!("RENAMED: {}", typed.to_uppercase()));
-                    }
-                    return;
-                }
-                let name = if typed.is_empty() { format!("LOOP {}", list.len() + 1) } else { typed };
-                list.push(Section { name: name.clone(), a, b, saved: store::today_str(), ..Default::default() });
-                self.keep_for_practice(t.id);
-                self.remember_song(&t);
-                // saving a loop is practice: the song is in this week's list
-                let date = store::today_str();
-                self.store.day_mut(&date).songs.entry(t.id).or_insert(0);
-                self.sec_name.clear();
-                self.store_dirty = true;
-                self.set_note(&format!("SAVED: {}", name.to_uppercase()));
-            }
-            Action::GoSection(i) => {
-                let Some(t) = self.cur_track() else { return };
-                let Some(s) = self.store.sections.get(&t.id).and_then(|l| l.get(i)).cloned() else { return };
-                self.practice = true;
-                self.loop_a = Some(s.a);
-                self.loop_b = Some(s.b);
-                self.loop_on = true;
-                self.loop_ident = None;
-                self.loop_saved = Some((t.id, i));
-                self.sync_loop();
-                self.player.send(Cmd::Seek(s.a));
-            }
-            Action::PlaySaved(v, lp) => self.play_saved(&v, lp),
-            Action::PlayAt(v, t) => {
-                let here = self.cur_track().map(|t| t.id) == Some(v.id);
-                self.play_saved(&v, None);
-                if here || !self.buffering {
-                    self.player.send(Cmd::Seek(t));
-                } else {
-                    self.pending_seek = Some(t);
-                }
-            }
-            Action::EditLoop(id, i, name, note, group) => {
-                if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
-                    if !name.trim().is_empty() {
-                        s.name = name.trim().to_string();
-                    }
-                    s.note = note.trim().to_string();
-                    s.group = group.trim().to_string();
-                    self.store_dirty = true;
-                }
-                let g = group.trim().to_string();
-                if !g.is_empty() && !self.store.groups().contains(&g) {
-                    let mut l = self.store.groups();
-                    l.push(g);
-                    self.store.loop_groups = Some(l);
-                }
-            }
-            Action::LoopGroup(id, i, group) => {
-                if let Some(s) = self.store.sections.get_mut(&id).and_then(|l| l.get_mut(i)) {
-                    s.group = group.trim().to_string();
-                    self.store_dirty = true;
-                }
-            }
-            Action::ForgetLoop(id, i) => {
-                // (the saved loops are counted again: which one is current, found afresh)
-                self.loop_saved = None;
-                if let Some(l) = self.store.sections.get_mut(&id) {
-                    if i < l.len() {
-                        l.remove(i);
-                        self.store_dirty = true;
-                    }
-                    if l.is_empty() {
-                        self.store.sections.remove(&id);
-                    }
-                }
-            }
-            Action::DeleteSection(i) => {
-                self.loop_saved = None;
-                if let Some(t) = self.cur_track() {
-                    if let Some(l) = self.store.sections.get_mut(&t.id) {
-                        if i < l.len() {
-                            l.remove(i);
-                            self.store_dirty = true;
-                        }
-                        if l.is_empty() {
-                            self.store.sections.remove(&t.id);
-                        }
-                    }
-                }
-            }
-
-            // ---- practice tools
-            Action::ToggleFocus => {
-                self.focus_mode = !self.focus_mode;
-                // (focus mode hides the library: the chart, when there is one, takes the queue's window; leaving it,
-                // the queue's window is the queue again, the chart on its page)
-                let has_chart = self.chart_tune().map(|i| !self.store.tunes[i].chart.is_empty()).unwrap_or(false);
-                self.rtab = if self.focus_mode && has_chart { 1 } else { 0 };
-                self.set_note(if self.focus_mode { "FOCUS MODE: PLAYER AND TOOLS ONLY" } else { "FULL LAYOUT" });
-            }
-            Action::Continue => {
-                let Some(l) = self.store.last.clone() else { return };
-                // the queue it was in when there is one, else just the song
-                let (queue, index) = if l.queue.is_empty() { (vec![l.version.clone()], 0) } else { (l.queue.clone(), l.index) };
-                for v in &queue {
-                    self.register(v);
-                }
-                self.queue = Arc::new(queue.iter().map(|v| v.to_track()).collect());
-                self.orig_queue = None;
-                self.shuffle = false;
-                self.practice = true;
-                self.play_index(index.min(self.queue.len().saturating_sub(1)));
-                // where you left off, at the speed you left it
-                self.speed = if l.speed == 0 { 100 } else { l.speed.clamp(25, 250) };
-                self.sync_loop();
-                if l.pos > 3.0 {
-                    let t = (l.pos - 2.0).max(0.0);
-                    if self.buffering {
-                        self.pending_seek = Some(t);
-                    } else {
-                        self.player.send(Cmd::Seek(t));
-                    }
-                }
-            }
-            Action::Trainer => {
-                self.trainer = !self.trainer;
-                self.passes = 0;
-                if self.trainer {
-                    self.practice = true;
-                    self.set_note(&format!("EVERY {} PASSES THE SPEED GOES UP {}%", self.trainer_n, self.trainer_step));
-                } else {
-                    self.set_note("SPEED TRAINER OFF");
-                }
-                self.sync_loop();
-            }
-            Action::TapTempo => {
-                let now = Instant::now();
-                if let Some(l) = self.taps.last() {
-                    if now.duration_since(*l) > Duration::from_millis(2000) {
-                        self.taps.clear();
-                    }
-                }
-                self.taps.push(now);
-                if self.taps.len() > 8 {
-                    self.taps.remove(0);
-                }
-                if self.taps.len() >= 3 {
-                    let span = now.duration_since(self.taps[0]).as_secs_f32();
-                    let n = (self.taps.len() - 1) as f32;
-                    let heard = 60.0 / (span / n).max(0.05);
-                    let factor = if self.practice { self.speed as f32 / 100.0 } else { 1.0 };
-                    // tapping finds the music's tempo: the song's and the metronome's both take it
-                    self.knob_set(Knob::Bpm, (heard / factor).round());
-                    self.knob_set(Knob::MetroBpm, (heard / factor).round());
-                } else {
-                    self.set_note("KEEP TAPPING...");
-                }
-            }
-            Action::CountIn => {
-                self.count_in = match self.count_in {
-                    0 => 2,
-                    2 => 4,
-                    _ => 0,
-                };
-                if self.count_in > 0 && self.bpm == 0 {
-                    self.set_note("THE COUNT-OFF NEEDS A TEMPO. TAP IT OR SET THE BPM");
-                }
-                self.sync_loop();
-            }
-            Action::Chan => {
-                self.chan = (self.chan + 1) % CHAN_NAMES.len() as u32;
-                self.practice = true;
-                self.sync_loop();
-                self.set_note(&format!("EAR: {}", CHAN_NAMES[self.chan as usize]));
-            }
-            Action::Transpose(d) => {
-                self.semis = (self.semis + d).clamp(-1200, 1200);
-                if self.cur.is_some() {
-                    self.practice = true;
-                }
-                self.sync_loop();
-                self.set_note(&format!("PITCH {:+.2} SEMITONES (SPEED UNCHANGED)", self.semis as f32 / 100.0));
-            }
-            Action::Export => {
-                // the A-B loop when there is one, else the whole song
-                let (a, b) = match (self.loop_a, self.loop_b) {
-                    (Some(a), Some(b)) if b > a => (a, b),
-                    _ => (0.0, 0.0),
-                };
-                let whole = b <= a;
-                let Some(t) = self.cur_track() else {
-                    self.set_note("PLAY A SONG FIRST");
-                    return;
-                };
-                if self.exporting {
-                    return;
-                }
-                // as you hear it: speed, and in practice mode the pitch and ear mode; balance and the equalizer
-                let fx = crate::player::Fx {
-                    speed: self.speed,
-                    cents: if self.practice { self.semis } else { 0 },
-                    chan: if self.practice { self.chan } else { 0 },
-                    balance: self.balance,
-                    eq: (self.eq_gains, self.eq_pre, self.eq_on),
-                };
-                let (api, lossless, src) = (self.api.clone(), self.prefer_lossless, self.srcmap.get(&t.id).cloned());
-                // what you hear: only the stems that are on, when the song has been split and some are off
-                let stems = if self.stem_on.iter().any(|on| !on) && stems::have_stems(t.id) {
-                    stems::load(t.id).ok().map(|s| (s.data, self.stem_on))
-                } else {
-                    None
-                };
-                // a folder next to Backline, a name that sorts by date and says what it is
-                let dir = std::env::current_exe()
-                    .ok()
-                    .and_then(|e| e.parent().map(|p| p.join("Saved loops")))
-                    .filter(|d| std::fs::create_dir_all(d).is_ok())
-                    .unwrap_or_else(|| dirs::audio_dir().unwrap_or_else(api::config_dir).join("Saved loops"));
-                let _ = std::fs::create_dir_all(&dir);
-                let what = self
-                    .store
-                    .sections
-                    .get(&t.id)
-                    .and_then(|l| l.iter().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05))
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| if whole { "whole song".to_string() } else { "loop".to_string() });
-                let (fa, fb) = if whole { (0.0, t.duration) } else { (a, b) };
-                let name = loop_file_name(store::now_local(), &t.artist, &t.title, &what, fa, fb, stems.is_some());
-                let id = t.id;
-                self.exporting = true;
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let Some(path) = rfd::FileDialog::new()
-                        .set_title(if whole { "Save the song as a WAV" } else { "Save the loop as a WAV" })
-                        .set_directory(&dir)
-                        .set_file_name(&name)
-                        .add_filter("WAV audio", &["wav"])
-                        .save_file()
-                    else {
-                        let _ = tx.send(Msg::Exported(Err("cancelled".to_string())));
-                        ctx.request_repaint();
-                        return;
-                    };
-                    // the samples (the stems that are on, or the song itself; fetched if it isn't on this computer),
-                    // then the player's own effects over them
-                    let samples = match stems {
-                        Some((data, on)) => Ok((sources::mix_stems_span(&data, on, a, b), 2u16, 44100u32)),
-                        None => {
-                            crate::fetch_audio(&api, id, lossless, false, src).and_then(|bytes| sources::decode_span(bytes, a, b))
-                        }
-                    };
-                    let r = samples
-                        .and_then(|(data, ch, rate)| {
-                            let (out, ch, rate) = crate::player::render(rodio::buffer::SamplesBuffer::new(ch, rate, data), &fx);
-                            sources::write_wav(&path, ch, rate, &out)
-                        })
-                        .map(|_| {
-                            // show it in Explorer, so it is easy to find later
-                            let _ = sources::reveal(&path.to_string_lossy());
-                            path.display().to_string()
-                        });
-                    let _ = tx.send(Msg::Exported(r));
-                    ctx.request_repaint();
-                });
-            }
-
-            // ---- diary
-            Action::SaveEntry => {
-                let today = if self.diary_sel == 0 { store::today_str() } else { store::date_str(self.diary_sel) };
-                let default_mins = self.store.secs_on(&today) / 60;
-                let mins = self.f_mins.trim().parse::<u32>().unwrap_or(default_mins);
-                let bpm = self.f_bpm.trim().parse::<u32>().unwrap_or(0);
-                let tune = if self.f_tune.trim().is_empty() { self.practice_label() } else { self.f_tune.trim().to_string() };
-                let note = self.f_note.trim().to_string();
-                match self.entry_edit.take().filter(|i| *i < self.store.entries.len()) {
-                    // an entry changed: it keeps its day
-                    Some(i) => {
-                        let e = &mut self.store.entries[i];
-                        (e.tune, e.mins, e.bpm, e.note) = (tune, mins, bpm, note);
-                    }
-                    None => {
-                        // a logged day with no tracked time still counts on the calendar
-                        if mins > 0 && self.store.secs_on(&today) == 0 {
-                            *self.store.day_mut(&today).secs.entry(tune.clone()).or_insert(0) += mins * 60;
-                        }
-                        self.store.entries.push(Entry { date: today, tune, mins, bpm, note });
-                    }
-                }
-                self.f_mins.clear();
-                self.f_bpm.clear();
-                self.f_note.clear();
-                self.f_tune.clear();
-                self.show_form = false;
-                self.ed.id = 0;
-                self.store_dirty = true;
-                self.set_note("ADDED TO THE DIARY");
-            }
-            Action::RightTab(n) => self.rtab = n,
-            Action::OpenChart => self.open_chart(),
-            Action::StemGet => {
-                if self.stem_busy != 0 {
-                    return;
-                }
-                self.stem_busy = 1;
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::StemTool(stems::download_tool()));
-                    ctx.request_repaint();
-                });
-            }
-            Action::StemSplit => {
-                if self.stem_busy != 0 {
-                    return;
-                }
-                let Some(t) = self.cur_track() else {
-                    self.set_note("PLAY A TRACK FIRST");
-                    return;
-                };
-                self.stem_busy = 2;
-                self.set_note("SPLITTING. KEEP PRACTICING, IT TAKES A FEW MINUTES");
-                let id = t.id;
-                // the stored copy, or (not stored: storing tracks is off, or it never finished) the track fetched
-                // again for the split
-                let src = self.srcmap.get(&t.id).cloned();
-                let (lossless, api) = (self.prefer_lossless, self.api.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    api::log(&format!("stems: split {} asked for", id));
-                    let r = crate::fetch_audio(&api, id, lossless, false, src).and_then(|b| {
-                        api::log(&format!("stems: {} bytes of audio, splitting", b.len()));
-                        stems::separate(b, id)
-                    });
-                    api::log(&format!("stems: {} -> {:?}", id, r));
-                    let _ = tx.send(Msg::Stems(id, r));
-                    ctx.request_repaint();
-                });
-            }
-            Action::StemCancel => stems::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed),
-            Action::StemToggle(i) => {
-                if i < 4 {
-                    let mut on = self.stem_on;
-                    on[i] = !on[i];
-                    self.apply_mix(on);
-                }
-            }
-            Action::StemSolo(i) => {
-                if i < 4 {
-                    let mut on = [false; 4];
-                    on[i] = true;
-                    self.apply_mix(on);
-                }
-            }
-            Action::StemAll => self.apply_mix([true; 4]),
-            Action::StemClear => {
-                let _ = std::fs::remove_dir_all(api::config_dir().join("stems"));
-                stems::forget_split();
-                self.stem_on = [true; 4];
-                self.set_note("ALL STEMS DELETED");
-            }
-            Action::StemDelete(id) => {
-                // back to the whole song first if a mix of stems is playing
-                if self.cur_track().is_some_and(|t| t.id == id) && self.stem_on != [true; 4] {
-                    self.apply_mix([true; 4]);
-                }
-                let _ = std::fs::remove_dir_all(stems::stems_dir(id));
-                stems::forget_split();
-                self.stem_on = [true; 4];
-                self.set_note("THIS SONG'S STEMS DELETED");
-            }
-            Action::StemOpen(id) => stems::open_folder(id),
-            Action::CmImport(own) => {
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let picked = if own {
-                        rfd::FileDialog::new()
-                            .set_title("Import transcriptions")
-                            .add_filter("Backline transcription", &["json"])
-                            .pick_files()
-                    } else {
-                        rfd::FileDialog::new().set_title("Import Guitar Pro files").add_filter("Guitar Pro", &["gp"]).pick_files()
-                    };
-                    let Some(files) = picked else { return };
-                    let mut done = Vec::new();
-                    let mut errs = Vec::new();
-                    for f in files {
-                        let stem = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                        let r = if own {
-                            crate::transcription::load(&f).and_then(|t| {
-                                // its recording too, when it came with one beside it
-                                let audio =
-                                    (!t.audio.is_empty()).then(|| f.with_file_name(&t.audio)).and_then(|a| std::fs::read(a).ok());
-                                crate::transcription::save_in(None, t, audio.as_deref())
-                            })
-                        } else {
-                            std::fs::read(&f)
-                                .map_err(|e| e.to_string())
-                                .and_then(|b| crate::transcription::from_gp(&b, &stem))
-                                .and_then(|(t, a)| crate::transcription::save_in(None, t, a.as_deref()))
-                        };
-                        match r {
-                            Ok(p) => done.push(p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()),
-                            Err(e) => errs.push(format!("{}: {}", stem, e)),
-                        }
-                    }
-                    let _ = tx.send(crate::Msg::CmImported(if done.is_empty() { Err(errs.join("; ")) } else { Ok(done) }));
-                    ctx.request_repaint();
-                });
-            }
-            Action::PomoHold => {
-                if matches!(self.pomo, 1 | 2) {
-                    self.pomo_left = self.pomo_end.map_or(0, |e| e.saturating_duration_since(Instant::now()).as_secs());
-                    self.pomo_was = self.pomo;
-                    self.pomo = 4;
-                    self.pomo_end = None;
-                    self.set_note("FOCUS TIMER PAUSED. RESUME WHEN READY");
-                } else if self.pomo == 4 {
-                    self.pomo = self.pomo_was.clamp(1, 2);
-                    self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_left.max(1)));
-                    self.set_note("FOCUS TIMER RESUMED");
-                }
-                self.dirty = true;
-            }
-            Action::Pomo => {
-                self.dirty = true;
-                if matches!(self.pomo, 1 | 2 | 4) {
-                    self.pomo = 0;
-                    self.pomo_end = None;
-                    self.set_note("FOCUS TIMER STOPPED");
-                } else {
-                    self.pomo_n = if self.pomo == 3 { self.pomo_n + 1 } else { 1 };
-                    self.pomo = 1;
-                    self.pomo_end = Some(Instant::now() + Duration::from_secs(self.pomo_focus as u64 * 60));
-                    self.set_note(&format!("FOCUS {} OF {}. ONE THING AT A TIME", self.pomo_n, self.pomo_cycles));
-                }
-                self.pomo_flash = None;
-            }
-            Action::TimerPanel => self.timer_open = !self.timer_open,
-            Action::PlayAlong(name) => {
-                let q: String = format!("{} backing track play along", name)
-                    .bytes()
-                    .map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{:02X}", b) })
-                    .collect();
-                let _ = webbrowser::open(&format!("https://www.youtube.com/results?search_query={}", q));
-                self.set_note("OPENED YOUTUBE IN YOUR BROWSER");
-            }
-            Action::MetroPanel => self.metro_open = !self.metro_open,
-            Action::ImportIreal(target) => {
-                let text = self.ireal_in.trim().to_string();
-                match crate::chart::parse_ireal_url(&text) {
-                    Err(e) => self.set_err(format!("CAN'T READ THAT LINK: {}", e)),
-                    Ok(songs) if songs.is_empty() => self.set_note("NO SONGS IN THAT LINK"),
-                    Ok(songs) => {
-                        let mut count = 0;
-                        let single = songs.len() == 1;
-                        let mut last = None;
-                        for s in songs {
-                            let idx = match target {
-                                Some(t) if single && t < self.store.tunes.len() => t,
-                                _ => self.new_tune_named(&s.title),
-                            };
-                            let tune = &mut self.store.tunes[idx];
-                            tune.chart = crate::chart::to_friendly(&s.measures, &s.time);
-                            if tune.key.is_empty() {
-                                tune.key = s.key.clone();
-                            }
-                            if tune.bpm == 0 {
-                                tune.bpm = s.bpm;
-                            }
-                            if tune.written_by.is_empty() && !s.composer.is_empty() {
-                                tune.written_by = s.composer.clone();
-                            }
-                            if tune.style.is_empty() && !s.style.is_empty() {
-                                tune.style = s.style.clone();
-                            }
-                            last = Some(idx);
-                            count += 1;
-                        }
-                        self.store_dirty = true;
-                        self.ireal_in.clear();
-                        self.chart_edit = false;
-                        self.ed.id = 0;
-                        if let Some(i) = last {
-                            self.tune_open = Some(i);
-                        }
-                        self.set_note(&format!("IMPORTED {} CHART{}", count, if count == 1 { "" } else { "S" }));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     /// Focus -> rest -> wait for you. No sound: the window just flashes.
-    fn pomo_tick(&mut self) {
+    pub(crate) fn pomo_tick(&mut self) {
         let Some(end) = self.pomo_end else { return };
         if Instant::now() < end {
             return;
@@ -4020,7 +1792,7 @@ impl App {
     }
 
     /// Play the mix of the stems that are switched on, from the same spot.
-    fn apply_mix(&mut self, on: [bool; 4]) {
+    pub(crate) fn apply_mix(&mut self, on: [bool; 4]) {
         let Some(t) = self.cur_track() else { return };
         if self.stopped || self.buffering {
             self.set_note("PLAY THE TRACK FIRST");
@@ -4042,7 +1814,7 @@ impl App {
         }
     }
 
-    fn knob_val(&self, k: Knob) -> f32 {
+    pub(crate) fn knob_val(&self, k: Knob) -> f32 {
         match k {
             Knob::Focus => self.pomo_focus as f32,
             Knob::Rest => self.pomo_break as f32,
@@ -4064,7 +1836,7 @@ impl App {
         }
     }
 
-    fn knob_set(&mut self, k: Knob, v: f32) {
+    pub(crate) fn knob_set(&mut self, k: Knob, v: f32) {
         let u = |lo: f32, hi: f32| v.round().clamp(lo, hi) as u32;
         match k {
             Knob::Focus => self.pomo_focus = u(1.0, 180.0),
@@ -4113,7 +1885,7 @@ impl App {
         }
     }
 
-    fn opt(&mut self, o: Opt) {
+    pub(crate) fn opt(&mut self, o: Opt) {
         match o {
             Opt::MetroOn => {
                 self.mt.on = !self.mt.on;
@@ -4219,7 +1991,7 @@ impl App {
         }
     }
 
-    fn set_bpm(&mut self, b: i32) {
+    pub(crate) fn set_bpm(&mut self, b: i32) {
         let b = b.clamp(30, 400) as u32;
         self.bpm = b;
         if let Some(t) = self.cur_track() {
@@ -4348,9 +2120,9 @@ pub(crate) fn tempo_in_notes(notes: &str) -> Option<u32> {
                 i += 1;
             }
             // part of a bigger token (1:23, 4/4, 3.5) is not a tempo
-            let joined = |c: Option<&u8>| c.map_or(false, |c| matches!(c, b':' | b'/' | b'.' | b','));
+            let joined = |c: Option<&u8>| c.is_some_and(|c| matches!(c, b':' | b'/' | b'.' | b','));
             if !joined(s.checked_sub(1).and_then(|k| b.get(k)))
-                && !(joined(b.get(i)) && b.get(i + 1).map_or(false, |c| c.is_ascii_digit()))
+                && !(joined(b.get(i)) && b.get(i + 1).is_some_and(|c| c.is_ascii_digit()))
             {
                 if let Ok(v) = low[s..i].parse::<u32>() {
                     nums.push((s, i, v));
@@ -4383,7 +2155,7 @@ mod tempo_tests {
 
 /// Write a title and an artist into an audio file's own tags (ID3, Vorbis comments, MP4 atoms... whatever the file
 /// uses; a tag is added when it has none).
-fn write_tags(path: &str, title: &str, artist: &str, album: &str) -> Result<String, String> {
+pub(crate) fn write_tags(path: &str, title: &str, artist: &str, album: &str) -> Result<String, String> {
     use lofty::prelude::*;
     let mut tagged = lofty::read_from_path(path).map_err(|e| e.to_string())?;
     if tagged.primary_tag().is_none() {
@@ -4404,14 +2176,14 @@ fn write_tags(path: &str, title: &str, artist: &str, album: &str) -> Result<Stri
 
 /// The songs waiting to be kept (one download at a time, in the background), the ones already lined up since
 /// Backline started (so a song that failed is not tried over and over), and whether the downloader is running.
-type KeepLine = (std::collections::VecDeque<(i64, Option<Src>)>, HashSet<i64>, bool);
-static KEEP: std::sync::LazyLock<std::sync::Mutex<KeepLine>> =
+pub(crate) type KeepLine = (std::collections::VecDeque<(i64, Option<Src>)>, HashSet<i64>, bool);
+pub(crate) static KEEP: std::sync::LazyLock<std::sync::Mutex<KeepLine>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new((std::collections::VecDeque::new(), HashSet::new(), false)));
 /// keeping songs is on (off stops the downloader after the song it is on)
 pub(crate) static KEEP_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Add songs to the line to keep, and start the downloader if it is not running. How many were added.
-fn keep_queue(api: &crate::api::Api, todo: Vec<(i64, Option<Src>)>) -> usize {
+pub(crate) fn keep_queue(api: &crate::api::Api, todo: Vec<(i64, Option<Src>)>) -> usize {
     use std::sync::atomic::Ordering;
     let Ok(mut k) = KEEP.lock() else { return 0 };
     let mut added = 0;

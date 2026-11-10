@@ -474,7 +474,7 @@ fn quality_parts(q: &str) -> (&'static str, bool, String) {
     let mut rest = s[n..].to_string();
     // a major 7th on a minor (diminished, augmented) chord: Cm(maj7), CmMaj7, CmM7, C-^7, Cm/maj7, C+maj7
     let mut maj = false;
-    if head != "maj" && head != "" {
+    if head != "maj" && !head.is_empty() {
         let low = rest.to_ascii_lowercase();
         for (w, k) in [("maj", 3), ("ma", 2)] {
             if low.starts_with(w) {
@@ -810,8 +810,8 @@ fn render_raw(chart: &Chart, order: &[usize], bpm: f32, style: u8, lv: [f32; 3],
         let nbb = chart.bar_len(*bar_ix).ceil().max(1.0) as usize;
         // chord at a beat, where that chord starts and how long it lasts (in beats)
         let span = |k: usize| -> (usize, usize) {
-            let a = (k * nbb + n - 1) / n;
-            let b = (((k + 1) * nbb + n - 1) / n).max(a + 1).min(nbb);
+            let a = (k * nbb).div_ceil(n);
+            let b = ((k + 1) * nbb).div_ceil(n).max(a + 1).min(nbb);
             (a, b)
         };
         let idx_at = |b: usize| (0..n).find(|k| span(*k).0 <= b && b < span(*k).1).unwrap_or(n - 1);
@@ -1132,7 +1132,7 @@ pub fn reading_sound(
     let n_beats = count_in + (length / spb).ceil() as u32;
     for k in 0..n_beats {
         // the one of each bar a little higher (counted from where the line picks up)
-        let accent = if k < count_in { k % beats.max(1) == 0 } else { (k - count_in + first_beat) % beats.max(1) == 0 };
+        let accent = if k < count_in { k % beats.max(1) == 0 } else { (k - count_in + first_beat).is_multiple_of(beats.max(1)) };
         mix.tick(k as f32 * spb, accent, if k < count_in { 1.0 } else { 0.6 });
     }
     for (ms, at, d) in notes {

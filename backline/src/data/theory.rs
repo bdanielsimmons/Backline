@@ -131,9 +131,6 @@ const TYPES: &[(&str, &[i32])] = &[
     ("7alt", &[0, 1, 3, 4, 6, 8, 10]),
 ];
 
-/// Names for a set of notes, best first: exact matches, then ones with the fifth left out, then near misses.
-/// `bass` is the lowest note (a different one from the root gives a slash chord).
-
 /// Every way to play these pitch classes one to a string on `strings` (low to high) with the notes climbing:
 /// `ordered` keeps them in the order given (a stack), else any order (inversions). Fretted notes within `reach`
 /// frets of each other; open strings only in a shape down by the nut (an open string under a hand at the 8th fret
@@ -197,6 +194,8 @@ pub fn centre(g: &[Option<u8>; 6]) -> f32 {
     }
 }
 
+/// Names for a set of notes, best first: exact matches, then ones with the fifth left out, then near misses.
+/// `bass` is the lowest note (a different one from the root gives a slash chord).
 pub fn name_chords(notes: &[i32], bass: Option<i32>) -> Vec<String> {
     let set: Vec<i32> = {
         let mut v: Vec<i32> = notes.iter().map(|n| n.rem_euclid(12)).collect();
@@ -1032,7 +1031,7 @@ pub fn grip_sections(c: &ChordNotes, tuning: &[i32; 6]) -> GripSections {
     }
     // open position: grips with open strings ringing, near the nut (found by the search, held to the same rules)
     for g in search_shapes(c, tuning) {
-        let open = g.iter().any(|f| *f == Some(0));
+        let open = g.contains(&Some(0));
         let hi = g.iter().flatten().copied().max().unwrap_or(0);
         if open && hi <= 4 && !lib.iter().any(|(_, l)| *l == g) && s.open.len() < 3 {
             s.open.push(g);
@@ -1095,7 +1094,7 @@ pub fn capo_shapes(c: &ChordNotes, tuning: &[i32; 6]) -> Vec<CapoShape> {
         };
         // (the reach from the first fret: the open position behind the capo)
         let pick = search_ranked(&t, tuning, 1..=1).into_iter().map(|(_, g)| g).find(|g| {
-            let open = g.iter().any(|f| *f == Some(0));
+            let open = g.contains(&Some(0));
             let hi = g.iter().flatten().copied().max().unwrap_or(0);
             let offs: [Option<i32>; 6] = g.map(|f| f.map(|f| f as i32));
             // (the open strings count as one barre in grip_fingers: that one is the capo)
@@ -1393,7 +1392,7 @@ pub fn cluster_voicings(bass: i32, pair: [i32; 2], extras: &[i32], tuning: &[i32
                                 if shape
                                     .iter()
                                     .enumerate()
-                                    .any(|(i, f)| i != b && f.map_or(false, |f| tuning[i] + f as i32 <= low))
+                                    .any(|(i, f)| i != b && f.is_some_and(|f| tuning[i] + f as i32 <= low))
                                 {
                                     continue;
                                 }

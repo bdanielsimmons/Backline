@@ -206,8 +206,8 @@ impl App {
             return;
         }
         self.timer_logic(acts);
-        let flash = self.pomo_flash.map_or(false, |t| self.pomo == 3 || t.elapsed().as_secs() < 6);
-        let blink = flash && (ctx.input(|i| i.time) * 2.5) as u32 % 2 == 0;
+        let flash = self.pomo_flash.is_some_and(|t| self.pomo == 3 || t.elapsed().as_secs() < 6);
+        let blink = flash && ((ctx.input(|i| i.time) * 2.5) as u32).is_multiple_of(2);
         if flash {
             ctx.request_repaint_after(Duration::from_millis(200));
             if blink {
@@ -300,7 +300,7 @@ impl App {
                         }
                     }
                     if now == 2 {
-                        let long = self.tm.long_every > 0 && self.pomo_n % self.tm.long_every == 0;
+                        let long = self.tm.long_every > 0 && self.pomo_n.is_multiple_of(self.tm.long_every);
                         let mins = if long { self.tm.long_mins } else { self.pomo_break } as u64;
                         if long {
                             self.pomo_end = Some(Instant::now() + Duration::from_secs(mins * 60));
@@ -366,7 +366,7 @@ impl App {
     }
 
     fn draw_timer_pill(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
-        if matches!(self.pomo, 1 | 2 | 3) {
+        if matches!(self.pomo, 1..=3) {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
         }
         let id = ui.id().with("timer_pill");
@@ -393,7 +393,7 @@ impl App {
                 p.circle_filled(dot.center(), r.height() * 0.17, if self.pomo == 1 { pal().red } else { pal().ink2 });
             }
             3 => {
-                if (t * 2.5) as u32 % 2 == 0 {
+                if ((t * 2.5) as u32).is_multiple_of(2) {
                     p.circle_filled(dot.center(), r.height() * 0.17, pal().red);
                 }
             }
@@ -430,7 +430,7 @@ impl App {
             let w = 320.0;
             ui.set_width(w);
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 10.0);
-            let running = matches!(self.pomo, 1 | 2 | 3 | 4);
+            let running = matches!(self.pomo, 1..=4);
             // title, settings while it runs, close
             ui.horizontal(|ui| {
                 let (tr, _) = ui.allocate_exact_size(Vec2::new(160.0, bh()), Sense::hover());
@@ -899,7 +899,7 @@ impl App {
             let tid = self.cur_track().map(|x| x.id);
             let (msg, red) = if self.beat_busy {
                 ("FINDING THE BEAT...", false)
-            } else if tid.map_or(false, |i| self.beat_failed.contains(&i)) {
+            } else if tid.is_some_and(|i| self.beat_failed.contains(&i)) {
                 ("NO STEADY BEAT FOUND. USING YOUR OWN TEMPO", true)
             } else if self.beat.map(|b| b.0) == tid && self.beat.is_some() {
                 ("LOCKED TO THE TRACK", false)

@@ -601,7 +601,7 @@ impl<S: Source<Item = i16>> Iterator for Stretch<S> {
                 return self.next();
             }
         }
-        if plain || (!self.stretching && self.raw_s % self.ch != 0) {
+        if plain || (!self.stretching && !self.raw_s.is_multiple_of(self.ch)) {
             self.stretching = false;
             let s = self.inner.next()?;
             self.raw_s += 1;
@@ -836,7 +836,7 @@ impl<S: Source<Item = i16>> Iterator for Chan<S> {
             return Some(s);
         }
         self.tick = self.tick.wrapping_add(1);
-        if self.tick % 256 == 0 {
+        if self.tick.is_multiple_of(256) {
             self.mode = self.ctl.chan.load(Ordering::Relaxed);
             self.bal = self.ctl.balance.load(Ordering::Relaxed);
         }
@@ -891,10 +891,10 @@ impl<S: Source<Item = i16>> Source for Chan<S> {
 }
 
 /// Click track: `beats` clicks `interval` seconds apart (first one accented), mono 44.1 kHz.
-fn click_buf(beats: u32, interval: f32, tail: bool) -> Vec<i16> {
+fn click_buf(beats: u32, interval: f32) -> Vec<i16> {
     let rate = 44100.0f32;
     let step = (interval * rate) as usize;
-    let total = step * beats as usize + if tail { 0 } else { 0 };
+    let total = step * beats as usize;
     let mut v = vec![0i16; total.max(1)];
     for b in 0..beats as usize {
         let f = if b == 0 { 1600.0 } else { 1100.0 };
@@ -1185,8 +1185,8 @@ impl<S: Source<Item = i16>> Tap<S> {
     fn flush(&mut self) {
         if let Ok(mut guard) = self.viz.lock() {
             let v = &mut *guard;
-            v.samples.extend(self.scratch.drain(..));
-            v.first.extend(self.scratch_first.drain(..));
+            v.samples.append(&mut self.scratch);
+            v.first.append(&mut self.scratch_first);
             for buf in [&mut v.samples, &mut v.first] {
                 let len = buf.len();
                 if len > 4096 {
@@ -1279,7 +1279,7 @@ fn chime_buf() -> Vec<i16> {
 fn play_clicks(handle: &OutputStreamHandle, beats: u32, interval: f32, vol: f32) {
     if let Ok(c) = Sink::try_new(handle) {
         c.set_volume(out((vol * 1.2).min(1.0)));
-        c.append(rodio::buffer::SamplesBuffer::new(1, 44100, click_buf(beats, interval.clamp(0.15, 4.0), false)));
+        c.append(rodio::buffer::SamplesBuffer::new(1, 44100, click_buf(beats, interval.clamp(0.15, 4.0))));
         c.sleep_until_end();
     }
 }

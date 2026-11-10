@@ -287,9 +287,9 @@ pub(crate) struct TourPlay {
     chords_tab: u8,
     ln_tab: u8,
     an_frets: [Option<u8>; 6],
-    /// the side pages that were open (preferences, the BACKLINE page, Winamp skins, the log, storage): the tour
+    /// the side pages that were open (preferences; the BACKLINE page, Winamp skins or the log): the tour
     /// closes them so every window it points at can be seen, and opens them again at the end
-    pages: (bool, bool, bool, bool, bool),
+    pages: (bool, Option<crate::Side>),
     /// the step whose action has been done, and whether the tour paused its song or started the band
     acted: Option<usize>,
     /// when the step's action began, and how many of the analyzer's notes are on the neck so far
@@ -338,7 +338,7 @@ impl App {
             chords_tab: self.chords_tab,
             ln_tab: self.ln_tab,
             an_frets: self.an_frets,
-            pages: (self.show_prefs, self.show_tl, self.show_winamp, self.show_log, self.show_cache),
+            pages: (self.show_prefs, self.side),
             acted: None,
             act_at: None,
             placed: 0,
@@ -384,7 +384,7 @@ impl App {
 
     /// Put on the tour's song (if the tour is still on and nothing has been put on yet).
     pub(crate) fn tour_put_on(&mut self, path: std::path::PathBuf) {
-        if self.tour.is_none() || self.tour_play.as_ref().map_or(true, |s| s.song.is_some()) {
+        if self.tour.is_none() || self.tour_play.as_ref().is_none_or(|s| s.song.is_some()) {
             return;
         }
         let mut track = crate::sources::ext_for_file(&path).to_track();
@@ -498,7 +498,7 @@ impl App {
         self.chords_tab = s.chords_tab;
         self.ln_tab = s.ln_tab;
         self.an_frets = s.an_frets;
-        (self.show_prefs, self.show_tl, self.show_winamp, self.show_log, self.show_cache) = s.pages;
+        (self.show_prefs, self.side) = s.pages;
         if s.song.is_some() {
             self.apply(Action::StopBtn);
         }
@@ -702,7 +702,7 @@ impl App {
         let i = i.min(list.len() - 1);
         let step = &list[i];
         // the library window shows the library, not a side page, while the tour points at things
-        (self.show_prefs, self.show_tl, self.show_winamp, self.show_log, self.show_cache) = (false, false, false, false, false);
+        (self.show_prefs, self.side) = (false, None);
         self.tour_scene(step.scene);
         self.tour_demo(step.speed, step.ab, step.eq);
         self.tour_act(i, step.act);
@@ -727,7 +727,7 @@ impl App {
             }
         }
         // card at the bottom, or at the top when the highlighted window is down there
-        let low = target.map_or(false, |t| t.center().y > screen.center().y);
+        let low = target.is_some_and(|t| t.center().y > screen.center().y);
         let (align, off) =
             if low { (egui::Align2::CENTER_TOP, [0.0, 24.0]) } else { (egui::Align2::CENTER_BOTTOM, [0.0, -24.0]) };
         let mut go: i32 = 0;
@@ -1085,6 +1085,12 @@ mod tests {
             include_str!("player_win.rs"),
             include_str!("album_view.rs"),
             include_str!("views.rs"),
+            include_str!("tunes.rs"),
+            include_str!("diary.rs"),
+            include_str!("loops_page.rs"),
+            include_str!("practice.rs"),
+            include_str!("layout.rs"),
+            include_str!("tracks.rs"),
             include_str!("chords.rs"),
             include_str!("lines.rs"),
             include_str!("tools.rs"),

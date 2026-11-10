@@ -220,7 +220,7 @@ pub(crate) fn keepers_today(ks: &[Keeper], today: &str, n: usize) -> Vec<usize> 
     let mut out: Vec<usize> = (0..ks.len()).filter(|i| ks[*i].seen == today).take(n).collect();
     let mut rest: Vec<usize> = (0..ks.len())
         .filter(|i| ks[*i].seen != today)
-        .filter(|i| !ks[*i].solid() || day_number(&ks[*i].seen).map_or(true, |s| t - s >= 14))
+        .filter(|i| !ks[*i].solid() || day_number(&ks[*i].seen).is_none_or(|s| t - s >= 14))
         .collect();
     rest.sort_by_key(|i| (day_number(&ks[*i].seen).unwrap_or(i64::MIN), day_number(&ks[*i].added).unwrap_or(0)));
     out.extend(rest.into_iter().take(n.saturating_sub(out.len())));
@@ -784,7 +784,7 @@ impl App {
                 Pos2::new(gr.min.x + 40.0 + (i % 7) as f32 * cell + 2.0, gr.min.y + 16.0 + (i / 7) as f32 * cell + 2.0),
                 Vec2::splat(cell - 4.0),
             );
-            if i % 7 == 0 {
+            if i.is_multiple_of(7) {
                 let (_, m, dd) = store::civil_from_days(d);
                 ptext(ui.painter(), Pos2::new(gr.min.x, r.center().y), Align::Min, &format!("{}/{}", m, dd), 1.0, pal().dim);
             }
@@ -949,7 +949,7 @@ impl App {
         if line.is_empty() {
             return;
         }
-        let sharps = crate::theory::chord_notes(&line[0].0).map_or(false, |c| crate::lines::key_sharps(c.root));
+        let sharps = crate::theory::chord_notes(&line[0].0).is_some_and(|c| crate::lines::key_sharps(c.root));
         let gap = if arp { 60.0 / self.band_bpm() / 2.0 } else { 60.0 / self.band_bpm() * 2.0 };
         ui.horizontal_wrapped(|ui| {
             self.seq_button(

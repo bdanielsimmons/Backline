@@ -522,7 +522,7 @@ impl Engine {
         let mut buf = [0u8; 600];
         while self.live(g) {
             let say_now = std::mem::take(&mut lock(&self.wake.0).say);
-            if self.port.load(Ordering::Relaxed) != 0 && (say_now || said.map_or(true, |t| t.elapsed() > Duration::from_secs(4))) {
+            if self.port.load(Ordering::Relaxed) != 0 && (say_now || said.is_none_or(|t| t.elapsed() > Duration::from_secs(4))) {
                 said = Some(Instant::now());
                 let msg = self.hello(false);
                 let peer_ip = self.peer().and_then(|p| p.addr.parse::<SocketAddr>().ok()).map(|a| a.ip());
@@ -535,7 +535,7 @@ impl Engine {
             if h.id == self.id() || h.port == 0 {
                 continue;
             }
-            if !h.reply && answered.get(&h.id).map_or(true, |t| t.elapsed() > Duration::from_secs(2)) {
+            if !h.reply && answered.get(&h.id).is_none_or(|t| t.elapsed() > Duration::from_secs(2)) {
                 answered.insert(h.id, Instant::now());
                 let _ = sock.send_to(self.hello(true).as_bytes(), from);
             }
@@ -630,7 +630,7 @@ impl Engine {
                 } else {
                     HEARTBEAT
                 };
-                if poke || last.map_or(true, |t| t.elapsed() >= wait) {
+                if poke || last.is_none_or(|t| t.elapsed() >= wait) {
                     last = Some(Instant::now());
                     let addr = lock(&self.near).get(&peer.id).map(|n| n.addr).or_else(|| peer.addr.parse().ok());
                     match addr.map_or(Err(Fail::Net(String::new())), |a| self.round(a)) {
@@ -653,7 +653,7 @@ impl Engine {
                     }
                 }
                 // (it may still sync by calling here)
-                if fails > 1 && lock(&self.ok_at).map_or(true, |t| t.elapsed() > Duration::from_secs(60)) {
+                if fails > 1 && lock(&self.ok_at).is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
                     self.set_note(&format!(
                         "Can't reach {} right now. SYNC needs to be on there too, on the same network.",
                         peer.name

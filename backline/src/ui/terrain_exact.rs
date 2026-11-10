@@ -237,7 +237,7 @@ pub(super) fn columns(a: &[f32; 256], b: &[f32; 256], tilt: f32) -> [f32; 128] {
     let mut s = [0.0f32; 128];
     for i in 0..64 {
         s[i] = a[i * 255 / 64];
-        s[64 + i] = b[255 - (i * 255 + 63) / 64];
+        s[64 + i] = b[255 - (i * 255).div_ceil(64)];
     }
     let mut peak = 1.0f32;
     for (i, v) in s.iter_mut().enumerate() {

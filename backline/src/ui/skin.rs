@@ -639,7 +639,7 @@ pub(crate) fn pal() -> &'static Pal {
     }
     // the built-in skins, kept readable the same way (text where text is drawn; their own looks otherwise)
     static FIXED: std::sync::OnceLock<Vec<Pal>> = std::sync::OnceLock::new();
-    let fixed = FIXED.get_or_init(|| PALS.iter().map(|p| readable(p.clone(), false)).collect());
+    let fixed = FIXED.get_or_init(|| PALS.iter().map(|p| readable(*p, false)).collect());
     &fixed[SKIN.load(Ordering::Relaxed) % fixed.len()]
 }
 

@@ -632,7 +632,7 @@ impl App {
         let stars: Vec<usize> = (0..n).filter(|i| self.store.lines_stars.contains(&format!("book:{}", i))).collect();
         let credit = lines::book_credit();
         if !credit.is_empty() {
-            crate::views::dim_line(ui, &crate::font::as_label(&credit), 1.0, pal().dim);
+            crate::views::dim_line(ui, &crate::font::as_label(credit), 1.0, pal().dim);
         }
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "SHOW FILE", false)
@@ -764,7 +764,6 @@ impl App {
         }
     }
 
-    /// SCALES: any scale, straight or in intervals and groups, over one or two octaves.
     // ------------------------------------------------------------------ practice progressions (under TUNES)
 
     /// CHORDS > PROGRESSIONS: one row of choices (the family, key, chord size, major or minor), a line on the family,

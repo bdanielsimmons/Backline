@@ -552,7 +552,7 @@ pub(crate) fn make_line(seed: u64, key: usize, pos: u8, level: usize, bars: usiz
             let fit: Vec<usize> = (0..all.len())
                 .filter(|i| {
                     let len: u16 = all[*i].0.iter().map(|x| x.0).sum();
-                    len <= left && (len < 2 * BEAT || at % (2 * BEAT) == 0) && (len != 4 * BEAT || at == 0)
+                    len <= left && (len < 2 * BEAT || at.is_multiple_of(2 * BEAT)) && (len != 4 * BEAT || at == 0)
                 })
                 .collect();
             let w: Vec<u32> = fit.iter().map(|i| all[*i].1).collect();
@@ -762,7 +762,7 @@ fn draw_score_at(ui: &mut egui::Ui, parts: &[(&Reading, Option<usize>, &str)], t
     };
     let n_bars = parts.iter().map(|p| p.0.bars.len()).max().unwrap_or(0);
     // a bar is as wide as its busiest part
-    let shared = |bi: usize| parts.iter().filter_map(|p| p.0.bars.get(bi)).map(|b| bar_w(b)).fold(0.0, f32::max);
+    let shared = |bi: usize| parts.iter().filter_map(|p| p.0.bars.get(bi)).map(&bar_w).fold(0.0, f32::max);
     let w = ui.available_width().max(300.0);
     let head_w = |first: bool| 40.0 + sig.unsigned_abs() as f32 * 9.0 + if first { 26.0 } else { 0.0 };
     let mut rows: Vec<Vec<usize>> = Vec::new();
@@ -1712,7 +1712,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 crate::views::form_label(ui, "YOUR PART");
                 for (i, (pn, _)) in piece.parts.iter().enumerate() {
-                    if retro_btn(ui, &crate::font::as_label(&pn), self.rd_part == i).clicked() {
+                    if retro_btn(ui, &crate::font::as_label(pn), self.rd_part == i).clicked() {
                         self.rd_part = i;
                     }
                 }

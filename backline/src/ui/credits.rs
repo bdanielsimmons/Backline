@@ -47,7 +47,7 @@ impl App {
             ui.add_space(4.0);
             let bw = ui.available_width();
             for (id, name) in list {
-                if retro_btn_w(ui, &crate::font::as_label(&name), bw, false).clicked() {
+                if retro_btn_w(ui, &crate::font::as_label(name), bw, false).clicked() {
                     picked = Some(Card {
                         kind: Kind::Artist,
                         id: id.to_string(),

@@ -675,7 +675,7 @@ fn registry_fonts() -> Vec<(String, String)> {
                 continue;
             }
             let n = String::from_utf16_lossy(&name[..nlen as usize]);
-            let wide: Vec<u16> = data[..dlen as usize].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let wide: Vec<u16> = data[..dlen as usize].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
             let f = String::from_utf16_lossy(&wide).trim_end_matches('\0').to_string();
             out.push((n, f));
         }
@@ -961,7 +961,7 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
     ];
     let words: Vec<&str> = text.split(' ').collect();
     let n = words.iter().filter(|w| !w.is_empty()).count();
-    let sentence = text.contains(|c: char| matches!(c, '.' | ',' | ';' | '?' | '!')) && !text.ends_with("...");
+    let sentence = text.contains(['.', ',', ';', '?', '!']) && !text.ends_with("...");
     let title = n <= 4 || (TITLE.with(|c| c.get()) && !sentence && n <= 8);
     let mut out = String::with_capacity(text.len());
     let mut first = true;

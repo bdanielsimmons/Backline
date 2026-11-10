@@ -259,7 +259,7 @@ impl App {
             self.ar_ex = offered[i] as u8;
         }
         let ex = self.ar_ex as usize;
-        crate::views::dim_line(ui, &crate::font::as_label(&AR_EXERCISES[ex].1), 1.0, pal().ink2);
+        crate::views::dim_line(ui, &crate::font::as_label(AR_EXERCISES[ex].1), 1.0, pal().ink2);
 
         // a chord's notes in a position, low to high (`extra`: more degrees, the 9th for 3-5-7-9)
         let in_pos = |pos: &[Spot], a: &Arp, degs: &[i32]| -> Vec<Spot> {
@@ -298,7 +298,7 @@ impl App {
                     if (d % 2 == 1) != (ex == 7) {
                         u.reverse();
                     }
-                    owner.extend(std::iter::repeat(d).take(u.len()));
+                    owner.extend(std::iter::repeat_n(d, u.len()));
                     all.extend(u);
                 }
                 all
@@ -307,7 +307,7 @@ impl App {
                 let mut all = Vec::new();
                 for k in 0..np {
                     let seg = up_down(in_pos(&positions[nth(k)], &arp, &arp.tones));
-                    owner.extend(std::iter::repeat(k).take(seg.len()));
+                    owner.extend(std::iter::repeat_n(k, seg.len()));
                     all.extend(seg);
                 }
                 all
@@ -432,7 +432,7 @@ impl App {
             dim_line(ui, "NO READABLE CHORDS IN THESE CHANGES", 1.0, pal().dim);
             return;
         }
-        let sharps = theory::chord_notes(&line[0].0).map_or(false, |c| lines::key_sharps(c.root));
+        let sharps = theory::chord_notes(&line[0].0).is_some_and(|c| lines::key_sharps(c.root));
         // the guide tones a half note each (two beats a chord), the arpeggios in eighths
         let gap = if kind == 0 { 60.0 / self.band_bpm() * 2.0 } else { 60.0 / self.band_bpm() / 2.0 };
         ui.horizontal_wrapped(|ui| {

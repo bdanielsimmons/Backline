@@ -476,7 +476,7 @@ pub fn load(id: i64) -> Result<Stems, String> {
         if b.len() < 44 {
             return Err("damaged stem file".to_string());
         }
-        out[s] = b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        out[s] = b[44..].as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
     }
     Ok(Stems { data: out })
 }

@@ -291,7 +291,7 @@ pub(crate) fn through(chords: &[(Vec<Voicing>, Vec<Voicing>, usize)]) -> Vec<(i3
         if va.is_empty() || vb.is_empty() {
             // (nothing to play it with: the last note held over, so the chords after stay in their bars)
             let last = out.last().copied().unwrap_or((60, None));
-            out.extend(std::iter::repeat(last).take(*len));
+            out.extend(std::iter::repeat_n(last, *len));
             continue;
         }
         // where to start: the first triad's voicing whose first note (going the way the line goes) is nearest the

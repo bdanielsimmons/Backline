@@ -165,7 +165,7 @@ pub struct ThumbBar;
 fn icon(rows: &[&str; 16]) -> windows::Win32::UI::WindowsAndMessaging::HICON {
     use windows::Win32::UI::WindowsAndMessaging::CreateIcon;
     let mut color = Vec::with_capacity(16 * 16 * 4);
-    let mut mask = vec![0u8; 16 * 2];
+    let mut mask = [0u8; 16 * 2];
     for (y, row) in rows.iter().enumerate() {
         for (x, ch) in row.chars().enumerate().take(16) {
             let on = ch == '#';

@@ -656,7 +656,7 @@ fn draw_sample(k: usize) -> image::RgbImage {
             // vinyl: a record on a red sleeve
             2 => {
                 let bg = hex(0xc0392b);
-                let groove = if (r as u32 / 5) % 2 == 0 { 0.0 } else { 0.1 };
+                let groove = if (r as u32 / 5).is_multiple_of(2) { 0.0 } else { 0.1 };
                 let rec = mix(hex(0x111111), hex(0x3a3a3a), groove);
                 let c = mix(mix(bg, rec, inside(r - 170.0)), hex(0xf4e1c1), inside(r - 55.0));
                 mix(c, bg, inside(r - 8.0))

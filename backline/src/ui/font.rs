@@ -697,7 +697,7 @@ pub fn fit(text: &str, px: f32, max_w: f32) -> String {
         let chars: Vec<char> = text.chars().collect();
         let (mut lo, mut hi) = (0usize, chars.len());
         while lo < hi {
-            let mid = (lo + hi + 1) / 2;
+            let mid = (lo + hi).div_ceil(2);
             let t: String = chars[..mid].iter().collect::<String>().trim_end().to_string() + "...";
             if sw(&t, px) <= max_w {
                 lo = mid;
