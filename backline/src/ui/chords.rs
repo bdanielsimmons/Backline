@@ -1110,7 +1110,7 @@ impl App {
                     ptext(ui.painter(), Pos2::new(r.max.x - 6.0, r.min.y + 8.0), Align::Max, "MINE", 1.0, gold);
                     let i = *i;
                     resp.context_menu(|ui| {
-                        if crate::menu_item(ui, "Delete this grip") {
+                        if crate::menu_item(ui, "Delete This Grip") {
                             self.grip_ask = Some((key.to_string(), i));
                             ui.close_menu();
                         }

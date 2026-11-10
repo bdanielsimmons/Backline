@@ -479,7 +479,7 @@ impl App {
                     acts.push(Action::PlayFromThere(f.clone()));
                     ui.close_menu();
                 }
-                if !here && crate::menu_item(ui, "Copy here") {
+                if !here && crate::menu_item(ui, "Copy Here") {
                     acts.push(Action::CopyHere(vec![f.clone()]));
                     ui.close_menu();
                 }
@@ -515,7 +515,7 @@ impl App {
                 {
                     pick = Some(false);
                 }
-                if retro_btn_w(ui, "Save a copy here", 170.0, false)
+                if retro_btn_w(ui, "Save a Copy Here", 170.0, false)
                     .tip("Copies it into your Music folder and your files. Your playlists play it from here after that.")
                     .clicked()
                 {

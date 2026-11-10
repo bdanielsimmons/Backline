@@ -611,14 +611,14 @@ impl App {
                                 let link = track_link(&t, self.ext_of(t.id).as_ref());
                                 let tidal = self.ext_of(t.id).is_none();
                                 r.context_menu(|ui| {
-                                    if menu_item(ui, "Play now") {
+                                    if menu_item(ui, "Play Now") {
                                         acts.push(Action::PlayIndex(i));
                                         ui.close_menu();
                                     }
                                     queue_moves(ui, acts, i, cur);
                                     crate::song_items(ui, acts, &t, liked, tidal);
                                     link_item(ui, acts, link.clone());
-                                    if cur != Some(i) && menu_item(ui, "Remove from queue") {
+                                    if cur != Some(i) && menu_item(ui, "Remove from Queue") {
                                         acts.push(Action::Remove(i));
                                         ui.close_menu();
                                     }
@@ -691,17 +691,17 @@ impl App {
 /// nor ones already played).
 pub(crate) fn queue_moves(ui: &mut egui::Ui, acts: &mut Vec<Action>, i: usize, cur: Option<usize>) {
     if cur.is_some_and(|c| i > c) {
-        if menu_item(ui, "Move: play next") {
+        if menu_item(ui, "Move: Play Next") {
             acts.push(Action::QueueNext(i));
             ui.close_menu();
         }
-        if menu_item(ui, "Move: after queued songs") {
+        if menu_item(ui, "Move: After Queued Songs") {
             acts.push(Action::QueueLater(i));
             ui.close_menu();
         }
     }
     if let Some(c) = cur.filter(|c| i != *c) {
-        if menu_item(ui, "Move: above current song") {
+        if menu_item(ui, "Move: Above Current Song") {
             acts.push(Action::MoveQueue(i, c));
             ui.close_menu();
         }
@@ -852,12 +852,12 @@ impl App {
                     let on = |b: bool| if b { "  (on)" } else { "" };
                     match *name {
                         "PIN" => {
-                            if menu_item(ui, &format!("Always on top{}", on(self.pinned))) {
+                            if menu_item(ui, &format!("Always on Top{}", on(self.pinned))) {
                                 acts.push(Action::TogglePin);
                             }
                         }
                         "MINI" => {
-                            if menu_item(ui, "Mini player") {
+                            if menu_item(ui, "Mini Player") {
                                 acts.push(Action::ToggleMini);
                             }
                         }
@@ -874,12 +874,12 @@ impl App {
                             }
                         }
                         "OFFLINE" => {
-                            if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline" }) {
+                            if menu_item(ui, if self.go_offline { "Go Online" } else { "Go Offline" }) {
                                 acts.push(Action::GoOffline(!self.go_offline));
                             }
                         }
                         "GUIDE" => {
-                            if menu_item(ui, &format!("Skin button guide{}", on(self.wa_guide))) {
+                            if menu_item(ui, &format!("Skin Button Guide{}", on(self.wa_guide))) {
                                 self.wa_guide = !self.wa_guide;
                                 self.dirty = true;
                             }

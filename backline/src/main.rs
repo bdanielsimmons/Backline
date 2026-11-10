@@ -952,7 +952,7 @@ pub(crate) fn on_disk(id: i64) -> bool {
 fn goto_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, tidal: bool) {
     // your files, YouTube and SoundCloud songs can be renamed; a Tidal song's names are Tidal's, but its key and
     // tempo can be set (kept on this computer)
-    if menu_item(ui, if tidal { "Key and BPM..." } else { "Edit info..." }) {
+    if menu_item(ui, if tidal { "Key and BPM..." } else { "Edit Info..." }) {
         acts.push(Action::EditInfo(t.id, t.title.clone(), t.artist.clone()));
         ui.close_menu();
     }
@@ -996,16 +996,16 @@ fn loop_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: f32, both: bool, loop
         ui.close_menu();
     }
     if both {
-        if menu_item(ui, if loop_on { "Loop off" } else { "Loop on" }) {
+        if menu_item(ui, if loop_on { "Loop Off" } else { "Loop On" }) {
             acts.push(Action::LoopToggle);
             ui.close_menu();
         }
-        if menu_item(ui, "Clear loop") {
+        if menu_item(ui, "Clear Loop") {
             acts.push(Action::LoopClear);
             ui.close_menu();
         }
     }
-    if menu_item(ui, if practice { "Back to listening mode" } else { "Practice mode" }) {
+    if menu_item(ui, if practice { "Back to Listening Mode" } else { "Practice Mode" }) {
         acts.push(Action::TogglePractice);
         ui.close_menu();
     }
@@ -1857,7 +1857,7 @@ fn tracks_list(
                 song_items(ui, acts, t, liked.contains(&t.id), true);
                 link_item(ui, acts, track_link(t, None));
                 if let Some(uuid) = own {
-                    if menu_item(ui, "Remove from this playlist") {
+                    if menu_item(ui, "Remove from This Playlist") {
                         // (which time it is there: a song can be in a playlist twice)
                         let nth = tracks[..i].iter().filter(|x| x.id == t.id).count();
                         acts.push(Action::TidalListRemove(uuid.to_string(), t.id, nth));
@@ -1919,11 +1919,11 @@ fn track_link(t: &Track, ext: Option<&store::Ext>) -> Option<String> {
 /// artist, keep it in My Tracks, put it in a tune or a playlist. `queued`: it is in the queue already.
 pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, liked: bool, tidal: bool) {
     // a new copy of the song each time, even from the queue itself
-    if menu_item(ui, "Play next") {
+    if menu_item(ui, "Play Next") {
         acts.push(Action::PlayNext(t.clone()));
         ui.close_menu();
     }
-    if menu_item(ui, "Add to queue") {
+    if menu_item(ui, "Add to Queue") {
         acts.push(Action::Enqueue(t.clone()));
         ui.close_menu();
     }
@@ -1932,22 +1932,22 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::ToggleLike(t.clone()));
         ui.close_menu();
     }
-    if PRACTICE && menu_item(ui, "Add to a tune...") {
+    if PRACTICE && menu_item(ui, "Add to a Tune...") {
         acts.push(Action::PickTune(t.clone()));
         ui.close_menu();
     }
     // (a window of its own, to find one among many: you stay where you are)
-    if menu_item(ui, "Add to playlist...") {
+    if menu_item(ui, "Add to Playlist...") {
         acts.push(Action::PlaylistPicker(t.clone(), None));
         ui.close_menu();
     }
-    if menu_item(ui, "Copy name") {
+    if menu_item(ui, "Copy Name") {
         let who = t.artists_text();
         acts.push(Action::CopyName(if who.is_empty() { t.title.clone() } else { format!("{} - {}", who, t.title) }));
         ui.close_menu();
     }
     // (a file of yours, or a streamed song's saved copy: nothing to delete otherwise)
-    if on_disk(t.id) && menu_item(ui, "Delete from this computer") {
+    if on_disk(t.id) && menu_item(ui, "Delete from This Computer") {
         acts.push(Action::DeleteSong(t.clone()));
         ui.close_menu();
     }
@@ -1972,7 +1972,7 @@ fn link_item(ui: &mut egui::Ui, acts: &mut Vec<Action>, link: Option<String>) {
     if let Some(l) = link {
         let short: String =
             if l.chars().count() > 46 { format!("{}...", l.chars().take(44).collect::<String>()) } else { l.clone() };
-        if menu_item(ui, &format!("Copy link   {}", short.trim_start_matches("https://"))) {
+        if menu_item(ui, &format!("Copy Link   {}", short.trim_start_matches("https://"))) {
             acts.push(Action::CopyLink(l));
             ui.close_menu();
         }
@@ -2017,15 +2017,15 @@ fn cards_list(ui: &mut egui::Ui, cards: &[Card], tags: bool, head: bool, acts: &
             let songs = c.kind != Kind::Artist;
             if songs || !c.image.is_empty() {
                 r.context_menu(|ui| {
-                    if songs && menu_item(ui, "Play next") {
+                    if songs && menu_item(ui, "Play Next") {
                         acts.push(Action::QueueCard(c.clone(), true));
                         ui.close_menu();
                     }
-                    if songs && menu_item(ui, "Add to queue") {
+                    if songs && menu_item(ui, "Add to Queue") {
                         acts.push(Action::QueueCard(c.clone(), false));
                         ui.close_menu();
                     }
-                    if !c.image.is_empty() && menu_item(ui, "View art") {
+                    if !c.image.is_empty() && menu_item(ui, "View Art") {
                         acts.push(Action::ArtPreview(c.image.clone(), c.title.clone(), c.kind == Kind::Artist));
                         ui.close_menu();
                     }
@@ -2056,10 +2056,10 @@ fn play_buttons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, ref
 /// changed before it's made). Tidal only for songs that are all Tidal's, when you're logged in.
 fn save_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, tracks: &[Track], name: &str) {
     let tidal = !tracks.is_empty() && tracks.iter().all(|t| t.id > 0) && PL_MENU.with(|m| m.borrow().tidal_on);
-    if tidal && menu_item(ui, "Save as a Tidal playlist...") {
+    if tidal && menu_item(ui, "Save as a Tidal Playlist...") {
         acts.push(Action::PlaylistNewFrom(name.to_string(), tracks.to_vec(), true));
     }
-    if menu_item(ui, "Save as a Backline playlist...") {
+    if menu_item(ui, "Save as a Backline Playlist...") {
         acts.push(Action::PlaylistNewFrom(name.to_string(), tracks.to_vec(), false));
     }
 }
@@ -2170,10 +2170,10 @@ fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Action>, refre
         }
         egui::popup_below_widget(ui, id, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
             ui.set_min_width(170.0 * sc);
-            if menu_item(ui, "Play all next") {
+            if menu_item(ui, "Play All Next") {
                 acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
             }
-            if menu_item(ui, "Add all to queue") {
+            if menu_item(ui, "Add All to Queue") {
                 acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
             }
             if refresh && menu_item(ui, "Refresh from Tidal") {
@@ -2906,6 +2906,10 @@ struct App {
     wa_recent: Vec<(String, String)>,
     /// your favourite Winamp skins (md5, name), kept until you remove them (their files stay on disk)
     wa_favs: Vec<(String, String)>,
+    /// the skins page's tab: 0 browse the museum, 1 favorites, 2 worn lately
+    wa_tab: u8,
+    /// a skin shown big, before it goes on
+    wa_preview: Option<winamp::WaSkin>,
     /// the worn Winamp skin's own pictures, drawn for the player and the equalizer
     wa_art: Option<winamp_ui::WaTex>,
     /// the album view cover's border (right-click the cover): 0 none, 1 subtle, 2 the skin's colour
@@ -3901,6 +3905,8 @@ impl App {
             wa_worn: None,
             wa_recent: Vec::new(),
             wa_favs: Vec::new(),
+            wa_tab: 0,
+            wa_preview: None,
             wa_art: None,
             art_border: 1,
             cap_size: 1,
@@ -5146,7 +5152,19 @@ Second line: comp lighter here.", m.1.note);
             }
             Ok("sc") => app.sec = Sec::Sc,
             Ok("settings") => app.show_tl = true,
-            Ok("skins") => app.show_winamp = true,
+            // the skins page (BACKLINE_WA_TAB=1 favorites, 2 recent); skinpreview: the skin worn, shown big
+            Ok(w @ ("skins" | "skinpreview")) => {
+                app.apply(Action::WaOpen);
+                app.wa_tab = std::env::var("BACKLINE_WA_TAB").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+                if w == "skinpreview" {
+                    app.wa_preview = app.wa_worn.clone().map(|(md5, name)| winamp::WaSkin {
+                        shot: winamp::shot_url(&md5),
+                        md5,
+                        name,
+                        download: String::new(),
+                    });
+                }
+            }
             Ok("art") => app.art_view = true,
             Ok("timer") => {
                 app.practice = true;
@@ -5600,6 +5618,7 @@ Second line: comp lighter here.", m.1.note);
             || self.pl_dupe.is_some()
             || self.queue_ask.is_some()
             || self.queue_save.is_some()
+            || self.wa_preview.is_some()
             || self.peer_ask.is_some()
             || self.edit_info.is_some()
             || self.takes_open
@@ -6139,7 +6158,13 @@ Second line: comp lighter here.", m.1.note);
                         let (top, bot) = ci.pixels.split_at(half);
                         self.images.avg.insert(url.clone(), [mean(top), mean(bot)]);
                     }
-                    let tex = img.map(|ci| ctx.load_texture(&url, ci, egui::TextureOptions::LINEAR));
+                    // (a skin's screenshot is pixel art: crisp when shown bigger, smooth when smaller)
+                    let opts = if url.contains("webampskins.org/screenshots") {
+                        egui::TextureOptions { magnification: egui::TextureFilter::Nearest, ..egui::TextureOptions::LINEAR }
+                    } else {
+                        egui::TextureOptions::LINEAR
+                    };
+                    let tex = img.map(|ci| ctx.load_texture(&url, ci, opts));
                     self.images.trim();
                     self.images.map.insert(url, (tex, Instant::now()));
                 }
@@ -8170,6 +8195,7 @@ impl eframe::App for App {
         self.dupe_panel(ctx, &mut acts);
         self.queue_ask_panel(ctx);
         self.queue_save_panel(ctx, &mut acts);
+        self.wa_preview_panel(ctx, &mut acts);
         self.edit_info_panel(ctx);
         self.takes_panel(ctx);
         self.skin_loading_panel(ctx);

@@ -597,7 +597,7 @@ impl App {
                                     crate::player_win::queue_moves(ui, acts, i, cur);
                                     crate::song_items(ui, acts, t, liked, tidal);
                                     crate::link_item(ui, acts, link.clone());
-                                    if cur != Some(i) && crate::menu_item(ui, "Remove from queue") {
+                                    if cur != Some(i) && crate::menu_item(ui, "Remove from Queue") {
                                         acts.push(Action::Remove(i));
                                         ui.close_menu();
                                     }

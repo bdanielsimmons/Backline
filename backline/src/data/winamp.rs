@@ -74,6 +74,11 @@ pub fn list(query: &str, offset: usize) -> Result<Vec<WaSkin>, String> {
     Ok(parse_skins(&v))
 }
 
+/// The museum's screenshot of a skin (main window, equalizer and playlist, 275 x 348), by its md5.
+pub fn shot_url(md5: &str) -> String {
+    format!("https://r2.webampskins.org/screenshots/{}.png", md5)
+}
+
 pub fn dir() -> PathBuf {
     crate::api::config_dir().join("skins")
 }
@@ -258,6 +263,94 @@ pub struct Art {
     pub bal_is_vol: bool,
     /// the balance pictures that make a smooth run from the middle out (empty: all of them)
     pub bal_frames: Vec<usize>,
+    /// how the volume and balance knobs are drawn (a skin may have none, or one that melts into its strip)
+    pub vol_knob: Knob,
+    pub bal_knob: Knob,
+    /// the background the skin's font comes on: the band the deck's title sits on
+    pub text_bg: Option<Color32>,
+}
+
+/// How a volume or balance knob is drawn. A skin's own knob is always drawn as the artist made it (a small
+/// triangle is a knob too); help comes only where there is none and nothing else shows the level.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Knob {
+    /// the skin's own
+    Own,
+    /// none here, but the volume has one: borrowed (the balance)
+    Volume,
+    /// none, and a strip that stays the same: a slim marker in the skin's colours shows where it is
+    Mark,
+    /// none, and none wanted: the strip's own pictures show the level (a bar that fills, hearts that empty)
+    Strip,
+}
+
+/// A sheet's pixel (RGB) at x, y, if the sheet has it.
+fn px(s: &(String, [usize; 2], Vec<u8>), x: usize, y: usize) -> Option<[i32; 3]> {
+    if x >= s.1[0] || y >= s.1[1] {
+        return None;
+    }
+    let i = (y * s.1[0] + x) * 4;
+    Some([s.2[i] as i32, s.2[i + 1] as i32, s.2[i + 2] as i32])
+}
+
+/// Do a strip's level pictures change along the run (x from..to, 13 high, 15 apart: the first against a quarter,
+/// half, three quarters and all the way)? A strip that stays the same shows nothing by itself: only a knob can.
+fn strip_moves(s: &(String, [usize; 2], Vec<u8>), from: usize, to: usize) -> bool {
+    let n = ((s.1[1] + 2) / 15).min(28);
+    if n < 2 {
+        return false;
+    }
+    let last = n - 1;
+    [last / 4, last / 2, last * 3 / 4, last].iter().filter(|f| **f > 0).any(|&f| {
+        let (mut d, mut all) = (0, 0);
+        for y in 0..13 {
+            for x in from..to.min(s.1[0]) {
+                if let (Some(a), Some(b)) = (px(s, x, y), px(s, x, f * 15 + y)) {
+                    all += 1;
+                    if (0..3).map(|k| (a[k] - b[k]).abs()).sum::<i32>() > 60 {
+                        d += 1;
+                    }
+                }
+            }
+        }
+        all > 0 && d * 20 > all
+    })
+}
+
+/// Has a sheet a knob of its own (Winamp's 14 x 11 at y 422, x 15, or the rows of it the skin has; many skins
+/// draw a shorter one, a triangle a few pixels high) - not one flat colour the same as the strip it slides over
+/// (`strip_x`: where the knob sits on the middle level picture)?
+fn own_knob(s: &(String, [usize; 2], Vec<u8>), strip_x: usize) -> bool {
+    if s.1[1] < 425 || s.1[0] < 29 {
+        return false;
+    }
+    let rows = s.1[1].min(433) - 422;
+    let knob: Vec<[i32; 3]> = (422..422 + rows).flat_map(|y| (15..29).filter_map(move |x| px(s, x, y))).collect();
+    if knob.iter().any(|c| (0..3).any(|k| (c[k] - knob[0][k]).abs() >= 12)) {
+        return true;
+    }
+    // (one flat colour: a plain block is a knob too, unless it's the strip's own colour - nothing to see)
+    px(s, strip_x + 7, 14 * 15 + 6).is_some_and(|b| (0..3).map(|k| (knob[0][k] - b[k]).abs()).sum::<i32>() > 60)
+}
+
+/// How each of the volume and balance knobs is drawn: the skin's own where it has one; none where the strip shows
+/// the level by itself; else the volume's knob borrowed (for the balance), else a slim marker.
+fn knobs(sheets: &[(String, [usize; 2], Vec<u8>)]) -> (Knob, Knob) {
+    let get = |n: &str| sheets.iter().find(|s| s.0 == n);
+    let vol = match get("volume") {
+        Some(s) if own_knob(s, 27) => Knob::Own,
+        Some(s) if strip_moves(s, 0, 68) => Knob::Strip,
+        _ => Knob::Mark,
+    };
+    // (no balance picture: the volume one stands in for it, knob and all)
+    let bal = match get("balance") {
+        None => vol,
+        Some(s) if own_knob(s, 21) => Knob::Own,
+        Some(s) if strip_moves(s, 9, 47) => Knob::Strip,
+        _ if vol == Knob::Own => Knob::Volume,
+        _ => Knob::Mark,
+    };
+    (vol, bal)
 }
 
 /// The balance pictures to show, from the middle out: a few stray ones that look nothing like the run around them
@@ -377,6 +470,7 @@ pub fn load(wsz: &[u8]) -> Result<(Pal, Art), String> {
     let pal = palette_from(&f)?;
     let mut sheets = Vec::new();
     let mut graph = Vec::new();
+    let mut text_bg = None;
     // pictures a skin leaves out are borrowed, as Winamp borrows from its base skin: from Backline's own skin made in
     // this skin's colours, so a skin with no equalizer or playlist still gets whole ones that match it
     let lacks = |n: &str| !f.contains_key(&format!("{}.bmp", n)) && !(n == "numbers" && f.contains_key("nums_ex.bmp"));
@@ -392,8 +486,9 @@ pub fn load(wsz: &[u8]) -> Result<(Pal, Art), String> {
         let mut img = img.to_rgba8();
         if name == "text" && img.width() > 150 {
             // the font comes on a solid background (the colour of the space character): make it see-through,
-            // so the letters sit on anything
+            // so the letters sit on anything (the deck paints that colour back behind its title, as Winamp shows it)
             let bg = *img.get_pixel(150, 0);
+            text_bg = Some(Color32::from_rgb(bg[0], bg[1], bg[2]));
             for px in img.pixels_mut() {
                 if px[0] == bg[0] && px[1] == bg[1] && px[2] == bg[2] {
                     px[3] = 0;
@@ -452,7 +547,8 @@ pub fn load(wsz: &[u8]) -> Result<(Pal, Art), String> {
     let eqpl_ink = faint_eqpl(&sheets);
     let bal_is_vol = balance_is_volume(&sheets);
     let bal_frames = balance_frames(&sheets);
-    Ok((pal, Art { sheets, vis, graph, font, eqpl_ink, bal_is_vol, bal_frames }))
+    let (vol_knob, bal_knob) = knobs(&sheets);
+    Ok((pal, Art { sheets, vis, graph, font, eqpl_ink, bal_is_vol, bal_frames, vol_knob, bal_knob, text_bg }))
 }
 
 /// A Backline palette from a skin file.
@@ -562,6 +658,18 @@ mod tests {
         }
     }
 
+    /// One skin's volume and balance decisions ($BACKLINE_SKIN = a .wsz; run with --ignored --nocapture).
+    #[test]
+    #[ignore]
+    fn print_sliders() {
+        let Ok(f) = std::env::var("BACKLINE_SKIN") else { return };
+        let (_, art) = load(&std::fs::read(f).unwrap()).unwrap();
+        let size = |n: &str| art.sheets.iter().find(|s| s.0 == n).map(|s| s.1);
+        println!("volume {:?} balance {:?}", size("volume"), size("balance"));
+        println!("bal_is_vol {} bal_frames {:?}", art.bal_is_vol, art.bal_frames);
+        println!("vol_knob {:?} bal_knob {:?}", art.vol_knob, art.bal_knob);
+    }
+
     /// Every skin in $BACKLINE_SKINS (a folder of .wsz): what each lacks of the windows Backline draws, and how bright
     /// its big areas come out (run with --ignored --nocapture).
     #[test]
@@ -571,6 +679,7 @@ mod tests {
         let need =
             ["main", "titlebar", "cbuttons", "eqmain", "pledit", "text", "numbers", "posbar", "volume", "shufrep", "playpaus"];
         let (mut n, mut bad) = (0, 0);
+        let mut knobs: std::collections::BTreeMap<String, usize> = Default::default();
         for e in std::fs::read_dir(dir).unwrap().flatten() {
             let b = std::fs::read(e.path()).unwrap();
             n += 1;
@@ -580,6 +689,16 @@ mod tests {
                     println!("FAIL {:?}: {}", e.file_name(), err);
                 }
                 Ok((pal, art)) => {
+                    // (how each knob is drawn, and the EQ / PL buttons helped: counted across all the skins)
+                    *knobs.entry(format!("volume {:?}", art.vol_knob).split('(').next().unwrap_or("").to_string()).or_insert(0) += 1;
+                    *knobs.entry(format!("balance {:?}", art.bal_knob).split('(').next().unwrap_or("").to_string()).or_insert(0) += 1;
+                    let odd = |k: Knob| k == Knob::Mark;
+                    if odd(art.vol_knob) || odd(art.bal_knob) {
+                        println!("KNOB {:?} vol {:?} bal {:?}", e.file_name(), art.vol_knob, art.bal_knob);
+                    }
+                    if art.eqpl_ink.is_some() {
+                        *knobs.entry("EQ/PL buttons outlined".to_string()).or_insert(0) += 1;
+                    }
                     let have: Vec<&str> = art.sheets.iter().map(|s| s.0.as_str()).collect();
                     let miss: Vec<&str> = need
                         .iter()
@@ -612,6 +731,9 @@ mod tests {
             }
         }
         println!("{} skins, {} with something to look at", n, bad);
+        for (k, v) in &knobs {
+            println!("  {:28} {}", k, v);
+        }
     }
     use super::*;
     use std::io::Write;

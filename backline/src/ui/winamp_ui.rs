@@ -263,7 +263,7 @@ impl App {
             // a menu's width, however wide the things in it would like to be
             ui.set_max_width(320.0 * crate::font::ui_scale());
             // the menu can be taller than the mini player: a way out at the top, and it scrolls in what room there is
-            if menu_item(ui, "x  Close this menu") {
+            if menu_item(ui, "x  Close This Menu") {
                 ui.memory_mut(|m| m.close_popup());
             }
             let room = (ui.ctx().screen_rect().max.y - ui.cursor().min.y - 12.0).max(80.0);
@@ -359,7 +359,11 @@ impl App {
             }
             (None, None) => "BACKLINE - A RETRO PLAYER FOR TIDAL".to_string(),
         };
-        let marquee = pl.r(111.0, 24.0, 154.0, 6.0);
+        // (where Winamp writes it: row 27, on the font's own band)
+        let marquee = pl.r(111.0, 27.0, 154.0, 6.0);
+        if let Some(bg) = t.text_bg {
+            p.rect_filled(marquee, 0.0, bg);
+        }
         let w = title.chars().count() as f32 * 5.0;
         let shift = if w > 154.0 && hint.is_none() && !crate::skin::calm() {
             ((ui.input(|i| i.time) as f32 * 22.0) % (w + 25.0)).floor()
@@ -368,9 +372,9 @@ impl App {
         };
         let clip = p.with_clip_rect(marquee);
         // the title
-        wa_text(&t, &clip, pl, 111.0 - shift, 24.0, &title);
+        wa_text(&t, &clip, pl, 111.0 - shift, 27.0, &title);
         if w > 154.0 && shift > 0.0 {
-            wa_text(&t, &clip, pl, 111.0 - shift + w + 25.0, 24.0, &title);
+            wa_text(&t, &clip, pl, 111.0 - shift + w + 25.0, 27.0, &title);
             // it moves one skin pixel at a time (22 a second): redrawn that often, not every frame (and not at all
             // when no one can see it)
             if crate::onscreen::seen() {
@@ -379,6 +383,10 @@ impl App {
         }
         // kbps, kHz, mono / stereo
         if active {
+            if let Some(bg) = t.text_bg {
+                p.rect_filled(pl.r(111.0, 43.0, 15.0, 6.0), 0.0, bg);
+                p.rect_filled(pl.r(156.0, 43.0, 10.0, 6.0), 0.0, bg);
+            }
             wa_text(&t, &p, pl, 111.0, 43.0, &format!("{:>3}", self.kbps.min(999)));
             wa_text(&t, &p, pl, 156.0, 43.0, &format!("{:>2}", (rate / 1000).min(99)));
         }
@@ -416,10 +424,8 @@ impl App {
         t.spr(&p, "volume", (0.0, frame * 15.0, 68.0, 13.0), vr);
         let vh = hit(ui, "volume", vr, true)
             .tip(format!("Volume {}%. Right-click for the sound output.", (self.volume * 100.0).round()));
-        if t.size("volume").map_or(false, |s| s.y >= 433.0) {
-            let src = if vh.dragged() { (0.0, 422.0, 14.0, 11.0) } else { (15.0, 422.0, 14.0, 11.0) };
-            t.spr(&p, "volume", src, pl.r(107.0 + self.volume * 54.0, 58.0, 14.0, 11.0));
-        }
+        // the knob: the skin's own, or one made to fit where it has none (or one that can't be seen)
+        t.knob(&p, t.vol_knob, "volume", pl.r(107.0 + self.volume * 54.0, 58.0, 14.0, 11.0), vh.dragged(), vr);
         if vh.dragged() || vh.clicked() {
             if let Some(pp) = vh.interact_pointer_pos() {
                 // the knob's middle follows the mouse, as in Winamp
@@ -443,6 +449,18 @@ impl App {
             let edge = 7.0 + f / (frames(bal) - 1.0).max(1.0) * 54.0;
             let x = (edge - (7.0 + at * 24.0)).clamp(0.0, 30.0).round();
             t.spr(&p, bal, (x, f * 15.0, 38.0, 13.0), br);
+        } else if t.bal_knob == crate::winamp::Knob::Strip {
+            // no knob, and pictures that change: they are the gauge. Read left to right - full at the right,
+            // emptying as it goes left - so it shows where the balance is (Winamp's mirror, the same both ways,
+            // can't)
+            let at = (self.balance + 100) as f32 / 200.0;
+            let mut f = ((1.0 - at) * (frames(bal) - 1.0)).round();
+            if bal == "balance" {
+                if let Some(k) = t.bal_frames.iter().min_by_key(|k| (**k as f32 - f).abs() as i32) {
+                    f = *k as f32;
+                }
+            }
+            t.spr(&p, bal, (9.0, f * 15.0, 38.0, 13.0), br);
         } else {
             let mut bframe = (self.balance.unsigned_abs() as f32 / 100.0 * (frames(bal) - 1.0)).round();
             // only the pictures of the smooth run (the nearest of them)
@@ -460,10 +478,7 @@ impl App {
             b if b < 0 => format!("Balance: {}% left. Double-click to center.", -b),
             b => format!("Balance: {}% right. Double-click to center.", b),
         });
-        if t.size(bal).map_or(false, |s| s.y >= 433.0) {
-            let src = if bh.dragged() { (0.0, 422.0, 14.0, 11.0) } else { (15.0, 422.0, 14.0, 11.0) };
-            t.spr(&p, bal, src, pl.r(177.0 + (self.balance + 100) as f32 / 200.0 * 24.0, 58.0, 14.0, 11.0));
-        }
+        t.knob(&p, t.bal_knob, bal, pl.r(177.0 + (self.balance + 100) as f32 / 200.0 * 24.0, 58.0, 14.0, 11.0), bh.dragged(), br);
         if bh.hovered() || bh.dragged() {
             say = Some(match self.balance {
                 0 => "BALANCE: CENTER".to_string(),
@@ -638,39 +653,47 @@ impl App {
                 p.rect_stroke(front, 0.0, ink);
             }
         }
-        // where the buttons are: outlined and named for a moment after a skin is put on, and while Alt is held over
-        // the player - some skins hide them in their picture
+        // where the buttons are - some skins hide them in their picture, or paint ones that do nothing: thin
+        // outlines round every real one while the pointer is over the player (the skin as drawn otherwise), and
+        // their names too for a moment after a skin is put on, while Alt is held, or with the Button Guide on
         {
             let deck = Rect::from_min_size(pl.o, Vec2::new(275.0, 116.0) * pl.s);
             let (now, alt) = ui.input(|i| (i.time, i.modifiers.alt));
-            let show = self.wa_guide || now < self.wa_map_until || (alt && ui.rect_contains_pointer(deck));
-            let a = ui.ctx().animate_bool_with_time(id.with("button_map"), show, 0.3);
+            let over = ui.rect_contains_pointer(deck);
+            let named = self.wa_guide || now < self.wa_map_until || (alt && over);
+            let a = ui.ctx().animate_bool_with_time(id.with("button_map"), named || over, 0.15);
+            let names = ui.ctx().animate_bool_with_time(id.with("button_names"), named, 0.3);
             if a > 0.0 {
                 if now < self.wa_map_until {
                     ui.ctx().request_repaint();
                 }
                 let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with("button_map_layer")));
                 let spots: [(&str, (f32, f32, f32, f32)); 13] = [
-                    ("PREV", (16.0, 88.0, 23.0, 18.0)),
-                    ("PLAY", (39.0, 88.0, 23.0, 18.0)),
-                    ("PAUSE", (62.0, 88.0, 23.0, 18.0)),
-                    ("STOP", (85.0, 88.0, 23.0, 18.0)),
-                    ("NEXT", (108.0, 88.0, 22.0, 18.0)),
-                    ("OPEN", (136.0, 89.0, 22.0, 16.0)),
-                    ("SHUFFLE", (164.0, 89.0, 47.0, 15.0)),
-                    ("REPEAT", (210.0, 89.0, 28.0, 15.0)),
+                    ("Previous", (16.0, 88.0, 23.0, 18.0)),
+                    ("Play", (39.0, 88.0, 23.0, 18.0)),
+                    ("Pause", (62.0, 88.0, 23.0, 18.0)),
+                    ("Stop", (85.0, 88.0, 23.0, 18.0)),
+                    ("Next", (108.0, 88.0, 22.0, 18.0)),
+                    ("Open", (136.0, 89.0, 22.0, 16.0)),
+                    ("Shuffle", (164.0, 89.0, 47.0, 15.0)),
+                    ("Repeat", (210.0, 89.0, 28.0, 15.0)),
                     ("EQ", (219.0, 58.0, 23.0, 12.0)),
                     ("PL", (242.0, 58.0, 23.0, 12.0)),
-                    ("VOLUME", (107.0, 57.0, 68.0, 13.0)),
-                    ("BAL", (177.0, 57.0, 38.0, 13.0)),
-                    ("SEEK", (16.0, 72.0, 248.0, 10.0)),
+                    ("Volume", (107.0, 57.0, 68.0, 13.0)),
+                    ("Balance", (177.0, 57.0, 38.0, 13.0)),
+                    ("Seek", (16.0, 72.0, 248.0, 10.0)),
                 ];
                 let font = egui::FontId::monospace((5.5 * pl.s).max(9.0));
                 for (name, (x, y, w, h)) in spots {
                     let r = pl.r(x, y, w, h);
-                    // dark under light, so it shows on any skin
-                    p.rect_stroke(r, 0.0, Stroke::new(3.0_f32, Color32::BLACK.gamma_multiply(0.6 * a)));
-                    p.rect_stroke(r, 0.0, Stroke::new(1.5_f32, Color32::WHITE.gamma_multiply(0.9 * a)));
+                    // dark under light, so it shows on any skin (finer when it's only the pointer over the player)
+                    let fine = 1.0 - 0.4 * (1.0 - names);
+                    p.rect_stroke(r, 1.0, Stroke::new(3.0_f32 * fine, Color32::BLACK.gamma_multiply(0.55 * a)));
+                    p.rect_stroke(r, 1.0, Stroke::new(1.5_f32 * fine, Color32::WHITE.gamma_multiply(0.85 * a)));
+                    if names <= 0.0 {
+                        continue;
+                    }
+                    let a = names;
                     let g = p.layout_no_wrap(name.to_string(), font.clone(), Color32::WHITE.gamma_multiply(a));
                     let bg = Rect::from_center_size(r.center(), g.size() + Vec2::new(4.0, 0.0));
                     p.rect_filled(bg, 2.0, Color32::from_black_alpha((190.0 * a) as u8));
@@ -870,7 +893,7 @@ impl App {
     pub(crate) fn output_menu(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         para(ui, "SOUND OUTPUT", pal().ink2);
         let mark = |on: bool| if on { "> " } else { "   " };
-        if menu_item(ui, &format!("{}System default", mark(self.out_device.is_none()))) {
+        if menu_item(ui, &format!("{}System Default", mark(self.out_device.is_none()))) {
             acts.push(Action::SetDevice(None));
             ui.close_menu();
         }
@@ -1148,7 +1171,7 @@ impl App {
                 // the same as every song's menu: album / artist, My Tracks, tunes, playlists (Backline and Tidal)
                 crate::song_items(ui, acts, &tr, liked, tidal);
                 link_item(ui, acts, link.clone());
-                if menu_item(ui, "Remove from the queue") {
+                if menu_item(ui, "Remove from the Queue") {
                     acts.push(Action::Remove(i));
                     ui.close_menu();
                 }
@@ -1229,10 +1252,10 @@ impl App {
             ui.set_min_width(220.0);
             let before = acts.len();
             para(ui, "PLAYLISTS", pal().ink2);
-            if menu_item(ui, "Save the queue as a playlist") {
+            if menu_item(ui, "Save the Queue as a Playlist") {
                 acts.push(Action::PlaylistFromQueue);
             }
-            if menu_item(ui, "New playlist...") {
+            if menu_item(ui, "New Playlist...") {
                 acts.push(Action::PlaylistNew(None));
             }
             for (i, pl) in self.store.playlists.iter().enumerate().take(12) {

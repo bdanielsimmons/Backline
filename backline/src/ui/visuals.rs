@@ -1211,7 +1211,7 @@ impl App {
             ui.close_menu();
         }
         let mark = if self.pop.is_some() { "* " } else { "  " };
-        if crate::popout::CAN && crate::menu_item(ui, &format!("{}Pop out", mark)) {
+        if crate::popout::CAN && crate::menu_item(ui, &format!("{}Pop Out", mark)) {
             self.pop_toggle();
             ui.close_menu();
         }

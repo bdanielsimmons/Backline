@@ -1142,7 +1142,7 @@ impl App {
                     acts.push(Action::CmImport(true));
                 }
                 // (copy one from there to send it)
-                if crate::menu_item(ui, "Open the transcriptions folder") {
+                if crate::menu_item(ui, "Open the Transcriptions Folder") {
                     open = true;
                 }
             });
@@ -2282,7 +2282,7 @@ impl App {
                         open = Some(i);
                     }
                     r.context_menu(|ui| {
-                        if menu_item(ui, "Delete this move") {
+                        if menu_item(ui, "Delete This Move") {
                             drop = Some(i);
                             ui.close_menu();
                         }

@@ -2,6 +2,32 @@
 
 use super::*;
 
+/// A small rounded tag on a picture, its bottom-left corner at `at`.
+fn tag(p: &egui::Painter, at: Pos2, text: &str, bg: Color32, fg: Color32) {
+    let sc = crate::font::ui_scale();
+    let w = crate::font::text_w(text, 1.0) + 16.0 * sc;
+    let r = Rect::from_min_max(Pos2::new(at.x, at.y - 20.0 * sc), Pos2::new(at.x + w, at.y));
+    p.rect_filled(r, r.height() / 2.0, bg);
+    crate::font::ptext(p, r.center(), Align::Center, text, 1.0, fg);
+}
+
+/// A five-pointed star of radius `r`: filled with `fill` (None: an outline only), edged in `edge`.
+fn star_mark(p: &egui::Painter, c: Pos2, r: f32, fill: Option<Color32>, edge: Color32) {
+    let pts: Vec<Pos2> = (0..10)
+        .map(|k| {
+            let a = -std::f32::consts::FRAC_PI_2 + k as f32 * std::f32::consts::PI / 5.0;
+            let rr = if k % 2 == 0 { r } else { r * 0.45 };
+            c + Vec2::new(a.cos() * rr, a.sin() * rr)
+        })
+        .collect();
+    if let Some(f) = fill {
+        for k in 0..10 {
+            p.add(egui::Shape::convex_polygon(vec![c, pts[k], pts[(k + 1) % 10]], f, Stroke::NONE));
+        }
+    }
+    p.add(egui::Shape::closed_line(pts, Stroke::new(1.4_f32, edge)));
+}
+
 impl App {
     pub(crate) fn login_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let full = ui.max_rect();
@@ -147,7 +173,7 @@ impl App {
                         }
                         if let Some(i) = k.checked_sub(EQ_PRESETS.len()) {
                             r.context_menu(|ui| {
-                                if menu_item(ui, "Delete preset") {
+                                if menu_item(ui, "Delete Preset") {
                                     drop = Some(i);
                                     ui.close_menu();
                                 }
@@ -601,180 +627,314 @@ impl App {
         ui.add_space(20.0);
     }
 
-    /// Winamp skins from the Skin Museum: search, a grid of screenshots, click one to wear it.
+    /// Winamp skins from the Skin Museum: the one you wear (keep it, or back to Backline's look), then BROWSE (search
+    /// the museum, its best when nothing's typed, more as you scroll), FAVORITES and RECENT, each a grid of
+    /// screenshots. A click shows the skin big first (`wa_preview_panel`); WEAR IT puts it on.
     pub(crate) fn winamp_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let sc = crate::font::ui_scale();
         ui.add_space(6.0);
         title_line(ui, "WINAMP SKINS", 3.0, pal().ink);
-        // under the title: the ones worn lately and your favourites, each a drop-down (a little darker, set apart)
-        {
-            let favs = self.wa_favs.clone();
-            if !self.wa_recent.is_empty() || !favs.is_empty() {
-                ui.horizontal_wrapped(|ui| {
-                    // your favourites: kept for good, until you take them off
-                    if !favs.is_empty() {
-                        let fd = retro_btn(ui, "FAVORITES  v", true).tip("Your favorite skins.");
-                        let fmenu = ui.id().with("wa_favs");
-                        if fd.clicked() {
-                            ui.memory_mut(|m| m.toggle_popup(fmenu));
-                        }
-                        let worn_now = self.wa_worn.as_ref().map(|w| w.0.clone());
-                        egui::popup::popup_below_widget(ui, fmenu, &fd, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                            ui.set_min_width(260.0);
-                            for (md5, name) in favs.clone() {
-                                ui.horizontal(|ui| {
-                                    if retro_btn_w(ui, "X", 24.0, false).tip("Remove from favorites").clicked() {
-                                        acts.push(Action::WaFav(md5.clone(), name.clone()));
-                                    }
-                                    let on = worn_now.as_deref() == Some(md5.as_str());
-                                    if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {
-                                        acts.push(Action::WaApply(crate::winamp::WaSkin {
-                                            md5,
-                                            name,
-                                            shot: String::new(),
-                                            download: String::new(),
-                                        }));
-                                        ui.memory_mut(|m| m.close_popup());
-                                    }
-                                });
-                            }
-                        });
-                    }
-                    if self.wa_recent.is_empty() {
-                        return;
-                    }
-                    let dd = retro_btn(ui, "RECENT  v", true).tip("Recently used skins.");
-                    let menu = ui.id().with("worn_lately");
-                    if dd.clicked() {
-                        ui.memory_mut(|m| m.toggle_popup(menu));
-                    }
-                    let worn_now = self.wa_worn.as_ref().map(|w| w.0.clone());
-                    egui::popup::popup_below_widget(ui, menu, &dd, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                        ui.set_min_width(260.0);
-                        for (md5, name) in self.wa_recent.clone() {
-                            ui.horizontal(|ui| {
-                                if retro_btn_w(ui, "X", 24.0, false).tip("Remove from this list").clicked() {
-                                    acts.push(Action::WaForget(md5.clone()));
-                                }
-                                let on = worn_now.as_deref() == Some(md5.as_str());
-                                if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {
-                                    acts.push(Action::WaApply(crate::winamp::WaSkin {
-                                        md5,
-                                        name,
-                                        shot: String::new(),
-                                        download: String::new(),
-                                    }));
-                                    ui.memory_mut(|m| m.close_popup());
-                                }
-                            });
-                        }
-                    });
-                });
-            }
-        }
-        para(ui, "From the Winamp Skin Museum. Click a skin to apply it. Use the back arrow to go back.", pal().ink2);
-        if let Some((md5, name)) = self.wa_worn.clone().filter(|w| !w.0.starts_with("gen:")) {
-            ui.horizontal(|ui| {
-                para(ui, &format!("CURRENT: {}", name.to_uppercase()), pal().ink);
-                let fav = self.wa_favs.iter().any(|f| f.0 == md5);
-                if retro_btn(ui, if fav { "* FAVORITE" } else { "+ FAVORITE" }, fav)
-                    .tip(if fav { "In your favorites. Click to remove." } else { "Add to favorites" })
-                    .clicked()
-                {
-                    acts.push(Action::WaFav(md5.clone(), name.clone()));
-                }
-            });
-        } else if let Some((_, name)) = &self.wa_worn {
-            para(ui, &format!("CURRENT: {}", name.to_uppercase()), pal().ink);
-        }
-        ui.horizontal_wrapped(|ui| {
-            let go_w = 54.0;
-            // (measured against what shows, so GO and BEST never end up past the panel's edge)
-            let seen = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width());
-            let w = (seen - go_w - 70.0 - 3.0 * ui.spacing().item_spacing.x - 12.0).max(120.0);
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-            let o = crate::views::field(
-                ui,
-                &mut self.ed,
-                crate::tools::F_WINAMP,
-                &mut self.wa_q,
-                rect,
-                "Search skins (zelda, metal, anime)",
-                false,
-            );
-            if o.enter || retro_btn_w(ui, "GO", go_w, false).clicked() {
-                acts.push(Action::WaSearch);
-            }
-            if retro_btn_w(ui, "BEST", 70.0, false).tip("The museum's favorites.").clicked() {
-                self.wa_q.clear();
-                acts.push(Action::WaSearch);
-            }
-        });
+        para(ui, "From the Winamp Skin Museum.", pal().ink2);
+        self.wa_wearing(ui, acts);
         ui.add_space(8.0);
-        let list = self.wa_list.clone();
+        let tabs = [
+            "Browse".to_string(),
+            format!("Favorites  {}", self.wa_favs.len()),
+            format!("Recent  {}", self.wa_recent.len()),
+        ];
+        let tabs: Vec<&str> = tabs.iter().map(|t| t.as_str()).collect();
+        if let Some(k) = crate::segments(ui, &tabs, self.wa_tab as usize) {
+            self.wa_tab = k as u8;
+        }
+        ui.add_space(8.0);
+        if self.wa_tab == 0 {
+            self.wa_search_row(ui, acts);
+            ui.add_space(4.0);
+        }
+        let q = self.wa_q.trim().to_string();
+        let caption = match self.wa_tab {
+            1 => "Kept until you take them off. Click one to see it big.".to_string(),
+            2 => "The skins you wore lately, newest first.".to_string(),
+            _ if q.is_empty() => "The museum's best. More load as you scroll.".to_string(),
+            _ => format!("Skins matching \"{}\".", q),
+        };
+        crate::views::dim_line(ui, &caption, 1.0, pal().ink2);
+        ui.add_space(6.0);
+        let list = self.wa_tab_list();
         let worn = self.wa_worn.as_ref().map(|w| w.0.clone());
+        let tab = self.wa_tab;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            // cards: the screenshot (main window, equalizer and playlist) and the name
-            let (cw, ch) = (150.0, 150.0 * 348.0 / 275.0);
-            let gap = 12.0;
-            let seen = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width());
-            let per_row = ((seen + gap) / (cw + gap)).floor().max(1.0) as usize;
+            // cards as wide as the row allows (no gap left at the right), 150 at least
+            let gap = 16.0 * sc;
+            let seen = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width()) - 4.0;
+            let per_row = ((seen + gap) / (150.0 * sc + gap)).floor().max(1.0) as usize;
+            let cw = ((seen - gap * (per_row - 1) as f32) / per_row as f32).min(260.0 * sc);
             for row in list.chunks(per_row) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = gap;
                     for s in row {
-                        let (cell, r) = ui.allocate_exact_size(Vec2::new(cw, ch + 22.0), Sense::click());
-                        let r = r
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .tip(format!("{}. Click to apply, right-click to add to favorites.", s.name));
-                        let fav = self.wa_favs.iter().any(|f| f.0 == s.md5);
-                        r.context_menu(|ui| {
-                            if menu_item(ui, if fav { "Remove from favorites" } else { "Add to favorites" }) {
-                                acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
-                                ui.close_menu();
-                            }
-                        });
-                        let shot = Rect::from_min_size(cell.min, Vec2::new(cw, ch));
-                        match self.images.get(&s.shot) {
-                            Some(id) => {
-                                egui::Image::new(egui::load::SizedTexture::new(id, shot.size())).paint_at(ui, shot);
-                            }
-                            None => {
-                                ui.painter().rect_filled(shot, 0.0, pal().lcd);
-                                ui.ctx().request_repaint();
-                            }
-                        }
-                        let on = worn.as_deref() == Some(s.md5.as_str());
-                        if r.hovered() || on {
-                            ui.painter().rect_stroke(
-                                shot.expand(2.0),
-                                0.0,
-                                Stroke::new(2.0_f32, if on { pal().red } else { pal().ink }),
-                            );
-                        }
-                        let label = crate::font::fit(&s.name, 1.0, cw);
-                        crate::font::ptext(
-                            ui.painter(),
-                            Pos2::new(cell.min.x, cell.max.y - 9.0),
-                            Align::Min,
-                            &label,
-                            1.0,
-                            pal().ink2,
-                        );
-                        if r.clicked() {
-                            acts.push(Action::WaApply(s.clone()));
-                        }
+                        self.wa_card(ui, acts, s, cw, worn.as_deref() == Some(s.md5.as_str()), tab);
                     }
                 });
                 ui.add_space(gap);
             }
-            if self.wa_busy {
-                para(ui, "LOADING SKINS...", pal().ink2);
-            } else if list.is_empty() {
-                para(ui, "No skins found. Try another word, or BEST.", pal().ink2);
-            } else if !self.wa_end && retro_btn(ui, "MORE SKINS", false).clicked() {
-                acts.push(Action::WaMore);
+            match tab {
+                1 if list.is_empty() => para(ui, "No favorites yet. Point at a skin and click its star.", pal().ink2),
+                2 if list.is_empty() => para(ui, "The skins you wear show up here.", pal().ink2),
+                0 if self.wa_busy => para(ui, "Loading skins...", pal().ink2),
+                0 if list.is_empty() => para(ui, "No skins found. Try another word, or clear the search for the museum's best.", pal().ink2),
+                0 if !self.wa_end => {
+                    // the end of the grid in sight: the next page comes
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
+                    if ui.is_rect_visible(r) {
+                        acts.push(Action::WaMore);
+                    }
+                }
+                _ => {}
+            }
+            ui.add_space(20.0);
+        });
+    }
+
+    /// The skins the tab shows: the museum's (BROWSE), your favorites, or the ones worn lately.
+    pub(crate) fn wa_tab_list(&self) -> Vec<crate::winamp::WaSkin> {
+        let kept = |l: &[(String, String)]| -> Vec<crate::winamp::WaSkin> {
+            l.iter()
+                .map(|(md5, name)| crate::winamp::WaSkin {
+                    md5: md5.clone(),
+                    name: name.clone(),
+                    shot: crate::winamp::shot_url(md5),
+                    download: String::new(),
+                })
+                .collect()
+        };
+        match self.wa_tab {
+            1 => kept(&self.wa_favs),
+            2 => kept(&self.wa_recent),
+            _ => self.wa_list.clone(),
+        }
+    }
+
+    /// WEARING: the museum skin on now (its picture and name), a star to keep it, and the way back to Backline's
+    /// own look. Its buttons wrap under it when the page is narrow, never off the edge.
+    fn wa_wearing(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let Some((md5, name)) = self.wa_worn.clone().filter(|w| !w.0.starts_with("gen:")) else { return };
+        let sc = crate::font::ui_scale();
+        let fav = self.wa_favs.iter().any(|f| f.0 == md5);
+        ui.add_space(4.0);
+        egui::Frame::none()
+            .fill(pal().row_alt)
+            .stroke(Stroke::new(1.0_f32, pal().groove))
+            .rounding(10.0)
+            .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(14.0, 8.0);
+                    let th = 64.0 * sc;
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(th * 275.0 / 348.0, th), Sense::hover());
+                    match self.images.get(&crate::winamp::shot_url(&md5)) {
+                        Some(id) => {
+                            egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
+                        }
+                        None => {
+                            ui.painter().rect_filled(r, 3.0, pal().lcd);
+                        }
+                    }
+                    let nw = (crate::font::text_w(&name, 2.4) + 10.0).clamp(140.0, 360.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(nw);
+                        crate::views::dim_line(ui, "WEARING", 1.0, pal().ink2);
+                        let (r, _) = ui.allocate_exact_size(Vec2::new(nw, 26.0 * sc), Sense::hover());
+                        crate::font::ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &name, 2.4, nw - 8.0, pal().ink);
+                    });
+                    if retro_btn(ui, if fav { "In Favorites" } else { "Add to Favorites" }, fav)
+                        .tip(if fav { "In your favorites. Click to take it out." } else { "Keep it in your favorites." })
+                        .clicked()
+                    {
+                        acts.push(Action::WaFav(md5.clone(), name.clone()));
+                    }
+                    if retro_btn(ui, "Backline Look", false).tip("Take the skin off: Backline's own look.").clicked() {
+                        acts.push(Action::Theme(crate::skin::SKIN.load(std::sync::atomic::Ordering::Relaxed) % crate::skin::PALS.len(), 2));
+                    }
+                });
+            });
+        ui.add_space(4.0);
+    }
+
+    /// BROWSE's search: a box you can see (a round edge and a magnifier), Enter to search, x to clear (back to the
+    /// museum's best).
+    fn wa_search_row(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let sc = crate::font::ui_scale();
+        let h = bh() + 6.0 * sc;
+        let w = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width()) - 6.0;
+        let (pill, _) = ui.allocate_exact_size(Vec2::new(w.max(160.0), h), Sense::hover());
+        let p = ui.painter();
+        p.rect_filled(pill, h / 2.0, pal().lcd);
+        let focused = self.ed.id == crate::tools::F_WINAMP;
+        p.rect_stroke(pill, h / 2.0, Stroke::new(1.0_f32, if focused { pal().ink2 } else { pal().groove.gamma_multiply(1.6) }));
+        let ir = Rect::from_center_size(Pos2::new(pill.min.x + 18.0 * sc, pill.center().y), Vec2::splat(16.0 * sc));
+        crate::vicon::named(p, ir, "search", pal().ink2);
+        let clear_w = if self.wa_q.is_empty() { 0.0 } else { 30.0 * sc };
+        let fr = Rect::from_min_max(
+            Pos2::new(ir.max.x + 4.0, pill.center().y - bh() / 2.0),
+            Pos2::new(pill.max.x - 12.0 - clear_w, pill.center().y + bh() / 2.0),
+        );
+        let o = crate::views::field_bare(ui, &mut self.ed, crate::tools::F_WINAMP, &mut self.wa_q, fr, "Search the museum (zelda, metal, anime)");
+        if o.enter {
+            acts.push(Action::WaSearch);
+        }
+        if clear_w > 0.0 {
+            let cr = Rect::from_center_size(Pos2::new(pill.max.x - 12.0 - clear_w / 2.0, pill.center().y), Vec2::splat(22.0 * sc));
+            let x = ui.interact(cr, ui.id().with("wa_clear"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Clear: the museum's best");
+            crate::vicon::named(ui.painter(), cr.shrink(4.0 * sc), "close", if x.hovered() { pal().ink } else { pal().ink2 });
+            if x.clicked() {
+                self.wa_q.clear();
+                self.ed.id = 0;
+                acts.push(Action::WaSearch);
+            }
+        }
+    }
+
+    /// One skin in the grid: its screenshot and name. The one you wear has a lit ring and a WEARING tag; the
+    /// pointer over it shows a star (always shown, filled, on a favorite). A click shows it big; right-click for
+    /// the rest.
+    fn wa_card(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, s: &crate::winamp::WaSkin, cw: f32, on: bool, tab: u8) {
+        let sc = crate::font::ui_scale();
+        let ch = cw * 348.0 / 275.0;
+        let name_h = 26.0 * sc;
+        let (cell, r) = ui.allocate_exact_size(Vec2::new(cw, ch + name_h), Sense::click());
+        if !ui.is_rect_visible(cell) {
+            return;
+        }
+        let shot = Rect::from_min_size(cell.min, Vec2::new(cw, ch));
+        let fav = self.wa_favs.iter().any(|f| f.0 == s.md5);
+        let p = ui.painter().clone();
+        match self.images.get(&s.shot) {
+            Some(id) => {
+                egui::Image::new(egui::load::SizedTexture::new(id, shot.size())).paint_at(ui, shot);
+            }
+            None => {
+                p.rect_filled(shot, 4.0, pal().lcd);
+            }
+        }
+        let hover = r.hovered();
+        if on {
+            p.rect_stroke(shot.expand(2.0), 4.0, Stroke::new(2.0_f32, pal().bar_txt));
+            p.rect_stroke(shot.expand(5.0), 6.0, Stroke::new(3.0_f32, pal().bar_txt.gamma_multiply(0.25)));
+        } else if hover {
+            p.rect_stroke(shot.expand(1.5), 4.0, Stroke::new(1.5_f32, pal().ink2));
+        }
+        if on {
+            tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Wearing", pal().bar_txt, pal().lcd);
+        }
+        if self.wa_loading.as_deref() == Some(s.name.as_str()) {
+            p.rect_filled(shot, 4.0, Color32::from_black_alpha(140));
+            tag(&p, Pos2::new(shot.min.x + 8.0, shot.max.y - 8.0), "Putting it on...", pal().ink, pal().lcd);
+        }
+        // the star: on the pointer, or always on a favorite
+        let star = Rect::from_min_size(Pos2::new(shot.max.x - 34.0 * sc, shot.min.y + 6.0 * sc), Vec2::splat(28.0 * sc));
+        let sr = ui.interact(star, ui.id().with(("wa_star", &s.md5)), Sense::click());
+        if hover || fav || sr.hovered() {
+            p.circle_filled(star.center(), star.width() / 2.0, Color32::from_black_alpha(200));
+            star_mark(&p, star.center(), 8.5 * sc, if fav { Some(pal().bar_txt) } else { None }, if fav { pal().bar_txt } else { Color32::from_gray(235) });
+        }
+        let sr = sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if fav { "In your favorites. Click to take it out." } else { "Add to favorites" });
+        if sr.clicked() {
+            acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
+        }
+        let label = crate::font::fit(&s.name, 1.5, cw);
+        crate::font::ptext(&p, Pos2::new(cell.min.x + 2.0, cell.max.y - name_h / 2.0 + 2.0), Align::Min, &label, 1.5, if on { pal().ink } else { pal().ink2 });
+        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}. Click to see it big.", s.name));
+        if r.clicked() && !sr.hovered() {
+            self.wa_preview = Some(s.clone());
+        }
+        r.context_menu(|ui| {
+            if menu_item(ui, "Wear It") {
+                acts.push(Action::WaApply(s.clone()));
+                ui.close_menu();
+            }
+            if menu_item(ui, if fav { "Remove from Favorites" } else { "Add to Favorites" }) {
+                acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
+                ui.close_menu();
+            }
+            if tab == 2 && menu_item(ui, "Remove from This List") {
+                acts.push(Action::WaForget(s.md5.clone()));
+                ui.close_menu();
             }
         });
+    }
+
+    /// A skin seen big before it goes on: its screenshot drawn twice size or as big as fits (crisp pixels), WEAR IT
+    /// (Enter), the star, PREVIOUS / NEXT through the grid it came from (the arrow keys), CLOSE (Esc).
+    pub(crate) fn wa_preview_panel(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let Some(s) = self.wa_preview.clone() else { return };
+        let list = self.wa_tab_list();
+        let at = list.iter().position(|x| x.md5 == s.md5);
+        let (mut wear, mut close, mut step) = ctx.input(|i| {
+            let step = if i.key_pressed(egui::Key::ArrowLeft) {
+                -1
+            } else if i.key_pressed(egui::Key::ArrowRight) {
+                1
+            } else {
+                0
+            };
+            (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape), step)
+        });
+        let fav = self.wa_favs.iter().any(|f| f.0 == s.md5);
+        let worn = self.wa_worn.as_ref().is_some_and(|w| w.0 == s.md5);
+        let screen = ctx.screen_rect();
+        // twice the museum's picture, or as big as the window lets it be
+        let h = (348.0_f32 * 2.0).min(screen.height() - 240.0).max(240.0);
+        let w = h * 275.0 / 348.0;
+        let tex = self.images.get(&s.shot);
+        crate::credits::panel(ctx, "wa_preview", w + 60.0, |ui| {
+            title_line(ui, &crate::font::as_label(&s.name), 3.0, pal().ink);
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+                match tex {
+                    Some(id) => {
+                        egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
+                    }
+                    None => {
+                        ui.painter().rect_filled(r, 4.0, pal().lcd);
+                        crate::font::ptext(ui.painter(), r.center(), Align::Center, "Loading the picture...", 1.5, pal().ink2);
+                    }
+                }
+            });
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                if retro_btn(ui, if worn { "WEARING IT" } else { "WEAR IT" }, true).tip("Put this skin on  (Enter)").clicked() {
+                    wear = true;
+                }
+                if retro_btn(ui, if fav { "In Favorites" } else { "Add to Favorites" }, fav).clicked() {
+                    acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
+                }
+                if at.is_some_and(|k| k > 0) && retro_btn(ui, "Previous", false).tip("The skin before  (Left)").clicked() {
+                    step = -1;
+                }
+                if at.is_some_and(|k| k + 1 < list.len()) && retro_btn(ui, "Next", false).tip("The next skin  (Right)").clicked() {
+                    step = 1;
+                }
+                if retro_btn(ui, "Close", false).tip("Esc").clicked() {
+                    close = true;
+                }
+            });
+        });
+        if wear {
+            if !worn {
+                acts.push(Action::WaApply(s.clone()));
+            }
+            self.wa_preview = None;
+        } else if close {
+            self.wa_preview = None;
+        } else if step != 0 {
+            if let Some(k) = at.map(|k| k as i64 + step).filter(|k| *k >= 0 && (*k as usize) < list.len()) {
+                self.wa_preview = Some(list[k as usize].clone());
+            }
+        }
     }
 
     pub(crate) fn cache_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
@@ -846,20 +1006,20 @@ impl App {
             if PRACTICE && menu_item(ui, if self.focus_mode { "Focus  (on)" } else { "Focus (hide the lists)" }) {
                 acts.push(Action::ToggleFocus);
             }
-            if menu_item(ui, if self.wa_guide { "Button guide  (on)" } else { "Button guide (name each button)" }) {
+            if menu_item(ui, if self.wa_guide { "Button Guide  (on)" } else { "Button Guide (name each button)" }) {
                 self.wa_guide = !self.wa_guide;
                 self.dirty = true;
             }
             ui.add_space(4.0);
         }
         // the window: keep it on top, the mini player and back
-        if menu_item(ui, if self.go_offline { "Go online" } else { "Go offline (only what's on this computer)" }) {
+        if menu_item(ui, if self.go_offline { "Go Online" } else { "Go Offline (only what's on this computer)" }) {
             acts.push(Action::GoOffline(!self.go_offline));
         }
-        if menu_item(ui, if self.pinned { "Always on top  (on)" } else { "Always on top" }) {
+        if menu_item(ui, if self.pinned { "Always on Top  (on)" } else { "Always on Top" }) {
             acts.push(Action::TogglePin);
         }
-        if menu_item(ui, if self.mini { "Exit mini player" } else { "Mini player" }) {
+        if menu_item(ui, if self.mini { "Exit Mini Player" } else { "Mini Player" }) {
             acts.push(Action::ToggleMini);
         }
         if menu_item(ui, if self.fullscreen { "Exit full screen  (F11)" } else { "Full screen  (F11)" }) {

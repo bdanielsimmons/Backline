@@ -1617,7 +1617,7 @@ impl App {
                     let looping = self.chart_sel.is_some();
                     if ti.is_none() && looping {
                         drag.context_menu(|ui| {
-                            if crate::menu_item(ui, "Clear loop") {
+                            if crate::menu_item(ui, "Clear Loop") {
                                 self.chart_sel = None;
                                 ui.close_menu();
                             }
@@ -1632,7 +1632,7 @@ impl App {
                             self.ed.cur = bar.chords.join(" ").chars().count();
                         }
                         rsp.context_menu(|ui| {
-                            if looping && crate::menu_item(ui, "Clear loop") {
+                            if looping && crate::menu_item(ui, "Clear Loop") {
                                 self.chart_sel = None;
                                 ui.close_menu();
                             }
@@ -1660,7 +1660,7 @@ impl App {
                                     ui.close_menu();
                                 }
                             }
-                            if crate::menu_item(ui, "Edit the chords") {
+                            if crate::menu_item(ui, "Edit the Chords") {
                                 req = Some((idx, "text".to_string()));
                                 ui.close_menu();
                             }

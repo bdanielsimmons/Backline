@@ -126,6 +126,19 @@ pub fn field(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: R
     field_x(ui, ed, id, text, rect, hint, multi, false)
 }
 
+thread_local! {
+    /// set while `field_bare` draws: the text and caret only, the caller's own box around them
+    static FIELD_BARE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A one-line text box drawn without a box (the caller draws its own: the skins page's round search).
+pub(crate) fn field_bare(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rect, hint: &str) -> FieldOut {
+    FIELD_BARE.with(|b| b.set(true));
+    let o = field(ui, ed, id, text, rect, hint, false);
+    FIELD_BARE.with(|b| b.set(false));
+    o
+}
+
 /// A text field; `fmt`: notes with formatting, its marks faint and the words they format shown so (see `notes_box`).
 #[allow(clippy::too_many_arguments)]
 fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rect, hint: &str, multi: bool, fmt: bool) -> FieldOut {
@@ -156,7 +169,7 @@ fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rec
             if menu_item(ui, "Paste") {
                 paste = true;
             }
-            if n > 0 && menu_item(ui, "Select all") {
+            if n > 0 && menu_item(ui, "Select All") {
                 picked = Some((None, true));
             }
             if picked.is_some() || paste {
@@ -427,9 +440,11 @@ fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String, rect: Rec
     let focused = ed.id == id;
     let (lines, hoff, voff) = offsets(&chars, ed.cur, focused);
     let p = ui.painter();
-    inset(p, rect, pal().lcd);
-    if focused {
-        outline(p, rect, 1.0, pal().ink2);
+    if !FIELD_BARE.with(|b| b.get()) {
+        inset(p, rect, pal().lcd);
+        if focused {
+            outline(p, rect, 1.0, pal().ink2);
+        }
     }
     let cp = p.with_clip_rect(inner);
     if chars.is_empty() {
@@ -1980,7 +1995,7 @@ impl App {
                         // a saved playlist's page: take a song out of it (kept out when it's read again)
                         let open = if which == 7 { self.yt_cur.as_ref() } else { self.sc_cur.as_ref() };
                         if let Some(url) = open.filter(|u| self.store.lists.iter().any(|l| l.url == **u)) {
-                            if menu_item(ui, "Remove from this playlist") {
+                            if menu_item(ui, "Remove from This Playlist") {
                                 acts.push(Action::RemoveFromList(url.clone(), e.id));
                                 ui.close_menu();
                             }
@@ -1993,7 +2008,7 @@ impl App {
                             acts.push(Action::YtKeep(e.id));
                             ui.close_menu();
                         }
-                    } else if menu_item(ui, "Remove from this list") {
+                    } else if menu_item(ui, "Remove from This List") {
                         acts.push(Action::RemoveExt(e.id));
                         ui.close_menu();
                     }
@@ -2029,17 +2044,17 @@ impl App {
                 }
                 r.context_menu(|ui| {
                     if !l.items.is_empty() {
-                        if menu_item(ui, "Play next") {
+                        if menu_item(ui, "Play Next") {
                             queue = Some((k, true));
                             ui.close_menu();
                         }
-                        if menu_item(ui, "Add to queue") {
+                        if menu_item(ui, "Add to Queue") {
                             queue = Some((k, false));
                             ui.close_menu();
                         }
                     }
                     crate::link_item(ui, acts, Some(l.url.clone()));
-                    if menu_item(ui, "Remove from my playlists") {
+                    if menu_item(ui, "Remove from My Playlists") {
                         acts.push(Action::RemoveList(*i));
                         ui.close_menu();
                     }
@@ -2382,13 +2397,13 @@ impl App {
             }
             egui::popup_below_widget(ui, pop, &add, egui::PopupCloseBehavior::CloseOnClick, |ui| {
                 ui.set_min_width(220.0);
-                if menu_item(ui, "Add files...") {
+                if menu_item(ui, "Add Files...") {
                     acts.push(Action::AddFiles);
                 }
-                if menu_item(ui, "Add a folder...") {
+                if menu_item(ui, "Add a Folder...") {
                     acts.push(Action::AddFolder);
                 }
-                if menu_item(ui, "Rescan folders") {
+                if menu_item(ui, "Rescan Folders") {
                     acts.push(Action::Rescan);
                 }
             });
@@ -2716,7 +2731,7 @@ impl App {
                     }
                 }
                 r.context_menu(|ui| {
-                    if menu_item(ui, "Rename / add a note...") {
+                    if menu_item(ui, "Rename / Add a Note...") {
                         self.edit_loop(*id, *i, s, false);
                         ui.close_menu();
                     }
@@ -2726,11 +2741,11 @@ impl App {
                             ui.close_menu();
                         }
                     }
-                    if !s.group.is_empty() && menu_item(ui, "Remove from group") {
+                    if !s.group.is_empty() && menu_item(ui, "Remove from Group") {
                         acts.push(Action::LoopGroup(*id, *i, String::new()));
                         ui.close_menu();
                     }
-                    if menu_item(ui, "Delete this loop") {
+                    if menu_item(ui, "Delete This Loop") {
                         acts.push(Action::ForgetLoop(*id, *i));
                         ui.close_menu();
                     }
@@ -3151,7 +3166,7 @@ impl App {
                         acts.push(Action::PlaylistEdit(i));
                         ui.close_menu();
                     }
-                    if menu_item(ui, "Delete this playlist") {
+                    if menu_item(ui, "Delete This Playlist") {
                         acts.push(Action::PlaylistDelete(i));
                         ui.close_menu();
                     }
@@ -3247,22 +3262,22 @@ impl App {
                 let liked = self.liked.contains(&v.id);
                 r.context_menu(|ui| {
                     let t = v.to_track();
-                    if v.loop_ab.is_some() && menu_item(ui, "Play the whole song") {
+                    if v.loop_ab.is_some() && menu_item(ui, "Play the Whole Song") {
                         acts.push(Action::PlaySaved(v.clone(), None));
                         ui.close_menu();
                     }
                     crate::song_items(ui, acts, &t, liked, tidal);
-                    if k > 0 && menu_item(ui, "Move up") {
+                    if k > 0 && menu_item(ui, "Move Up") {
                         acts.push(Action::PlaylistMove(pi, k, -1));
                         ui.close_menu();
                     }
-                    if k + 1 < items.len() && menu_item(ui, "Move down") {
+                    if k + 1 < items.len() && menu_item(ui, "Move Down") {
                         acts.push(Action::PlaylistMove(pi, k, 1));
                         ui.close_menu();
                     }
                     let ext = self.ext_of(v.id);
                     crate::link_item(ui, acts, crate::track_link(&t, ext.as_ref()));
-                    if menu_item(ui, "Remove from this playlist") {
+                    if menu_item(ui, "Remove from This Playlist") {
                         acts.push(Action::PlaylistRemove(pi, k));
                         ui.close_menu();
                     }
@@ -3764,7 +3779,7 @@ impl App {
                 if menu_item(ui, "   Play-alongs on YouTube...") {
                     acts.push(Action::PlayAlong(tname.clone()));
                 }
-                if menu_item(ui, "   Remove this tune...") {
+                if menu_item(ui, "   Remove This Tune...") {
                     if !self.del_arm {
                         acts.push(Action::RemoveTune(i));
                     }
@@ -3846,14 +3861,14 @@ impl App {
                 }
                 let liked = self.liked.contains(&vtracks[vi].id);
                 r.context_menu(|ui| {
-                    if menu_item(ui, "Rate / add a note") {
+                    if menu_item(ui, "Rate / Add a Note") {
                         self.edit_ver = Some(vi);
                         ui.close_menu();
                     }
                     let tidal = self.ext_of(vtracks[vi].id).is_none();
                     crate::song_items(ui, acts, &vtracks[vi], liked, tidal);
                     crate::link_item(ui, acts, crate::track_link(&vtracks[vi], self.ext_of(vtracks[vi].id).as_ref()));
-                    if menu_item(ui, "Remove from this tune") {
+                    if menu_item(ui, "Remove from This Tune") {
                         acts.push(Action::RemoveVersion(i, vi));
                         ui.close_menu();
                     }
@@ -3932,7 +3947,7 @@ impl App {
                     }
                     let liked = self.liked.contains(&t.id);
                     r.context_menu(|ui| {
-                        if menu_item(ui, "Add to this tune") {
+                        if menu_item(ui, "Add to This Tune") {
                             acts.push(Action::AddToTune(i, t.clone()));
                             ui.close_menu();
                         }
@@ -4042,10 +4057,10 @@ impl App {
                     }
                 }
                 dim_line(ui, "SHARE", 1.0, pal().dim);
-                if menu_item(ui, "   Export loops & playlists...") {
+                if menu_item(ui, "   Export Loops & Playlists...") {
                     acts.push(Action::ShareExport);
                 }
-                if menu_item(ui, "   Import from another computer...") {
+                if menu_item(ui, "   Import from Another Computer...") {
                     acts.push(Action::ShareImport);
                 }
             });
@@ -4368,17 +4383,17 @@ impl App {
                         }
                     }
                     resp.context_menu(|ui| {
-                        if menu_item(ui, if s.note.is_empty() { "Rename / add a note..." } else { "Rename / edit the note..." }) {
+                        if menu_item(ui, if s.note.is_empty() { "Rename / Add a Note..." } else { "Rename / Edit the Note..." }) {
                             self.edit_loop(c.id, *i, s, false);
                             ui.close_menu();
                         }
                         if let Some(v) = &c.v {
-                            if menu_item(ui, "Add this loop to a playlist...") {
+                            if menu_item(ui, "Add This Loop to a Playlist...") {
                                 acts.push(Action::PlaylistPicker(v.to_track(), Some((s.a, s.b, s.name.clone()))));
                                 ui.close_menu();
                             }
                         }
-                        if menu_item(ui, "Delete this loop") {
+                        if menu_item(ui, "Delete This Loop") {
                             acts.push(Action::ForgetLoop(c.id, *i));
                             ui.close_menu();
                         }
@@ -4411,11 +4426,11 @@ impl App {
                         }
                     }
                     resp.context_menu(|ui| {
-                        if menu_item(ui, if m.note.is_empty() { "Rename / add a note..." } else { "Rename / edit the note..." }) {
+                        if menu_item(ui, if m.note.is_empty() { "Rename / Add a Note..." } else { "Rename / Edit the Note..." }) {
                             self.edit_mark(c.id, *i, m, false);
                             ui.close_menu();
                         }
-                        if menu_item(ui, "Remove this bookmark") {
+                        if menu_item(ui, "Remove This Bookmark") {
                             drop_mark = Some(*i);
                             ui.close_menu();
                         }
@@ -5786,7 +5801,7 @@ impl App {
                 }
                 let one = self.mark_col;
                 mb.context_menu(|ui| {
-                    if menu_item(ui, if one.is_none() { "* Random colors" } else { "  Random colors" }) {
+                    if menu_item(ui, if one.is_none() { "* Random Colors" } else { "  Random Colors" }) {
                         self.mark_col = None;
                         self.dirty = true;
                         ui.close_menu();
@@ -5797,7 +5812,7 @@ impl App {
                         self.dirty = true;
                         ui.close_menu();
                     }
-                    if self.store.marks.get(&id).is_some_and(|m| !m.is_empty()) && menu_item(ui, "Remove this song's bookmarks") {
+                    if self.store.marks.get(&id).is_some_and(|m| !m.is_empty()) && menu_item(ui, "Remove This Song's Bookmarks") {
                         self.store.marks.remove(&id);
                         self.store_dirty = true;
                         ui.close_menu();
@@ -5839,7 +5854,7 @@ impl App {
                         acts.push(Action::Seek(m.t));
                     }
                     fr.context_menu(|ui| {
-                        if menu_item(ui, "Rename / add a note...") {
+                        if menu_item(ui, "Rename / Add a Note...") {
                             rename = Some(k);
                             ui.close_menu();
                         }
@@ -5847,7 +5862,7 @@ impl App {
                             recolour = Some((k, c));
                             ui.close_menu();
                         }
-                        if menu_item(ui, "Remove this bookmark") {
+                        if menu_item(ui, "Remove This Bookmark") {
                             drop = Some(k);
                             ui.close_menu();
                         }
@@ -6001,7 +6016,7 @@ impl App {
             let mut mark_here = false;
             resp.context_menu(|ui| {
                 crate::loop_menu(ui, acts, mt, both, lo, pr);
-                if menu_item(ui, &format!("Bookmark here  {}", fmt_t(mt))) {
+                if menu_item(ui, &format!("Bookmark Here  {}", fmt_t(mt))) {
                     mark_here = true;
                     ui.close_menu();
                 }
@@ -6265,7 +6280,7 @@ impl App {
                         acts.push(Action::GoSection(i));
                     }
                     r.context_menu(|ui| {
-                        if menu_item(ui, if s.note.is_empty() { "Rename / add a note..." } else { "Rename / edit the note..." }) {
+                        if menu_item(ui, if s.note.is_empty() { "Rename / Add a Note..." } else { "Rename / Edit the Note..." }) {
                             self.edit_loop(id, i, s, true);
                             ui.close_menu();
                         }
@@ -6275,18 +6290,18 @@ impl App {
                                 ui.close_menu();
                             }
                         }
-                        if menu_item(ui, "Move to a new group...") {
+                        if menu_item(ui, "Move to a New Group...") {
                             self.edit_loop(id, i, s, true);
                             self.clip_group = String::new();
                             self.ed.id = crate::tools::F_CLIP_GROUP;
                             self.ed.anchor = None;
                             ui.close_menu();
                         }
-                        if !s.group.is_empty() && menu_item(ui, "Remove from group") {
+                        if !s.group.is_empty() && menu_item(ui, "Remove from Group") {
                             acts.push(Action::LoopGroup(id, i, String::new()));
                             ui.close_menu();
                         }
-                        if menu_item(ui, "Delete this loop...") {
+                        if menu_item(ui, "Delete This Loop...") {
                             self.loop_ask = Some((id, i));
                             ui.close_menu();
                         }
@@ -6441,7 +6456,7 @@ impl App {
                         write = true;
                         ui.close_menu();
                     }
-                    if menu_item(ui, "Remove this bookmark") {
+                    if menu_item(ui, "Remove This Bookmark") {
                         drop = Some(k);
                         ui.close_menu();
                     }
@@ -6778,7 +6793,7 @@ impl App {
                             acts.push(Action::StemToggle(i));
                         }
                         r.context_menu(|ui| {
-                            if menu_item(ui, "Solo this stem") {
+                            if menu_item(ui, "Solo This Stem") {
                                 acts.push(Action::StemSolo(i));
                                 ui.close_menu();
                             }

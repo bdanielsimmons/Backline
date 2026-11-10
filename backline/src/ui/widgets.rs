@@ -902,7 +902,8 @@ pub(crate) fn menu_item(ui: &mut egui::Ui, text: &str) -> bool {
     if resp.hovered() {
         fill_rect(ui.painter(), rect, pal().sel);
     }
-    ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y), Align::Min, text, 2.0, pal().ink);
+    // (a control: Title Case, as buttons and tabs are)
+    winamp_ui::as_title(|| ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y), Align::Min, text, 2.0, pal().ink));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
@@ -916,7 +917,7 @@ pub(crate) fn sub_menu(ui: &mut egui::Ui, text: &str, add_contents: impl FnOnce(
     let rect = Rect::from_min_size(r.rect.min, Vec2::new(r.rect.width().max(w), r.rect.height()));
     let p = ui.painter();
     p.rect_filled(rect, 0.0, if r.hovered() { pal().sel } else { ui.visuals().window_fill() });
-    ptext(p, Pos2::new(rect.min.x + 10.0, rect.center().y), Align::Min, text, 2.0, pal().ink);
+    winamp_ui::as_title(|| ptext(p, Pos2::new(rect.min.x + 10.0, rect.center().y), Align::Min, text, 2.0, pal().ink));
     let (c, s) = (Pos2::new(rect.max.x - 10.0 * sc, rect.center().y), 4.0 * sc);
     p.add(egui::Shape::convex_polygon(
         vec![c + Vec2::new(-s * 0.6, -s), c + Vec2::new(s * 0.6, 0.0), c + Vec2::new(-s * 0.6, s)],

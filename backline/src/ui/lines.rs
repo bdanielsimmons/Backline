@@ -713,7 +713,7 @@ impl App {
             }
             egui::popup_below_widget(ui, pop, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
                 ui.set_min_width(240.0);
-                if crate::menu_item(ui, "Add a pattern book...") {
+                if crate::menu_item(ui, "Add a Pattern Book...") {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Pattern book", &["txt"]).pick_file() {
                         self.add_pattern_book(&path);
                     }
@@ -857,7 +857,7 @@ impl App {
                 }
                 // right-click: straight to the lead sheet (in this key or all 12), keep it, or make it a tune
                 b.context_menu(|ui| {
-                    if crate::menu_item(ui, "Put it on the lead sheet") {
+                    if crate::menu_item(ui, "Put It on the Lead Sheet") {
                         self.prog_to_sheet(acts, prog, false);
                         ui.close_menu();
                     }
@@ -865,7 +865,7 @@ impl App {
                         self.prog_to_sheet(acts, prog, true);
                         ui.close_menu();
                     }
-                    if !mine && crate::menu_item(ui, "Add to my progressions") {
+                    if !mine && crate::menu_item(ui, "Add to My Progressions") {
                         if !self.store.my_progs.iter().any(|p| p == prog) {
                             self.store.my_progs.push(prog.clone());
                             self.store_dirty = true;
@@ -873,7 +873,7 @@ impl App {
                         self.set_note("ADDED TO MY PROGRESSIONS");
                         ui.close_menu();
                     }
-                    if crate::menu_item(ui, "Save as a tune") {
+                    if crate::menu_item(ui, "Save as a Tune") {
                         let mut name = title.clone();
                         let mut k = 2;
                         while self.store.tunes.iter().any(|t| t.name.eq_ignore_ascii_case(&name)) {

@@ -16,6 +16,11 @@ pub(crate) struct WaTex {
     pub(crate) bal_is_vol: bool,
     /// the balance pictures that make a smooth run (empty: all)
     pub(crate) bal_frames: Vec<usize>,
+    /// the band behind the deck's title (the skin font's own background)
+    pub(crate) text_bg: Option<Color32>,
+    /// how the volume and balance knobs are drawn
+    pub(crate) vol_knob: crate::winamp::Knob,
+    pub(crate) bal_knob: crate::winamp::Knob,
 }
 
 impl WaTex {
@@ -34,6 +39,39 @@ impl WaTex {
             eqpl_ink: art.eqpl_ink,
             bal_is_vol: art.bal_is_vol,
             bal_frames: art.bal_frames,
+            text_bg: art.text_bg,
+            vol_knob: art.vol_knob,
+            bal_knob: art.bal_knob,
+        }
+    }
+
+    /// A volume or balance knob at `at` (Winamp's 14 x 11), from `sheet` (volume or balance), as the skin allows:
+    /// its own, the volume's borrowed, a slim marker where it has none, or nothing (its strip shows the level).
+    /// `down`: being dragged. `track`: the whole slider (a marker comes in a box the length of it, so you can see
+    /// where it can go).
+    pub(crate) fn knob(&self, p: &egui::Painter, kind: crate::winamp::Knob, sheet: &str, at: Rect, down: bool, track: Rect) {
+        use crate::winamp::Knob;
+        let own = (if down { 0.0 } else { 15.0 }, 422.0, 14.0, 11.0);
+        match kind {
+            Knob::Own => {
+                self.spr(p, sheet, own, at);
+            }
+            Knob::Volume => {
+                self.spr(p, "volume", own, at);
+            }
+            Knob::Mark => {
+                // the slider's length as a faint box (a shade darker inside, a fine edge in the skin's colour), and
+                // a slim upright bar where the knob's middle is: the skin's colour, a dark edge
+                let accent = crate::pal().bar_txt;
+                let edge = (track.height() / 13.0).max(1.0);
+                p.rect_filled(track, 2.0, Color32::from_black_alpha(70));
+                p.rect_stroke(track, 2.0, Stroke::new(edge, accent.gamma_multiply(0.55)));
+                let w = (at.width() * 3.0 / 14.0).max(2.0);
+                let r = Rect::from_center_size(at.center(), Vec2::new(w, at.height() + at.height() * 2.0 / 11.0));
+                p.rect_filled(r.expand(1.0), 1.5, Color32::from_black_alpha(170));
+                p.rect_filled(r, 1.0, crate::pal().bar_txt);
+            }
+            Knob::Strip => {}
         }
     }
 
