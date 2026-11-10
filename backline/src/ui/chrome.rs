@@ -30,11 +30,51 @@ pub(crate) fn app_bar_strip(ui: &egui::Ui, strip: Rect, id: egui::Id) {
     crate::frame_win::caption(bar, ui.ctx().pixels_per_point());
     let r = ui.interact(strip, id, Sense::click_and_drag());
     if r.double_clicked() {
-        let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+        toggle_max(ui.ctx());
     } else if r.drag_started() {
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        drag_window(ui.ctx());
     }
+}
+
+/// The window's size and place when it neither fills the screen nor is maximized, kept each frame (points), so a
+/// drag out of full screen brings it back at its own size.
+pub(crate) fn keep_windowed_size(ctx: &egui::Context) {
+    let (max, full, outer) =
+        ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false), i.viewport().outer_rect));
+    if let (false, false, Some(r)) = (max, full, outer) {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("windowed_size"), r.size()));
+    }
+}
+
+/// Maximize or restore; from full screen, back to the window.
+pub(crate) fn toggle_max(ctx: &egui::Context) {
+    let (max, full) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
+    if full {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+    } else {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+    }
+}
+
+/// The window, dragged by its bar: Windows moves it (and snaps it). From full screen it first comes back at its own
+/// size under the pointer, held where it was along the bar, so it moves and snaps as any window does.
+pub(crate) fn drag_window(ctx: &egui::Context) {
+    let (full, inner, at) = ctx.input(|i| (i.viewport().fullscreen.unwrap_or(false), i.viewport().inner_rect, i.pointer.interact_pos()));
+    if full {
+        let screen = ctx.screen_rect();
+        let size = ctx
+            .data(|d| d.get_temp::<Vec2>(egui::Id::new("windowed_size")))
+            .filter(|s| s.x > 200.0 && s.y > 150.0)
+            .unwrap_or(screen.size() * 0.7);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        if let (Some(inner), Some(p)) = (inner, at) {
+            let along = ((p.x - screen.min.x) / screen.width().max(1.0)).clamp(0.0, 1.0);
+            let top = (p.y - screen.min.y).min(size.y * 0.5);
+            let cursor = inner.min + (p - screen.min);
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::new(cursor.x - size.x * along, cursor.y - top)));
+        }
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
 }
 
 /// Now Playing's own bar along the top (a skin worn, Windows: there is no system title bar), always there: the
@@ -114,11 +154,11 @@ pub(crate) fn window_bar(ui: &mut egui::Ui, bar: Rect, a: f32, shade: u8) {
                 }
             }
             if b.clicked() {
-                ui.ctx().send_viewport_cmd(match k {
-                    0 => egui::ViewportCommand::Close,
-                    1 => egui::ViewportCommand::Maximized(!max),
-                    _ => egui::ViewportCommand::Minimized(true),
-                });
+                match k {
+                    0 => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                    1 => toggle_max(ui.ctx()),
+                    _ => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+                }
             }
         }
         let drag = Rect::from_min_max(bar.min, Pos2::new(bar.max.x - 3.0 * bw, bar.max.y));
@@ -126,9 +166,9 @@ pub(crate) fn window_bar(ui: &mut egui::Ui, bar: Rect, a: f32, shade: u8) {
         if !over_button {
             let r = ui.interact(drag, egui::Id::new("float_app_bar_drag"), Sense::click_and_drag());
             if r.double_clicked() {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+                toggle_max(ui.ctx());
             } else if r.drag_started() {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                drag_window(ui.ctx());
             }
         }
     }

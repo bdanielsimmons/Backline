@@ -3748,6 +3748,10 @@ impl eframe::App for App {
             ptext(&p, r.center(), Align::Center, "DROP AUDIO FILES OR FOLDERS TO ADD THEM", 3.0, pal().bar_txt);
         }
         self.floating_tools(ctx, &mut acts);
+        // (its own size kept, for a drag out of full screen)
+        if !self.mini {
+            crate::chrome::keep_windowed_size(ctx);
+        }
         // the window can also go fullscreen/windowed by itself (the green Mac button, F11): follow it,
         // except for a moment after our own command, while the window reports the old state
         if self.fs_cmd_at.is_none_or(|t| t.elapsed() > Duration::from_millis(1500)) {

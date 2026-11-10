@@ -280,10 +280,17 @@ impl App {
         if tb(ui, "min", 244.0, (9.0, 0.0), "Minimize").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
-        if !self.mini
-            && tb(ui, "shade", 254.0, (0.0, 18.0), if self.fullscreen { "Exit fullscreen" } else { "Fullscreen" }).clicked()
-        {
-            acts.push(Action::ToggleFullscreen);
+        // (the square: maximize and restore, as a window's; full screen is in the options menu and F11)
+        let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        let tip = if self.fullscreen {
+            "Exit Full Screen"
+        } else if max {
+            "Restore"
+        } else {
+            "Maximize"
+        };
+        if !self.mini && tb(ui, "shade", 254.0, (0.0, 18.0), tip).clicked() {
+            crate::chrome::toggle_max(ui.ctx());
         }
         if tb(ui, "close", 264.0, (18.0, 0.0), "Quit Backline").clicked() {
             acts.push(Action::QuitApp);
