@@ -390,13 +390,20 @@ impl App {
                         let status = match self.upd_state {
                             1 => "Downloading an update...".to_string(),
                             2 => format!(
-                                "{} is downloaded. Click the bar at the top to restart, or it installs the next time you open Backline.",
+                                "{} is downloaded. Restart to install it, or it installs the next time you open Backline.",
                                 self.upd.as_ref().map_or("An update".to_string(), |u| u.tag.clone())
                             ),
                             3 => "The last check or download failed. It will try again later.".to_string(),
                             _ => format!("You are up to date (build {}).", crate::update::build()),
                         };
                         para(ui, &status, pal().ink2);
+                        if self.upd_state == 2
+                            && retro_btn(ui, "Restart and Update", false)
+                                .tip("Saves everything and restarts Backline on the new version.")
+                                .clicked()
+                        {
+                            acts.push(Action::ApplyUpdate);
+                        }
                         if !self.upd_note.is_empty() {
                             para(ui, &self.upd_note.clone(), pal().ink2);
                         } else if self.upd_at > 0 && self.upd_state == 0 {

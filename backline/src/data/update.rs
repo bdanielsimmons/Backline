@@ -233,8 +233,9 @@ impl App {
             ctx.request_repaint_after(Duration::from_secs(15));
         }
         let Some(info) = self.upd.clone() else { return };
+        // (over everything, Preferences and the other dialogs too, so it can always be clicked)
         egui::Area::new(egui::Id::new("update_banner"))
-            .order(egui::Order::Foreground)
+            .order(egui::Order::Tooltip)
             .anchor(egui::Align2::CENTER_TOP, [0.0, 4.0])
             .show(ctx, |ui| {
                 if retro_btn(ui, &format!("UPDATE {} READY - CLICK TO RESTART", info.tag.to_uppercase()), true)

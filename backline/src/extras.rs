@@ -1479,7 +1479,8 @@ impl App {
             self.drop_unused_copies(&cache::ids());
             // (the day's notes read again, in case they came over too)
             self.diary_note = Default::default();
-            self.serial += 1;
+            // (the page stays where it is: the other computer practicing sends its time every few seconds, and a
+            // page sent back to the top each time can't be scrolled)
             self.store.save();
             self.store_dirty = false;
             self.store_saved = Instant::now();
