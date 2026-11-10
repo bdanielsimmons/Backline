@@ -1225,7 +1225,7 @@ const PAGES: &str = "ALL PAGES";
 
 /// The room the ALL PAGES button takes in a row, the gap before it included.
 pub(crate) fn pages_w() -> f32 {
-    text_w(PAGES, 2.0) + 50.0
+    text_w(PAGES, 2.0) + 70.0
 }
 
 /// Where a line of the ALL PAGES list takes you: the PRACTICE tab, then the page's own number
@@ -1513,7 +1513,24 @@ impl App {
             _ => Go::Melodies(self.cm_tab),
         };
         let sel = gos.iter().position(|g| *g == now).unwrap_or(usize::MAX);
-        let Some(i) = crate::menu_list(ui, "practice_go", PAGES, &items, sel, &heads) else { return };
+        // the button names the page you are on (cut short to fit), so it reads as where you are and the way to
+        // the others; a page's own tab with its page ("Triads: Map")
+        let face = match items.get(sel) {
+            Some(it) => match it.strip_prefix("  ") {
+                Some(sub) => {
+                    let parent = items[..sel].iter().rev().find(|s| !s.starts_with("  ")).copied().unwrap_or("");
+                    format!("{}: {}", parent, sub)
+                }
+                None => it.to_string(),
+            },
+            None => PAGES.to_string(),
+        };
+        let at = ui.cursor().min;
+        let picked = crate::menu_list_w(ui, "practice_go", &face, &items, sel, &heads, pages_w());
+        let _ = ui
+            .interact(Rect::from_min_size(at, Vec2::new(pages_w(), bh())), ui.id().with("practice_go_tip"), Sense::hover())
+            .tip("The page you're on. Click to go to any practice page.");
+        let Some(i) = picked else { return };
         let g = gos[i];
         let sec = match g {
             Go::Tunes(_) => Sec::Tunes,
@@ -5436,7 +5453,7 @@ impl App {
         // the focus timer and the metronome: a pill each in the title strip (click the dot to start or stop, the words
         // to open its panel)
         let sc = crate::font::ui_scale();
-        let (tw, mw, h) = (170.0 * sc, 120.0 * sc, 24.0);
+        let (tw, mw, h) = (170.0 * sc, 140.0 * sc, 24.0);
         let mr = crate::title_slot(inner, crate::title_right(inner), mw, h);
         let tr = crate::title_slot(inner, mr.min.x - 8.0, tw, h);
         self.timer_pill(ui, tr, acts);

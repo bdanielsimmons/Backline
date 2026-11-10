@@ -675,7 +675,7 @@ impl App {
         let note = Rect::from_center_size(Pos2::new(right.min.x + 9.0, right.center().y), Vec2::splat(r.height() * 0.5));
         crate::vicon::named(&p, note, "note", pal().ink2);
         let words = Rect::from_min_max(Pos2::new(note.max.x + 2.0, r.min.y), r.max);
-        pill_words(&p, words, &self.mt_bpm.to_string(), &format!("{}/{}", self.mt.beats, self.mt.unit), pal().ink);
+        pill_words(&p, words, &format!("{} BPM", self.mt_bpm), &format!("{}/{}", self.mt.beats, self.mt.unit), pal().ink);
         if lr.clicked() {
             acts.push(Action::Opt(Opt::MetroOn));
         }

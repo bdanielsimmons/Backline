@@ -252,6 +252,42 @@ pub(crate) fn set_chrome(t: Option<&WaTex>) {
 /// the bar, then its shading, the line and the border under it).
 pub(crate) const BAR_CAP_TOP: f32 = 3.0;
 pub(crate) const BAR_CAP_BOTTOM: f32 = 8.0;
+thread_local! {
+    /// Where each window's title-strip controls begin (their left edge), by the window's frame: noted as they are
+    /// placed (`note_strip_control`), read when the frame is drawn the next time, so the window's name keeps clear.
+    static STRIP_CTRL: std::cell::RefCell<Vec<((i32, i32, i32), f32)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn strip_key(outer: Rect) -> (i32, i32, i32) {
+    (outer.min.x.round() as i32, outer.min.y.round() as i32, outer.max.x.round() as i32)
+}
+
+/// A control placed in the title strip of the window framed by `outer`, its left edge at `left`.
+pub(crate) fn note_strip_control(outer: Rect, left: f32) {
+    STRIP_CTRL.with(|s| {
+        let mut s = s.borrow_mut();
+        let k = strip_key(outer);
+        if let Some(e) = s.iter_mut().find(|e| e.0 == k) {
+            e.1 = e.1.min(left);
+        } else {
+            s.push((k, left));
+            if s.len() > 32 {
+                s.remove(0);
+            }
+        }
+    })
+}
+
+/// Where the window's strip controls began last time (and start noting them afresh).
+fn take_strip_controls(outer: Rect) -> Option<f32> {
+    STRIP_CTRL.with(|s| {
+        let mut s = s.borrow_mut();
+        let k = strip_key(outer);
+        let i = s.iter().position(|e| e.0 == k)?;
+        Some(s.remove(i).1)
+    })
+}
+
 /// The gap kept above and below anything in a title strip's free band (the title's plate, a window's controls).
 pub(crate) const TITLE_GAP: f32 = 4.0;
 
@@ -336,36 +372,51 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
         // controls. A skin with no font of its own: light letters on a dark band
         let plate_h = (band.height() - 2.0 * TITLE_GAP).max(8.0);
         let label = title.to_uppercase();
-        let x0 = outer.min.x + tw + 6.0;
+        let n = label.chars().count() as f32;
+        // centred on the window, as the player and the playlist have theirs; when the strip's own controls are in the
+        // way, centred in the room left of them; with no room, from the left
+        let lo = outer.min.x + tw + 6.0;
+        let hi = take_strip_controls(outer).map_or(outer.max.x - tw - 6.0, |l| l - 10.0);
+        let place = |w: f32| -> f32 {
+            let c = outer.center().x - w / 2.0;
+            let x = if c >= lo && c + w <= hi {
+                c
+            } else if hi - lo >= w {
+                lo + (hi - lo - w) / 2.0
+            } else {
+                lo
+            };
+            x.round()
+        };
         match (text, text_bg) {
             (Some((ttex, tsize)), Some(bg)) => {
-                // whole skin pixels, as tall as the band allows (the deck's own size at most)
+                // whole skin pixels, as tall as the band allows (the deck's own size at most); the plate fills the
+                // band, with four of the font's pixels either side of the letters, as the player's own title has
                 let g = ((plate_h - 4.0) / 6.0).floor().max(1.0);
-                let n = label.chars().count() as f32;
-                let plate = Rect::from_min_size(
-                    Pos2::new(x0, band.center().y - (6.0 * g + 4.0) / 2.0),
-                    Vec2::new(n * 5.0 * g + 4.0 * g, 6.0 * g + 4.0),
-                );
+                let ph = plate_h.max(6.0 * g + 4.0);
+                let w = (n * 5.0 - 1.0) * g + 8.0 * g;
+                let plate = Rect::from_min_size(Pos2::new(place(w), (band.center().y - ph / 2.0).round()), Vec2::new(w, ph));
                 p.rect_filled(plate, 2.0, *bg);
+                let ty = (plate.center().y - 3.0 * g).round();
                 for (i, ch) in label.chars().enumerate() {
                     let (row, col) = glyph(ch);
-                    let dst = Rect::from_min_size(
-                        Pos2::new(plate.min.x + 2.0 * g + i as f32 * 5.0 * g, plate.min.y + 2.0),
-                        Vec2::new(5.0 * g, 6.0 * g),
-                    );
+                    let dst =
+                        Rect::from_min_size(Pos2::new(plate.min.x + 4.0 * g + i as f32 * 5.0 * g, ty), Vec2::new(5.0 * g, 6.0 * g));
                     piece(p, ttex, *tsize, (col as f32 * 5.0, row as f32 * 6.0, 5.0, 6.0), dst);
                 }
             }
             _ => {
                 let size = plate_h * 0.6;
                 let tw2 = sans_width(&label, size);
-                let at = Pos2::new(x0, band.center().y);
+                let pad = (size * 0.8).round();
+                let w = tw2 + 2.0 * pad;
+                let x = place(w);
                 p.rect_filled(
-                    Rect::from_center_size(Pos2::new(at.x + tw2 / 2.0, band.center().y), Vec2::new(tw2 + 10.0, plate_h)),
+                    Rect::from_min_size(Pos2::new(x, band.center().y - plate_h / 2.0), Vec2::new(w, plate_h)),
                     2.0,
                     Color32::from_black_alpha(190),
                 );
-                sans_text(p, at, Align::Min, &label, size, outer.width() * 0.5, Color32::from_gray(235));
+                sans_text(p, Pos2::new(x + pad, band.center().y), Align::Min, &label, size, outer.width() * 0.5, Color32::from_gray(235));
             }
         }
         round_corners(p, outer, true);

@@ -225,11 +225,11 @@ fn title_strip(p: &mut Pic, t: &Th, x: i32, y: i32, w: i32, h: i32, title: &str)
             }
         }
     }
+    // the title on the display's colours, as every window's name is written (Library, Practice)
     let tw = text_w(title);
     let tx = x + (w - tw) / 2;
-    let plate = if t.sleek { t.face_lo } else { t.face };
-    p.fill(tx - 4, y + 1, tw + 8, h - 2, plate);
-    p.text(tx, y + (h - 5) / 2, title, if t.sleek { t.btn_ink } else { t.face_ink });
+    p.fill(tx - 4, y + 1, tw + 8, h - 2, t.lcd);
+    p.text(tx, y + (h - 5) / 2, title, t.lcd_ink);
 }
 
 /// A tiny square title-bar button with a picture on it.
@@ -636,8 +636,8 @@ fn pledit(t: &Th) -> Pic {
         p.fill(26, row, 100, 1, t.edge);
         let title = "PLAYLIST";
         let tx = 26 + (100 - text_w(title)) / 2;
-        p.fill(tx - 4, row + 4, text_w(title) + 8, 12, if t.sleek { t.face_lo } else { t.face });
-        p.text(tx, row + 7, title, if t.sleek { t.btn_ink } else { t.face_ink });
+        p.fill(tx - 4, row + 4, text_w(title) + 8, 12, t.lcd);
+        p.text(tx, row + 7, title, t.lcd_ink);
         strip(&mut p, 127, 25);
         p.fill(127, row, 25, 1, t.edge);
         strip(&mut p, 153, 25);

@@ -308,7 +308,10 @@ pub(crate) fn title_right(inner: Rect) -> f32 {
 pub(crate) fn title_slot(inner: Rect, right: f32, w: f32, h: f32) -> Rect {
     let (cy, room) = title_band(inner);
     let h = h.min(room);
-    Rect::from_min_size(Pos2::new(right - w, cy - h / 2.0), Vec2::new(w, h))
+    let r = Rect::from_min_size(Pos2::new(right - w, cy - h / 2.0), Vec2::new(w, h));
+    // (the window's name keeps clear of the strip's controls)
+    winamp_ui::note_strip_control(frame_outer(inner), r.min.x);
+    r
 }
 
 /// Black window frame with beige trim, title tab and beige body at `inner`; square, with stepped corners.
@@ -973,6 +976,19 @@ pub(crate) fn dropdown_at(
 /// Returns the index chosen this frame.
 pub(crate) fn menu_list(ui: &mut egui::Ui, id: &str, face: &str, items: &[&str], sel: usize, heads: &[(usize, &str)]) -> Option<usize> {
     dropdown_list(ui, id, "", items, sel, 0.0, false, heads, &[], Some(face))
+}
+
+/// `menu_list` at a set width `w`: a face too long for it is cut short with ...
+pub(crate) fn menu_list_w(
+    ui: &mut egui::Ui,
+    id: &str,
+    face: &str,
+    items: &[&str],
+    sel: usize,
+    heads: &[(usize, &str)],
+    w: f32,
+) -> Option<usize> {
+    dropdown_list(ui, id, "", items, sel, w, true, heads, &[], Some(face))
 }
 
 /// A dropdown whose list is in headed groups (`heads`: the item each group starts at, and its heading), each item
