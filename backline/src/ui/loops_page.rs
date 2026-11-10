@@ -367,8 +367,6 @@ impl App {
     /// LOOPS (under PRACTICE): every song you saved a loop on or practised, without making it a tune - this week's
     /// first, or all of them. Click a loop to jump straight to it, looping.
     pub(crate) fn loops_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        ui.add_space(6.0);
-        title_line(ui, "LOOPS", 3.0, pal().ink);
         self.name_old_loops();
         let data = self.spot_data();
         // the song picked: one asked for, else the song playing, else the first
@@ -376,37 +374,60 @@ impl App {
         let has = |id: i64| data.songs.iter().any(|s| s.id == id);
         let pick = self.loops_pick.filter(|p| has(*p)).or(playing.filter(|p| has(*p))).or(data.songs.first().map(|s| s.id));
         if ui.available_width() >= 640.0 {
-            // two panes: the songs on the left, the one picked on the right
-            ui.horizontal_top(|ui| {
-                let lw = 250.0;
-                ui.allocate_ui_with_layout(Vec2::new(lw, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.set_width(lw);
-                    self.loops_controls(ui, acts);
-                    ui.add_space(6.0);
+            // two panes, each scrolling on its own: the songs on the left (under the filter, which stays), the one
+            // picked on the right (its waveform stays in sight as the list moves)
+            ui.add_space(6.0);
+            title_line(ui, "LOOPS", 3.0, pal().ink);
+            let full = ui.available_rect_before_wrap();
+            let lw = 250.0;
+            let left = Rect::from_min_max(full.min, Pos2::new(full.min.x + lw, full.max.y));
+            let right = Rect::from_min_max(Pos2::new(left.max.x + 14.0, full.min.y), full.max);
+            ui.painter().line_segment(
+                [Pos2::new(left.max.x + 6.0, full.min.y), Pos2::new(left.max.x + 6.0, full.max.y - 8.0)],
+                Stroke::new(1.0_f32, pal().row_alt),
+            );
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| {
+                ui.set_width(lw);
+                self.loops_controls(ui, acts);
+                ui.add_space(6.0);
+                egui::ScrollArea::vertical().id_salt("loops_songs").auto_shrink([false, false]).show(ui, |ui| {
                     self.loops_songs(ui, &data, pick);
-                });
-                let top = ui.cursor().min;
-                ui.add_space(14.0);
-                ui.painter().line_segment(
-                    [Pos2::new(top.x + 6.0, top.y), Pos2::new(top.x + 6.0, top.y + 600.0)],
-                    Stroke::new(1.0_f32, pal().row_alt),
-                );
-                ui.vertical(|ui| {
-                    ui.set_width(ui.available_width());
-                    self.loops_detail(ui, acts, &data, pick);
+                    ui.add_space(20.0);
                 });
             });
-        } else if let Some(open) = self.loops_pick.filter(|p| has(*p)) {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| {
+                egui::ScrollArea::vertical().id_salt("loops_detail").auto_shrink([false, false]).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    self.loops_detail(ui, acts, &data, pick);
+                    ui.add_space(20.0);
+                });
+            });
+            ui.allocate_rect(full, Sense::hover());
+            return;
+        }
+        // narrow: the page scrolls as one
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+            .show(ui, |ui| self.loops_narrow(ui, acts, &data));
+    }
+
+    /// The Loops page in a narrow window: the songs, or the one opened (the list a click away).
+    fn loops_narrow(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, data: &SpotData) {
+        ui.add_space(6.0);
+        title_line(ui, "LOOPS", 3.0, pal().ink);
+        let has = |id: i64| data.songs.iter().any(|s| s.id == id);
+        if let Some(open) = self.loops_pick.filter(|p| has(*p)) {
             // narrow: one song at a time, the list a click away
             if retro_btn(ui, "< ALL SONGS", false).clicked() {
                 self.loops_pick = None;
             }
             ui.add_space(8.0);
-            self.loops_detail(ui, acts, &data, Some(open));
+            self.loops_detail(ui, acts, data, Some(open));
         } else {
             self.loops_controls(ui, acts);
             ui.add_space(6.0);
-            self.loops_songs(ui, &data, None);
+            self.loops_songs(ui, data, None);
             if self.loops_mode == 2 {
                 ui.add_space(14.0);
                 self.groups_view(ui, acts);

@@ -1719,6 +1719,10 @@ struct App {
     voicing_tab: u8,
     /// the stack's width with a skin worn, dragged (0: as wide as fits at a whole-pixel size)
     stack_w: f32,
+    /// the same while practicing (0: the deck about a quarter of the window tall)
+    prac_stack_w: f32,
+    /// the places' list down the library's side, dragged (0: its own width)
+    nav_w: f32,
     stack_frac: f32,
     /// the Winamp stack's size: points per skin pixel (a whole number of screen pixels)
     stack_k: f32,
@@ -2491,6 +2495,8 @@ impl App {
             lib_frac: 0.34,
             voicing_tab: 0,
             stack_w: 0.0,
+            prac_stack_w: 0.0,
+            nav_w: 0.0,
             stack_k: 2.0,
             stack_frac: 1.0,
             prac_h: 0.0,

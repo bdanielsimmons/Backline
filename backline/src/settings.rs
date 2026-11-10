@@ -281,6 +281,12 @@ impl App {
             app.offline = true;
             app.sec = Sec::Files;
         }
+        if let Some(f) = st["prac_stack_w"].as_f64() {
+            app.prac_stack_w = f as f32;
+        }
+        if let Some(f) = st["nav_w"].as_f64() {
+            app.nav_w = f as f32;
+        }
         if let Some(f) = st["stack_w"].as_f64() {
             app.stack_w = f as f32;
         }
@@ -447,6 +453,8 @@ impl App {
             "speed": self.speed,
             "lib_frac": self.lib_frac,
             "stack_w": self.stack_w,
+            "prac_stack_w": self.prac_stack_w,
+            "nav_w": self.nav_w,
             "offline": self.offline,
             "sc_browser": sources::SC_BROWSER.load(Ordering::Relaxed),
             "stack_frac": self.stack_frac,

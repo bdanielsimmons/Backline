@@ -34,10 +34,17 @@ impl App {
         // practising with a skin: the deck and playlist stop growing at about a quarter of the window's height,
         // so the practice panel gets the room; the column is then just as wide as the deck (the library takes
         // the rest), so the deck always fills it, edge to edge - never a gap beside it. (Never narrower than
-        // the practice panel's tabs need.)
+        // the practice panel's tabs need.) Dragged wider: as wide as you made it, the deck up to 40% of the
+        // window's height, the library at least 640 points wide.
         let skin_k = skin_k.map(|k| {
             if self.practice && !self.lib_hidden {
-                k.min((screen.height() * 0.25 / 116.0).max(PRACTICE_COL_MIN / 275.0))
+                let least = PRACTICE_COL_MIN / 275.0;
+                if self.prac_stack_w > 0.0 {
+                    let most = (screen.height() * 0.4 / 116.0).min((screen.width() - 640.0) / 275.0).max(least);
+                    (self.prac_stack_w / 275.0).clamp(least, most)
+                } else {
+                    k.min((screen.height() * 0.25 / 116.0).max(least))
+                }
             } else {
                 k
             }
@@ -297,6 +304,15 @@ impl App {
         if !self.lib_hidden {
             let r = Rect::from_min_size(Pos2::new(lib_w - 7.0, screen.min.y), Vec2::new(14.0, screen.height()));
             match splitter(ctx, "split_v", r, true) {
+                // practising: its own width (double-click: back to the deck a quarter of the window tall)
+                Some(Some(x)) if skin_k.is_some() && self.practice => {
+                    self.prac_stack_w = (screen.width() - x).max(275.0);
+                    self.dirty = true;
+                }
+                Some(None) if skin_k.is_some() && self.practice => {
+                    self.prac_stack_w = 0.0;
+                    self.dirty = true;
+                }
                 Some(Some(x)) if skin_k.is_some() => {
                     self.stack_w = (screen.width() - x).max(275.0);
                     self.dirty = true;

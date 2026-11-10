@@ -1157,9 +1157,28 @@ impl App {
             let all = crate::frame_body(ui.max_rect());
             let p = ui.painter().clone();
             p.rect_filled(all, 0.0, pal().display);
-            // (the places get the window's whole height; Now Playing is the page's foot)
-            let sw = (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0));
+            // (the places get the window's whole height; Now Playing is the page's foot; their width is yours to
+            // drag, double-click its edge for their own)
+            let least = 180.0 * font::ui_scale();
+            let most = (all.width() * 0.45).max(least);
+            let sw = if self.nav_w > 0.0 {
+                self.nav_w.clamp(least, most)
+            } else {
+                (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0))
+            };
             let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
+            let edge = Rect::from_min_size(Pos2::new(side.max.x - 4.0, side.min.y), Vec2::new(8.0, side.height()));
+            match crate::chrome::splitter(ui.ctx(), "split_nav", edge, true) {
+                Some(Some(x)) => {
+                    self.nav_w = (x - all.min.x).clamp(least, most);
+                    self.dirty = true;
+                }
+                Some(None) => {
+                    self.nav_w = 0.0;
+                    self.dirty = true;
+                }
+                None => {}
+            }
             p.rect_filled(side, 0.0, side_tone());
             p.line_segment([side.right_top(), side.right_bottom()], Stroke::new(1.0_f32, divider()));
             self.side_nav(ui, side, acts);
@@ -1624,6 +1643,11 @@ impl App {
                 ui.push_id((serial, sec_i), |ui| self.chart_ui(ui, acts));
                 return;
             }
+            // Loops scrolls its two panes apart (the song list moves, the one picked stays)
+            if sec == Sec::Loops {
+                ui.push_id((serial, sec_i), |ui| self.loops_view(ui, acts));
+                return;
+            }
             // the scrollbar's room is always kept: a page about as tall as the window would otherwise gain and lose
             // its scrollbar every frame (the width changes, rows wrap, the height changes) and flicker
             // (a test copy can open scrolled down: BACKLINE_SCROLL=points; the chord finder scrolls itself)
@@ -1714,11 +1738,10 @@ impl App {
                         Sec::Sc => self.sc_view(ui, acts),
                         Sec::Tunes => self.tunes_view(ui, acts),
                         Sec::Diary => self.diary_view(ui, acts),
-                        Sec::Loops => self.loops_view(ui, acts),
                         Sec::Reading => self.reading_view(ui, acts),
                         Sec::Chords => self.chords_view(ui, acts),
                         Sec::Lines => self.lines_view(ui, acts),
-                        Sec::Melodies | Sec::Chart => {}
+                        Sec::Melodies | Sec::Chart | Sec::Loops => {}
                         Sec::Ear => self.ear_view(ui, acts),
                         Sec::Lists => self.playlists_view(ui, acts),
                         Sec::Mine => self.mine_view(ui, acts),
