@@ -831,7 +831,7 @@ impl App {
         self.chart_sel = None;
         self.chart_tr = 0;
         self.prog_ask = None;
-        acts.push(Action::RightTab(1));
+        acts.push(Action::OpenChart);
     }
 
     /// One group's progressions: the numerals (click to put it on the lead sheet), HEAR, and its chords in the key.
@@ -891,7 +891,7 @@ impl App {
                         let i = self.store.tunes.len() - 1;
                         self.set_note(&format!("NEW TUNE: {}", name.to_uppercase()));
                         acts.push(Action::OpenTune(Some(i)));
-                        acts.push(Action::RightTab(1));
+                        acts.push(Action::OpenChart);
                         ui.close_menu();
                     }
                 });

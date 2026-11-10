@@ -466,14 +466,14 @@ impl App {
 
     pub(crate) fn playlist_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         // a worn Winamp skin draws the queue as its own playlist window
-        if self.rtab == 0 && self.wa_art.as_ref().is_some_and(|t| t.sheets.contains_key("pledit")) {
+        if !self.chart_in_queue() && self.wa_art.as_ref().is_some_and(|t| t.sheets.contains_key("pledit")) {
             let inner = ui.max_rect();
             let outer = crate::frame_outer(inner);
             crate::tour::note("QUEUE", outer);
             self.winamp_playlist(ui, outer, acts);
             return;
         }
-        let title = if self.rtab == 1 {
+        let title = if self.chart_in_queue() {
             "LEAD SHEET"
         } else if self.shuffle {
             "QUEUE - SHUFFLED"

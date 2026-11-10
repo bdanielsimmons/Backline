@@ -10,7 +10,11 @@ const CAP_SHOW: [&str; 3] = ["ART AND INFO", "INFO ONLY", "NOTHING"];
 
 impl App {
     pub(crate) fn art_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let full = ui.max_rect();
+        // a skin worn on Windows: the window's own bar along the top, always there (minimise, maximise, close; it moves
+        // the window), the page under it; the backdrop and the visuals fill the whole window, under the bar too
+        let whole = ui.max_rect();
+        let own_bar = crate::app_bar() && self.art_view && !self.mini && !self.fullscreen;
+        let full = Rect::from_min_max(whole.min + Vec2::new(0.0, if own_bar { crate::NP_BAR_H - 8.0 } else { 0.0 }), whole.max);
         let p = ui.painter().clone();
         let dt = ui.input(|i| i.stable_dt).min(0.05);
         let hover = ui.input(|i| i.pointer.hover_pos());
@@ -79,7 +83,7 @@ impl App {
             let mut mesh = egui::Mesh::default();
             let uv = egui::epaint::WHITE_UV;
             for (pos, color) in
-                [(full.left_top(), tl), (full.right_top(), tr), (full.right_bottom(), br), (full.left_bottom(), bl)]
+                [(whole.left_top(), tl), (whole.right_top(), tr), (whole.right_bottom(), br), (whole.left_bottom(), bl)]
             {
                 mesh.vertices.push(egui::epaint::Vertex { pos, uv, color });
             }
@@ -88,8 +92,8 @@ impl App {
             // vignette: an oval, clear around the cover and easing smoothly into near-black, reaching it right at the
             // corners (rings of a soft curve, so there are no seams or corners in the shading)
             let edge = Color32::from_rgb(4, 4, 6);
-            let c = full.center();
-            let (rx, ry) = (full.width() * 0.5 * 1.42, full.height() * 0.5 * 1.42);
+            let c = whole.center();
+            let (rx, ry) = (whole.width() * 0.5 * 1.42, whole.height() * 0.5 * 1.42);
             const SEG: u32 = 64;
             const RINGS: u32 = 24;
             let mut v = egui::Mesh::default();
@@ -117,14 +121,14 @@ impl App {
 
         // ---- visuals, in place of the cover (with or without one), under the words and the controls
         if self.vis_in_np() {
-            self.vis_paint(ui, full, 1);
+            self.vis_paint(ui, whole, 1);
             let now = ui.input(|i| i.time);
             let name = self.vis_name();
             if self.vis_seen != name {
                 self.vis_seen = name.clone();
                 self.vis_ui_at = now;
             }
-            if ui.rect_contains_pointer(full) && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
+            if ui.rect_contains_pointer(whole) && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
                 self.vis_ui_at = now;
             }
             let fade = (1.0 - ((now - self.vis_ui_at) as f32 - 3.0)).clamp(0.0, 1.0);
@@ -955,6 +959,9 @@ impl App {
                 1.0,
                 pal().dim,
             );
+        }
+        if own_bar {
+            crate::window_bar(ui, Rect::from_min_size(whole.min, Vec2::new(whole.width(), crate::NP_BAR_H)), 1.0, 70);
         }
     }
 }

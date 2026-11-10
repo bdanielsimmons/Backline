@@ -340,6 +340,18 @@ enum Sec {
     Melodies,
     /// EAR: ear training drills
     Ear,
+    /// CHART: the lead sheet (the tune open, or the song playing) and the band, a page of its own
+    Chart,
+}
+
+impl Sec {
+    /// A PRACTICE page (the rest are music: the sources and your lists).
+    pub(crate) fn practice(self) -> bool {
+        matches!(
+            self,
+            Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies | Sec::Ear | Sec::Chart
+        )
+    }
 }
 
 /// The sources Backline plays from: (key, name). A song's source is "tidal" for Tidal, otherwise its kind
@@ -661,6 +673,8 @@ enum Action {
     // ---- diary / chart
     SaveEntry,
     RightTab(u8),
+    /// the lead sheet: its page in the library (in focus mode, the queue's window)
+    OpenChart,
     ImportIreal(Option<usize>),
 }
 
@@ -4943,6 +4957,10 @@ impl App {
             app.show_tl = false;
             app.show_log = false;
         }
+        // (BACKLINE_PRACTICE=1: in practice mode, whatever page it opens on)
+        if std::env::var_os("BACKLINE_PRACTICE").is_some() {
+            app.practice = true;
+        }
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
             // the practice panel, the playing song's second loop open to edit (its note box)
@@ -5183,7 +5201,7 @@ Second line: comp lighter here.", m.1.note);
             }
             Ok("chart") => {
                 app.practice = true;
-                app.rtab = 1;
+                app.sec = Sec::Chart;
                 app.prac_chart = Some(("Cherokee".to_string(), crate::tour::CHEROKEE.to_string()));
             }
             Ok("tunes") => app.sec = Sec::Tunes,
@@ -7851,6 +7869,17 @@ impl eframe::App for App {
                         by_w.min(by_h).clamp(1.0, (2.0 * ppp).round().max(2.0)) / ppp
                     }
                 });
+                // practising with a skin: the deck and playlist stop growing at about a quarter of the window's height,
+                // so the practice panel gets the room; the column is then just as wide as the deck (the library takes
+                // the rest), so the deck always fills it, edge to edge - never a gap beside it. (Never narrower than
+                // the practice panel's tabs need.)
+                let skin_k = skin_k.map(|k| {
+                    if self.practice && !self.focus_mode {
+                        k.min((screen.height() * 0.25 / 116.0).max(PRACTICE_COL_MIN / 275.0))
+                    } else {
+                        k
+                    }
+                });
                 if let Some(k) = skin_k {
                     self.stack_k = k;
                 }
@@ -7864,18 +7893,6 @@ impl eframe::App for App {
                 } else {
                     (self.lib_frac * screen.width()).clamp(280.0, (screen.width() - 560.0).max(280.0))
                 };
-                // practising with a skin: the column keeps the width you gave it, but the deck and playlist stop
-                // growing at about a quarter of the window's height (the deck centred), so the practice panel gets the room
-                let skin_k = skin_k.map(|k| {
-                    if self.practice && !self.focus_mode {
-                        k.min((screen.height() * 0.25 / 116.0).max(1.0))
-                    } else {
-                        k
-                    }
-                });
-                if let Some(k) = skin_k {
-                    self.stack_k = k;
-                }
                 let right_w = screen.width() - lib_w;
                 let inner_w = right_w - 28.0;
                 // the practice panel's height and the player's are yours to drag (double-click a handle: back to auto)
@@ -8259,7 +8276,8 @@ impl eframe::App for App {
             self.show_help = false;
         }
         if app_bar() {
-            if (self.art_view || self.vis_full) && !self.mini && !self.fullscreen {
+            // (Now Playing draws its own bar, always there: `art_ui`)
+            if self.vis_full && !self.mini && !self.fullscreen {
                 floating_app_bar(ctx);
             }
             edge_resize(ctx);
@@ -8319,6 +8337,9 @@ impl eframe::App for App {
     }
 }
 
+/// The skin's column while practising is never narrower than this (points): the practice panel's tabs fit in it.
+const PRACTICE_COL_MIN: f32 = 560.0;
+
 /// A tour is running (set every frame): the windows can't be resized under it.
 static TOUR_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -8345,9 +8366,12 @@ pub(crate) fn app_bar_strip(ui: &egui::Ui, strip: Rect, id: egui::Id) {
     }
 }
 
-/// Now Playing and the full-window visuals fill the window, with no system title bar: a slim bar comes in along the
-/// top when the mouse moves and goes after a few still seconds, as a video player's does. Drag it to move the window,
-/// double-click to fill the screen; minimise, maximise and close at its right, as Windows has them.
+/// Now Playing's own bar along the top (a skin worn, Windows: there is no system title bar), always there: the
+/// window's minimise, maximise and close at its right, the rest of it moves the window. The page sits under it.
+pub(crate) const NP_BAR_H: f32 = 34.0;
+
+/// The full-window visuals fill the window, with no system title bar: a slim bar comes in along the top when the mouse
+/// moves and goes after a few still seconds, as a video player's does (Now Playing keeps its bar: `window_bar`).
 fn floating_app_bar(ctx: &egui::Context) {
     let screen = ctx.screen_rect();
     let (still, pos) = ctx.input(|i| (i.pointer.time_since_last_movement(), i.pointer.hover_pos()));
@@ -8361,13 +8385,22 @@ fn floating_app_bar(ctx: &egui::Context) {
     if a <= 0.0 {
         return;
     }
-    let h = 36.0;
-    let bar = Rect::from_min_size(screen.min, Vec2::new(screen.width(), h));
+    let bar = Rect::from_min_size(screen.min, Vec2::new(screen.width(), 36.0));
     egui::Area::new(egui::Id::new("float_app_bar_area")).order(egui::Order::Foreground).fixed_pos(bar.min).show(ctx, |ui| {
+        window_bar(ui, bar, a, 150);
+        ui.allocate_rect(bar, Sense::hover());
+    });
+}
+
+/// A window bar: a soft shade from the top (`shade`: how dark at the very top) so the buttons read over any picture;
+/// minimise, maximise / restore and close at the right, as Windows has them; the rest moves the window, double-click
+/// fills the screen or brings it back. `a`: how far faded in.
+pub(crate) fn window_bar(ui: &mut egui::Ui, bar: Rect, a: f32, shade: u8) {
+    let h = bar.height();
+    {
         let p = ui.painter().clone();
-        // a soft shade from the top, so the buttons read over any picture
         let mut mesh = egui::Mesh::default();
-        let (top, bottom) = (Color32::from_black_alpha((150.0 * a) as u8), Color32::from_black_alpha(0));
+        let (top, bottom) = (Color32::from_black_alpha((shade as f32 * a) as u8), Color32::from_black_alpha(0));
         mesh.colored_vertex(bar.left_top(), top);
         mesh.colored_vertex(bar.right_top(), top);
         mesh.colored_vertex(bar.right_bottom(), bottom);
@@ -8375,6 +8408,9 @@ fn floating_app_bar(ctx: &egui::Context) {
         mesh.add_triangle(0, 1, 2);
         mesh.add_triangle(0, 2, 3);
         p.add(egui::Shape::mesh(mesh));
+    }
+    {
+        let p = ui.painter().clone();
         // the buttons first (they win over the dragging strip under them)
         let bw = 46.0;
         let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
@@ -8423,8 +8459,7 @@ fn floating_app_bar(ctx: &egui::Context) {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
         }
-        ui.allocate_rect(bar, Sense::hover());
-    });
+    }
 }
 
 /// With no system frame: the window's edges and corners size it, as a framed window's do (the pointer turns at

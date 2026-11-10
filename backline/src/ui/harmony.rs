@@ -489,7 +489,8 @@ impl App {
                         self.prac_chart = Some((title.clone(), format!("T44 {}|", bars)));
                         self.chart_sel = None;
                         self.chart_tr = 0;
-                        acts.push(Action::RightTab(1));
+                        // (you stay here, with what to play over each chord: the vamp waits on the Chart page)
+                        self.toast("The vamp is on the Chart");
                         // a band already going starts again on the vamp
                         if self.band_on {
                             acts.push(Action::Opt(crate::extras::Opt::Band));

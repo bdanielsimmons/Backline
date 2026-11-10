@@ -303,6 +303,15 @@ pub fn named(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
             pen.dot(0.27, 0.76, 0.12);
             pen.dot(0.73, 0.68, 0.12);
         }
+        // a lead sheet: two lines of bars
+        "chart" => {
+            for y in [0.3, 0.7] {
+                pen.line(&[(0.06, y + 0.14), (0.94, y + 0.14)]);
+                for x in [0.06, 0.35, 0.65, 0.94] {
+                    pen.line(&[(x, y - 0.16), (x, y + 0.14)]);
+                }
+            }
+        }
         "diary" => {
             pen.frame(0.12, 0.18, 0.88, 0.9, 0.08);
             pen.line(&[(0.12, 0.38), (0.88, 0.38)]);

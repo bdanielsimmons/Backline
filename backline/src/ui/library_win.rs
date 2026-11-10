@@ -1261,6 +1261,7 @@ impl App {
                 // practice in three groups: what you play, how it works, every day
                 ("", "Repertoire", false, 0),
                 ("note", "Tunes", here(Sec::Tunes), 10),
+                ("chart", "Chart", here(Sec::Chart), 18),
                 ("loop", "Loops", here(Sec::Loops), 12),
                 ("melody", "Chord Melodies", here(Sec::Melodies), 16),
                 ("", "Theory", false, 0),
@@ -1356,6 +1357,7 @@ impl App {
             Some(15) => acts.push(Action::Section(Sec::Lines)),
             Some(16) => acts.push(Action::Section(Sec::Melodies)),
             Some(17) => acts.push(Action::Section(Sec::Ear)),
+            Some(18) => acts.push(Action::OpenChart),
             Some(20) => acts.push(Action::BacklinePage),
             Some(21) => acts.push(Action::WaOpen),
             Some(22) => acts.push(Action::ShowLog),
@@ -1538,8 +1540,7 @@ impl App {
             }
             // HOME: Tidal home in MUSIC (your files when not signed in), your tunes in PRACTICE
             if !side && tabs {
-                let in_practice =
-                    matches!(self.sec, Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Ear);
+                let in_practice = self.sec.practice();
                 let tip = if in_practice {
                     "Your tunes."
                 } else if self.offline {
@@ -1562,10 +1563,7 @@ impl App {
             let pages = crate::PRACTICE
                 && !tabs
                 && !side
-                && matches!(
-                    self.sec,
-                    Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Ear | Sec::Melodies
-                );
+                && self.sec.practice();
             let pages_w = if pages { crate::views::pages_w() } else { 0.0 };
             if !self.offline && !side {
                 let go_w = 54.0;
@@ -1671,6 +1669,11 @@ impl App {
                 ui.push_id((serial, sec_i), |ui| self.melodies_view(ui, acts));
                 return;
             }
+            // the lead sheet fills the page (it fits the chart to the room, the band along its foot)
+            if sec == Sec::Chart {
+                ui.push_id((serial, sec_i), |ui| self.chart_ui(ui, acts));
+                return;
+            }
             // the scrollbar's room is always kept: a page about as tall as the window would otherwise gain and lose
             // its scrollbar every frame (the width changes, rows wrap, the height changes) and flicker
             // (a test copy can open scrolled down: BACKLINE_SCROLL=points; the chord finder scrolls itself)
@@ -1765,7 +1768,7 @@ impl App {
                         Sec::Reading => self.reading_view(ui, acts),
                         Sec::Chords => self.chords_view(ui, acts),
                         Sec::Lines => self.lines_view(ui, acts),
-                        Sec::Melodies => {}
+                        Sec::Melodies | Sec::Chart => {}
                         Sec::Ear => self.ear_view(ui, acts),
                         Sec::Lists => self.playlists_view(ui, acts),
                         Sec::Mine => self.mine_view(ui, acts),

@@ -1240,6 +1240,7 @@ enum Go {
     Ear,
     Lines(u8),
     Melodies(u8),
+    Chart,
 }
 
 const ANY: u8 = 255;
@@ -1252,7 +1253,7 @@ fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go
         diary.push(("MY PLAN", Diary(3)));
     }
     let groups: Vec<(&str, Vec<(&str, Go)>)> = vec![
-        ("TUNES", vec![("YOUR TUNES", Tunes(0)), ("RECOMMENDED", Tunes(1))]),
+        ("TUNES", vec![("YOUR TUNES", Tunes(0)), ("RECOMMENDED", Tunes(1)), ("CHART", Chart)]),
         ("DIARY", diary),
         ("LOOPS", vec![("LOOPS & BOOKMARKS", Loops)]),
         ("READING", vec![("THE BOOK", Reading(0)), ("MADE-UP LINES", Reading(1))]),
@@ -1508,6 +1509,7 @@ impl App {
             Sec::Chords => Go::Chords(self.chords_tab, sub(self.chords_tab)),
             Sec::Ear => Go::Ear,
             Sec::Lines => Go::Lines(self.ln_tab),
+            Sec::Chart => Go::Chart,
             _ => Go::Melodies(self.cm_tab),
         };
         let sel = gos.iter().position(|g| *g == now).unwrap_or(usize::MAX);
@@ -1522,6 +1524,7 @@ impl App {
             Go::Ear => Sec::Ear,
             Go::Lines(_) => Sec::Lines,
             Go::Melodies(_) => Sec::Melodies,
+            Go::Chart => Sec::Chart,
         };
         if sec != self.sec {
             acts.push(Action::Section(sec));
@@ -1550,7 +1553,7 @@ impl App {
             }
             Go::Lines(t) => self.ln_tab = t,
             Go::Melodies(t) => self.cm_tab = t,
-            Go::Loops | Go::Ear => {}
+            Go::Loops | Go::Ear | Go::Chart => {}
         }
     }
 
@@ -1558,8 +1561,9 @@ impl App {
     /// Two levels: MUSIC (the sources and your lists) and PRACTICE (tunes, diary) on top, that group's lists under it.
     /// Each group comes back to the list you last had open in it. The plain build has only MUSIC, so only its row shows.
     pub(crate) fn section_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        const PRACTICE_SECS: [(Sec, &str); 8] = [
+        const PRACTICE_SECS: [(Sec, &str); 9] = [
             (Sec::Tunes, "TUNES"),
+            (Sec::Chart, "CHART"),
             (Sec::Diary, "DIARY"),
             (Sec::Loops, "LOOPS"),
             (Sec::Reading, "READING"),
@@ -1907,10 +1911,10 @@ impl App {
         }
     }
 
-    /// Called at the top of the queue window: the QUEUE / CHART chips in the window's title strip (`ui`, the
-    /// panel's), the lead sheet on its page (`page`).
+    /// Called at the top of the queue window: in focus mode (no library, so no Chart page), the QUEUE / CHART chips
+    /// in the window's title strip (`ui`, the panel's), the lead sheet on its page (`page`).
     pub(crate) fn right_header(&mut self, ui: &mut egui::Ui, page: &mut egui::Ui, acts: &mut Vec<Action>) -> bool {
-        if !PRACTICE {
+        if !PRACTICE || !self.focus_mode {
             return false;
         }
         self.right_tabs(ui, acts);
@@ -3640,8 +3644,8 @@ impl App {
             if retro_btn(ui, "< TUNES", false).clicked() {
                 acts.push(Action::OpenTune(None));
             }
-            if retro_btn(ui, "CHART", self.rtab == 1).tip("Show the chord changes on the right.").clicked() {
-                acts.push(Action::RightTab(if self.rtab == 1 { 0 } else { 1 }));
+            if retro_btn(ui, "CHART", false).tip("Its chord changes and the band, on the Chart page. Back comes here.").clicked() {
+                acts.push(Action::OpenChart);
             }
         });
         ui.add_space(4.0);

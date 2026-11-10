@@ -585,7 +585,7 @@ impl App {
                 self.sec = crate::Sec::Ear;
             }
             Scene::Sheet => {
-                self.rtab = 1;
+                self.sec = crate::Sec::Chart;
                 if self.prac_chart.as_ref().map(|c| c.0.as_str()) != Some("CHEROKEE") {
                     self.prac_chart = Some(("CHEROKEE".to_string(), CHEROKEE.to_string()));
                 }

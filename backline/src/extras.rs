@@ -316,6 +316,26 @@ impl App {
         self.chart_pick.filter(|i| *i < self.store.tunes.len()).or_else(|| self.cur_tune())
     }
 
+    /// Show the lead sheet: its own page in the library, so Back returns to where you were and the queue's window
+    /// stays the queue. In focus mode (no library) it takes the queue's window, as a tab beside the queue.
+    pub(crate) fn open_chart(&mut self) {
+        if self.focus_mode {
+            self.rtab = 1;
+            return;
+        }
+        self.rtab = 0;
+        self.show_winamp = false;
+        self.show_tl = false;
+        if self.sec != Sec::Chart {
+            self.apply(Action::Section(Sec::Chart));
+        }
+    }
+
+    /// The queue's window shows the lead sheet (focus mode only: elsewhere the chart has its page).
+    pub(crate) fn chart_in_queue(&self) -> bool {
+        crate::PRACTICE && self.focus_mode && self.rtab == 1
+    }
+
     /// Put the lead sheet on the song playing: its tune when it is in one, else its changes looked up.
     pub(crate) fn chart_follow(&mut self, id: i64) {
         self.prac_chart = None;
@@ -2045,7 +2065,7 @@ impl App {
                             self.prac_chart = Some((name.to_uppercase(), chart));
                             self.chart_sel = None;
                             self.chart_tr = 0;
-                            self.rtab = 1;
+                            self.open_chart();
                             self.chart_sugg.clear();
                         }
                         Err((e, _)) => self.set_note(&format!("NO CHART FOR {}: {}", name.to_uppercase(), e.to_uppercase())),
@@ -2413,7 +2433,7 @@ impl App {
                 if let Some(i) = self.find_tune(&name) {
                     // one of yours: its own chart
                     self.apply(Action::OpenTune(Some(i)));
-                    self.rtab = 1;
+                    self.open_chart();
                     if self.store.tunes[i].chart.trim().is_empty() {
                         self.apply(Action::FindChart(i, None));
                     }
@@ -2491,17 +2511,11 @@ impl App {
             }
             Action::TakeDelete(id) => self.take_delete(id),
             Action::Section(s) => {
-                if matches!(
-                    s,
-                    Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies | Sec::Ear
-                ) {
+                if s.practice() {
                     self.last_practice = s;
                     // coming over from a music page, a practice page turns practice mode on (its panel opens); between
                     // practice pages your Listen / Practice choice stays as you set it
-                    let from_music = !matches!(
-                        self.sec,
-                        Sec::Tunes | Sec::Diary | Sec::Loops | Sec::Reading | Sec::Chords | Sec::Lines | Sec::Melodies | Sec::Ear
-                    );
+                    let from_music = !self.sec.practice();
                     if crate::PRACTICE && !self.practice && from_music {
                         self.practice = true;
                         self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
@@ -3572,10 +3586,10 @@ impl App {
             // ---- practice tools
             Action::ToggleFocus => {
                 self.focus_mode = !self.focus_mode;
-                if self.focus_mode {
-                    let has_chart = self.chart_tune().map(|i| !self.store.tunes[i].chart.is_empty()).unwrap_or(false);
-                    self.rtab = if has_chart { 1 } else { 0 };
-                }
+                // (focus mode hides the library: the chart, when there is one, takes the queue's window; leaving it,
+                // the queue's window is the queue again, the chart on its page)
+                let has_chart = self.chart_tune().map(|i| !self.store.tunes[i].chart.is_empty()).unwrap_or(false);
+                self.rtab = if self.focus_mode && has_chart { 1 } else { 0 };
                 self.set_note(if self.focus_mode { "FOCUS MODE: PLAYER AND TOOLS ONLY" } else { "FULL LAYOUT" });
             }
             Action::Continue => {
@@ -3776,6 +3790,7 @@ impl App {
                 self.set_note("ADDED TO THE DIARY");
             }
             Action::RightTab(n) => self.rtab = n,
+            Action::OpenChart => self.open_chart(),
             Action::StemGet => {
                 if self.stem_busy != 0 {
                     return;

@@ -1318,7 +1318,7 @@ impl App {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("The lead sheet");
         if lb.clicked() {
-            self.rtab = 1;
+            self.open_chart();
         }
         // running time (where we are / the whole queue) and the mini clock, in the skin's font
         let total: f32 = queue.iter().map(|t| t.duration).sum();

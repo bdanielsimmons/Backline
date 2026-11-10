@@ -1129,10 +1129,69 @@ impl App {
         let chart = self.chart_for(&text);
         let has = !chart.bars.is_empty();
 
-        // ---- the header: name, key, transpose, numerals, look again, edit, follow / lock
+        // ---- the header: the name on a line of its own (the page's title); under it the key, transpose and
+        // numerals on the left, look again / edit and follow / lock on the right
         ui.add_space(4.0);
+        {
+            let (nr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh() + 8.0), Sense::hover());
+            crate::winamp_ui::as_title(|| {
+                crate::ui_text(
+                    ui.painter(),
+                    Pos2::new(nr.min.x + 2.0, nr.center().y),
+                    Align::Min,
+                    &name,
+                    3.0,
+                    nr.width() - 4.0,
+                    pal().ink,
+                )
+            });
+        }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
+            if retro_btn_w(ui, "-", 28.0, false).tip("Down a half step").clicked() {
+                self.chart_tr = (self.chart_tr - 1).rem_euclid(12);
+            }
+            // the key chip: every key, and the horn transpositions
+            let tonic = chart::tonic(&key, &chart);
+            let names = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+            let chip = match tonic {
+                Some(t) => format!("KEY {}", names[(t + self.chart_tr).rem_euclid(12) as usize]),
+                None if self.chart_tr == 0 => "CONCERT".to_string(),
+                None => format!("+{}", self.chart_tr),
+            };
+            let kr = retro_btn(ui, &chip, self.chart_tr != 0).tip("Shown in this key. Click for any key or the horn parts.");
+            let mut keys: Vec<(String, i32)> =
+                vec![("CONCERT (C)".into(), 0), ("Bb HORNS".into(), 2), ("Eb HORNS".into(), 9), ("F HORN".into(), 7)];
+            let t0 = tonic.unwrap_or(0);
+            for (n, nm) in names.iter().enumerate() {
+                keys.push((format!("IN KEY OF {}", nm), (n as i32 - t0).rem_euclid(12)));
+            }
+            let cur = keys.iter().position(|k| k.1 == self.chart_tr).unwrap_or(0);
+            let mut pick = None;
+            popup(ui, "sheet_key", &kr, 220.0, false, |ui| {
+                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    for (i, k) in keys.iter().enumerate() {
+                        let mark = if i == cur { "> " } else { "   " };
+                        if crate::menu_item(ui, &format!("{}{}", mark, k.0)) {
+                            pick = Some(k.1);
+                        }
+                    }
+                });
+                pick.is_some()
+            });
+            if let Some(t) = pick {
+                self.chart_tr = t;
+            }
+            if retro_btn_w(ui, "+", 28.0, false).tip("Up a half step").clicked() {
+                self.chart_tr = (self.chart_tr + 1).rem_euclid(12);
+            }
+            ui.add_space(6.0);
+            if retro_btn(ui, "I-IV-V", self.chart_rn)
+                .tip("Show Roman numerals under the chords, relative to the key.")
+                .clicked()
+            {
+                acts.push(Action::ToggleNumerals);
+            }
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 self.sheet_lock(ui, playing.as_ref().map(|t| t.id));
                 if let Some(i) = ti {
@@ -1160,65 +1219,6 @@ impl App {
                         acts.push(Action::SaveLive);
                     }
                 }
-                if retro_btn(ui, "I-IV-V", self.chart_rn)
-                    .tip("Show Roman numerals under the chords, relative to the key.")
-                    .clicked()
-                {
-                    acts.push(Action::ToggleNumerals);
-                }
-                ui.add_space(6.0);
-                if retro_btn_w(ui, "+", 28.0, false).tip("Up a half step").clicked() {
-                    self.chart_tr = (self.chart_tr + 1).rem_euclid(12);
-                }
-                // the key chip: every key, and the horn transpositions
-                let tonic = chart::tonic(&key, &chart);
-                let names = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
-                let chip = match tonic {
-                    Some(t) => format!("KEY {}", names[(t + self.chart_tr).rem_euclid(12) as usize]),
-                    None if self.chart_tr == 0 => "CONCERT".to_string(),
-                    None => format!("+{}", self.chart_tr),
-                };
-                let kr = retro_btn(ui, &chip, self.chart_tr != 0)
-                    .tip("Shown in this key. Click for any key or the horn parts.");
-                let mut keys: Vec<(String, i32)> =
-                    vec![("CONCERT (C)".into(), 0), ("Bb HORNS".into(), 2), ("Eb HORNS".into(), 9), ("F HORN".into(), 7)];
-                let t0 = tonic.unwrap_or(0);
-                for (n, nm) in names.iter().enumerate() {
-                    keys.push((format!("IN KEY OF {}", nm), (n as i32 - t0).rem_euclid(12)));
-                }
-                let cur = keys.iter().position(|k| k.1 == self.chart_tr).unwrap_or(0);
-                let mut pick = None;
-                popup(ui, "sheet_key", &kr, 220.0, false, |ui| {
-                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                        for (i, k) in keys.iter().enumerate() {
-                            let mark = if i == cur { "> " } else { "   " };
-                            if crate::menu_item(ui, &format!("{}{}", mark, k.0)) {
-                                pick = Some(k.1);
-                            }
-                        }
-                    });
-                    pick.is_some()
-                });
-                if let Some(t) = pick {
-                    self.chart_tr = t;
-                }
-                if retro_btn_w(ui, "-", 28.0, false).tip("Down a half step").clicked() {
-                    self.chart_tr = (self.chart_tr - 1).rem_euclid(12);
-                }
-                ui.add_space(8.0);
-                // the name takes what is left
-                let (nr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
-                crate::winamp_ui::as_title(|| {
-                    crate::ui_text(
-                        ui.painter(),
-                        Pos2::new(nr.min.x + 2.0, nr.center().y),
-                        Align::Min,
-                        &name,
-                        3.0,
-                        nr.width() - 4.0,
-                        pal().ink,
-                    )
-                });
             });
         });
         let mut sub = String::new();
