@@ -374,13 +374,15 @@ pub struct Section {
     pub fav: bool,
 }
 
-/// A bookmark on a song's waveform: where, its colour, and a name if you gave it one.
+/// A bookmark on a song's waveform: where, its colour, a name if you gave it one, and your note on it.
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct Bookmark {
     pub t: f32,
     pub col: [u8; 3],
     pub name: String,
+    /// what happens here, what to work on (as a loop's note)
+    pub note: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]

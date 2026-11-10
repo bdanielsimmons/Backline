@@ -1330,6 +1330,21 @@ fn song_wave(id: i64) -> Option<std::rc::Rc<Vec<u8>>> {
     })
 }
 
+/// A bookmark's flag tip: its name and note (when it has them), then where it is and what clicks do.
+fn mark_tip(m: &store::Bookmark, k: usize, at: &str) -> String {
+    let mut s = String::new();
+    for line in [&m.name, &m.note] {
+        if !line.is_empty() {
+            s.push_str(line);
+            s.push('\n');
+        }
+    }
+    format!("{}Bookmark {} at {}. Click to jump, alt + click to remove, right-click to rename, add a note or recolor.", s, k + 1, at)
+}
+
+/// The BOOKMARKS tab puts a bookmark's note beside its name from this width, under it when narrower.
+const MARK_NOTE_BESIDE: f32 = 300.0;
+
 /// The bookmark colours: bright enough to read a dark number on, apart enough to tell apart.
 const MARK_COLS: [[u8; 3]; 8] = [
     [235, 80, 80],
@@ -4030,7 +4045,7 @@ impl App {
                 Vec::new()
             };
             let marks: Vec<(usize, store::Bookmark)> = if show_marks {
-                self.store.marks.get(id).into_iter().flatten().cloned().enumerate().filter(|(_, m)| hit(&[&m.name])).collect()
+                self.store.marks.get(id).into_iter().flatten().cloned().enumerate().filter(|(_, m)| hit(&[&m.name, &m.note])).collect()
             } else {
                 Vec::new()
             };
@@ -4290,6 +4305,7 @@ impl App {
                     }
                     resp.context_menu(|ui| {
                         if menu_item(ui, "Rename / add a note...") {
+                            self.mark_edit = None;
                             self.clip_edit = Some((c.id, *i));
                             self.clip_name = s.name.clone();
                             self.clip_note = s.note.clone();
@@ -4312,29 +4328,45 @@ impl App {
                     }
                 }
                 Row::Mark(i, m) => {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
+                    let h = if m.note.is_empty() { 32.0 } else { 50.0 };
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
                     let p = ui.painter();
                     if resp.hovered() {
                         p.rect_filled(r, 6.0, pal().sel);
                     }
-                    let cy = r.center().y;
+                    let cy = r.min.y + 16.0;
                     let col = Color32::from_rgb(m.col[0], m.col[1], m.col[2]);
                     p.rect_filled(Rect::from_center_size(Pos2::new(r.min.x + 18.0, cy), Vec2::new(3.0, 14.0)), 1.0, col);
                     let mw = ptext(p, Pos2::new(r.max.x - 40.0, cy), Align::Max, &fmt_time(m.t), 1.0, pal().ink2);
                     let name = if m.name.is_empty() { "Bookmark" } else { &m.name };
                     ptext_fit(p, Pos2::new(r.min.x + 36.0, cy), Align::Min, name, 1.6, (r.width() - mw - 90.0).max(20.0), if m.name.is_empty() { pal().ink2 } else { pal().ink });
-                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play from this bookmark. Right-click to remove it.");
+                    if !m.note.is_empty() {
+                        ptext_fit(p, Pos2::new(r.min.x + 36.0, r.min.y + 35.0), Align::Min, &m.note, 1.3, r.width() - 80.0, pal().dim);
+                    }
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .tip("Play from this bookmark. Right-click to rename, add a note or remove it.");
                     if resp.clicked() {
                         if let Some(v) = &c.v {
                             acts.push(Action::PlayAt(v.clone(), m.t));
                         }
                     }
                     resp.context_menu(|ui| {
+                        if menu_item(ui, "Rename / add a note...") {
+                            self.clip_edit = None;
+                            self.mark_edit = Some((c.id, *i));
+                            self.clip_name = m.name.clone();
+                            self.clip_note = m.note.clone();
+                            ui.close_menu();
+                        }
                         if menu_item(ui, "Remove this bookmark") {
                             drop_mark = Some(*i);
                             ui.close_menu();
                         }
                     });
+                    if self.mark_edit == Some((c.id, *i)) {
+                        self.mark_editor(ui);
+                    }
                 }
             }
         }
@@ -4345,7 +4377,36 @@ impl App {
                     self.store_dirty = true;
                 }
             }
+            self.mark_edit = None;
         }
+    }
+
+    /// Renaming a bookmark or giving it a note, on the LOOPS page (as a loop's editor, without the group).
+    fn mark_editor(&mut self, ui: &mut egui::Ui) {
+        let Some((id, k)) = self.mark_edit else { return };
+        let o1 = field_row(ui, &mut self.ed, crate::tools::F_CLIP_NAME, "NAME", &mut self.clip_name, "solo, bridge, key change", None);
+        let o2 = field_row(ui, &mut self.ed, crate::tools::F_CLIP_NOTE, "NOTE", &mut self.clip_note, "what happens here, what to work on", None);
+        let mut done = o1.enter || o2.enter;
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(12.0);
+            if retro_btn(ui, "SAVE", false).clicked() {
+                done = true;
+            }
+            if retro_btn(ui, "CANCEL", false).clicked() {
+                self.mark_edit = None;
+                self.ed.id = 0;
+            }
+        });
+        if done {
+            if let Some(m) = self.store.marks.get_mut(&id).and_then(|l| l.get_mut(k)) {
+                m.name = self.clip_name.trim().to_string();
+                m.note = self.clip_note.trim().to_string();
+                self.store_dirty = true;
+            }
+            self.mark_edit = None;
+            self.ed.id = 0;
+        }
+        ui.add_space(6.0);
     }
 
     /// Loops saved before songs were remembered: name them from wherever the song is known (tunes, files, lists,
@@ -5309,7 +5370,7 @@ impl App {
             pool[n as usize % pool.len()]
         });
         let list = self.store.marks.entry(id).or_default();
-        list.push(crate::store::Bookmark { t, col, name: String::new() });
+        list.push(crate::store::Bookmark { t, col, ..Default::default() });
         list.sort_by(|a, b| a.t.total_cmp(&b.t));
         self.store_dirty = true;
         self.set_note(&format!("BOOKMARK AT {}", fmt_t(t)));
@@ -5708,27 +5769,14 @@ impl App {
                     let fr = ui
                         .interact(flag.expand(2.0), ui.id().with(("wv_bm", k)), Sense::click())
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip(format!(
-                            "{}Bookmark {} at {}. Click to jump, alt + click to remove, right-click to rename or recolor.",
-                            if m.name.is_empty() {
-                                String::new()
-                            } else {
-                                format!(
-                                    "{}
-",
-                                    m.name
-                                )
-                            },
-                            k + 1,
-                            fmt_t(m.t)
-                        ));
+                        .tip(mark_tip(m, k, &fmt_t(m.t)));
                     if fr.clicked() && ui.input(|i| i.modifiers.alt) {
                         drop = Some(k);
                     } else if fr.clicked() {
                         acts.push(Action::Seek(m.t));
                     }
                     fr.context_menu(|ui| {
-                        if menu_item(ui, "Rename...") {
+                        if menu_item(ui, "Rename / add a note...") {
                             rename = Some(k);
                             ui.close_menu();
                         }
@@ -5742,7 +5790,7 @@ impl App {
                         }
                     });
                 }
-                // rename: the BOOKMARKS tab, its name ready to type
+                // rename / a note: the BOOKMARKS tab, its name ready to type
                 if let Some(k) = rename {
                     self.more = true;
                     self.mtab = 3;
@@ -6111,6 +6159,7 @@ impl App {
                     }
                     r.context_menu(|ui| {
                         if menu_item(ui, "Rename / add a note...") {
+                            self.mark_edit = None;
                             self.clip_edit = Some((id, i));
                             self.clip_name = s.name.clone();
                             self.clip_note = s.note.clone();
@@ -6274,8 +6323,10 @@ impl App {
                 if retro_btn_w(ui, &fmt_t(m.t), 70.0, false).tip("Jump here.").clicked() {
                     acts.push(Action::Seek(m.t));
                 }
-                let w = (ui.available_width() - 40.0).clamp(80.0, 360.0);
-                let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+                let w = (ui.available_width() - 40.0).clamp(80.0, 720.0);
+                let side = w >= MARK_NOTE_BESIDE;
+                let name_w = if side { (w * 0.4).min(240.0) } else { w };
+                let (r, _) = ui.allocate_exact_size(Vec2::new(name_w, bh()), Sense::hover());
                 let fid = 5000 + k as u32;
                 if let Some(list) = self.store.marks.get_mut(&id) {
                     let o = field(ui, &mut self.ed, fid, &mut list[k].name, r, "Name it (solo, bridge, key change)", false);
@@ -6283,10 +6334,23 @@ impl App {
                         self.store_dirty = true;
                     }
                 }
+                if side {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(w - name_w - ui.spacing().item_spacing.x, bh()), Sense::hover());
+                    self.mark_note_field(ui, id, k, r);
+                }
                 if retro_btn_w(ui, "X", 28.0, false).tip("Remove this bookmark.").clicked() {
                     drop = Some(k);
                 }
             });
+            // (narrow: the note on a line of its own, under the name)
+            let w = (ui.available_width() - 40.0).clamp(80.0, 720.0);
+            if w < MARK_NOTE_BESIDE {
+                ui.horizontal(|ui| {
+                    ui.add_space(22.0 + 70.0 + ui.spacing().item_spacing.x * 2.0);
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(w - 92.0, bh()), Sense::hover());
+                    self.mark_note_field(ui, id, k, r);
+                });
+            }
         }
         if let Some(list) = self.store.marks.get_mut(&id) {
             if let Some((k, c)) = recolour {
@@ -6295,6 +6359,16 @@ impl App {
             }
             if let Some(k) = drop {
                 list.remove(k);
+                self.store_dirty = true;
+            }
+        }
+    }
+
+    /// A bookmark's note, typed in the BOOKMARKS tab.
+    fn mark_note_field(&mut self, ui: &mut egui::Ui, id: i64, k: usize, r: Rect) {
+        if let Some(list) = self.store.marks.get_mut(&id) {
+            let o = field(ui, &mut self.ed, 9000 + k as u32, &mut list[k].note, r, "Add a note", false);
+            if o.changed {
                 self.store_dirty = true;
             }
         }
@@ -7067,6 +7141,18 @@ fn pencil(p: &egui::Painter, at: Pos2, size: f32, col: Color32) {
 #[cfg(test)]
 mod summary_tests {
     use super::*;
+
+    #[test]
+    fn a_bookmark_keeps_a_note() {
+        // one saved before notes were kept still loads, with none
+        let old: store::Bookmark = serde_json::from_str(r#"{"t":12.5,"col":[1,2,3],"name":"bridge"}"#).unwrap();
+        assert_eq!((old.name.as_str(), old.note.as_str()), ("bridge", ""));
+        let m = store::Bookmark { t: 70.0, name: "Solo".into(), note: "watch the turnaround".into(), ..Default::default() };
+        let tip = mark_tip(&m, 1, "1:10");
+        assert!(tip.starts_with("Solo\nwatch the turnaround\nBookmark 2 at 1:10."), "{}", tip);
+        let plain = mark_tip(&store::Bookmark::default(), 0, "0:00");
+        assert!(plain.starts_with("Bookmark 1 at 0:00."), "{}", plain);
+    }
 
     #[test]
     fn skimming_goes_day_to_day_with_notes() {

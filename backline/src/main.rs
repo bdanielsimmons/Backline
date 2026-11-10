@@ -3219,6 +3219,8 @@ struct App {
     loops_pick: Option<i64>,
     /// the loop being renamed / noted in LOOPS (song id, which), and what is typed
     clip_edit: Option<(i64, usize)>,
+    /// a bookmark being renamed or given a note on the LOOPS page: (song, which one); its words in clip_name/clip_note
+    mark_edit: Option<(i64, usize)>,
     clip_name: String,
     clip_note: String,
     clip_group: String,
@@ -4116,6 +4118,7 @@ impl App {
             loops_show: 0,
             loops_pick: None,
             clip_edit: None,
+            mark_edit: None,
             clip_name: String::new(),
             clip_note: String::new(),
             clip_group: String::new(),
@@ -4986,6 +4989,16 @@ impl App {
             Ok("groups") => {
                 app.sec = Sec::Loops;
                 app.loops_mode = 2;
+            }
+            // the LOOPS page on the song with the most bookmarks, the first one's name and note being edited
+            Ok("loopmarks") => {
+                app.sec = Sec::Loops;
+                app.loops_all = true;
+                app.loops_pick = app.store.marks.iter().max_by_key(|(id, l)| (l.len(), **id)).map(|(id, _)| *id);
+                if let Some(id) = app.loops_pick {
+                    app.mark_edit = Some((id, 0));
+                    app.clip_name = app.store.marks[&id][0].name.clone();
+                }
             }
             Ok("moves") => {
                 app.sec = Sec::Chords;
