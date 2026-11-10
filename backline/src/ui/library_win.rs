@@ -631,7 +631,7 @@ impl App {
             let n = recent[i..].iter().take_while(|r| day(r.1) == label).count();
             dim_line(ui, label, 1.0, pal().ink2);
             let tracks: Vec<Track> = recent[i..i + n].iter().map(|r| r.0.to_track()).collect();
-            crate::tracks_list(ui, &tracks, playing, &self.liked, None, acts);
+            crate::tracks_list(ui, &tracks, playing, &self.liked, None, &self.srcmap, acts);
             ui.add_space(6.0);
             i += n;
         }
@@ -1730,7 +1730,7 @@ impl App {
                                     self.filter_box(ui, hint);
                                 }
                                 let filter = if pg.library { self.lib_filter.clone() } else { String::new() };
-                                page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, &filter, acts);
+                                page_view(ui, &mut self.images, pg, playing_id, tab, &self.liked, &filter, &self.srcmap, acts);
                             }
                         }
                         Sec::Files => self.files_view(ui, acts),

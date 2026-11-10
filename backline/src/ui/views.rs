@@ -560,7 +560,7 @@ impl App {
         crate::play_buttons(ui, tracks, acts, false);
         ui.add_space(4.0);
         let playing = self.cur_track().map(|t| t.id);
-        crate::tracks_list(ui, tracks, playing, &self.liked, None, acts);
+        crate::tracks_list(ui, tracks, playing, &self.liked, None, &self.srcmap, acts);
         ui.add_space(20.0);
     }
 

@@ -619,6 +619,18 @@ pub(crate) fn track_cells(id: i64, title: &str, artist: &str, album: &str, kind:
     format!("{}\t{}\t{}\t{}|{}\t{}", title, artist, album, key, bpm, source_label(kind))
 }
 
+/// Where a track comes from ("tidal", "file", "yt", "sc"), by what it plays from: a song not on Tidal is in `src`;
+/// one that isn't (and isn't a Tidal song) says nothing.
+pub(crate) fn track_kind(src: &HashMap<i64, crate::Src>, id: i64) -> &'static str {
+    match src.get(&id) {
+        Some(crate::Src::File(_)) => "file",
+        Some(crate::Src::Yt(v)) if v.starts_with("http") => "sc",
+        Some(crate::Src::Yt(_)) => "yt",
+        None if id > 0 => "tidal",
+        None => "",
+    }
+}
+
 /// Where a song comes from, as the SOURCE column says it.
 pub(crate) fn source_label(kind: &str) -> &'static str {
     match kind {
@@ -631,13 +643,15 @@ pub(crate) fn source_label(kind: &str) -> &'static str {
 }
 
 // ------------------------------------------------------------------ page view
-/// `own`: the id of your own Tidal playlist these songs are, for taking one out of it.
+/// `own`: the id of your own Tidal playlist these songs are, for taking one out of it. `src`: where each song not on
+/// Tidal plays from (the SOURCE column).
 pub(crate) fn tracks_list(
     ui: &mut egui::Ui,
     tracks: &[Track],
     playing_id: Option<i64>,
     liked: &HashSet<i64>,
     own: Option<&str>,
+    src: &HashMap<i64, crate::Src>,
     acts: &mut Vec<Action>,
 ) {
     // covers beside the songs (not on an album's own page: they would all be the same one)
@@ -666,7 +680,7 @@ pub(crate) fn tracks_list(
             ui,
             i,
             Some(i + 1),
-            || track_cells(t.id, &t.title, &t.artists_text(), &t.album, "tidal"),
+            || track_cells(t.id, &t.title, &t.artists_text(), &t.album, track_kind(src, t.id)),
             || if col_on(2) { fmt_time(t.duration) } else { String::new() },
             state,
             false,
@@ -1022,6 +1036,7 @@ pub(crate) fn page_view(
     tab: Tab,
     liked: &HashSet<i64>,
     filter: &str,
+    src: &HashMap<i64, crate::Src>,
     acts: &mut Vec<Action>,
 ) {
     ui.add_space(6.0);
@@ -1110,7 +1125,7 @@ pub(crate) fn page_view(
                 } else if tracks.is_empty() {
                     title_line(ui, "No songs match.", 2.0, pal().ink2);
                 }
-                tracks_list(ui, tracks, playing_id, liked, None, acts);
+                tracks_list(ui, tracks, playing_id, liked, None, src, acts);
             }
             t => {
                 let (key, name) = match t {
@@ -1265,7 +1280,7 @@ pub(crate) fn page_view(
         }
         // one of your own playlists (nothing to save): its songs can be taken out of it
         let own = page.card.as_ref().filter(|c| c.kind == Kind::Playlist && page.saved.is_none()).map(|c| c.id.as_str());
-        tracks_list(ui, &page.tracks, playing_id, liked, own, acts);
+        tracks_list(ui, &page.tracks, playing_id, liked, own, src, acts);
     }
     for (title, cards) in &page.rows {
         section_header(ui, title);

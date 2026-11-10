@@ -605,7 +605,7 @@ impl App {
         for s in &data.songs {
             let (title, artist) = match &s.v {
                 Some(v) => (v.title.clone(), v.artist.clone()),
-                None => ("Unknown song (play it to load its name)".to_string(), String::new()),
+                None => ("Unknown song".to_string(), String::new()),
             };
             let spots = s.loops.len() + s.marks.len();
             let mut sub = artist;
@@ -634,7 +634,7 @@ impl App {
         // ---- the song, and a button to play it
         let (title, artist) = match &c.v {
             Some(v) => (v.title.clone(), v.artist.clone()),
-            None => ("Unknown song (play it to load its name)".to_string(), String::new()),
+            None => ("Unknown song".to_string(), String::new()),
         };
         let (hr, hresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
         let play_r = Rect::from_center_size(Pos2::new(hr.max.x - 18.0, hr.center().y), Vec2::splat(30.0));
@@ -646,13 +646,19 @@ impl App {
             if !artist.is_empty() && tw < room && room - tw > 70.0 {
                 ptext_fit(p, Pos2::new(hr.min.x + tw + 12.0, hr.center().y + 2.0), Align::Min, &artist, 1.4, room - tw - 16.0, pal().ink2);
             }
-            p.circle_filled(play_r.center(), 15.0, pal().bar_txt);
-            let c0 = play_r.center();
-            p.add(egui::Shape::convex_polygon(
-                vec![c0 + Vec2::new(-4.0, -6.5), c0 + Vec2::new(7.0, 0.0), c0 + Vec2::new(-4.0, 6.5)],
-                pal().app_bg,
-                Stroke::NONE,
-            ));
+            // (a song never found has nothing to play: no button)
+            if c.v.is_some() {
+                p.circle_filled(play_r.center(), 15.0, pal().bar_txt);
+                let c0 = play_r.center();
+                p.add(egui::Shape::convex_polygon(
+                    vec![c0 + Vec2::new(-4.0, -6.5), c0 + Vec2::new(7.0, 0.0), c0 + Vec2::new(-4.0, 6.5)],
+                    pal().app_bg,
+                    Stroke::NONE,
+                ));
+            }
+        }
+        if c.v.is_none() {
+            hresp.clone().tip("Backline doesn't know which song this is: it was bookmarked before songs were kept with their bookmarks.");
         }
         if let Some(v) = &c.v {
             let pr = ui.interact(play_r, ui.id().with(("spot_play", c.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play the song.");
@@ -912,10 +918,21 @@ impl App {
         ui.add_space(6.0);
     }
 
-    /// Loops saved before songs were remembered: name them from wherever the song is known (tunes, files, lists,
-    /// the queue).
+    /// Loops and bookmarks saved before their songs were remembered: name them from wherever the song is known
+    /// (tunes, files, playlists, what you played, the queue). Each song is looked for once a run.
     pub(crate) fn name_old_loops(&mut self) {
-        let missing: Vec<i64> = self.store.sections.keys().copied().filter(|id| !self.store.songs.contains_key(id)).collect();
+        thread_local! {
+            static TRIED: std::cell::RefCell<std::collections::HashSet<i64>> = Default::default();
+        }
+        let marked = self.store.marks.iter().filter(|(_, l)| !l.is_empty()).map(|(id, _)| id);
+        let missing: Vec<i64> = self
+            .store
+            .sections
+            .keys()
+            .chain(marked)
+            .copied()
+            .filter(|id| !self.store.songs.contains_key(id) && TRIED.with(|t| t.borrow_mut().insert(*id)))
+            .collect();
         for id in missing {
             let found = self
                 .store
@@ -934,6 +951,8 @@ impl App {
                         .find(|e| e.id == id)
                         .map(|e| e.to_version())
                 })
+                .or_else(|| self.store.playlists.iter().flat_map(|p| p.items.iter()).find(|v| v.id == id).cloned())
+                .or_else(|| self.store.recent.iter().find(|(v, _)| v.id == id).map(|(v, _)| v.clone()))
                 .or_else(|| self.store.last.as_ref().and_then(|l| l.queue.iter().find(|v| v.id == id).cloned()))
                 .or_else(|| self.queue.iter().find(|t| t.id == id).map(|t| self.version_of(t)));
             if let Some(v) = found {

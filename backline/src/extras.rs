@@ -243,6 +243,8 @@ impl App {
         vs.extend(self.store.files.iter().map(|e| e.to_version()));
         vs.extend(self.store.yt.iter().map(|e| e.to_version()));
         vs.extend(self.store.sc.iter().map(|e| e.to_version()));
+        // (hearted ones not on Tidal: MY TRACKS lists them among the Tidal ones, its SOURCE column says which)
+        vs.extend(self.store.hearts.iter().map(|e| e.to_version()));
         for t in &self.store.tunes {
             vs.extend(t.versions.iter().cloned());
         }
@@ -1185,8 +1187,9 @@ impl App {
                 self.apply_eq();
             }
         }
-        // a song with loops saved before songs were remembered: remember it now
-        if (self.store.sections.contains_key(&t.id) || stems::is_split(t.id)) && !self.is_demo(t.id) {
+        // a song with loops or bookmarks saved before songs were remembered: remember it now
+        let marked = self.store.marks.get(&t.id).is_some_and(|l| !l.is_empty());
+        if (self.store.sections.contains_key(&t.id) || marked || stems::is_split(t.id)) && !self.is_demo(t.id) {
             self.remember_song(t);
         }
         match self.loops.get(&t.id).copied().filter(|_| !self.is_demo(t.id)) {

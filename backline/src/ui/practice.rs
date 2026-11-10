@@ -73,6 +73,10 @@ impl App {
         self.store_dirty = true;
         self.set_note(&format!("BOOKMARK AT {}", fmt_t(t)));
         self.keep_for_practice(id);
+        // remembered, so LOOPS can name and play it (as a saved loop's song is)
+        if let Some(song) = self.cur_track().filter(|s| s.id == id && !self.is_demo(id)) {
+            self.remember_song(&song);
+        }
     }
 
     /// The note view in the waveform's place: the song by pitch (`notes::NoteMap`) as a heat map, a keyboard down the

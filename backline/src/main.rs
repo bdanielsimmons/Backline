@@ -4165,6 +4165,19 @@ mod tests {
         assert!(track_cells(888002, "T", "A", "B", "sc").ends_with("\tC?|95\tSoundCloud"), "detected keys carry a ?");
         assert!(track_cells(888003, "T", "A", "", "file").ends_with("\t|\tFile"), "unknown: empty cell");
     }
+
+    #[test]
+    fn source_of_a_track() {
+        let mut src = HashMap::new();
+        src.insert(-5, Src::File(std::path::PathBuf::from("C:/a.mp3")));
+        src.insert(-6, Src::Yt("dQw4w9WgXcQ".into()));
+        src.insert(-7, Src::Yt("https://soundcloud.com/a/b".into()));
+        assert_eq!(track_kind(&src, 42), "tidal");
+        assert_eq!(track_kind(&src, -5), "file");
+        assert_eq!(track_kind(&src, -6), "yt");
+        assert_eq!(track_kind(&src, -7), "sc");
+        assert_eq!(track_kind(&src, -8), "", "not on Tidal, not known: nothing said");
+    }
 }
 
 /// The latest samples (`rate` a second) as the visualizers see them: `bands` from 50 Hz to 12 kHz (`nb` of them,
