@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Fourteen Backline looks and a Custom look made from two colors
 - Pitch tab tuning in Hz: find or type the record's A (A = 452), set yours, and match them in one click
 - Copy songs from your other computer: browse its files, pick the ones you want, and they copy in the background
 - Save a radio or mix as a playlist, in Backline or on Tidal, and add songs to playlists without leaving the page
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Gospel progressions (church, shout and quartet) and scale fingerings by the root's finger
 - Sync between your computers on the same network, with no account or cloud
 - Pop the visuals out into a small window of their own
-- 3D Wave: a sheet of light drifting across the sky, glowing where it folds
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
