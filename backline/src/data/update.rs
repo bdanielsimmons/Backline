@@ -239,9 +239,14 @@ impl App {
         if due && matches!(self.upd_state, 0 | 3) {
             self.start_update_check();
         }
-        // linked with a computer running a newer Backline: take it from there (every two minutes it's asked)
-        let ask_linked = self.linked_upd_at.is_none_or(|t| t.elapsed() > Duration::from_secs(120));
+        // linked with a computer running a newer Backline: take it from there, as soon as it says so (it says which
+        // build it runs every few seconds), and every two minutes in case it's one that doesn't say
+        static ASKED_FOR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let there = crate::sync::peer_build();
+        let news = there > build() && ASKED_FOR.load(std::sync::atomic::Ordering::Relaxed) != there;
+        let ask_linked = news || self.linked_upd_at.is_none_or(|t| t.elapsed() > Duration::from_secs(120));
         if ask_linked && matches!(self.upd_state, 0 | 3) && build() > 0 && crate::sync::peer_name().is_some() {
+            ASKED_FOR.store(there, std::sync::atomic::Ordering::Relaxed);
             self.linked_upd_at = Some(Instant::now());
             let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
             std::thread::spawn(move || {

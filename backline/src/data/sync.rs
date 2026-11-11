@@ -297,6 +297,14 @@ pub(crate) fn share(files: Vec<Shared>) {
     }
 }
 
+/// The Backline build the linked computer last said it runs (heard every few seconds; 0 until it's heard, or an
+/// older Backline that doesn't say).
+static PEER_BUILD: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn peer_build() -> u64 {
+    PEER_BUILD.load(Ordering::Relaxed)
+}
+
 /// The linked computer's name, while syncing is on.
 pub(crate) fn peer_name() -> Option<String> {
     let e = engine()?;
@@ -596,7 +604,7 @@ impl Engine {
     }
 
     /// This computer's announcement: "BLSYNC1|id|port|flags|joining|name" (flags: L linked, D something new to sync,
-    /// R an answer).
+    /// R an answer, then the Backline build it runs: "LD371"; an older Backline reads only the letters).
     fn hello(&self, reply: bool) -> String {
         let s = lock(&self.saved);
         let mut f = String::new();
@@ -609,6 +617,7 @@ impl Engine {
         if reply {
             f.push('R');
         }
+        f.push_str(&crate::update::build().to_string());
         let joining = lock(&self.joining).as_ref().filter(|j| Instant::now() < j.1).map_or(0, |j| j.2);
         format!("BLSYNC1|{}|{}|{}|{}|{}", s.id, self.port.load(Ordering::Relaxed), f, joining, self.name)
     }
@@ -623,6 +632,8 @@ impl Engine {
             (s.peer.as_ref().is_some_and(|p| p.id == h.id), s.on && s.peer.is_none())
         };
         if mine {
+            // (a newer Backline there: taken at once, not at the next two-minute look; `peer_build`)
+            PEER_BUILD.store(h.build, Ordering::Relaxed);
             // (kept with the next round: a computer heard at two addresses doesn't rewrite sync.json each time)
             if let Some(p) = lock(&self.saved).peer.as_mut() {
                 p.addr = addr.to_string();
@@ -1730,6 +1741,8 @@ struct Hello {
     reply: bool,
     joining: Option<u64>,
     name: String,
+    /// the Backline build it runs (0: one from before builds were said)
+    build: u64,
 }
 
 fn parse_hello(b: &[u8]) -> Option<Hello> {
@@ -1743,7 +1756,8 @@ fn parse_hello(b: &[u8]) -> Option<Hello> {
     let f = it.next()?;
     let joining = it.next()?.parse::<u64>().ok().filter(|j| *j != 0);
     let name = it.next().unwrap_or("").chars().take(64).collect();
-    Some(Hello { id, port, linked: f.contains('L'), dirty: f.contains('D'), reply: f.contains('R'), joining, name })
+    let build = f.chars().filter(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0);
+    Some(Hello { id, port, linked: f.contains('L'), dirty: f.contains('D'), reply: f.contains('R'), joining, name, build })
 }
 
 /// Where an announcement goes: everyone on the network (and on this computer's own network, for one with more than
@@ -2118,6 +2132,21 @@ mod tests {
         for e in [&a, &b] {
             e.gen.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    #[test]
+    fn announcements_say_the_build() {
+        // a Backline from before builds were said: the letters as ever, build 0
+        let old = parse_hello(b"BLSYNC1|5|9000|LD|0|PC").unwrap();
+        assert!(old.linked && old.dirty && !old.reply);
+        assert_eq!((old.build, old.name.as_str()), (0, "PC"));
+        // now: the build after the letters
+        let new = parse_hello(b"BLSYNC1|5|9000|LDR371|0|PIKASSO").unwrap();
+        assert!(new.linked && new.dirty && new.reply);
+        assert_eq!((new.build, new.name.as_str()), (371, "PIKASSO"));
+        let bare = parse_hello(b"BLSYNC1|5|9000|371|7|LAPTOP").unwrap();
+        assert!(!bare.linked && !bare.dirty);
+        assert_eq!((bare.build, bare.joining), (371, Some(7)));
     }
 
     #[test]
