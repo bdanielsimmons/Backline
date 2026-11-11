@@ -274,20 +274,12 @@ fn border_cols(face: Color32) -> (Color32, Color32, Color32) {
     }
 }
 
-/// Strips `w` wide inside `r` along its sides (left, top, right, bottom: the ones that are true).
-fn strips(p: &egui::Painter, r: Rect, w: f32, sides: [bool; 4], c: Color32) {
-    if sides[0] {
-        p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.min.x + w, r.max.y)), 0.0, c);
-    }
-    if sides[1] {
-        p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + w)), 0.0, c);
-    }
-    if sides[2] {
-        p.rect_filled(Rect::from_min_max(Pos2::new(r.max.x - w, r.min.y), r.max), 0.0, c);
-    }
-    if sides[3] {
-        p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x, r.max.y - w), r.max), 0.0, c);
-    }
+/// A line `w` wide just inside `r`, all the way round.
+fn strips(p: &egui::Painter, r: Rect, w: f32, c: Color32) {
+    p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.min.x + w, r.max.y)), 0.0, c);
+    p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + w)), 0.0, c);
+    p.rect_filled(Rect::from_min_max(Pos2::new(r.max.x - w, r.min.y), r.max), 0.0, c);
+    p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x, r.max.y - w), r.max), 0.0, c);
 }
 
 /// Backline's looks: a window's border as one ring of lines carried round its corners (they nest, so every corner
@@ -305,11 +297,11 @@ pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>, 
         Rect::from_min_max(Pos2::new(s(r.min.x), s(r.min.y)), Pos2::new(s(r.max.x), s(r.max.y)))
     };
     let (outer, inside) = (snap(outer), inside.map(snap));
-    strips(p, outer, w, [true; 4], edge);
-    strips(p, outer.shrink(w), w, [true; 4], hi);
+    strips(p, outer, w, edge);
+    strips(p, outer.shrink(w), w, hi);
     if let Some(inside) = inside {
-        strips(p, inside.expand(2.0 * w), w, [true; 4], lo);
-        strips(p, inside.expand(w), w, [true; 4], edge);
+        strips(p, inside.expand(2.0 * w), w, lo);
+        strips(p, inside.expand(w), w, edge);
     }
 }
 

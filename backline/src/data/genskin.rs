@@ -574,8 +574,6 @@ fn pledit(t: &Th) -> Pic {
     let mut p = Pic::new(280, 186, t.face);
     // the title bar: corners, the title piece and the plain tile, focused (top row) and not (second row)
     for row in [0, 21] {
-        let lit = row == 0;
-        let _ = lit;
         let strip = |p: &mut Pic, x: i32, w: i32| p.fill(x, row, w, 20, t.face);
         strip(&mut p, 0, 25);
         strip(&mut p, 26, 100);

@@ -13,6 +13,17 @@ pub(crate) fn divider() -> Color32 {
     pal().ink2.gamma_multiply(0.22)
 }
 
+/// The side list as a slim strip of icons (points, at the app's size).
+const NAV_RAIL: f32 = 58.0;
+
+/// The narrowest the whole side list goes: room for its name and the Listen / Practice switch, nothing cut.
+fn nav_least() -> f32 {
+    let sc = font::ui_scale();
+    let brand = 12.0 + 22.0 * sc + 8.0 + text_w("Backline", 2.2) + 14.0;
+    let switch = 2.0 * (text_w("PRACTICE", 1.4) + 18.0 + 22.0) + 20.0;
+    brand.max(switch).max(170.0 * sc)
+}
+
 /// A small rounded tag on a picture, its bottom-left corner at `at`.
 /// A Backline look's card on the Skins page: its deck (in the look's own panel color until drawn), its name under it,
 /// ringed and tagged when worn. True when clicked.
@@ -1242,19 +1253,26 @@ impl App {
             let p = ui.painter().clone();
             p.rect_filled(all, 0.0, pal().display);
             // (the places get the window's whole height; Now Playing is the page's foot; their width is yours to
-            // drag, double-click its edge for their own)
-            let least = 180.0 * font::ui_scale();
+            // drag, double-click its edge for their own. Never narrower than the Listen / Practice switch needs:
+            // dragged past that, or no room for it, they become a slim strip of icons, as Spotify's do)
+            let least = nav_least();
+            let rail = NAV_RAIL * font::ui_scale();
             let most = (all.width() * 0.45).max(least);
-            let sw = if self.nav_w > 0.0 {
+            let auto = (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0));
+            let sw = if self.nav_w < 0.0 || (self.nav_w == 0.0 && auto < least) {
+                rail
+            } else if self.nav_w > 0.0 {
                 self.nav_w.clamp(least, most)
             } else {
-                (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0))
+                auto
             };
             let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
             let edge = Rect::from_min_size(Pos2::new(side.max.x - 4.0, side.min.y), Vec2::new(8.0, side.height()));
             match crate::chrome::splitter(ui.ctx(), "split_nav", edge, true) {
                 Some(Some(x)) => {
-                    self.nav_w = (x - all.min.x).clamp(least, most);
+                    let want = x - all.min.x;
+                    // (past halfway down to the strip: the strip)
+                    self.nav_w = if want < (least + rail) / 2.0 { -1.0 } else { want.clamp(least, most) };
                     self.dirty = true;
                 }
                 Some(None) => {
@@ -1293,14 +1311,19 @@ impl App {
     fn side_nav(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let sc = font::ui_scale();
-        // the brand at the top
-        let gem = Rect::from_min_size(r.min + Vec2::new(12.0, 12.0), Vec2::splat(22.0 * sc));
-        crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
-        ptext(&p, Pos2::new(gem.max.x + 8.0, gem.center().y), Align::Min, "Backline", 2.2, pal().ink);
-        let gem =
-            Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 8.0 + self.mode_switch(ui, r, gem.max.y + 8.0, acts)));
-        let gem =
-            Rect::from_min_max(gem.min, Pos2::new(gem.max.x, gem.max.y + 6.0 + self.window_icons(ui, r, gem.max.y + 6.0, acts)));
+        // the slim strip: icons only, their names under the pointer
+        let mini = r.width() < (NAV_RAIL + 20.0) * sc;
+        let head_y = if mini {
+            self.side_head_mini(ui, r, acts)
+        } else {
+            // the brand at the top
+            let gem = Rect::from_min_size(r.min + Vec2::new(12.0, 12.0), Vec2::splat(22.0 * sc));
+            crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
+            ptext(&p, Pos2::new(gem.max.x + 8.0, gem.center().y), Align::Min, "Backline", 2.2, pal().ink);
+            let y = gem.max.y + 8.0;
+            let y = y + self.mode_switch(ui, r, y, acts) + 6.0;
+            y + self.window_icons(ui, r, y, acts)
+        };
 
         let side = self.side.is_some();
         let on_lib = self.page.as_ref().is_some_and(|p| p.library);
@@ -1344,7 +1367,7 @@ impl App {
             ("skins", "Skins", self.side == Some(Side::Skins), 21),
             ("log", "Log", self.side == Some(Side::Log), 22),
         ];
-        let top = gem.max.y + 14.0;
+        let top = head_y + 14.0;
         let heads = rows.iter().filter(|r| r.0.is_empty()).count() as f32;
         let items = (rows.len() + foot.len()) as f32 - heads;
         let rh = (28.0 * sc).min((r.max.y - top - 12.0) / (items + heads * 0.9 + 0.5)).max(16.0);
@@ -1361,22 +1384,34 @@ impl App {
                 p.rect_filled(rr, 5.0, Color32::from_white_alpha(10));
             }
             let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
-            let ic =
-                Rect::from_center_size(Pos2::new(rr.min.x + 18.0 * sc, rr.center().y), Vec2::splat((16.0 * sc).min(rh - 8.0)));
-            crate::vicon::named(&p, ic, icon, col);
-            let tx = rr.min.x + 36.0 * sc;
-            ptext_fit(&p, Pos2::new(tx, rr.center().y), Align::Min, name, 1.8, rr.max.x - tx - 4.0, col);
+            let size = Vec2::splat((16.0 * sc).min(rh - 8.0));
+            if mini {
+                crate::vicon::named(&p, Rect::from_center_size(rr.center(), size), icon, col);
+            } else {
+                crate::vicon::named(&p, Rect::from_center_size(Pos2::new(rr.min.x + 18.0 * sc, rr.center().y), size), icon, col);
+                let tx = rr.min.x + 36.0 * sc;
+                ptext_fit(&p, Pos2::new(tx, rr.center().y), Align::Min, name, 1.8, rr.max.x - tx - 4.0, col);
+            }
+            let resp = if mini { resp.tip(name) } else { resp };
             if resp.clicked() {
                 *hit = Some(key);
             }
         };
         for it in rows {
             if it.0.is_empty() {
-                // a group's heading: small, dim
+                // a group's heading: small, dim (the strip: a short line)
                 y += rh * 0.3;
-                font::keep_caps(|| {
-                    ptext(&p, Pos2::new(r.min.x + 14.0, y + rh * 0.3), Align::Min, &it.1.to_uppercase(), 1.25, pal().dim)
-                });
+                if mini {
+                    let cy = y + rh * 0.3;
+                    p.line_segment(
+                        [Pos2::new(r.center().x - 9.0 * sc, cy), Pos2::new(r.center().x + 9.0 * sc, cy)],
+                        Stroke::new(1.0_f32, pal().dim),
+                    );
+                } else {
+                    font::keep_caps(|| {
+                        ptext(&p, Pos2::new(r.min.x + 14.0, y + rh * 0.3), Align::Min, &it.1.to_uppercase(), 1.25, pal().dim)
+                    });
+                }
                 y += rh * 0.6;
                 continue;
             }
@@ -1483,8 +1518,72 @@ impl App {
         h
     }
 
-    fn window_icons(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
+    /// The side list as a slim strip (dragged narrow, or no room): the gem, Listen and Practice as two icons, the
+    /// window's switches one under another. Returns where they end.
+    fn side_head_mini(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) -> f32 {
         let p = ui.painter().clone();
+        let sc = font::ui_scale();
+        let cx = r.center().x;
+        let gem = Rect::from_center_size(Pos2::new(cx, r.min.y + 12.0 + 11.0 * sc), Vec2::splat(22.0 * sc));
+        crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
+        let d = 30.0 * sc;
+        let mut y = gem.max.y + 10.0;
+        if PRACTICE {
+            for (k, (icon, on, tip)) in [
+                ("headphones", !self.practice, "Listen: no loop, no slow-down."),
+                ("wave", self.practice, "Practice: loop, slow down, the band and your tools.  (P)"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let b = Rect::from_center_size(Pos2::new(cx, y + d / 2.0), Vec2::splat(d));
+                let resp = ui
+                    .interact(b, ui.id().with(("mode_mini", k)), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .tip(tip);
+                if on {
+                    p.rect_filled(b, d / 2.0, pal().ink);
+                } else if resp.hovered() {
+                    p.rect_filled(b, d / 2.0, Color32::from_white_alpha(14));
+                }
+                crate::vicon::named(&p, b.shrink(d * 0.27), icon, if on { pal().display } else { pal().ink2 });
+                if resp.clicked() && !on {
+                    acts.push(Action::TogglePractice);
+                }
+                y += d + 3.0;
+            }
+            y += 6.0;
+        }
+        let d = 26.0 * sc;
+        for (icon, on, tip, key) in self.window_items() {
+            let b = Rect::from_center_size(Pos2::new(cx, y + d / 2.0), Vec2::splat(d));
+            let h = ui
+                .interact(b, ui.id().with(("win_icon_mini", key)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .tip(tip);
+            if on {
+                p.rect_filled(b, 5.0, pal().panel.lerp_to_gamma(pal().display, 0.3));
+            } else if h.hovered() {
+                p.rect_filled(b, 5.0, Color32::from_white_alpha(10));
+            }
+            let col = if on {
+                pal().bar_txt
+            } else if h.hovered() {
+                pal().ink
+            } else {
+                pal().ink2
+            };
+            crate::vicon::named(&p, b.shrink(d * 0.22), icon, col);
+            if h.clicked() {
+                self.window_icon_clicked(key, acts);
+            }
+            y += d + 2.0;
+        }
+        y
+    }
+
+    /// The window's switches: (icon, on, what it does, which).
+    fn window_items(&self) -> Vec<(&'static str, bool, String, u8)> {
         let off = self.go_offline || self.net_down;
         let mut items: Vec<(&str, bool, String, u8)> = vec![(
             "globe",
@@ -1504,6 +1603,27 @@ impl App {
         items.push(("mini", false, "Mini player.".into(), 4));
         items.push(("pin", self.pinned, "Always on top".into(), 5));
         items.push(("guide", self.wa_guide, "Label this skin's buttons.".into(), 6));
+        items
+    }
+
+    /// One of the window's switches, clicked.
+    fn window_icon_clicked(&mut self, key: u8, acts: &mut Vec<Action>) {
+        match key {
+            1 => acts.push(Action::GoOffline(!self.go_offline)),
+            2 => acts.push(Action::ToggleLibrary),
+            3 => acts.push(Action::TogglePractice),
+            4 => acts.push(Action::ToggleMini),
+            5 => acts.push(Action::TogglePin),
+            _ => {
+                self.wa_guide = !self.wa_guide;
+                self.dirty = true;
+            }
+        }
+    }
+
+    fn window_icons(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
+        let p = ui.painter().clone();
+        let items = self.window_items();
         let d = 26.0 * font::ui_scale();
         let names = self.icon_names;
         // the icons spread evenly across the list's width (with names: a word under each)
@@ -1555,17 +1675,7 @@ impl App {
                 tour::mark("CHIP", b);
             }
             if h.clicked() {
-                match key {
-                    1 => acts.push(Action::GoOffline(!self.go_offline)),
-                    2 => acts.push(Action::ToggleLibrary),
-                    3 => acts.push(Action::TogglePractice),
-                    4 => acts.push(Action::ToggleMini),
-                    5 => acts.push(Action::TogglePin),
-                    _ => {
-                        self.wa_guide = !self.wa_guide;
-                        self.dirty = true;
-                    }
-                }
+                self.window_icon_clicked(key, acts);
             }
         }
         if self.icon_names {

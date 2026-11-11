@@ -1299,8 +1299,12 @@ impl App {
                         ui.horizontal_wrapped(|ui| {
                             if let Some((title, artist, at)) = &resume {
                                 let who = if artist.is_empty() { String::new() } else { format!(" by {}", artist) };
-                                if retro_btn(ui, &format!("Continue: {}{}", title, who), true)
-                                    .tip(format!("Play it again from {}, where it was.", at))
+                                // (a long title shortened to the box's width, whole in the tip: the box never
+                                // stretches to fit it)
+                                let whole = format!("Continue: {}{}", title, who);
+                                let label = crate::font::fit(&whole, 2.0, w - 20.0);
+                                if retro_btn(ui, &label, true)
+                                    .tip(format!("{}. Play it again from {}, where it was.", whole, at))
                                     .clicked()
                                 {
                                     go_on = true;

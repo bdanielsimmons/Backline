@@ -1126,6 +1126,9 @@ impl App {
         }
         let digits = format!("{}", queue.len()).len();
         let clip = p.with_clip_rect(list);
+        // the hearts drawn and clicked only inside the list
+        let mut heart_ui = ui.new_child(egui::UiBuilder::new().max_rect(list));
+        heart_ui.set_clip_rect(list.intersect(ui.clip_rect()));
         let mut rects: Vec<(usize, Rect)> = Vec::new();
         for (n, i) in (first.floor() as usize..queue.len()).take(rows + 1).enumerate() {
             let tr = &queue[i];
@@ -1172,8 +1175,9 @@ impl App {
                 Pos2::new(r.max.x - 4.0 - dw - 4.0 - crate::HEART_W, r.min.y),
                 Vec2::new(crate::HEART_W, r.height()),
             );
-            if list.contains_rect(hr) {
-                if crate::draw_heart(ui, hr, self.liked.contains(&tr.id), h.hovered(), id.with(("heart", i))) {
+            // (a row part scrolled out keeps its heart, cut at the list's edge like the row)
+            if hr.intersects(list) {
+                if crate::draw_heart(&heart_ui, hr, self.liked.contains(&tr.id), h.hovered(), id.with(("heart", i))) {
                     acts.push(Action::ToggleLike(tr.clone()));
                 }
                 dw += crate::HEART_W + 4.0;

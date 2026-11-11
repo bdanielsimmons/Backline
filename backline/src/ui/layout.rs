@@ -31,22 +31,35 @@ impl App {
                 by_w.min(by_h).clamp(1.0, (2.0 * ppp).round().max(2.0)) / ppp
             }
         });
-        // practising with a skin: the deck and playlist stop growing at about a quarter of the window's height,
-        // so the practice panel gets the room; the column is then just as wide as the deck (the library takes
-        // the rest), so the deck always fills it, edge to edge - never a gap beside it. (Never narrower than
-        // the practice panel's tabs need.) Dragged wider: as wide as you made it, the deck up to 40% of the
-        // window's height, the library at least 640 points wide.
+        // practising with a skin: the deck stops growing at about a quarter of the window's height, so the practice
+        // panel gets the room. The column: as wide as the deck (never narrower than the practice panel's tabs
+        // need), as wide as you dragged it (the library at least 640 points), or the whole window with the library
+        // hidden. Wider than that deck: the playlist sits beside it (as wide as the deck at least, so its buttons
+        // fit), both at the size the column has room for, so the deck never turns giant and blocky and there's
+        // never a gap beside it; when that would leave the deck small, it fills the column instead.
+        let mut col_w: Option<f32> = None;
+        let mut side_pl = false;
         let skin_k = skin_k.map(|k| {
-            if self.practice && !self.lib_hidden {
-                let least = PRACTICE_COL_MIN / 275.0;
-                if self.prac_stack_w > 0.0 {
-                    let most = (screen.height() * 0.4 / 116.0).min((screen.width() - 640.0) / 275.0).max(least);
-                    (self.prac_stack_w / 275.0).clamp(least, most)
-                } else {
-                    k.min((screen.height() * 0.25 / 116.0).max(least))
-                }
+            if !self.practice {
+                return k;
+            }
+            let cap = (screen.height() * 0.25 / 116.0).max(1.0);
+            let w = if self.lib_hidden {
+                screen.width()
+            } else if self.prac_stack_w > 0.0 {
+                self.prac_stack_w.clamp(PRACTICE_COL_MIN, (screen.width() - 640.0).max(PRACTICE_COL_MIN))
             } else {
-                k
+                (275.0 * k.min(cap)).max(PRACTICE_COL_MIN)
+            };
+            col_w = Some(w);
+            let fill = w / 275.0;
+            let beside = cap.min(w / 550.0);
+            // (beside it only while the deck keeps most of its size; stacked, it's then never past half again)
+            if fill > cap && beside >= DECK_BESIDE_MIN.max(cap * 0.75) && !self.queue_hidden {
+                side_pl = true;
+                beside
+            } else {
+                fill
             }
         });
         if let Some(k) = skin_k {
@@ -54,6 +67,8 @@ impl App {
         }
         let lib_w = if self.lib_hidden {
             0.0
+        } else if let Some(w) = col_w {
+            (screen.width() - w).max(280.0)
         } else if let Some(k) = skin_k {
             (screen.width() - 275.0 * k).max(280.0)
         } else {
@@ -186,7 +201,10 @@ impl App {
             let min_pl = 58.0 * k + songs * 13.0 * k.min(2.0) + 8.0;
             let eq_now = if self.show_eq { eq_h } else { 0.0 };
             let mut p = practice_h;
-            if self.practice {
+            if side_pl {
+                // the playlist beside the deck: the practice panel has everything under them
+                p = (screen.height() - player_h - eq_now).max(160.0);
+            } else if self.practice {
                 p = p.min((screen.height() - player_h - eq_now - min_pl).max(160.0));
             }
             let e = if self.show_eq { eq_h.min((screen.height() - player_h - p - min_pl).max(120.0)) } else { eq_h };
@@ -203,7 +221,25 @@ impl App {
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(panel_frame())
-                .show(ctx, |ui| self.player_window(ui, acts));
+                .show(ctx, |ui| {
+                    if !side_pl {
+                        self.player_window(ui, acts);
+                        return;
+                    }
+                    // the deck at the left, the playlist beside it in the rest of the row
+                    let full = crate::frame_outer(ui.max_rect());
+                    let split = full.min.x + 275.0 * self.stack_k;
+                    let inner = |r: Rect| {
+                        Rect::from_min_max(r.min + Vec2::new(FRAME_SIDE, FRAME_TOP), r.max - Vec2::splat(FRAME_SIDE))
+                    };
+                    let deck = Rect::from_min_max(full.min, Pos2::new(split, full.max.y));
+                    let list = Rect::from_min_max(Pos2::new(split, full.min.y), full.max);
+                    let mut a = ui.new_child(egui::UiBuilder::new().max_rect(inner(deck)));
+                    self.player_window(&mut a, acts);
+                    let mut b = ui.new_child(egui::UiBuilder::new().max_rect(inner(list)));
+                    self.playlist_ui(&mut b, acts);
+                    ui.allocate_rect(ui.max_rect(), Sense::hover());
+                });
         }
         if self.show_eq {
             egui::TopBottomPanel::top("eq_dock")
@@ -228,7 +264,10 @@ impl App {
                 });
         }
         let rest = egui::CentralPanel::default();
-        if !self.queue_hidden {
+        if side_pl {
+            // (the playlist is up beside the deck)
+            rest.frame(panel_frame()).show(ctx, |_| {});
+        } else if !self.queue_hidden {
             rest.frame(panel_frame()).show(ctx, |ui| self.playlist_ui(ui, acts));
         } else if self.show_eq {
             // PL off, the equalizer open: the room left under them
@@ -274,7 +313,8 @@ impl App {
                 None => {}
             }
         }
-        if self.practice {
+        // (the playlist beside the deck: the practice panel is everything under them, nothing to drag)
+        if self.practice && !side_pl {
             let y = screen.max.y - practice_h;
             let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
             match splitter(ctx, "split_p", r, false) {
@@ -341,3 +381,7 @@ pub(crate) fn panel_frame() -> egui::Frame {
 
 /// The skin's column while practising is never narrower than this (points): the practice panel's tabs fit in it.
 pub(crate) const PRACTICE_COL_MIN: f32 = 560.0;
+
+/// Practising in a wide column: the playlist goes beside the deck when the deck can still be at least this size
+/// (Winamp's own size: twice the pixels on a high-density screen).
+const DECK_BESIDE_MIN: f32 = 1.0;
