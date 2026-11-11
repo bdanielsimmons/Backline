@@ -1036,6 +1036,9 @@ struct App {
     loop_on: bool,
     speed: u32,
     loops: HashMap<i64, (f32, f32)>,
+    /// a loop asked for on the song about to start (one picked on the LOOPS page): the only way a song starts
+    /// looping; otherwise it starts without one, even with a loop left on it last time
+    loop_next: Option<(i64, (f32, f32))>,
     menu_t: f32,
     /// the colour new bookmarks get: None for a random one each time
     mark_col: Option<[u8; 3]>,
@@ -2012,6 +2015,7 @@ impl App {
             loop_on: false,
             speed: 100,
             loops: HashMap::new(),
+            loop_next: None,
             menu_t: 0.0,
             mark_col: None,
             // tracks are streamed, not kept; saving them to disk is switched on by hand
@@ -3512,6 +3516,10 @@ impl eframe::App for App {
             if at.elapsed() > Duration::from_millis(300) {
                 self.mini_size_at = None;
                 if self.mini {
+                    // (a window still filling the screen takes no size: out of that first)
+                    if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                    }
                     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
                 }
             } else {

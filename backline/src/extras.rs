@@ -384,6 +384,7 @@ impl App {
     pub(crate) fn play_saved(&mut self, v: &Version, lp: Option<(f32, f32)>) {
         if let Some((a, b)) = lp {
             self.loops.insert(v.id, (a, b));
+            self.loop_next = Some((v.id, (a, b)));
             self.practice = true;
         }
         // already playing: just go to the loop
@@ -1198,12 +1199,17 @@ impl App {
         if (self.store.sections.contains_key(&t.id) || marked || stems::is_split(t.id)) && !self.is_demo(t.id) {
             self.remember_song(t);
         }
-        match self.loops.get(&t.id).copied().filter(|_| !self.is_demo(t.id)) {
+        // a song starts without a loop: only one picked on the LOOPS page starts it looping, and the same song again
+        // (on repeat) keeps the one it had - never a loop left on it some other time, while you're just listening
+        // through a list
+        let asked = self.loop_next.take().filter(|(id, _)| *id == t.id && !self.is_demo(t.id)).map(|(_, ab)| ab);
+        match asked {
             Some((a, b)) => {
                 self.loop_a = Some(a);
                 self.loop_b = Some(b);
                 self.loop_on = self.practice;
             }
+            None if self.wave.0 == t.id => {}
             None => {
                 self.loop_a = None;
                 self.loop_b = None;

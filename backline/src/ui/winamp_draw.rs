@@ -282,15 +282,19 @@ fn strips(p: &egui::Painter, r: Rect, w: f32, c: Color32) {
     p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x, r.max.y - w), r.max), 0.0, c);
 }
 
+/// The width of each of a border's lines (points).
+const BORDER_LINE: f32 = 1.5;
+
 /// Backline's looks: a window's border as one ring of lines carried round its corners (they nest, so every corner
 /// meets): a dark edge and a light line all round the window, and a shade and a dark line round what it holds
 /// (`inside`; None for the player, its panel is its inside). Two windows side by side: their rings side by side, each
-/// whole (the owner's pick over one frame with shared bars). `px`: one of the skin's pixels.
-pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>, px: f32) {
+/// whole (the owner's pick over one frame with shared bars). Every window's lines the same width (`BORDER_LINE`,
+/// whole screen pixels), whatever size its skin is drawn at.
+pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>) {
     let Some(face) = flat_frame() else { return };
     let (edge, hi, lo) = border_cols(face);
     let ppp = p.ctx().pixels_per_point();
-    let w = ((px * ppp).round().max(1.0)) / ppp;
+    let w = ((BORDER_LINE * ppp).round().max(1.0)) / ppp;
     // on whole screen pixels, so two windows' lines meet with nothing between them
     let snap = |r: Rect| {
         let s = |v: f32| (v * ppp).round() / ppp;
@@ -399,7 +403,7 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             ] {
                 p.rect_filled(r, 0.0, face);
             }
-            border_ring(p, outer, Some(inner), k);
+            border_ring(p, outer, Some(inner));
         } else {
         // one 25-pixel column of the title bar at `x`: its top rows, the stretched band, its bottom rows
         let bar = |p: &egui::Painter, sx: f32, x: f32| {

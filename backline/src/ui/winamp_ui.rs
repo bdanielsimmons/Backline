@@ -720,7 +720,7 @@ impl App {
             crate::winamp_ui::round_corners(&p, deck, true);
             // (Backline's looks: its border round its whole window - the column, when that's wider than the deck)
             let window = Rect::from_min_max(Pos2::new(area.min.x - 14.0, deck.min.y), Pos2::new(area.max.x + 14.0, deck.max.y));
-            crate::winamp_ui::border_ring(&p, window.union(deck), None, deck.width() / 275.0);
+            crate::winamp_ui::border_ring(&p, window.union(deck), None);
         }
         self.wa_art = Some(t);
     }
@@ -1378,7 +1378,7 @@ impl App {
         crate::winamp_ui::round_corners(&p, outer, false);
         // (Backline's looks: its border, drawn last so nothing in the frame covers a line of it)
         if !self.mini {
-            crate::winamp_ui::border_ring(&p, outer, Some(list), k);
+            crate::winamp_ui::border_ring(&p, outer, Some(list));
         }
         self.wa_art = Some(t);
     }

@@ -71,6 +71,12 @@ impl App {
             self.apply(Action::ToggleMini); // restores the window size
         }
         self.art_view = false;
+        // the mini player from anywhere: the library left as it is (bringing it back would size the window again,
+        // even fill the screen, under the mini one); leaving the mini player comes back to it as it was
+        if m == 3 {
+            self.apply(Action::ToggleMini);
+            return;
+        }
         match m {
             1 => {
                 if !self.lib_hidden {

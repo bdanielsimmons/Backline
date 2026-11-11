@@ -135,8 +135,9 @@ impl App {
             if fade > 0.0 {
                 let label = format!("VISUALS: {}", name);
                 let w = crate::text_w(&label, 1.2) + 32.0;
-                // (top left: clear of the lyrics, which take the right side)
-                let bar = Rect::from_min_size(full.min + Vec2::new(24.0, 16.0), Vec2::new(w, 28.0));
+                // (top left: clear of the lyrics, which take the right side, and under the practice band when it's up)
+                let below = if prac { strip_h + 12.0 } else { 0.0 };
+                let bar = Rect::from_min_size(full.min + Vec2::new(24.0, 16.0 + below), Vec2::new(w, 28.0));
                 let p = ui.painter();
                 p.rect_filled(bar, 14.0, egui::Color32::from_black_alpha((170.0 * fade) as u8));
                 crate::ptext(p, bar.center(), egui::Align::Center, &label, 1.2, egui::Color32::from_white_alpha((235.0 * fade) as u8));
