@@ -68,7 +68,7 @@ impl App {
             pool[n as usize % pool.len()]
         });
         let list = self.store.marks.entry(id).or_default();
-        list.push(crate::store::Bookmark { t, col, ..Default::default() });
+        list.push(crate::store::Bookmark { t, col, saved: crate::store::today_str(), ..Default::default() });
         list.sort_by(|a, b| a.t.total_cmp(&b.t));
         self.store_dirty = true;
         self.set_note(&format!("BOOKMARK AT {}", fmt_t(t)));

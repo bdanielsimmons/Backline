@@ -28,10 +28,25 @@ pub(crate) fn caption(r: egui::Rect, ppp: f32) {
     }
 }
 
+/// Things drawn over the title bar that take their own clicks (the update bar, a menu, a tip, a dialog): noted this
+/// frame and in force, as the title-bar parts are; over one of them the window is the app's, not the title bar.
+static HOLES_NEXT: Mutex<Vec<[f32; 4]>> = Mutex::new(Vec::new());
+static HOLES: Mutex<Vec<[f32; 4]>> = Mutex::new(Vec::new());
+
+/// Something floating over the title bar this frame (points), clickable in its own right.
+pub(crate) fn hole(r: egui::Rect, ppp: f32) {
+    if let Ok(mut v) = HOLES_NEXT.lock() {
+        v.push([r.min.x * ppp, r.min.y * ppp, r.max.x * ppp, r.max.y * ppp]);
+    }
+}
+
 /// The frame is drawn: its title-bar parts are the ones in force, and whether the skin's bars are the title bar.
 pub(crate) fn end_frame(on: bool) {
     if let (Ok(mut next), Ok(mut cap)) = (NEXT.lock(), CAPTION.lock()) {
         *cap = std::mem::take(&mut *next);
+    }
+    if let (Ok(mut next), Ok(mut holes)) = (HOLES_NEXT.lock(), HOLES.lock()) {
+        *holes = std::mem::take(&mut *next);
     }
     ON.store(on, Ordering::Relaxed);
 }
@@ -102,7 +117,10 @@ unsafe extern "system" fn proc_(
                     return LRESULT(hit);
                 }
             }
-            let on_bar = CAPTION.lock().is_ok_and(|v| v.iter().any(|c| x >= c[0] && x < c[2] && y >= c[1] && y < c[3]));
+            let inside = |c: &[f32; 4]| x >= c[0] && x < c[2] && y >= c[1] && y < c[3];
+            // (something floating over the bar - the update bar, a menu - takes its own clicks)
+            let over = HOLES.lock().is_ok_and(|v| v.iter().any(inside));
+            let on_bar = !over && CAPTION.lock().is_ok_and(|v| v.iter().any(inside));
             if on_bar {
                 return LRESULT(2); // HTCAPTION
             }

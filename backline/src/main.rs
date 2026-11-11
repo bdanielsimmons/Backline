@@ -3830,6 +3830,23 @@ impl eframe::App for App {
                 edge_resize(ctx);
             }
         }
+        // whatever floats over the windows (the update bar, a menu, a tip, a dialog) takes its own clicks, also where
+        // it lies over a title strip Windows would otherwise take for the title bar (the floating bar over the
+        // visuals is a title bar itself)
+        {
+            let ppp = ctx.pixels_per_point();
+            let float_bar = egui::Id::new("float_app_bar_area");
+            ctx.memory(|m| {
+                for layer in m.areas().visible_layer_ids() {
+                    if layer.order == egui::Order::Background || layer.id == float_bar {
+                        continue;
+                    }
+                    if let Some(r) = m.area_rect(layer.id) {
+                        frame_win::hole(r, ppp);
+                    }
+                }
+            });
+        }
         frame_win::end_frame(app_bar() && !self.fullscreen);
         for a in acts {
             self.apply(a);

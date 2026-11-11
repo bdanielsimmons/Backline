@@ -23,19 +23,19 @@ pub(crate) struct SpotSong {
     pub(crate) last: i64,
 }
 
-/// ALL's headings, as a game library has them: Recent (the last week), then each month (this year's by name, older
-/// ones with their year), then Earlier (songs never dated).
+/// ALL's headings, as a game library has them: Recent (this month), then each month before it (this year's by name,
+/// older ones with their year), then Earlier (songs never dated).
 pub(crate) fn when_heading(day: i64, today: i64) -> String {
     const MONTHS: [&str; 12] =
         ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     if day <= 0 {
         return "Earlier".to_string();
     }
-    if day >= today - 6 {
+    let (y, m, _) = store::civil_from_days(day);
+    let (this_year, this_month, _) = store::civil_from_days(today);
+    if (y, m) >= (this_year, this_month) {
         return "Recent".to_string();
     }
-    let (y, m, _) = store::civil_from_days(day);
-    let (this_year, _, _) = store::civil_from_days(today);
     let name = MONTHS[(m as usize).clamp(1, 12) - 1];
     if y == this_year {
         name.to_string()
@@ -553,19 +553,7 @@ impl App {
             spent.get(&(id, (s.a * 10.0).round() as i32, (s.b * 10.0).round() as i32)).copied().unwrap_or(0)
         };
         // the last day each song was practiced (the diary) or played (what you played lately), for ALL's months
-        let mut touched: HashMap<i64, i64> = HashMap::new();
-        for d in &self.store.days {
-            if let Some(n) = store::parse_date(&d.date) {
-                for id in d.songs.keys() {
-                    let e = touched.entry(*id).or_insert(0);
-                    *e = (*e).max(n);
-                }
-            }
-        }
-        for (v, at) in &self.store.recent {
-            let e = touched.entry(v.id).or_insert(0);
-            *e = (*e).max((*at / 86_400) as i64);
-        }
+        let touched = self.last_days();
         let (show_loops, show_marks) = (self.loops_show != 2, self.loops_show != 1);
         // the songs: practised this week, or with a loop saved this week (ALL: every song with a loop or bookmark)
         let mut ids: Vec<i64> = week.keys().copied().collect();
@@ -615,6 +603,8 @@ impl App {
             let newest = loops.iter().map(|l| l.1.saved.clone()).max().unwrap_or_default();
             // (any loop of the song's counts, also one the filter hides)
             let saved = self.store.sections.get(id).into_iter().flatten().filter_map(|s| store::parse_date(&s.saved)).max().unwrap_or(0);
+            let marked = self.store.marks.get(id).into_iter().flatten().filter_map(|m| store::parse_date(&m.saved)).max().unwrap_or(0);
+            let saved = saved.max(marked);
             let last = touched.get(id).copied().unwrap_or(0).max(saved);
             songs.push(SpotSong { id: *id, v, loops, marks, mins, total, newest, last });
         }
@@ -989,7 +979,50 @@ impl App {
 
     /// Loops and bookmarks saved before their songs were remembered: name them from wherever the song is known
     /// (tunes, files, playlists, what you played, the queue). Each song is looked for once a run.
+    /// The last day each song was practiced (the diary) or played here (what you played lately), as days since 1970.
+    fn last_days(&self) -> HashMap<i64, i64> {
+        let mut last: HashMap<i64, i64> = HashMap::new();
+        for d in &self.store.days {
+            if let Some(n) = store::parse_date(&d.date) {
+                for id in d.songs.keys() {
+                    let e = last.entry(*id).or_insert(0);
+                    *e = (*e).max(n);
+                }
+            }
+        }
+        for (v, at) in &self.store.recent {
+            let e = last.entry(v.id).or_insert(0);
+            *e = (*e).max((*at / 86_400) as i64);
+        }
+        last
+    }
+
+    /// Bookmarks set before their day was kept: dated from the song's last play this computer knows, so ALL's months
+    /// place them - here, and (synced) on the other computer, whose list of what was played lately is its own. Once a
+    /// run.
+    fn date_old_marks(&mut self) {
+        thread_local! {
+            static DONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if DONE.with(|d| d.replace(true)) {
+            return;
+        }
+        let last = self.last_days();
+        let mut changed = false;
+        for (id, l) in self.store.marks.iter_mut() {
+            let Some(day) = last.get(id).copied().filter(|d| *d > 0) else { continue };
+            for m in l.iter_mut().filter(|m| m.saved.is_empty()) {
+                m.saved = store::date_str(day);
+                changed = true;
+            }
+        }
+        if changed {
+            self.store_dirty = true;
+        }
+    }
+
     pub(crate) fn name_old_loops(&mut self) {
+        self.date_old_marks();
         thread_local! {
             static TRIED: std::cell::RefCell<std::collections::HashSet<i64>> = Default::default();
         }
@@ -1041,7 +1074,7 @@ mod tests {
         let today = store::days_from_civil(2026, 11, 10);
         assert_eq!(when_heading(today, today), "Recent");
         assert_eq!(when_heading(today - 6, today), "Recent");
-        assert_eq!(when_heading(store::days_from_civil(2026, 11, 2), today), "November");
+        assert_eq!(when_heading(store::days_from_civil(2026, 11, 1), today), "Recent", "all of this month");
         assert_eq!(when_heading(store::days_from_civil(2026, 10, 31), today), "October");
         assert_eq!(when_heading(store::days_from_civil(2026, 1, 1), today), "January");
         assert_eq!(when_heading(store::days_from_civil(2025, 12, 31), today), "December 2025");

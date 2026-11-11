@@ -383,6 +383,9 @@ pub struct Bookmark {
     pub name: String,
     /// what happens here, what to work on (as a loop's note)
     pub note: String,
+    /// the day it was set (empty for one set before this was kept, until the song's last play fills it in)
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub saved: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]

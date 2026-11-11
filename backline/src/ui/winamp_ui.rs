@@ -176,8 +176,9 @@ impl App {
             }
         } else {
             // the full window with no system title bar: the deck's is part of the app's
-            // (between the options button and minimize: the rest of the bar is buttons)
-            crate::app_bar_strip(ui, pl.r(16.0, 0.0, 227.0, 14.0), tid.with("app_bar"));
+            // (between the options button and the mini player's: the rest of the bar is buttons, and over the title
+            // bar Windows would take their clicks)
+            crate::app_bar_strip(ui, pl.r(16.0, 0.0, 216.0, 14.0), tid.with("app_bar"));
         }
         // (in the full window the middle one is the skin's own button below, which goes fullscreen)
         {
