@@ -539,9 +539,13 @@ impl App {
                 flag(x_at(a), "A");
             }
         }
-        // (one light colour over a soft dark glow: readable over any visual)
+        // (one light colour on a soft dark spot: readable over any visual)
         for (x, align, t) in [(sb.min.x, Align::Min, fmt_time(if active { pos } else { 0.0 })), (sb.max.x, Align::Max, fmt_time(dur))] {
-            glow_text(&p, Pos2::new(x, sb.max.y + 14.0), align, &t, 2.0, OVER);
+            let at = Pos2::new(x, sb.max.y + 14.0);
+            let w = text_w(&t, 2.0);
+            let x0 = if align == Align::Min { at.x } else { at.x - w };
+            soft_spot(&p, Rect::from_min_max(Pos2::new(x0 + 2.0, at.y - 5.0), Pos2::new(x0 + w - 2.0, at.y + 5.0)), 11.0, 0.42);
+            ptext(&p, at, align, &t, 2.0, OVER);
         }
 
         // ---- the queue, as a panel on the right (the three-lines button)
@@ -773,10 +777,10 @@ impl App {
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .tip(tip);
                 let p = ui.painter();
-                // (one light colour over a soft dark glow, whatever the visuals do: readable over any picture)
+                // (one light colour on a soft dark spot, whatever the visuals do: readable over any picture)
                 if big {
                     let rad = d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 };
-                    glow_disc(p, r.center(), rad);
+                    soft_spot(p, Rect::from_center_size(r.center(), Vec2::splat(2.0 * rad)), 9.0, 0.36);
                     p.circle_filled(r.center(), rad, OVER);
                     let off = if icon == "play" { 1.5 } else { 0.0 };
                     crate::vicon::named(
@@ -788,10 +792,11 @@ impl App {
                 } else {
                     // (hovered: a little brighter; on: a dot under it)
                     let col = if resp.hovered() { Color32::WHITE } else { OVER };
-                    crate::vicon::named_glow(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.62)), icon, col);
+                    soft_spot(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.5)), 10.0, 0.42);
+                    crate::vicon::named(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.62)), icon, col);
                     if on {
                         let at = Pos2::new(r.center().x, r.max.y + 3.0);
-                        glow_disc(p, at, 2.0);
+                        soft_spot(p, Rect::from_center_size(at, Vec2::splat(4.0)), 4.0, 0.42);
                         p.circle_filled(at, 2.0, col);
                     }
                 }
@@ -827,7 +832,7 @@ impl App {
             }
             if self.repeat == Repeat::One {
                 let c = Pos2::new(x0 + 1.5 * gap + 9.0, cy - 9.0);
-                glow_disc(ui.painter(), c, 6.0);
+                soft_spot(ui.painter(), Rect::from_center_size(c, Vec2::splat(12.0)), 5.0, 0.42);
                 ui.painter().circle_filled(c, 6.0, OVER);
                 crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, Color32::from_rgb(20, 20, 22)));
             }
@@ -970,27 +975,52 @@ impl App {
     }
 }
 
-/// The one colour of what's drawn straight over the picture (the bare symbols and the times): near-white over a soft
-/// dark glow, so it reads over any cover or visual without changing with them.
+/// The one colour of what's drawn straight over the picture (the bare symbols and the times): near-white on a soft
+/// dark spot (`soft_spot`), so it reads over any cover or visual without changing with them.
 const OVER: Color32 = Color32::from_rgb(240, 240, 238);
 
-/// A soft dark glow round a round shape of radius `rad`, fading out over a few pixels (drawn under it).
-fn glow_disc(p: &egui::Painter, c: Pos2, rad: f32) {
-    for (grow, a) in [(4.0, 16), (2.8, 24), (1.7, 34), (0.8, 48)] {
-        p.circle_filled(c, rad + grow, Color32::from_black_alpha(a));
-    }
-}
-
-/// Text in `col` over a soft dark glow: the text drawn faintly round itself in two rings (further out, fainter), then
-/// itself on top.
-fn glow_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px: f32, col: Color32) {
-    for (r, n, a) in [(2.2, 12, 16), (1.2, 8, 36)] {
-        for k in 0..n {
-            let ang = k as f32 / n as f32 * std::f32::consts::TAU;
-            ptext(p, at + Vec2::new(ang.cos(), ang.sin()) * r, align, text, px, Color32::from_black_alpha(a));
+/// A soft dark spot under something drawn straight over the picture: `inner` (a rounded shape, as round as its
+/// shorter side allows: a circle for a square) filled at `a`, fading smoothly to nothing over `spread` all round, the
+/// same in every direction. One gradient (no steps, no edge), so the symbol on it reads over any visual.
+fn soft_spot(p: &egui::Painter, inner: Rect, spread: f32, a: f32) {
+    let rr = inner.width().min(inner.height()) / 2.0;
+    // the corner arcs' centres, each with the angle its quarter starts at (going round)
+    let corners = [
+        (Pos2::new(inner.max.x - rr, inner.max.y - rr), 0.0f32),
+        (Pos2::new(inner.min.x + rr, inner.max.y - rr), 90.0),
+        (Pos2::new(inner.min.x + rr, inner.min.y + rr), 180.0),
+        (Pos2::new(inner.max.x - rr, inner.min.y + rr), 270.0),
+    ];
+    const K: usize = 10;
+    const RINGS: usize = 10;
+    let per = corners.len() * (K + 1);
+    let uv = egui::epaint::WHITE_UV;
+    let mut m = egui::Mesh::default();
+    m.vertices.push(egui::epaint::Vertex { pos: inner.center(), uv, color: Color32::from_black_alpha((a * 255.0) as u8) });
+    for ring in 0..=RINGS {
+        let t = ring as f32 / RINGS as f32;
+        // (eases out: full at the shape's edge, a long gentle tail)
+        let f = 1.0 - t * t * (3.0 - 2.0 * t);
+        let col = Color32::from_black_alpha((a * f * 255.0) as u8);
+        let r = rr + spread * t;
+        for (c, start) in corners {
+            for j in 0..=K {
+                let ang = (start + 90.0 * j as f32 / K as f32).to_radians();
+                m.vertices.push(egui::epaint::Vertex { pos: c + Vec2::new(ang.cos(), ang.sin()) * r, uv, color: col });
+            }
         }
     }
-    ptext(p, at, align, text, px, col);
+    let at = |ring: usize, i: usize| (1 + ring * per + i % per) as u32;
+    for i in 0..per {
+        m.indices.extend_from_slice(&[0, at(0, i), at(0, i + 1)]);
+    }
+    for ring in 0..RINGS {
+        for i in 0..per {
+            let (a0, a1, b0, b1) = (at(ring, i), at(ring, i + 1), at(ring + 1, i), at(ring + 1, i + 1));
+            m.indices.extend_from_slice(&[a0, a1, b1, a0, b1, b0]);
+        }
+    }
+    p.add(egui::Shape::mesh(m));
 }
 
 /// The cover as a fine grid of points, each placed through the same 3D tilt, so the picture stays a flat,
