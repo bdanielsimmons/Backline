@@ -133,6 +133,8 @@ mod melodies;
 mod music_data;
 #[path = "ui/onscreen.rs"]
 mod onscreen;
+#[path = "ui/behind.rs"]
+mod behind;
 #[path = "ui/palette.rs"]
 mod palette;
 #[path = "ui/plan.rs"]
