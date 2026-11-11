@@ -1236,7 +1236,7 @@ fn search_ranked(c: &ChordNotes, tuning: &[i32; 6], starts: std::ops::RangeInclu
             best.push((score, shape));
         }
     }
-    best.sort_by(|a, b| b.0.cmp(&a.0));
+    best.sort_by_key(|a| std::cmp::Reverse(a.0));
     best
 }
 
@@ -1406,7 +1406,7 @@ pub fn cluster_voicings(bass: i32, pair: [i32; 2], extras: &[i32], tuning: &[i32
             }
         }
     }
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|a| std::cmp::Reverse(a.0));
     let pos = |x: &[Option<u8>; 6]| x.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
     let mut out: Vec<[Option<u8>; 6]> = Vec::new();
     for (_, s) in found {

@@ -336,8 +336,8 @@ enum Msg {
     WaList(Result<Vec<winamp::WaSkin>, String>, bool),
     /// a Winamp skin fetched and turned into colours
     WaSkin(Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
-    /// a free playlist font fetched (which one)
-    FontReady(usize, Result<Vec<u8>, String>),
+    /// a free playlist font fetched
+    FontReady(Result<Vec<u8>, String>),
     /// the file picked for the opening sound
     IntroFile(Option<String>),
     /// the tour's song, fetched

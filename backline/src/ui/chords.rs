@@ -742,7 +742,6 @@ impl App {
         let triads = fam <= 1;
         let sharps = self.chord_sp.sharps;
         const KEYS: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
-        let _ = sharps;
         let types: Vec<(&str, Vec<i32>)> = if triads {
             theory::TRIAD_TYPES.iter().map(|(n, v)| (*n, v.to_vec())).collect()
         } else {
@@ -1324,7 +1323,7 @@ pub(crate) const CL_BASS: Color32 = Color32::from_rgb(255, 170, 60);
 
 /// One octave of keys, C to B, to pick a note on: `marks` colours keys, `faded` keys are dimmed with an X.
 /// A click gives that key's pitch class.
-pub(crate) fn octave_keys(ui: &mut egui::Ui, id: &str, marks: &[(i32, Color32)], faded: &[i32]) -> Option<i32> {
+pub(crate) fn octave_keys(ui: &mut egui::Ui, marks: &[(i32, Color32)], faded: &[i32]) -> Option<i32> {
     let (w, h) = (196.0_f32, 46.0_f32);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1352,7 +1351,6 @@ pub(crate) fn octave_keys(ui: &mut egui::Ui, id: &str, marks: &[(i32, Color32)],
         }
     }
     let pos = resp.interact_pointer_pos().filter(|_| resp.clicked())?;
-    let _ = id;
     if let Some((pc, _)) = BLACK.iter().find(|(_, at)| black_rect(*at).contains(pos)) {
         return Some(*pc);
     }

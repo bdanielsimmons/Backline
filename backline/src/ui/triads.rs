@@ -557,7 +557,6 @@ impl App {
             ui.add_space(8.0);
             crate::views::label(ui, "R ROOT   3 THIRD   5 FIFTH", 200.0);
         });
-        let sp = self.chord_sp;
         let mut pick = None;
         crate::App::card_grid(ui, |ui| {
             for (i, g) in grips.iter().enumerate() {
@@ -571,7 +570,6 @@ impl App {
                 };
                 let fr = g.iter().flatten().filter(|f| **f > 0).min().copied().unwrap_or(0);
                 let name = format!("{}, FRET {}", inv, fr);
-                let _ = sp;
                 let tint = |pc: i32| Some(degree(pc, root).1);
                 if self.voicing_card(ui, acts, g, root, &name, &tint, false, false) != crate::clusters::CardAct::None {
                     pick = Some(i);

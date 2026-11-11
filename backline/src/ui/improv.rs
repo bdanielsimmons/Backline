@@ -732,7 +732,6 @@ impl App {
             ("maj7#11", 0) => Some(7),
             _ => None,
         };
-        let q = curated.unwrap_or(0);
         if let Some(i) = crate::choice_line(
             ui,
             "si_any",
@@ -799,7 +798,6 @@ impl App {
                     if adds.is_empty() { ", THE CHORD ITSELF".to_string() } else { format!(", ADDS {}", adds.join(" ")) }
                 )
             };
-            let _ = q;
             (sug[pick].0, sug[pick].1, why)
         };
         let shape_root = (root + off).rem_euclid(12);

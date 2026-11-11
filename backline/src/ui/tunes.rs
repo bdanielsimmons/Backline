@@ -421,7 +421,7 @@ impl App {
                 store::parse_date(&d.date).map(|x| (x, crate::notes_fmt::plain(line)))
             })
             .collect();
-        named.sort_by(|a, b| b.0.cmp(&a.0));
+        named.sort_by_key(|a| std::cmp::Reverse(a.0));
         if !named.is_empty() {
             section_header(ui, &format!("FROM YOUR DIARY  -  {} {}", named.len(), if named.len() == 1 { "DAY" } else { "DAYS" }));
             let mut open = None;

@@ -1294,7 +1294,6 @@ impl App {
         crate::winamp_ui::as_title(|| {
             crate::ui_text(p, Pos2::new(r.min.x + 26.0, r.center().y), Align::Min, word, 1.6, w - 28.0, col)
         });
-        let _ = ibutton;
         if resp.tip(tip).clicked() {
             if self.chart_lock {
                 self.chart_lock = false;

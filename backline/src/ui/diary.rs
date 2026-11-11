@@ -667,7 +667,7 @@ impl App {
             ui.add_space(4.0);
             dim_line(ui, "TOP LOOPS", 1.0, pal().dim);
             let most = sum.loops.first().map_or(1, |l| l.3).max(1);
-            for (id, a, b, secs, passes) in sum.loops.iter().take(5) {
+            for (id, a, b, secs, _) in sum.loops.iter().take(5) {
                 let loop_name = self
                     .store
                     .sections
@@ -677,7 +677,6 @@ impl App {
                     .filter(|n| !n.is_empty())
                     .unwrap_or_else(|| format!("{}-{}", fmt_time(*a), fmt_time(*b)));
                 let song = self.store.songs.get(id).map(|v| v.title.clone()).unwrap_or_default();
-                let _ = passes;
                 let right = mins_text(*secs);
                 bar_row(ui, &format!("{}  ({})", loop_name, song), *secs, most, sum.colour(*id), &right);
             }
@@ -740,9 +739,8 @@ impl App {
         } else {
             dim_line(ui, "LOOPS PRACTICED (CLICK TO PLAY)", 1.0, pal().dim);
         }
-        for (k, (a, b, s, n)) in loops.iter().enumerate() {
+        for (k, (a, b, s, _)) in loops.iter().enumerate() {
             let label = format!("{}   {}-{}", name_of(*a, *b), fmt_time(*a), fmt_time(*b));
-            let _ = n;
             let right = if *s == 0 { String::new() } else { mins_text(*s) };
             if let Some(r) = list_row(ui, k, None, || label.clone(), || right.clone(), RowState::Normal, false, false) {
                 if let Some(v) = v.clone() {
@@ -1400,12 +1398,12 @@ impl App {
         let date = store::date_str(sel);
         ui.add_space(6.0);
         section_header(ui, &format!("{} {}  -  {}", store::weekday(sel), date, mins_text(day_secs(self, sel))));
-        let (mut rows_d, mut loops, mut pomos) = (Vec::new(), 0, 0);
+        let (mut rows_d, mut pomos) = (Vec::new(), 0);
         if let Some(d) = self.store.days.iter().find(|d| d.date == date) {
             rows_d = d.secs.iter().map(|(k, v)| (k.clone(), *v)).collect::<Vec<_>>();
-            (loops, pomos) = (d.loops, d.pomos);
+            pomos = d.pomos;
         }
-        rows_d.sort_by(|a, b| b.1.cmp(&a.1));
+        rows_d.sort_by_key(|a| std::cmp::Reverse(a.1));
         let tot: u32 = rows_d.iter().map(|r| r.1).sum();
         // the day's times changed, or added by hand
         ui.horizontal_wrapped(|ui| {
@@ -1473,7 +1471,6 @@ impl App {
         }
         // time spent looping (how many times round says little), and focus blocks when there were some
         let looped: u32 = self.store.days.iter().find(|d| d.date == date).map_or(0, |d| d.loop_time.values().map(|v| v.0).sum());
-        let _ = loops;
         let mut bits = Vec::new();
         if looped > 0 {
             bits.push(format!("TIME LOOPED {}", mins_text(looped)));
@@ -1502,7 +1499,7 @@ impl App {
             .find(|d| d.date == date)
             .map(|d| d.songs.iter().map(|(k, v)| (*k, *v)).collect())
             .unwrap_or_default();
-        songs.sort_by(|a, b| b.1.cmp(&a.1));
+        songs.sort_by_key(|a| std::cmp::Reverse(a.1));
         // a song opened: the loops worked on that day and for how long, and PLAY if you want to hear it
         if let Some(id) = self.diary_song.as_ref().filter(|(d, _)| *d == date).map(|(_, id)| *id) {
             self.diary_song_view(ui, acts, &date, id, songs.iter().find(|s| s.0 == id).map_or(0, |s| s.1));
@@ -1541,7 +1538,6 @@ impl App {
                         self.diary_song = Some((date.clone(), *id));
                     }
                 }
-                let _ = v;
             }
         }
 

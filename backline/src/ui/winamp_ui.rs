@@ -986,10 +986,10 @@ impl App {
         // the skin's font comes from the list of installed fonts: if that is not read yet, read it in the
         // background and come back (the window never stalls on it)
         if !fonts_ready() && matches!(PL_FONTS.get(self.pl_font).map(|f| &f.1), Some(FontSrc::Skin | FontSrc::Sys(_))) {
-            let (tx, ctx, choice) = (self.tx.clone(), self.ctx.clone(), self.pl_font);
+            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
             std::thread::spawn(move || {
                 warm_fonts();
-                let _ = tx.send(Msg::FontReady(choice, Ok(Vec::new())));
+                let _ = tx.send(Msg::FontReady(Ok(Vec::new())));
                 ctx.request_repaint();
             });
             return;
@@ -1015,7 +1015,7 @@ impl App {
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
                 self.set_note("DOWNLOADING FONT...");
                 std::thread::spawn(move || {
-                    let _ = tx.send(Msg::FontReady(choice, fetch_font(choice)));
+                    let _ = tx.send(Msg::FontReady(fetch_font(choice)));
                     ctx.request_repaint();
                 });
             }

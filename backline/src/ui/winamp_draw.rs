@@ -1042,7 +1042,36 @@ pub(crate) fn as_title<R>(f: impl FnOnce() -> R) -> R {
 }
 
 pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
-    if !text.chars().any(|c| c.is_uppercase()) || text.chars().any(|c| c.is_lowercase()) {
+    if !text.chars().any(|c| c.is_uppercase()) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    if text.chars().any(|c| c.is_lowercase()) {
+        // words in capitals around notes and chords ("GRIPS FOR Cm7", "Bb BLUES", "KEY OF Eb: THE NOTE WAS G"): read
+        // just as the line would all in capitals ("C7", "C# BLUES"), so flats or a minor chord don't change how the rest
+        // looks; the notes and chords stay as written
+        // (checked word by word, stopping at the first ordinary one: this runs for every line drawn)
+        if text.split(' ').all(|w| !w.chars().any(|c| c.is_lowercase()) || music_word(w)) {
+            let words: Vec<&str> = text.split(' ').collect();
+            let up = display_case(&text.to_uppercase()).into_owned();
+            let out: Vec<&str> = up
+                .split(' ')
+                .zip(&words)
+                .map(|(cased, w)| if w.chars().any(|c| c.is_lowercase()) { *w } else { cased })
+                .collect();
+            return std::borrow::Cow::Owned(out.join(" "));
+        }
+        // a label in capitals before what it names ("SHOWING: Already played"): the label reads as it would were all of
+        // it in capitals, whatever follows, and the rest stays as written
+        if let Some(i) = text.find(": ") {
+            let head = &text[..i];
+            let letters = head.chars().filter(|c| c.is_alphabetic()).count();
+            if letters >= 2 && !head.chars().any(|c| c.is_lowercase()) {
+                let up = display_case(&text.to_uppercase()).into_owned();
+                if let Some(j) = up.find(": ") {
+                    return std::borrow::Cow::Owned(format!("{}{}", &up[..j], &text[i..]));
+                }
+            }
+        }
         return std::borrow::Cow::Borrowed(text);
     }
     const KEEP: [&str; 27] = [
@@ -1161,6 +1190,41 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 const APOS: char = '\u{27}';
+
+/// A note, chord or degree as written in music, with its small letters: Bb, Ebmaj7, Dbm7b5, F#m/C#, Bbsus4, b3, #11,
+/// x2 (a count). Not an ordinary word that starts with A to G ("Already", "Back", "Add").
+fn music_word(w: &str) -> bool {
+    let t = w.trim_matches(|c: char| "()[]:;,.!?\"'".contains(c));
+    // a degree or a count: b3, #11, x2
+    if let Some(r) = t.strip_prefix(['b', '#', '\u{266d}', '\u{266f}', 'x']) {
+        if !r.is_empty() && r.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    // a root (A to G), maybe a flat or sharp, then chord words, numbers and alterations; maybe over a bass (/E)
+    const PARTS: [&str; 22] = [
+        "maj", "min", "dim", "aug", "sus", "add", "alt", "no", "m", "M", "b", "#", "\u{266d}", "\u{266f}", "+", "-", "\u{b0}",
+        "\u{f8}", "\u{394}", "(", ")", ",",
+    ];
+    !t.is_empty()
+        && t.split('/').all(|part| {
+            let Some(root) = part.chars().next().filter(|c| ('A'..='G').contains(c)) else { return false };
+            let mut s = &part[root.len_utf8()..];
+            s = s.strip_prefix(['b', '#', '\u{266d}', '\u{266f}']).unwrap_or(s);
+            while !s.is_empty() {
+                if let Some(r) = PARTS.iter().find_map(|p| s.strip_prefix(p)) {
+                    s = r;
+                    continue;
+                }
+                let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
+                if digits == 0 {
+                    return false;
+                }
+                s = &s[digits..];
+            }
+            true
+        })
+}
 
 /// A line of the playlist in its font as Winamp drew it: at the font's own size (11 pixels for an ordinary font, a
 /// pixel font's native one), every pixel `k` points square - a whole number of screen pixels - so the stack's text
@@ -1386,6 +1450,33 @@ mod tests {
         assert_eq!(display_case("D E F G A B C"), "D E F G A B C");
         assert_eq!(display_case("PLAY A SONG TO START"), "Play a song to start");
         assert_eq!(display_case("START ON: C (AS WRITTEN)"), "Start on: C (as written)");
+        // a label before notes reads the same with sharps (all capitals) and flats (a small b)
+        assert_eq!(display_case("NOTES: C# (1)  F (4)  G# (5)"), "Notes: C# (1)  F (4)  G# (5)");
+        assert_eq!(display_case("NOTES: Db (1)  F (3)  Ab (5)"), "Notes: Db (1)  F (3)  Ab (5)");
+        assert_eq!(display_case("POSSIBLE CHORDS: Cm7  Ebmaj7"), "Possible Chords: Cm7  Ebmaj7");
+        assert_eq!(display_case("POSSIBLE CHORDS: CM7  EBMAJ7"), "Possible Chords: CM7  EBMAJ7");
+        assert_eq!(display_case("SHOWING: Cm7"), "Showing: Cm7");
+        // (a label already cased, or text in capitals inside a sentence: as written)
+        assert_eq!(display_case("Notes: Db"), "Notes: Db");
+        assert_eq!(display_case("Press SAVE: it keeps it"), "Press SAVE: it keeps it");
+        assert_eq!(display_case("SHOWING: Already played"), "Showing: Already played");
+        // capitals around notes and chords read the same whether a name has small letters or not
+        assert_eq!(display_case("GRIPS FOR Cm7"), "Grips for Cm7");
+        assert_eq!(display_case("GRIPS FOR C7"), "Grips for C7");
+        assert_eq!(display_case("Bb BLUES"), "Bb Blues");
+        assert_eq!(display_case("C# BLUES"), "C# Blues");
+        assert_eq!(display_case("KEY OF Eb: THE NOTE WAS G"), "Key of Eb: the note was G");
+        assert_eq!(display_case("KEY OF E: THE NOTE WAS G"), "Key of E: the note was G");
+        assert_eq!(display_case("SHOWING Dbm7b5.  HOVER TO PREVIEW, CLICK TO SELECT"), "Showing Dbm7b5.  Hover to preview, click to select");
+        // ordinary words that start with A to G aren't notes: mixed text stays as written
+        assert_eq!(display_case("Back in BLACK"), "Back in BLACK");
+        assert_eq!(display_case("Add It"), "Add It");
+        for w in ["Bb", "Ebmaj7", "Dbm7b5", "F#m/C#", "Bbsus4", "(b3)", "#11", "x2", "Cm7,", "Gb:", "C7(no5)"] {
+            assert!(music_word(w), "{}", w);
+        }
+        for w in ["Already", "Back", "Add", "Bad", "Ebay", "Dim", "Be", "Am-I"] {
+            assert!(!music_word(w), "{}", w);
+        }
         assert_eq!(display_case("START ON: A (AS WRITTEN)"), "Start on: A (as written)");
         assert_eq!(display_case("B♭7 OVER E♭"), "B♭7 Over E♭");
         assert_eq!(caps_words("Triads, then 7THS."), "Triads, then 7ths.");

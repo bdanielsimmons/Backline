@@ -121,7 +121,7 @@ pub(crate) fn likely_title(name: &str, titles: &[&str], known: &[&str]) -> Optio
     for k in known.iter().filter(|k| fits(k)) {
         add(k);
     }
-    groups.sort_by(|a, b| b.1.cmp(&a.1));
+    groups.sort_by_key(|a| std::cmp::Reverse(a.1));
     if groups.len() > 1 && groups[0].1 == groups[1].1 {
         return None;
     }

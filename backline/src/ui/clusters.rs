@@ -410,7 +410,6 @@ impl App {
     fn note_picker(
         &self,
         ui: &mut egui::Ui,
-        id: &str,
         label: &str,
         cur: i32,
         marks: &[(i32, Color32)],
@@ -422,7 +421,7 @@ impl App {
             if retro_btn_w(ui, "<", 30.0, false).tip("A half step down").clicked() {
                 out = Some((cur + 11) % 12);
             }
-            if let Some(pc) = octave_keys(ui, id, marks, faded) {
+            if let Some(pc) = octave_keys(ui, marks, faded) {
                 out = Some(pc);
             }
             if retro_btn_w(ui, ">", 30.0, false).tip("A half step up").clicked() {
@@ -642,13 +641,13 @@ impl App {
         let sharps = self.chord_sp.sharps;
         let col = self.cl_col();
         let pair = [self.cl_low, (self.cl_low + self.cl_gap()).rem_euclid(12)];
-        if let Some(pc) = self.note_picker(ui, "cl_top", "YOUR CLUSTER", pair[0], &[(pair[0], col), (pair[1], col)], &[]) {
+        if let Some(pc) = self.note_picker(ui, "YOUR CLUSTER", pair[0], &[(pair[0], col), (pair[1], col)], &[]) {
             self.cl_low = pc;
         }
         let pair = [self.cl_low, (self.cl_low + self.cl_gap()).rem_euclid(12)];
         // the bass, on its own keyboard: faded keys are basses no scale holds the cluster over
         let no_fit: Vec<i32> = (0..12).filter(|b| Self::fits(*b, &pair) == 0).collect();
-        if let Some(pc) = self.note_picker(ui, "cl_fc_bass", "THE BASS", self.fc_bass, &[(self.fc_bass, CL_BASS)], &no_fit) {
+        if let Some(pc) = self.note_picker(ui, "THE BASS", self.fc_bass, &[(self.fc_bass, CL_BASS)], &no_fit) {
             self.fc_bass = pc;
         }
         crate::views::dim_line(ui, "FADED KEYS: NO SCALE HOLDS THE CLUSTER OVER THAT BASS", 1.0, pal().dim);
@@ -681,14 +680,14 @@ impl App {
         para(ui, "Hold the bass and walk the two notes up over it, a half step at a time. Each spot is a different pair of degrees over the same root, and so a different chord type.", pal().ink2);
         let sharps = self.chord_sp.sharps;
         let gap = self.cl_gap();
-        if let Some(pc) = self.note_picker(ui, "cl_bass2", "THE BASS", self.cl_bass, &[(self.cl_bass, CL_BASS)], &[]) {
+        if let Some(pc) = self.note_picker(ui, "THE BASS", self.cl_bass, &[(self.cl_bass, CL_BASS)], &[]) {
             self.cl_bass = pc;
         }
         let bass = self.cl_bass;
         let col = self.cl_col();
         let fb = [self.fb_low, (self.fb_low + gap).rem_euclid(12)];
         let no_fit: Vec<i32> = (0..12).filter(|lo| Self::fits(bass, &[*lo, (lo + gap).rem_euclid(12)]) == 0).collect();
-        if let Some(pc) = self.note_picker(ui, "cl_fb_top", "THE CLUSTER", fb[0], &[(fb[0], col), (fb[1], col)], &no_fit) {
+        if let Some(pc) = self.note_picker(ui, "THE CLUSTER", fb[0], &[(fb[0], col), (fb[1], col)], &no_fit) {
             self.fb_low = pc;
         }
         crate::views::dim_line(ui, "FADED KEYS: NO SCALE HOLDS A CLUSTER FROM THERE OVER THIS BASS", 1.0, pal().dim);
@@ -954,11 +953,11 @@ impl App {
                 )
             })
             .collect();
-        if let Some(pc) = self.note_picker(ui, "cb_top", "STARTS ON", self.cb_lo, &marks, &[]) {
+        if let Some(pc) = self.note_picker(ui, "STARTS ON", self.cb_lo, &marks, &[]) {
             self.cb_lo = pc;
         }
         let x: Vec<i32> = (0..12).filter(|b| Self::fits(*b, &spcs) == 0).collect();
-        if let Some(pc) = self.note_picker(ui, "cb_bass", "THE BASS", self.cl_bass, &[(self.cl_bass, CL_BASS)], &x) {
+        if let Some(pc) = self.note_picker(ui, "THE BASS", self.cl_bass, &[(self.cl_bass, CL_BASS)], &x) {
             self.cl_bass = pc;
         }
         let sb = self.cl_bass;

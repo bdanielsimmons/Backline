@@ -907,10 +907,9 @@ impl App {
                     self.apply(Action::Intro(4));
                 }
             }
-            Msg::FontReady(choice, r) => match r {
+            Msg::FontReady(r) => match r {
                 Ok(_) => {
                     // kept on disk now: wear it if it is still the one wanted
-                    let _ = choice;
                     self.apply_pl_font();
                     self.set_note("FONT READY");
                 }

@@ -116,7 +116,7 @@ pub fn notes(n: usize) -> Result<Vec<(String, String)>, String> {
         // a local build (0) shows the newest ones
         .filter(|(n, ..)| me == 0 || *n <= me)
         .collect();
-    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.sort_by_key(|a| std::cmp::Reverse(a.0));
     Ok(out.into_iter().take(n).map(|(_, t, b)| (t, b)).collect())
 }
 
@@ -261,13 +261,17 @@ impl App {
         if self.upd_state != 2 {
             return;
         }
-        // opt-in only: restart by itself once nothing is playing and you have been away a while
+        // restart by itself once nothing is playing and you have been away a while: when it's turned on in
+        // Preferences, and always for a version taken from your own linked computer (after a minute, not five)
         let playing = self.cur.is_some() && !self.paused && !self.stopped;
-        if self.auto_restart && !playing && self.last_active.elapsed() > Duration::from_secs(300) {
+        let from_link = self.upd.as_ref().is_some_and(|i| i.url == FROM_LINKED);
+        let away = Duration::from_secs(if from_link { 60 } else { 300 });
+        if (self.auto_restart || from_link) && !playing && self.last_active.elapsed() > away {
+            api::log("update: nothing playing and no one at it: restarting on the new version");
             acts.push(Action::ApplyUpdate);
             return;
         }
-        if self.auto_restart {
+        if self.auto_restart || from_link {
             ctx.request_repaint_after(Duration::from_secs(15));
         }
         let Some(info) = self.upd.clone() else { return };
@@ -276,8 +280,13 @@ impl App {
             .order(egui::Order::Tooltip)
             .anchor(egui::Align2::CENTER_TOP, [0.0, 4.0])
             .show(ctx, |ui| {
+                let tip = if from_link {
+                    "Saves everything and restarts Backline on the new version from your linked computer. It also restarts by itself once nothing is playing and no one has used it for a minute."
+                } else {
+                    "Saves everything and restarts Backline on the new version. Otherwise it installs the next time you open the app. You can turn on automatic restart in Preferences."
+                };
                 if retro_btn(ui, &format!("UPDATE {} READY - CLICK TO RESTART", info.tag.to_uppercase()), true)
-                    .tip("Saves everything and restarts Backline on the new version. Otherwise it installs the next time you open the app. You can turn on automatic restart in Preferences.")
+                    .tip(tip)
                     .clicked()
                 {
                     acts.push(Action::ApplyUpdate);

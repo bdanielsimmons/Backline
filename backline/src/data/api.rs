@@ -1482,7 +1482,7 @@ impl Api {
         };
         let want = name.to_lowercase();
         let mut all: Vec<(i32, Track, u32)> = all.into_iter().map(|(t, p)| (score(&t, p), t, p)).collect();
-        all.sort_by(|a, b| b.0.cmp(&a.0));
+        all.sort_by_key(|a| std::cmp::Reverse(a.0));
         let (named, rest): (Vec<_>, Vec<_>) = all.into_iter().partition(|(_, t, _)| t.title.to_lowercase().contains(&want));
         let mut seen: Vec<String> = Vec::new();
         let mut out = Vec::new();
