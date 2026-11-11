@@ -742,10 +742,19 @@ impl App {
             Msg::Exported(r) => {
                 self.exporting = false;
                 match r {
-                    Ok(p) => self.set_note(&format!("SAVED: {}", p)),
+                    Ok(p) => {
+                        let path = std::path::PathBuf::from(p);
+                        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        self.set_note(&format!("SAVED: {}", name));
+                        self.export_last = Some(path);
+                    }
                     Err(e) if e == "cancelled" => {}
                     Err(e) => self.set_err(format!("EXPORT FAILED: {}", e)),
                 }
+            }
+            Msg::ExportDir(d) => {
+                self.export_dir = Some(d);
+                self.dirty = true;
             }
             Msg::Stems(id, r) => {
                 self.stem_busy = 0;

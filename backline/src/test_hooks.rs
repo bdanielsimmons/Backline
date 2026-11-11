@@ -70,9 +70,10 @@ impl App {
                 app.more = true;
                 app.mtab = ["trainer", "pitch", "stems"].iter().position(|x| *x == t).unwrap_or(0) as u8;
                 // with the tour song playing, so the tab shows what it does (BACKLINE_REC_A=452: tuned to that A;
-                // BACKLINE_SONG=<file>: that song instead; BACKLINE_MENU=export: with STEMS' EXPORT WAV menu open)
+                // BACKLINE_SONG=<file>: that song instead; BACKLINE_MENU=export: with the EXPORT panel open, on the
+                // loop BACKLINE_LOOP=<a>-<b> seconds)
                 if std::env::var("BACKLINE_MENU").as_deref() == Ok("export") {
-                    app.ctx.memory_mut(|m| m.open_popup(egui::Id::new("export_menu")));
+                    app.export_open = true;
                 }
                 let song = std::env::var_os("BACKLINE_SONG").map(std::path::PathBuf::from).or_else(tour_song::ready);
                 if let Some(p) = song {
@@ -87,6 +88,12 @@ impl App {
                     app.srcmap.insert(t.id, Src::File(p));
                     app.queue = Arc::new(vec![t]);
                     app.play_index(0);
+                    if let Some((a, b)) = std::env::var("BACKLINE_LOOP").ok().and_then(|l| {
+                        let (a, b) = l.split_once('-')?;
+                        Some((a.parse::<f32>().ok()?, b.parse::<f32>().ok()?))
+                    }) {
+                        (app.loop_a, app.loop_b) = (Some(a), Some(b));
+                    }
                 }
             }
             // (BACKLINE_PL=<n>: with your playlist n open)

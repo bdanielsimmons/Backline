@@ -340,13 +340,24 @@ impl App {
         window_deco(ui, inner, "EQUALIZER");
         // the close button, in the title strip
         // (drawn to the slot's height: a full-size button would stand taller than the strip's band)
-        let xr = crate::title_slot(inner, crate::title_right(inner), 30.0, 22.0);
+        // (Backline's looks: the small close button every title bar has)
+        let flat = crate::winamp_ui::flat_frame().is_some();
+        let size = crate::winamp_ui::bar_btn(crate::title_band(inner).1);
+        let xr = if flat {
+            crate::title_slot(inner, crate::title_right(inner), size, size)
+        } else {
+            crate::title_slot(inner, crate::title_right(inner), 30.0, 22.0)
+        };
         let xb = ui
             .interact(xr, ui.id().with("eq_close"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Close the equalizer.");
-        raised_h(ui.painter(), xr, xb.is_pointer_button_down_on(), xb.hovered());
-        crate::winamp_ui::as_title(|| ui_text(ui.painter(), xr.center(), Align::Center, "X", 2.0, xr.width() - 6.0, pal().ink));
+        if flat {
+            crate::winamp_ui::bar_button(ui.painter(), xr, true, xb.is_pointer_button_down_on());
+        } else {
+            raised_h(ui.painter(), xr, xb.is_pointer_button_down_on(), xb.hovered());
+            crate::winamp_ui::as_title(|| ui_text(ui.painter(), xr.center(), Align::Center, "X", 2.0, xr.width() - 6.0, pal().ink));
+        }
         if xb.clicked() {
             self.show_eq = false;
         }
@@ -358,7 +369,7 @@ impl App {
             // the preset cards under it give way as you size the equalizer up (as the cover beside the player
             // does): lower, then gone; they come back as it gets smaller
             let strip_h = match self.eq_zoom {
-                Some(z) => (full.height() - 116.0 * z - 6.0).clamp(0.0, 56.0),
+                Some(z) => (full.height() - crate::winamp_ui::eq_art_h(z) - 6.0).clamp(0.0, 56.0),
                 None => 56.0,
             };
             let strip_h = if strip_h < 30.0 { 0.0 } else { strip_h };

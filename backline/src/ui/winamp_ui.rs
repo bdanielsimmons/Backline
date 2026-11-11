@@ -167,7 +167,23 @@ impl App {
         // The mini player has its own button beside them. In mini the deck is the window, so minimize and close work
         // as Winamp's did
         let tid = ui.id().with("wa_titlebar");
-        let at = |x: f32| Rect::from_min_size(pl.o + Vec2::new(x, 3.0) * pl.s, Vec2::new(9.0, 9.0) * pl.s);
+        // Backline's looks: the deck's title bar is every window's - as tall, the name at its left, the buttons on its
+        // middle line - over the deck's art less its own title strip (a Winamp skin keeps its own)
+        let bar = (crate::winamp_ui::flat_frame().is_some() && !self.mini).then(|| {
+            let body = pl.o.y + 14.0 * pl.s;
+            let deck_r = pl.o.x + 275.0 * pl.s;
+            let (l, r) =
+                if self.deck_zoom.is_some() { (pl.o.x, deck_r) } else { ((area.min.x - 14.0).min(pl.o.x), (area.max.x + 14.0).max(deck_r)) };
+            Rect::from_min_max(Pos2::new(l, body - crate::winamp_ui::deck_bar_h(pl.s)), Pos2::new(r, body))
+        });
+        // a title-bar button at `x` in the deck's pixels
+        let at = |x: f32| match bar {
+            Some(b) => Rect::from_center_size(
+                Pos2::new(pl.o.x + (x + 4.5) * pl.s, crate::winamp_ui::bar_mid(b)),
+                Vec2::splat(crate::winamp_ui::bar_btn(crate::winamp_ui::bar_room(b))),
+            ),
+            None => Rect::from_min_size(pl.o + Vec2::new(x, 3.0) * pl.s, Vec2::new(9.0, 9.0) * pl.s),
+        };
         if self.mini {
             // no system title bar in mini: the deck's own one moves the window (its buttons, drawn after, win)
             let bar = Rect::from_min_size(pl.o, Vec2::new(275.0, 14.0) * pl.s);
@@ -178,7 +194,11 @@ impl App {
             // the full window with no system title bar: the deck's is part of the app's
             // (between the options button and the mini player's: the rest of the bar is buttons, and over the title
             // bar Windows would take their clicks)
-            crate::app_bar_strip(ui, pl.r(16.0, 0.0, 216.0, 14.0), tid.with("app_bar"));
+            let strip = match bar {
+                Some(b) => Rect::from_min_max(Pos2::new(at(6.0).max.x + 2.0, b.min.y), Pos2::new(at(234.0).min.x - 2.0, b.max.y)),
+                None => pl.r(16.0, 0.0, 216.0, 14.0),
+            };
+            crate::app_bar_strip(ui, strip, tid.with("app_bar"));
         }
         // (in the full window the middle one is the skin's own button below, which goes fullscreen)
         {
@@ -248,11 +268,21 @@ impl App {
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
         };
 
-        t.spr(&p, "main", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
-        t.spr(&p, "titlebar", (27.0, 0.0, 275.0, 14.0), pl.r(0.0, 0.0, 275.0, 14.0));
+        if let Some(b) = bar {
+            // (the art's own title strip set aside: the deck's body under the bar, its buttons and name on the bar)
+            t.spr(&p, "main", (0.0, 14.0, 275.0, 102.0), pl.r(0.0, 14.0, 275.0, 102.0));
+            crate::winamp_ui::paint_bar(&p, b);
+            for x in [6.0, 244.0, 254.0, 264.0] {
+                t.spr(&p, "titlebar", (27.0 + x, 3.0, 9.0, 9.0), at(x));
+            }
+            crate::winamp_ui::name_plate(&p, at(6.0).max.x + 8.0, crate::winamp_ui::bar_mid(b), "BACKLINE", crate::winamp_ui::bar_room(b));
+        } else {
+            t.spr(&p, "main", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
+            t.spr(&p, "titlebar", (27.0, 0.0, 275.0, 14.0), pl.r(0.0, 0.0, 275.0, 14.0));
+        }
         // the title bar's own buttons: options menu, minimize, shade (MINI), close
         let tb = |ui: &mut egui::Ui, name: &str, x: f32, src: (f32, f32), tip: &str| -> egui::Response {
-            let r = pl.r(x, 3.0, 9.0, 9.0);
+            let r = at(x);
             let h = ui.interact(r, id.with(name), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             if h.is_pointer_button_down_on() {
                 t.spr(&p, "titlebar", (src.0, src.1 + 9.0, 9.0, 9.0), r);
@@ -721,7 +751,7 @@ impl App {
             crate::winamp_ui::round_corners(&p, deck, true);
             // (Backline's looks: its border round its whole window - the column, when that's wider than the deck)
             let window = Rect::from_min_max(Pos2::new(area.min.x - 14.0, deck.min.y), Pos2::new(area.max.x + 14.0, deck.max.y));
-            crate::winamp_ui::border_ring(&p, window.union(deck), None);
+            crate::winamp_ui::border_ring(&p, bar.map_or(window.union(deck), |b| window.union(deck).union(b)), None);
         }
         self.wa_art = Some(t);
     }
@@ -730,6 +760,8 @@ impl App {
     pub(crate) fn winamp_eq(&mut self, ui: &mut egui::Ui, area: Rect) {
         let Some(t) = self.wa_art.take() else { return };
         let id = ui.id().with("winamp_eq");
+        // (Backline's looks, in its window: one title bar, its window's)
+        let flat = crate::winamp_ui::flat_frame().is_some() && !self.mini;
         let pl = if self.mini {
             // the mini player's stack: right under the deck, at its width; its title bar moves the window
             let pl = Place { o: area.min, s: area.width() / 275.0 };
@@ -743,12 +775,35 @@ impl App {
                 self.eq_zoom = z;
                 self.dirty = true;
             }
-            pl
+            if flat {
+                // Backline's looks: its window's bar names it, so its body sits at the top of the page, as big as fits
+                // (whole screen pixels) or the size you gave it
+                let ppp = font::ppp();
+                let s = match self.eq_zoom {
+                    Some(_) => pl.s,
+                    None => {
+                        let fit = (area.width() / 275.0).min(area.height() / 102.0);
+                        if fit * ppp >= 1.0 {
+                            (fit * ppp).floor() / ppp
+                        } else {
+                            fit.max(0.2)
+                        }
+                    }
+                };
+                let snap = |v: f32| (v * ppp).round() / ppp;
+                Place { o: Pos2::new(snap(area.center().x - 137.5 * s), snap(area.min.y - 14.0 * s)), s }
+            } else {
+                pl
+            }
         };
         let p = ui.painter().clone();
         let mut changed = false;
-        t.spr(&p, "eqmain", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
-        t.spr(&p, "eqmain", (0.0, 134.0, 275.0, 14.0), pl.r(0.0, 0.0, 275.0, 14.0));
+        if flat {
+            t.spr(&p, "eqmain", (0.0, 14.0, 275.0, 102.0), pl.r(0.0, 14.0, 275.0, 102.0));
+        } else {
+            t.spr(&p, "eqmain", (0.0, 0.0, 275.0, 116.0), pl.r(0.0, 0.0, 275.0, 116.0));
+            t.spr(&p, "eqmain", (0.0, 134.0, 275.0, 14.0), pl.r(0.0, 0.0, 275.0, 14.0));
+        }
         // ON
         let on_r = pl.r(14.0, 18.0, 26.0, 12.0);
         let on_h = ui
@@ -776,14 +831,16 @@ impl App {
             self.eq_auto = !self.eq_auto;
             self.dirty = true;
         }
-        // the title bar's close button closes the equalizer
-        let cl = pl.r(264.0, 3.0, 9.0, 9.0);
-        let clh = ui.interact(cl, id.with("close"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Close");
-        if clh.is_pointer_button_down_on() {
-            t.spr(&p, "eqmain", (0.0, 125.0, 9.0, 9.0), cl);
-        }
-        if clh.clicked() {
-            self.show_eq = false;
+        // the title bar's close button closes the equalizer (Backline's looks: its window's bar has the one)
+        if !flat {
+            let cl = pl.r(264.0, 3.0, 9.0, 9.0);
+            let clh = ui.interact(cl, id.with("close"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Close");
+            if clh.is_pointer_button_down_on() {
+                t.spr(&p, "eqmain", (0.0, 125.0, 9.0, 9.0), cl);
+            }
+            if clh.clicked() {
+                self.show_eq = false;
+            }
         }
         // PRESETS: click for the list
         let pr_r = pl.r(217.0, 18.0, 44.0, 12.0);
@@ -1072,22 +1129,28 @@ impl App {
                 }
             }
         };
-        let (top, left, right, bottom) = (20.0 * k, 12.0 * k, 20.0 * k, 38.0 * k);
+        // (Backline's looks: every window's title bar, the name at its left, its buttons on its middle line)
+        let flat = crate::winamp_ui::flat_frame().is_some() && !self.mini;
+        let (top, left, right, bottom) = (if flat { crate::title_h() } else { 20.0 * k }, 12.0 * k, 20.0 * k, 38.0 * k);
+        let bar = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + top));
         let list = Rect::from_min_max(outer.min + Vec2::new(left, top), outer.max - Vec2::new(right, bottom));
         // the list's own background, in the skin's playlist colour
         p.rect_filled(list, 0.0, pal().display);
 
         // ---- the frame
-        tiled((127.0, 0.0, 25.0, 20.0), Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + top)), true);
-        piece((0.0, 0.0, 25.0, 20.0), Rect::from_min_size(outer.min, Vec2::new(25.0, 20.0) * k));
-        piece(
-            (153.0, 0.0, 25.0, 20.0),
-            Rect::from_min_size(Pos2::new(outer.max.x - 25.0 * k, outer.min.y), Vec2::new(25.0, 20.0) * k),
-        );
-        piece(
-            (26.0, 0.0, 100.0, 20.0),
-            Rect::from_center_size(Pos2::new(outer.center().x, outer.min.y + top / 2.0), Vec2::new(100.0, 20.0) * k),
-        );
+        if flat {
+            crate::winamp_ui::paint_bar(&p, bar);
+            crate::winamp_ui::name_plate(&p, outer.min.x + 26.0, crate::winamp_ui::bar_mid(bar), "PLAYLIST", crate::winamp_ui::bar_room(bar));
+        } else {
+            tiled((127.0, 0.0, 25.0, 20.0), bar, true);
+            piece((0.0, 0.0, 25.0, 20.0), Rect::from_min_size(outer.min, Vec2::new(25.0, 20.0) * k));
+            piece(
+                (153.0, 0.0, 25.0, 20.0),
+                Rect::from_min_size(Pos2::new(outer.max.x - 25.0 * k, outer.min.y), Vec2::new(25.0, 20.0) * k),
+            );
+            let title = Rect::from_center_size(Pos2::new(outer.center().x, outer.min.y + top / 2.0), Vec2::new(100.0, 20.0) * k);
+            piece((26.0, 0.0, 100.0, 20.0), title);
+        }
         tiled(
             (0.0, 42.0, 12.0, 29.0),
             Rect::from_min_max(Pos2::new(outer.min.x, list.min.y), Pos2::new(list.min.x, list.max.y)),
@@ -1102,7 +1165,7 @@ impl App {
         piece((126.0, 72.0, 150.0, 38.0), br);
         if !self.mini {
             // its title strip moves the window too (Snap and all), short of its own buttons
-            let strip = Rect::from_min_size(outer.min, Vec2::new(outer.width(), 20.0 * k));
+            let strip = Rect::from_min_size(outer.min, Vec2::new(outer.width(), top));
             crate::winamp_ui::note_strip_control(outer, outer.max.x - 22.0 * k);
             crate::app_bar_strip(ui, strip, id.with("app_bar"));
         }
@@ -1312,13 +1375,17 @@ impl App {
         });
         // the title bar's close (and shade) hide the queue
         for (name, x) in [("pl_close", 11.0), ("pl_shade", 21.0)] {
-            let r = Rect::from_min_size(Pos2::new(outer.max.x - x * k, outer.min.y + 3.0 * k), Vec2::new(9.0, 9.0) * k);
-            if ui
-                .interact(r, id.with(name), Sense::click())
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip("Hide the queue.")
-                .clicked()
-            {
+            let r = if flat {
+                let size = crate::winamp_ui::bar_btn(crate::winamp_ui::bar_room(bar));
+                Rect::from_center_size(Pos2::new(outer.max.x - (x - 4.5) * k, crate::winamp_ui::bar_mid(bar)), Vec2::splat(size))
+            } else {
+                Rect::from_min_size(Pos2::new(outer.max.x - x * k, outer.min.y + 3.0 * k), Vec2::new(9.0, 9.0) * k)
+            };
+            let h = ui.interact(r, id.with(name), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hide the queue.");
+            if flat {
+                crate::winamp_ui::bar_button(&p, r, name == "pl_close", h.is_pointer_button_down_on());
+            }
+            if h.clicked() {
                 self.queue_hidden = true;
             }
         }

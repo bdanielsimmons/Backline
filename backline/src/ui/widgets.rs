@@ -235,6 +235,10 @@ pub(crate) fn title_band(inner: Rect) -> (f32, f32) {
     let outer = frame_outer(inner);
     if winamp_ui::chrome_on() {
         let strip = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + title_h()));
+        // (Backline's looks: the bar's own middle line, as the window's name has)
+        if winamp_ui::flat_frame().is_some() {
+            return (winamp_ui::bar_mid(strip), winamp_ui::bar_room(strip));
+        }
         let band = winamp_ui::title_band_rect(strip, FRAME_SIDE);
         (band.center().y, band.height() - 2.0 * winamp_ui::TITLE_GAP)
     } else {

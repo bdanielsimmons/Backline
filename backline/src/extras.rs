@@ -134,39 +134,27 @@ pub(crate) fn tune_name_from(title: &str) -> String {
     }
 }
 
-/// A saved loop's file name: when it was saved, the song, which loop and where, and which version (`tag`, e.g.
-/// "no vocals"; empty for the song itself) - e.g.
-/// "2026-10-11 00-41-05 - Average White Band - Cut the Cake - FUNKY RIFF (0m05s-0m12s).wav". Nothing in it that a
-/// file name can't hold.
-pub(crate) fn loop_file_name(
-    now: (i32, u32, u32, u32, u32, u32),
-    artist: &str,
-    title: &str,
-    what: &str,
-    a: f32,
-    b: f32,
-    tag: &str,
-) -> String {
-    let (y, mo, d, h, mi, s) = now;
+/// An exported file's name: the song, which loop and where, and which version (`tag`, e.g. "no vocals"; empty for
+/// the song as you hear it) - e.g. "Average White Band - Cut the Cake - FUNKY RIFF (0m05s-0m12s).wav". Nothing in it
+/// that a file name can't hold.
+pub(crate) fn export_file_name(artist: &str, title: &str, what: &str, a: f32, b: f32, tag: &str) -> String {
     let t = |x: f32| format!("{}m{:02}s", x as u32 / 60, x as u32 % 60);
     let song = if artist.trim().is_empty() { title.to_string() } else { format!("{} - {}", artist, title) };
-    let raw = format!(
-        "{:04}-{:02}-{:02} {:02}-{:02}-{:02} - {} - {} ({}-{}){}.wav",
-        y,
-        mo,
-        d,
-        h,
-        mi,
-        s,
-        song,
-        what,
-        t(a),
-        t(b),
-        if tag.is_empty() { String::new() } else { format!(" - {}", tag) }
-    );
+    let tag = if tag.is_empty() { String::new() } else { format!(" - {}", tag) };
+    let raw = format!("{} - {} ({}-{}){}.wav", song, what, t(a), t(b), tag);
     // tidy: no doubled spaces, no trailing dots (Windows drops them)
     let clean = safe_name(&raw).split_whitespace().collect::<Vec<_>>().join(" ");
     clean.replace(". .wav", ".wav")
+}
+
+/// `name` in `dir`, or "name (2).wav" and on when that's taken: a new save never covers an old one.
+pub(crate) fn free_path(dir: &std::path::Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let stem = name.strip_suffix(".wav").unwrap_or(name);
+    (2..).map(|n| dir.join(format!("{} ({}).wav", stem, n))).find(|p| !p.exists()).unwrap_or(first)
 }
 
 pub(crate) fn safe_name(s: &str) -> String {
@@ -183,21 +171,40 @@ pub(crate) fn stem_tag(on: [bool; 4]) -> String {
     }
 }
 
-/// The files one EXPORT WAV makes: each one's name tag and the stems in it (None: the song itself, all of it).
-pub(crate) fn export_jobs(kind: crate::ExportKind, on: [bool; 4], split: bool) -> Vec<(String, Option<[bool; 4]>)> {
-    use crate::ExportKind::*;
-    match kind {
-        // the stems that are on, when some are off; else the song itself
-        Hear if split && on.iter().any(|x| !x) => vec![(stem_tag(on), Some(on))],
-        Hear => vec![(String::new(), None)],
-        // the song, without vocals, and without vocals, bass and drums (stems: drums, bass, other, vocals)
-        Three => vec![
-            ("full".to_string(), None),
-            (stem_tag([true, true, true, false]), Some([true, true, true, false])),
-            (stem_tag([false, false, true, false]), Some([false, false, true, false])),
-        ],
-        Each => (0..4).map(|i| (stems::NAMES[i].to_lowercase(), Some(std::array::from_fn(|k| k == i)))).collect(),
+/// EXPORT's versions, one file each: the name on its button, the tag in the file's name, and the stems in it (drums,
+/// bass, other, vocals). None: as you hear it (the stems you have on, or the song itself); all four: the song itself.
+pub(crate) const EXPORT_AS: [(&str, &str, Option<[bool; 4]>); 7] = [
+    ("AS YOU HEAR IT", "", None),
+    ("FULL", "full", Some([true; 4])),
+    ("NO VOCALS", "no vocals", Some([true, true, true, false])),
+    ("DRUMS", "drums", Some([true, false, false, false])),
+    ("BASS", "bass", Some([false, true, false, false])),
+    ("OTHER", "other", Some([false, false, true, false])),
+    ("VOCALS", "vocals", Some([false, false, false, true])),
+];
+
+/// The file EXPORT makes for version `pick`: its name tag and the stems in it (None: the song itself). None when the
+/// version needs stems the song doesn't have.
+pub(crate) fn export_job(pick: usize, on: [bool; 4], split: bool) -> Option<(String, Option<[bool; 4]>)> {
+    let (_, tag, stems) = EXPORT_AS.get(pick).copied().unwrap_or(EXPORT_AS[0]);
+    match stems {
+        // as you hear it: the stems that are on, when some are off; else the song itself
+        None if split && on.iter().any(|x| !x) => Some((stem_tag(on), Some(on))),
+        None => Some((String::new(), None)),
+        Some(_) if !split => None,
+        Some(s) if s == [true; 4] => Some((tag.to_string(), None)),
+        Some(s) => Some((tag.to_string(), Some(s))),
     }
+}
+
+/// What EXPORT saves with the panel's choices: the song, from `a` to `b` (both 0: all of it), the file's name, the
+/// stems in it (None: the song itself).
+pub(crate) struct ExportPlan {
+    pub id: i64,
+    pub a: f32,
+    pub b: f32,
+    pub name: String,
+    pub stems: Option<[bool; 4]>,
 }
 
 /// Make the files: the stems asked for (or the song itself, fetched if it isn't on this computer), from `a` to `b`
@@ -224,32 +231,71 @@ fn write_exports(
 }
 
 impl App {
-    /// EXPORT WAV: the A-B loop (or the whole song) as WAV files, as you hear it (speed, pitch, ear mode, equalizer).
-    /// One file asks where to save it; several ask for a folder once.
-    pub(crate) fn export_wav(&mut self, kind: crate::ExportKind) {
-        // the A-B loop when there is one, else the whole song
-        let (a, b) = match (self.loop_a, self.loop_b) {
-            (Some(a), Some(b)) if b > a => (a, b),
-            _ => (0.0, 0.0),
+    /// The A-B loop, when one is set.
+    pub(crate) fn export_loop(&self) -> Option<(f32, f32)> {
+        match (self.loop_a, self.loop_b) {
+            (Some(a), Some(b)) if b > a => Some((a, b)),
+            _ => None,
+        }
+    }
+
+    /// Whether EXPORT's versions without some stems can be had: the playing song is split.
+    pub(crate) fn export_split(&self) -> bool {
+        self.cur_track().is_some_and(|t| stems::have_stems(t.id))
+    }
+
+    /// What EXPORT would save now (the current loop or the whole song, in the version picked), or why it can't.
+    pub(crate) fn export_plan(&self) -> Result<ExportPlan, &'static str> {
+        let t = self.cur_track().filter(|t| !self.is_demo(t.id)).ok_or("PLAY ONE OF YOUR SONGS FIRST")?;
+        let lp = self.export_loop().filter(|_| !self.export_whole);
+        let split = stems::have_stems(t.id);
+        // (a song not split has only "as you hear it")
+        let pick = if split { self.export_pick.min(EXPORT_AS.len() - 1) } else { 0 };
+        if split && EXPORT_AS[pick].2.is_none() && !self.stem_on.iter().any(|on| *on) {
+            return Err("ALL STEMS ARE OFF");
+        }
+        let (tag, stems) = export_job(pick, self.stem_on, split).ok_or("SPLIT THIS SONG FIRST")?;
+        // the loop's name when it is a saved one
+        let what = match lp {
+            Some((a, b)) => self
+                .store
+                .sections
+                .get(&t.id)
+                .and_then(|l| l.iter().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05))
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| "loop".to_string()),
+            None => "whole song".to_string(),
         };
-        let whole = b <= a;
-        let Some(t) = self.cur_track() else {
-            self.set_note("PLAY A SONG FIRST");
-            return;
-        };
+        let (a, b) = lp.unwrap_or((0.0, 0.0));
+        let (fa, fb) = if lp.is_some() { (a, b) } else { (0.0, t.duration) };
+        Ok(ExportPlan { id: t.id, a, b, name: export_file_name(&t.artist, &t.title, &what, fa, fb, &tag), stems })
+    }
+
+    /// Where EXPORT puts its files: the folder picked, else Saved loops next to Backline (or in Music).
+    pub(crate) fn export_folder(&self) -> PathBuf {
+        if let Some(d) = self.export_dir.as_ref().filter(|d| d.is_dir()) {
+            return d.clone();
+        }
+        let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("Saved loops")));
+        match beside {
+            Some(d) if d.is_dir() || std::fs::create_dir_all(&d).is_ok() => d,
+            _ => dirs::audio_dir().unwrap_or_else(api::config_dir).join("Saved loops"),
+        }
+    }
+
+    /// EXPORT: one WAV with the panel's choices, straight into its folder (no save window), as you hear it: speed,
+    /// pitch, ear mode and the equalizer.
+    pub(crate) fn export_wav(&mut self) {
         if self.exporting {
             return;
         }
-        let split = stems::have_stems(t.id);
-        if kind != crate::ExportKind::Hear && !split {
-            self.set_note("SPLIT THIS TRACK FIRST");
-            return;
-        }
-        if split && !self.stem_on.iter().any(|on| *on) && kind == crate::ExportKind::Hear {
-            self.set_note("ALL STEMS ARE OFF");
-            return;
-        }
-        // as you hear it: speed, and in practice mode the pitch and ear mode; balance and the equalizer
+        let plan = match self.export_plan() {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_note(e);
+                return;
+            }
+        };
         let fx = crate::player::Fx {
             speed: self.speed,
             cents: if self.practice { self.semis } else { 0 },
@@ -257,66 +303,30 @@ impl App {
             balance: self.balance,
             eq: (self.eq_gains, self.eq_pre, self.eq_on),
         };
-        let (api, lossless, src) = (self.api.clone(), self.prefer_lossless, self.srcmap.get(&t.id).cloned());
-        // a folder next to Backline, names that sort by date and say what each is
-        let dir = std::env::current_exe()
-            .ok()
-            .and_then(|e| e.parent().map(|p| p.join("Saved loops")))
-            .filter(|d| std::fs::create_dir_all(d).is_ok())
-            .unwrap_or_else(|| dirs::audio_dir().unwrap_or_else(api::config_dir).join("Saved loops"));
+        let (api, lossless, src) = (self.api.clone(), self.prefer_lossless, self.srcmap.get(&plan.id).cloned());
+        let dir = self.export_folder();
         let _ = std::fs::create_dir_all(&dir);
-        let what = self
-            .store
-            .sections
-            .get(&t.id)
-            .and_then(|l| l.iter().find(|s| (s.a - a).abs() < 0.05 && (s.b - b).abs() < 0.05))
-            .map(|s| s.name.clone())
-            .unwrap_or_else(|| if whole { "whole song".to_string() } else { "loop".to_string() });
-        let (fa, fb) = if whole { (0.0, t.duration) } else { (a, b) };
-        let now = store::now_local();
-        let files: Vec<(String, Option<[bool; 4]>)> = export_jobs(kind, self.stem_on, split)
-            .into_iter()
-            .map(|(tag, on)| (loop_file_name(now, &t.artist, &t.title, &what, fa, fb, &tag), on))
-            .collect();
-        let id = t.id;
+        let path = free_path(&dir, &plan.name);
         self.exporting = true;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
-            // one save window: the file's name, or for several the folder they go in
-            let jobs: Option<Vec<(PathBuf, Option<[bool; 4]>)>> = if files.len() == 1 {
-                rfd::FileDialog::new()
-                    .set_title(if whole { "Save the song as a WAV" } else { "Save the loop as a WAV" })
-                    .set_directory(&dir)
-                    .set_file_name(&files[0].0)
-                    .add_filter("WAV audio", &["wav"])
-                    .save_file()
-                    .map(|p| vec![(p, files[0].1)])
-            } else {
-                rfd::FileDialog::new()
-                    .set_title(format!("Choose a folder for the {} WAVs", files.len()))
-                    .set_directory(&dir)
-                    .pick_folder()
-                    .map(|d| files.iter().map(|(name, on)| (d.join(name), *on)).collect())
-            };
-            let Some(jobs) = jobs else {
-                let _ = tx.send(Msg::Exported(Err("cancelled".to_string())));
-                ctx.request_repaint();
-                return;
-            };
-            let fetch = || crate::fetch_audio(&api, id, lossless, false, src.clone());
-            let r = write_exports(&jobs, id, a, b, &fx, fetch).map(|_| {
-                // show it in Explorer, so it is easy to find later
-                let first = &jobs[0].0;
-                let _ = sources::reveal(&first.to_string_lossy());
-                if jobs.len() == 1 {
-                    first.display().to_string()
-                } else {
-                    format!("{} WAVS IN {}", jobs.len(), first.parent().map(|d| d.display().to_string()).unwrap_or_default())
-                }
-            });
+            let fetch = || crate::fetch_audio(&api, plan.id, lossless, false, src.clone());
+            let r = write_exports(&[(path.clone(), plan.stems)], plan.id, plan.a, plan.b, &fx, fetch)
+                .map(|_| path.display().to_string());
             let _ = tx.send(Msg::Exported(r));
             ctx.request_repaint();
         });
+    }
+
+    /// EXPORT's OPEN FOLDER: the last file saved there, picked out, or the folder.
+    pub(crate) fn export_show(&self) {
+        let dir = self.export_folder();
+        match self.export_last.as_ref().filter(|p| p.exists() && p.parent() == Some(dir.as_path())) {
+            Some(p) => {
+                let _ = sources::reveal(&p.to_string_lossy());
+            }
+            None => stems::open_path(&dir),
+        }
     }
 
     /// Put on a skin (downloaded or drawn by Backline). `announce`: say so in the status line (not at start-up).
@@ -2229,41 +2239,49 @@ mod tests {
         assert_eq!(safe_name(" a<b>c|d*e \"f\" "), "a_b_c_d_e _f_");
         assert_eq!(safe_name("ok - name (1s-2s).wav"), "ok - name (1s-2s).wav");
         assert_eq!(
-            loop_file_name(
-                (2026, 10, 11, 0, 41, 5),
-                "Average White Band",
-                "Cut the Cake (Single Edit)",
-                "FUNKY RIFF",
-                5.2,
-                12.9,
-                ""
-            ),
-            "2026-10-11 00-41-05 - Average White Band - Cut the Cake (Single Edit) - FUNKY RIFF (0m05s-0m12s).wav"
+            export_file_name("Average White Band", "Cut the Cake (Single Edit)", "FUNKY RIFF", 5.2, 12.9, ""),
+            "Average White Band - Cut the Cake (Single Edit) - FUNKY RIFF (0m05s-0m12s).wav"
         );
         assert_eq!(
-            loop_file_name((2026, 1, 2, 3, 4, 5), "AC/DC", "What?: \"Yes\"", "loop", 61.0, 70.0, "no vocals"),
-            "2026-01-02 03-04-05 - AC_DC - What__ _Yes_ - loop (1m01s-1m10s) - no vocals.wav"
+            export_file_name("AC/DC", "What?: \"Yes\"", "loop", 61.0, 70.0, "no vocals"),
+            "AC_DC - What__ _Yes_ - loop (1m01s-1m10s) - no vocals.wav"
         );
     }
 
     #[test]
-    fn export_makes_the_versions_asked_for() {
-        use crate::ExportKind::*;
-        let tags = |kind, on, split| export_jobs(kind, on, split).into_iter().map(|j| j.0).collect::<Vec<_>>();
+    fn a_new_export_never_covers_an_old_one() {
+        let dir = std::env::temp_dir().join(format!("backline_free_path_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        assert_eq!(free_path(&dir, "a - loop.wav"), dir.join("a - loop.wav"));
+        std::fs::write(dir.join("a - loop.wav"), b"x").unwrap();
+        assert_eq!(free_path(&dir, "a - loop.wav"), dir.join("a - loop (2).wav"));
+        std::fs::write(dir.join("a - loop (2).wav"), b"x").unwrap();
+        assert_eq!(free_path(&dir, "a - loop.wav"), dir.join("a - loop (3).wav"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_makes_the_version_picked() {
+        let job = |pick, on, split| export_job(pick, on, split);
         // as you hear it: the song itself, or the stems that are on
-        assert_eq!(export_jobs(Hear, [true; 4], true)[0].1, None);
-        assert_eq!(export_jobs(Hear, [false, true, true, true], false)[0].1, None);
-        assert_eq!(tags(Hear, [false, true, true, false], true), ["no vocals drums"]);
-        // the three versions: full, no vocals, no vocals bass drums (only the other stem left)
-        let three = export_jobs(Three, [true; 4], true);
-        assert_eq!(tags(Three, [true; 4], true), ["full", "no vocals", "no vocals bass drums"]);
-        assert_eq!(three[0].1, None);
-        assert_eq!(three[1].1, Some([true, true, true, false]));
-        assert_eq!(three[2].1, Some([false, false, true, false]));
+        assert_eq!(job(0, [true; 4], true), Some((String::new(), None)));
+        assert_eq!(job(0, [false, true, true, true], false), Some((String::new(), None)));
+        assert_eq!(
+            job(0, [false, true, true, false], true),
+            Some(("no vocals drums".to_string(), Some([false, true, true, false])))
+        );
+        // full is the song itself; no vocals leaves the vocals out
+        assert_eq!(job(1, [false; 4], true), Some(("full".to_string(), None)));
+        assert_eq!(job(2, [true; 4], true), Some(("no vocals".to_string(), Some([true, true, true, false]))));
         // each stem on its own
-        let each = export_jobs(Each, [true; 4], true);
-        assert_eq!(tags(Each, [true; 4], true), ["drums", "bass", "other", "vocals"]);
-        assert!(each.iter().enumerate().all(|(i, j)| j.1.unwrap().iter().enumerate().all(|(k, on)| *on == (k == i))));
+        for (i, name) in ["drums", "bass", "other", "vocals"].iter().enumerate() {
+            let (tag, on) = job(3 + i, [true; 4], true).unwrap();
+            assert_eq!(&tag, name);
+            assert!(on.unwrap().iter().enumerate().all(|(k, x)| *x == (k == i)));
+        }
+        // a song not split has only "as you hear it"
+        assert_eq!(job(2, [true; 4], false), None);
+        assert_eq!(job(1, [true; 4], false), None);
     }
 
     #[test]

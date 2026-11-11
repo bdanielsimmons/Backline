@@ -30,9 +30,13 @@ impl App {
         // the focus timer and the metronome: a pill each in the title strip (click the dot to start or stop, the words
         // to open its panel)
         let sc = crate::font::ui_scale();
-        let (tw, mw, h) = (170.0 * sc, 140.0 * sc, 24.0);
+        // (the timer's pill is short while it waits, so the window keeps room for its name)
+        let tw = if self.pomo == 0 { 100.0 } else { 170.0 };
+        let (tw, mw, ew, h) = (tw * sc, 140.0 * sc, 104.0 * sc, 24.0);
         let mr = crate::title_slot(inner, crate::title_right(inner), mw, h);
         let tr = crate::title_slot(inner, mr.min.x - 8.0, tw, h);
+        let er = crate::title_slot(inner, tr.min.x - 8.0, ew, h);
+        self.export_pill(ui, er, acts);
         self.timer_pill(ui, tr, acts);
         self.metro_pill(ui, mr, acts);
         crate::tour::mark("TIMEBTNS", tr.union(mr));
@@ -1455,7 +1459,6 @@ impl App {
                         {
                             acts.push(Action::StemOpen(id));
                         }
-                        self.export_btn(ui, acts, true);
                         let text = if sure { "CLICK AGAIN TO DELETE" } else { "DELETE THESE STEMS" };
                         if retro_btn_w(ui, text, 210.0, sure)
                             .tip("Deletes this song's stems to free space. The song itself stays. You can split it again any time.")
@@ -1472,45 +1475,9 @@ impl App {
                     if sure {
                         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
                     }
-                } else if tid.is_some_and(|id| !self.is_demo(id)) {
-                    // not split: the song as you hear it
-                    centered_row(ui, "stems_export", |ui| self.export_btn(ui, acts, false));
                 }
             }
         }
     }
 
-    /// EXPORT WAV: the loop (or the whole song) as you hear it. With stems it opens a menu: as you hear it, the three
-    /// versions (full, no vocals, no vocals bass drums), or each stem on its own.
-    fn export_btn(&self, ui: &mut egui::Ui, acts: &mut Vec<Action>, split: bool) {
-        let text = if self.exporting { "SAVING..." } else { "EXPORT WAV" };
-        let tip = if split {
-            "Saves the A-B loop, or the whole song, as WAV files: as you hear it, in three versions, or each stem on its own. Speed, pitch and equalizer are kept."
-        } else {
-            "Saves the A-B loop, or the whole song, as you hear it to a WAV file, with speed, pitch, ear mode and equalizer."
-        };
-        let r = retro_btn_w(ui, text, 120.0, false).tip(tip);
-        if !split {
-            if r.clicked() {
-                acts.push(Action::Export(crate::ExportKind::Hear));
-            }
-            return;
-        }
-        // (one EXPORT WAV on screen at a time, so one name for its menu)
-        let pop = egui::Id::new("export_menu");
-        if r.clicked() {
-            ui.memory_mut(|m| m.toggle_popup(pop));
-        }
-        egui::popup_below_widget(ui, pop, &r, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-            for (name, kind) in [
-                ("As You Hear It", crate::ExportKind::Hear),
-                ("3 Versions: Full, No Vocals, No Vocals Bass Drums", crate::ExportKind::Three),
-                ("4 Stems, Each on Its Own", crate::ExportKind::Each),
-            ] {
-                if menu_item(ui, name) {
-                    acts.push(Action::Export(kind));
-                }
-            }
-        });
-    }
 }

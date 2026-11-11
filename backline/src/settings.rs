@@ -55,6 +55,10 @@ impl App {
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
         app.wv_notes = PRACTICE && st["wv_notes"].as_bool().unwrap_or(false);
+        if let Some(v) = st["export_pick"].as_u64() {
+            app.export_pick = (v as usize).min(crate::extras::EXPORT_AS.len() - 1);
+        }
+        app.export_dir = st["export_dir"].as_str().filter(|d| !d.is_empty()).map(std::path::PathBuf::from);
         if let Some(v) = st["wv_h"].as_f64() {
             app.wv_h = v as f32;
         }
@@ -413,6 +417,8 @@ impl App {
             "tr_whole": self.tr_whole,
             "mark_col": self.mark_col,
             "wv_h": self.wv_h,
+            "export_pick": self.export_pick,
+            "export_dir": self.export_dir.as_ref().map(|d| d.display().to_string()).unwrap_or_default(),
             "wv_notes": self.wv_notes,
             "chart_lock": self.chart_lock,
             "ghost_alpha": self.ghost_alpha,

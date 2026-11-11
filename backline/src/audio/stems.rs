@@ -83,15 +83,19 @@ pub fn stems_dir(id: i64) -> PathBuf {
 
 /// Show this song's stems in Explorer / Finder (the four WAV files).
 pub fn open_folder(id: i64) {
-    let d = stems_dir(id);
+    open_path(&stems_dir(id));
+}
+
+/// Open a folder in Explorer / Finder.
+pub fn open_path(d: &std::path::Path) {
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("explorer").arg(&d).spawn();
+        let _ = std::process::Command::new("explorer").arg(d).spawn();
     }
     #[cfg(not(windows))]
     {
         let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-        let _ = std::process::Command::new(opener).arg(&d).spawn();
+        let _ = std::process::Command::new(opener).arg(d).spawn();
     }
 }
 

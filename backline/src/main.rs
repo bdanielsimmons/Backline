@@ -320,6 +320,8 @@ enum Msg {
     /// The note view's map for a song and the stems it was made from (0: the whole song).
     Notes(i64, u8, Option<notes::NoteMap>),
     Exported(Result<String, String>),
+    /// EXPORT's new folder, picked
+    ExportDir(std::path::PathBuf),
     /// LOOK UP result: tune name, who wrote it, other versions found on Tidal
     /// A tune looked up: who wrote it, and recordings (from Tidal, or YouTube without it: those come with their links).
     Lookup(String, Result<sources::Work, String>, Vec<(Track, u32)>, Vec<store::Ext>),
@@ -426,15 +428,6 @@ enum Tab {
     Lists,
     Albums,
     Artists,
-}
-
-/// What EXPORT WAV saves: the song as you hear it, the three versions (full, no vocals, no vocals bass drums),
-/// or each stem on its own.
-#[derive(PartialEq, Clone, Copy)]
-pub(crate) enum ExportKind {
-    Hear,
-    Three,
-    Each,
 }
 
 enum Action {
@@ -721,7 +714,12 @@ enum Action {
     CountIn,
     Chan,
     Transpose(i32),
-    Export(ExportKind),
+    /// EXPORT: save one WAV with the panel's choices
+    Export,
+    /// open or shut the EXPORT panel
+    ExportPanel,
+    /// EXPORT: pick another folder for the files
+    ExportFolder,
     // ---- diary / chart
     SaveEntry,
     RightTab(u8),
@@ -1313,6 +1311,13 @@ struct App {
     grp_open: Option<String>,
     sel_anchor: Option<f32>,
     exporting: bool,
+    /// EXPORT's panel open; what it saves (EXPORT_AS), the whole song rather than the loop, the folder (None: Saved
+    /// loops), the last file saved
+    export_open: bool,
+    export_pick: usize,
+    export_whole: bool,
+    export_dir: Option<std::path::PathBuf>,
+    export_last: Option<std::path::PathBuf>,
 
     // ---- lead sheet
     rtab: u8,
@@ -2227,6 +2232,11 @@ impl App {
             grp_open: None,
             sel_anchor: None,
             exporting: false,
+            export_open: false,
+            export_pick: 0,
+            export_whole: false,
+            export_dir: None,
+            export_last: None,
             rtab: 0,
             chart_tr: 0,
             chart_sel: None,

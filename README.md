@@ -110,8 +110,9 @@ The library now has five lists: **TIDAL | FILES | YT | TUNES | DIARY**.
   and vocals; they are saved on disk (DISK view shows the size, CLEAR STEMS deletes them). Afterwards the pixel icons
   (drums, bass, other, vocals) switch each stem on or off; right-click an icon to hear only that one.
   Loops, slow-down, pitch and EQ all keep working on the mix.
-  **EXPORT WAV** (in STEMS) saves the A-B loop, or the whole song, as you hear it. Once a song is split it can also save
-  three versions at once (full, no vocals, no vocals/bass/drums) or each stem on its own, into a folder you pick once.
+- **EXPORT** (pill in the practice window's title bar, beside the timer) saves one WAV file at a time: the current loop
+  (its times shown) or the whole song, as you hear it, or, once the song is split, full, no vocals, or one stem. The panel
+  shows the file's name before you save; files go straight into Saved loops (or a folder you pick), no save window.
 - **TIMER** (button in the tools row, works in every mode): set focus minutes, rest minutes and how many blocks, then START.
   It floats bottom-right. When a block ends the window flashes (and chimes, unless you untick SOUND) and switches to REST; after the rest it waits
   (flashing) until you press NEXT FOCUS. The time also shows in the window title.

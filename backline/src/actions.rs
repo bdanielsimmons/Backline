@@ -2124,7 +2124,22 @@ impl App {
                 self.sync_loop();
                 self.set_note(&format!("PITCH {:+.2} SEMITONES (SPEED UNCHANGED)", self.semis as f32 / 100.0));
             }
-            Action::Export(kind) => self.export_wav(kind),
+            Action::Export => self.export_wav(),
+            Action::ExportPanel => {
+                self.export_open = !self.export_open;
+                if self.export_open {
+                    (self.timer_open, self.metro_open) = (false, false);
+                }
+            }
+            Action::ExportFolder => {
+                let (tx, ctx, at) = (self.tx.clone(), self.ctx.clone(), self.export_folder());
+                std::thread::spawn(move || {
+                    if let Some(d) = rfd::FileDialog::new().set_title("Save exports in this folder").set_directory(&at).pick_folder() {
+                        let _ = tx.send(Msg::ExportDir(d));
+                        ctx.request_repaint();
+                    }
+                });
+            }
 
             // ---- diary
             Action::SaveEntry => {

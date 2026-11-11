@@ -55,6 +55,8 @@ impl App {
         });
         if let Some(k) = skin_k {
             self.stack_k = k;
+            // (every window's name the size of the player's and the playlist's)
+            crate::winamp_ui::set_title_k(k);
         }
         let lib_w = if self.lib_hidden {
             0.0
@@ -127,7 +129,7 @@ impl App {
             }
         }
         // (a skin's deck: its own height, a little room above it, resting on the playlist)
-        let player_h = skin_k.map_or(138.0 * s + 44.0, |k| 116.0 * k);
+        let player_h = skin_k.map_or(138.0 * s + 44.0, crate::winamp_ui::deck_h);
 
         if !self.lib_hidden {
             egui::SidePanel::left("library")
@@ -178,8 +180,8 @@ impl App {
         // the equalizer docks under the player: the skin's at the player's own scale, or Backline's
         let eq_h = eq_fit.unwrap_or(match (skin_k, self.wa_art.is_some()) {
             // a skin's stack: the equalizer at the deck's own size, its frame and preset cards round it
-            (Some(k), _) => 116.0 * k + 44.0 + 60.0,
-            (None, true) => 116.0 * s + 44.0 + 60.0,
+            (Some(k), _) => crate::winamp_ui::eq_art_h(k) + 44.0 + 60.0,
+            (None, true) => crate::winamp_ui::eq_art_h(s) + 44.0 + 60.0,
             _ => 340.0,
         });
         // a skin's stack: deck, equalizer and practice panel never leave the playlist less than a few songs
@@ -286,7 +288,11 @@ impl App {
             let y = screen.min.y + player_h;
             let r = Rect::from_min_size(Pos2::new(lib_w, y - 7.0), Vec2::new(right_w, 14.0));
             let w = match splitter(ctx, "split_deck", r, false) {
-                Some(Some(py)) => Some(275.0 * ((py - screen.min.y) / 116.0).max(1.0)),
+                Some(Some(py)) => Some(275.0 * {
+                    // (the deck's size from its foot: its bar is a fixed height in Backline's looks)
+                    let bar = crate::winamp_ui::deck_bar_h(0.0);
+                    if crate::winamp_ui::flat_frame().is_some() { (py - screen.min.y - bar) / 102.0 } else { (py - screen.min.y) / 116.0 }
+                }.max(1.0)),
                 Some(None) => Some(0.0),
                 None => None,
             };

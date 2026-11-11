@@ -190,11 +190,12 @@ fn label_button(p: &mut Pic, t: &Th, x: i32, y: i32, w: i32, h: i32, down: bool,
 /// A title strip with `title` in the middle.
 fn title_strip(p: &mut Pic, t: &Th, x: i32, y: i32, w: i32, h: i32, title: &str) {
     p.fill(x, y, w, h, t.face);
-    // the title on the display's colours, as every window's name is written (Library, Practice)
+    // the title on the display's colours, as every window's name is written (Library, Practice): a plate nine rows
+    // tall, three clear of the strip's top (the window's border lines run there), two above and below the letters
     let tw = text_w(title);
     let tx = x + (w - tw) / 2;
-    p.fill(tx - 4, y + 1, tw + 8, h - 2, t.display);
-    p.text(tx, y + (h - 5) / 2, title, t.display_ink);
+    p.fill(tx - 4, y + 3, tw + 8, 9, t.display);
+    p.text(tx, y + 5, title, t.display_ink);
 }
 
 /// A tiny square title-bar button with a picture on it.
@@ -579,7 +580,8 @@ fn pledit(t: &Th) -> Pic {
         strip(&mut p, 26, 100);
         let title = "PLAYLIST";
         let tx = 26 + (100 - text_w(title)) / 2;
-        p.fill(tx - 4, row + 4, text_w(title) + 8, 12, t.display);
+        // (the plate nine rows tall, as every window's name)
+        p.fill(tx - 4, row + 5, text_w(title) + 8, 9, t.display);
         p.text(tx, row + 7, title, t.display_ink);
         strip(&mut p, 127, 25);
         strip(&mut p, 153, 25);

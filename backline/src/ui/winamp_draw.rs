@@ -274,22 +274,182 @@ fn border_cols(face: Color32) -> (Color32, Color32, Color32) {
     }
 }
 
-/// A line `w` wide just inside `r`, all the way round.
-fn strips(p: &egui::Painter, r: Rect, w: f32, c: Color32) {
-    p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.min.x + w, r.max.y)), 0.0, c);
-    p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + w)), 0.0, c);
-    p.rect_filled(Rect::from_min_max(Pos2::new(r.max.x - w, r.min.y), r.max), 0.0, c);
-    p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x, r.max.y - w), r.max), 0.0, c);
-}
-
 /// The width of each of a border's lines (points).
 const BORDER_LINE: f32 = 1.5;
+/// How round a window's corners are (Backline's looks), and the corners of what it holds.
+const RING_R: f32 = 8.0;
+const PANE_R: f32 = 4.0;
 
-/// Backline's looks: a window's border as one ring of lines carried round its corners (they nest, so every corner
-/// meets): a dark edge and a light line all round the window, and a shade and a dark line round what it holds
-/// (`inside`; None for the player, its panel is its inside). Two windows side by side: their rings side by side, each
-/// whole (the owner's pick over one frame with shared bars). Every window's lines the same width (`BORDER_LINE`,
-/// whole screen pixels), whatever size its skin is drawn at.
+/// Fill the corners of `r` outside a quarter circle of radius `rad` with `c`: what shows round a rounded corner.
+fn corner_fill(p: &egui::Painter, r: Rect, rad: f32, c: Color32) {
+    const N: usize = 12;
+    let mut mesh = egui::Mesh::default();
+    for (corner, centre, a0) in [
+        (r.left_top(), r.left_top() + Vec2::splat(rad), std::f32::consts::PI),
+        (r.right_top(), Pos2::new(r.max.x - rad, r.min.y + rad), 1.5 * std::f32::consts::PI),
+        (r.right_bottom(), r.right_bottom() - Vec2::splat(rad), 0.0),
+        (r.left_bottom(), Pos2::new(r.min.x + rad, r.max.y - rad), 0.5 * std::f32::consts::PI),
+    ] {
+        let at = |i: usize| {
+            let a = a0 + i as f32 / N as f32 * std::f32::consts::FRAC_PI_2;
+            centre + Vec2::new(a.cos(), a.sin()) * rad
+        };
+        for i in 0..N {
+            let k = mesh.vertices.len() as u32;
+            for q in [corner, at(i), at(i + 1)] {
+                mesh.colored_vertex(q, c);
+            }
+            mesh.add_triangle(k, k + 1, k + 2);
+        }
+    }
+    p.add(egui::Shape::mesh(mesh));
+}
+
+/// A title bar's light (Backline's looks): how much lighter its top is than the frame, fading to the frame at its foot.
+fn bar_light(face: Color32) -> f32 {
+    let lum = (0.2126 * face.r() as f32 + 0.7152 * face.g() as f32 + 0.0722 * face.b() as f32) / 255.0;
+    if lum > 0.4 {
+        0.6
+    } else {
+        0.2
+    }
+}
+
+/// The width of one of a border's lines on screen (whole screen pixels).
+fn line_w(ppp: f32) -> f32 {
+    ((BORDER_LINE * ppp).round().max(1.0)) / ppp
+}
+
+/// A title bar's middle line (Backline's looks): halfway down what shows under the border's two lines along its top.
+/// The window's name and every control in the bar sit on it.
+pub(crate) fn bar_mid(bar: Rect) -> f32 {
+    (bar.min.y + 2.0 * line_w(font::ppp()) + bar.max.y) / 2.0
+}
+
+/// The tallest thing a title bar holds (Backline's looks): what shows under its border's lines, less a gap above and
+/// below.
+pub(crate) fn bar_room(bar: Rect) -> f32 {
+    bar.height() - 2.0 * line_w(font::ppp()) - 2.0 * TITLE_GAP
+}
+
+/// Backline's looks: a window's title bar, its frame's colour lit from above - lighter at the top, fading to the
+/// frame at its foot. Painted solid, in thin bands, so it is even everywhere; the name and the buttons go on top.
+pub(crate) fn paint_bar(p: &egui::Painter, bar: Rect) {
+    let Some(face) = flat_frame() else { return };
+    let top = bar_light(face);
+    let col = |y: f32| {
+        let k = top * (1.0 - ((y - bar.min.y) / bar.height().max(1.0)).clamp(0.0, 1.0));
+        let m = |v: u8| (v as f32 + (255.0 - v as f32) * k).round() as u8;
+        Color32::from_rgb(m(face.r()), m(face.g()), m(face.b()))
+    };
+    let n = (bar.height() / 2.0).ceil().max(1.0) as usize;
+    let mut mesh = egui::Mesh::default();
+    for i in 0..n {
+        let y0 = bar.min.y + bar.height() * i as f32 / n as f32;
+        let y1 = bar.min.y + bar.height() * (i + 1) as f32 / n as f32;
+        let (a, b) = (col(y0), col(y1));
+        let k = mesh.vertices.len() as u32;
+        mesh.colored_vertex(Pos2::new(bar.min.x, y0), a);
+        mesh.colored_vertex(Pos2::new(bar.max.x, y0), a);
+        mesh.colored_vertex(Pos2::new(bar.max.x, y1), b);
+        mesh.colored_vertex(Pos2::new(bar.min.x, y1), b);
+        mesh.add_triangle(k, k + 1, k + 2);
+        mesh.add_triangle(k, k + 2, k + 3);
+    }
+    p.add(egui::Shape::mesh(mesh));
+}
+
+/// One piece of a sheet (`src` in its pixels) drawn into `dst`.
+fn sprite(p: &egui::Painter, tex: &egui::TextureHandle, size: Vec2, src: (f32, f32, f32, f32), dst: Rect) {
+    const E: f32 = 0.02;
+    let uv = Rect::from_min_max(
+        Pos2::new((src.0 + E) / size.x, (src.1 + E) / size.y),
+        Pos2::new((src.0 + src.2 - E) / size.x, (src.1 + src.3 - E) / size.y),
+    );
+    p.image(tex.id(), dst, uv, Color32::WHITE);
+}
+
+/// A window's name on its plate in a title bar (Backline's looks): the look's own font on its display colour, the
+/// size the player writes its name (`title_k`, no taller than `room`), the plate's left edge at `x`, centred on `mid`.
+/// Gives the plate.
+pub(crate) fn name_plate(p: &egui::Painter, x: f32, mid: f32, title: &str, room: f32) -> Rect {
+    CHROME.with(|c| {
+        let c = c.borrow();
+        let Some((_, Some((ttex, tsize)), Some(bg))) = c.as_ref() else { return Rect::NOTHING };
+        let label = title.to_uppercase();
+        let n = label.chars().count() as f32;
+        // a plate nine of the font's pixels tall, four either side of the letters
+        let g = title_k().unwrap_or(2.0).min(room / 9.0).max(1.0);
+        let plate = Rect::from_min_size(Pos2::new(x.round(), (mid - 4.5 * g).round()), Vec2::new((n * 5.0 + 7.0) * g, 9.0 * g));
+        p.rect_filled(plate, 2.0, *bg);
+        let ty = (plate.center().y - 2.5 * g).round();
+        for (i, ch) in label.chars().enumerate() {
+            let (row, col) = glyph(ch);
+            let dst = Rect::from_min_size(Pos2::new(plate.min.x + 4.0 * g + i as f32 * 5.0 * g, ty), Vec2::new(5.0 * g, 6.0 * g));
+            sprite(p, ttex, *tsize, (col as f32 * 5.0, row as f32 * 6.0, 5.0, 6.0), dst);
+        }
+        plate
+    })
+}
+
+/// How big a title bar's small buttons are (Backline's looks): the player's own size, as the bar allows.
+pub(crate) fn bar_btn(room: f32) -> f32 {
+    (9.0 * title_k().unwrap_or(2.0)).min(room).round()
+}
+
+/// A title bar's small button (Backline's looks): the look's close (or shade) picture at `r`, darker while held.
+pub(crate) fn bar_button(p: &egui::Painter, r: Rect, close: bool, down: bool) {
+    CHROME.with(|c| {
+        let c = c.borrow();
+        let Some(((tex, size), _, _)) = c.as_ref() else { return };
+        sprite(p, tex, *size, (if close { 167.0 } else { 157.0 }, 3.0, 9.0, 9.0), r);
+        if down {
+            p.rect_filled(r, 0.0, Color32::from_black_alpha(90));
+        }
+    })
+}
+
+/// The deck's title bar: Backline's looks give it every window's (`title_h`), its art's own 14-pixel strip set aside;
+/// a Winamp skin keeps its own.
+pub(crate) fn deck_bar_h(k: f32) -> f32 {
+    if flat_frame().is_some() {
+        crate::title_h()
+    } else {
+        14.0 * k
+    }
+}
+
+/// The deck's whole height at size `k`, its title bar and all.
+pub(crate) fn deck_h(k: f32) -> f32 {
+    102.0 * k + deck_bar_h(k)
+}
+
+/// The equalizer's art at size `k`: without its own title strip in Backline's looks (its window's bar names it).
+pub(crate) fn eq_art_h(k: f32) -> f32 {
+    if flat_frame().is_some() {
+        102.0 * k
+    } else {
+        116.0 * k
+    }
+}
+
+/// The deck's size (screen points per skin pixel), so every window's name is written as big as the player's and the
+/// playlist's are. 0: not known yet.
+static TITLE_K: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub(crate) fn set_title_k(k: f32) {
+    TITLE_K.store(k.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn title_k() -> Option<f32> {
+    Some(f32::from_bits(TITLE_K.load(std::sync::atomic::Ordering::Relaxed))).filter(|k| *k > 0.0)
+}
+
+/// Backline's looks: a window's border as one ring of lines carried round its rounded corners: a dark edge and a light
+/// line all round the window, and a shade and a dark line round what it holds (`inside`; None for the player, its
+/// panel is its inside), whose corners are rounded too. Two windows side by side: their rings side by side, each
+/// whole (the owner's pick over one frame with shared bars); where their corners meet, a small dark notch. Every
+/// window's lines the same width (`BORDER_LINE`, whole screen pixels), whatever size its skin is drawn at.
 pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>) {
     let Some(face) = flat_frame() else { return };
     let (edge, hi, lo) = border_cols(face);
@@ -301,11 +461,15 @@ pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>) 
         Rect::from_min_max(Pos2::new(s(r.min.x), s(r.min.y)), Pos2::new(s(r.max.x), s(r.max.y)))
     };
     let (outer, inside) = (snap(outer), inside.map(snap));
-    strips(p, outer, w, edge);
-    strips(p, outer.shrink(w), w, hi);
+    // outside the curve: what lies between the windows (their dark edge)
+    corner_fill(p, outer, RING_R, edge);
+    p.rect_stroke(outer.shrink(w / 2.0), RING_R - w / 2.0, egui::Stroke::new(w, edge));
+    p.rect_stroke(outer.shrink(1.5 * w), RING_R - 1.5 * w, egui::Stroke::new(w, hi));
     if let Some(inside) = inside {
-        strips(p, inside.expand(2.0 * w), w, lo);
-        strips(p, inside.expand(w), w, edge);
+        // what the window holds, cut to the pane's curve
+        corner_fill(p, inside, PANE_R, edge);
+        p.rect_stroke(inside.expand(1.5 * w), PANE_R + 1.5 * w, egui::Stroke::new(w, lo));
+        p.rect_stroke(inside.expand(w / 2.0), PANE_R + w / 2.0, egui::Stroke::new(w, edge));
     }
 }
 
@@ -394,16 +558,20 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
         let top = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, inner.min.y));
         let band = title_band_rect(top, inner.min.x - outer.min.x);
         if let Some(face) = flat_frame() {
-            // Backline's look: the frame one flat colour all round, nothing at its corners
+            // Backline's look: the frame one colour all round; its title bar lit from above, the window's name at its
+            // left on the bar's middle line, as the bar's controls are (`title_band`)
             for r in [
-                top,
                 Rect::from_min_max(Pos2::new(outer.min.x, inner.min.y), Pos2::new(inner.min.x, outer.max.y)),
                 Rect::from_min_max(Pos2::new(inner.max.x, inner.min.y), Pos2::new(outer.max.x, outer.max.y)),
                 Rect::from_min_max(Pos2::new(inner.min.x, inner.max.y), Pos2::new(inner.max.x, outer.max.y)),
             ] {
                 p.rect_filled(r, 0.0, face);
             }
+            paint_bar(p, top);
+            let _ = take_strip_controls(outer);
+            name_plate(p, inner.min.x + crate::PAGE_PAD, bar_mid(top), title, bar_room(top));
             border_ring(p, outer, Some(inner));
+            return true;
         } else {
         // one 25-pixel column of the title bar at `x`: its top rows, the stretched band, its bottom rows
         let bar = |p: &egui::Painter, sx: f32, x: f32| {
@@ -476,14 +644,15 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
         };
         match (text, text_bg) {
             (Some((ttex, tsize)), Some(bg)) => {
-                // whole skin pixels, as tall as the band allows (the deck's own size at most); the plate fills the
-                // band, with four of the font's pixels either side of the letters, as the player's own title has
-                let g = ((plate_h - 4.0) / 6.0).floor().max(1.0);
-                let ph = plate_h.max(6.0 * g + 4.0);
+                // the size the player and the playlist write their names (the deck's own size), as the band allows;
+                // the plate nine of the font's pixels tall with four either side of the letters, as theirs are
+                let g = title_k().map_or(((plate_h - 4.0) / 6.0).floor().max(1.0), |k| k.min(band.height() / 6.0));
+                let ph = if title_k().is_some() { (9.0 * g).min(band.height()) } else { plate_h.max(6.0 * g + 4.0) };
                 let w = (n * 5.0 - 1.0) * g + 8.0 * g;
                 let plate = Rect::from_min_size(Pos2::new(place(w), (band.center().y - ph / 2.0).round()), Vec2::new(w, ph));
                 p.rect_filled(plate, 2.0, *bg);
-                let ty = (plate.center().y - 3.0 * g).round();
+                // (the letters' five rows in the plate's middle)
+                let ty = (plate.center().y - 2.5 * g).round();
                 for (i, ch) in label.chars().enumerate() {
                     let (row, col) = glyph(ch);
                     let dst =

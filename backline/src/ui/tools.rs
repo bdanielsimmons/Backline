@@ -215,20 +215,25 @@ impl App {
                 outline(&p, ctx.screen_rect(), 6.0, pal().ink);
             }
         }
-        // only one of the two big panels open: the one opened last stays
-        if self.timer_open && self.metro_open {
-            if self.tm.was_open.0 {
-                self.timer_open = false;
-            } else {
-                self.metro_open = false;
+        // one big panel open at a time (timer, metronome, export): the one opened last stays
+        let mut open = [self.timer_open, self.metro_open, self.export_open];
+        if open.iter().filter(|o| **o).count() > 1 {
+            for (o, was) in open.iter_mut().zip(self.tm.was_open) {
+                *o &= !was;
             }
+            // (opened together: the first)
+            if let Some(k) = open.iter().position(|o| *o) {
+                open.iter_mut().skip(k + 1).for_each(|o| *o = false);
+            }
+            [self.timer_open, self.metro_open, self.export_open] = open;
         }
-        self.tm.was_open = (self.timer_open, self.metro_open);
+        self.tm.was_open = open;
         // the pills drawn this frame or the last (the practice window's title strip)
         let fr = ctx.cumulative_pass_nr();
         let fresh = |p: Option<(u64, Rect)>| p.filter(|(f, _)| *f + 1 >= fr).map(|x| x.1);
         let tpill = fresh(self.tm.timer_pill);
         let mpill = fresh(self.tm.metro_pill);
+        let epill = fresh(self.tm.export_pill);
         let screen = ctx.screen_rect();
         // no pill on show (the practice window shut): a running timer keeps a pill in the corner
         let corner = if tpill.is_none() && (self.pomo != 0 || self.timer_open) {
@@ -254,13 +259,23 @@ impl App {
         } else if self.metro_open {
             let area = place(egui::Area::new(egui::Id::new("metro")).order(egui::Order::Foreground).constrain(true), mpill);
             panel = Some(area.show(ctx, |ui| self.metro_box(ui, acts)).response.rect);
+        } else if let Some(ep) = epill.filter(|_| self.export_open) {
+            // (export only under its pill: it saves from the practice window)
+            let area = place(egui::Area::new(egui::Id::new("export")).order(egui::Order::Foreground).constrain(true), Some(ep));
+            panel = Some(area.show(ctx, |ui| self.export_box(ui, acts)).response.rect);
         }
         // Esc shuts the open panel (a click elsewhere leaves it open: you play along with it; its X and its pill close it)
         if panel.is_some() {
             let _ = (tpill, mpill, corner);
             let esc = self.ed.id == 0 && !self.panel_open() && ctx.input(|i| i.key_pressed(egui::Key::Escape));
             if esc {
-                acts.push(if self.timer_open { Action::TimerPanel } else { Action::MetroPanel });
+                acts.push(if self.timer_open {
+                    Action::TimerPanel
+                } else if self.metro_open {
+                    Action::MetroPanel
+                } else {
+                    Action::ExportPanel
+                });
             }
         }
     }
@@ -639,6 +654,128 @@ impl App {
         }
         ui.add_space(6.0);
         out
+    }
+
+    // --------------------------------------------------------------- EXPORT
+    /// EXPORT as a small pill in the practice window's title strip: opens the panel that saves WAV files.
+    pub(crate) fn export_pill(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
+        self.tm.export_pill = Some((ui.ctx().cumulative_pass_nr(), r));
+        let rr = ui
+            .interact(r, ui.id().with("export_pill"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .tip("Export: save the loop or the whole song as a WAV file, with or without vocals, or one stem.");
+        let p = ui.painter().clone();
+        pill_face(&p, r, self.export_open, rr.hovered());
+        let icon = Rect::from_center_size(Pos2::new(r.min.x + r.height() * 0.5 + 3.0, r.center().y), Vec2::splat(r.height() * 0.5));
+        crate::vicon::named(&p, icon, "wave", if rr.hovered() { pal().ink } else { pal().ink2 });
+        let words = Rect::from_min_max(Pos2::new(icon.max.x + 2.0, r.min.y), r.max);
+        pill_words(&p, words, if self.exporting { "SAVING..." } else { "EXPORT" }, "", pal().ink);
+        if rr.clicked() {
+            acts.push(Action::ExportPanel);
+        }
+    }
+
+    /// The EXPORT panel: what to save (the current loop with its times, or the whole song), which version (as you
+    /// hear it, full, no vocals, or one stem), the file's name and folder, and SAVE WAV. One file a save.
+    fn export_box(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        panel_frame().show(ui, |ui| {
+            let sc = crate::font::ui_scale();
+            ui.set_width(400.0 * sc);
+            ui.spacing_mut().item_spacing = Vec2::new(8.0, 10.0);
+            // title, close
+            ui.horizontal(|ui| {
+                let (tr, _) = ui.allocate_exact_size(Vec2::new(160.0, bh()), Sense::hover());
+                panel_title(ui.painter(), tr, "EXPORT WAV");
+                ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+                    if ibutton(ui, "close", "Close", false).clicked() {
+                        acts.push(Action::ExportPanel);
+                    }
+                });
+            });
+            let col = 52.0;
+            // SAVE: the loop set now, with its times, or the whole song
+            let lp = self.export_loop();
+            let whole = self.export_whole || lp.is_none();
+            ui.horizontal(|ui| {
+                label(ui, "SAVE", col);
+                let words = match lp {
+                    Some((a, b)) => format!("CURRENT LOOP {}-{}", short_t(a), short_t(b)),
+                    None => "NO LOOP SET".to_string(),
+                };
+                let r = ui.add_enabled_ui(lp.is_some(), |ui| retro_btn_w(ui, &words, 0.0, !whole)).inner;
+                if r.tip(if lp.is_some() { "The A-B loop as it is set now." } else { "Set an A-B loop to save just that part." }).clicked() {
+                    self.export_whole = false;
+                }
+                if retro_btn_w(ui, "WHOLE SONG", 0.0, whole).clicked() && lp.is_some() {
+                    self.export_whole = true;
+                }
+            });
+            // AS: one version (a song not split has only "as you hear it")
+            let split = self.export_split();
+            let pick = if split { self.export_pick } else { 0 };
+            let tips = [
+                "With your speed, pitch and equalizer, and only the stems you have on.",
+                "The whole mix, every stem.",
+                "Everything but the vocals.",
+                "The drums alone.",
+                "The bass alone.",
+                "Everything but vocals, bass and drums: guitars, keys, horns.",
+                "The vocals alone.",
+            ];
+            let mut choose = |ui: &mut egui::Ui, i: usize| {
+                if retro_btn_w(ui, crate::extras::EXPORT_AS[i].0, 0.0, pick == i).tip(tips[i]).clicked() && split {
+                    self.export_pick = i;
+                    self.dirty = true;
+                }
+            };
+            ui.horizontal_wrapped(|ui| {
+                label(ui, "AS", col);
+                let n = if split { 3 } else { 1 };
+                (0..n).for_each(|i| choose(ui, i));
+            });
+            if split {
+                ui.horizontal_wrapped(|ui| {
+                    label(ui, "", col);
+                    (3..crate::extras::EXPORT_AS.len()).for_each(|i| choose(ui, i));
+                });
+            } else {
+                dim_line(ui, "Split this song in Stems to save it without vocals, or one stem at a time.", 1.0, pal().dim);
+            }
+            // the file and where it goes
+            let plan = self.export_plan();
+            ui.horizontal(|ui| {
+                label(ui, "FILE", col);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), bh()), Sense::hover());
+                let (text, c) = match &plan {
+                    Ok(p) => (p.name.clone(), pal().ink),
+                    Err(e) => (e.to_string(), pal().dim),
+                };
+                crate::ui_text(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &text, 1.5, r.width() - 4.0, c);
+            });
+            ui.horizontal(|ui| {
+                label(ui, "INTO", col);
+                let dir = self.export_folder();
+                let name = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| dir.display().to_string());
+                let room = (ui.available_width() - 190.0 * sc).max(60.0);
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(room, bh()), Sense::hover());
+                resp.tip(&dir.display().to_string());
+                crate::ui_text(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, &name, 1.5, r.width() - 4.0, pal().ink);
+                if retro_btn_w(ui, "OPEN", 0.0, false).tip("Show the folder, with the last file saved picked out.").clicked() {
+                    self.export_show();
+                }
+                if retro_btn_w(ui, "CHANGE", 0.0, false).tip("Pick another folder for the files.").clicked() {
+                    acts.push(Action::ExportFolder);
+                }
+            });
+            // save
+            ui.vertical_centered(|ui| {
+                let text = if self.exporting { "SAVING..." } else { "SAVE WAV" };
+                let r = ui.add_enabled_ui(plan.is_ok() && !self.exporting, |ui| retro_btn_w(ui, text, 180.0, false)).inner;
+                if r.tip("Saves one WAV file into the folder above, with your speed, pitch and equalizer.").clicked() {
+                    acts.push(Action::Export);
+                }
+            });
+        });
     }
 
     // ------------------------------------------------------------ METRONOME
@@ -1880,12 +2017,15 @@ pub(crate) struct TimerMore {
     #[serde(skip)]
     pub show_set: bool,
     #[serde(skip)]
-    pub was_open: (bool, bool),
+    pub was_open: [bool; 3],
     /// where the pills were drawn, and in which frame
     #[serde(skip)]
     pub timer_pill: Option<(u64, Rect)>,
     #[serde(skip)]
     pub metro_pill: Option<(u64, Rect)>,
+    /// (the export pill, likewise)
+    #[serde(skip)]
+    pub export_pill: Option<(u64, Rect)>,
 }
 
 impl Default for TimerMore {
@@ -1902,11 +2042,18 @@ impl Default for TimerMore {
             was_playing: false,
             paused_by_us: false,
             show_set: false,
-            was_open: (false, false),
+            was_open: [false; 3],
             timer_pill: None,
             metro_pill: None,
+            export_pill: None,
         }
     }
+}
+
+/// A time as minutes and seconds, "1:29".
+fn short_t(s: f32) -> String {
+    let s = s.max(0.0).round() as u32;
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 fn mix(a: Color32, b: Color32, k: f32) -> Color32 {
