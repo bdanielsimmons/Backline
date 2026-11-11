@@ -488,34 +488,6 @@ impl App {
                 acts.push(Action::Seek(((pp.x - sb.min.x) / sb.width()).clamp(0.0, 1.0) * dur));
             }
         }
-        // the buttons' row (with a skin worn: centred exactly between the seek bar and the window's bottom edge)
-        let row_y = if crate::winamp_ui::chrome_on() {
-            (sb.max.y + ui.ctx().screen_rect().max.y) / 2.0 - bh() / 2.0
-        } else {
-            full.max.y - 52.0
-        };
-        let row = Rect::from_min_size(Pos2::new(full.min.x + 28.0, row_y), Vec2::new(full.width() - 56.0, bh()));
-        // what's drawn behind the times and the bare symbols (the backdrop, the visuals), read back so each can take a
-        // colour that stands out from it, with no box behind it
-        let spots = ctl_spots(row);
-        let time_spot = |left: bool| {
-            Rect::from_min_size(Pos2::new(if left { sb.min.x } else { sb.max.x - 64.0 }, sb.max.y + 4.0), Vec2::new(64.0, 20.0))
-        };
-        let mut look = vec![(behind_id(6), time_spot(true)), (behind_id(7), time_spot(false))];
-        if crate::winamp_ui::chrome_on() {
-            look.extend(spots.iter().enumerate().map(|(i, r)| (behind_id(i), r.expand(4.0))));
-        }
-        crate::behind::probe(&p, now, look);
-        let ctx = ui.ctx().clone();
-        let under = |i: usize| {
-            let (c, moving) = crate::behind::behind(behind_id(i), dt)?;
-            if moving {
-                ctx.request_repaint();
-            }
-            Some(c)
-        };
-        let bgs: [Option<Color32>; 8] = std::array::from_fn(under);
-        let readable = |c: Color32, i: usize, need: f32| bgs[i].map(|b| crate::behind::stand_out(c, b, need)).unwrap_or(c);
         inset(&p, sb, pal().groove);
         let frac = if active && dur > 0.0 { (pos / dur).clamp(0.0, 1.0) } else { 0.0 };
         fill_rect(
@@ -567,9 +539,10 @@ impl App {
                 flag(x_at(a), "A");
             }
         }
-        let (t0, t1) = (readable(pal().accent, 6, 4.5), readable(pal().accent, 7, 4.5));
-        ptext(&p, Pos2::new(sb.min.x, sb.max.y + 14.0), Align::Min, &fmt_time(if active { pos } else { 0.0 }), 2.0, t0);
-        ptext(&p, Pos2::new(sb.max.x, sb.max.y + 14.0), Align::Max, &fmt_time(dur), 2.0, t1);
+        // (one light colour over a soft dark glow: readable over any visual)
+        for (x, align, t) in [(sb.min.x, Align::Min, fmt_time(if active { pos } else { 0.0 })), (sb.max.x, Align::Max, fmt_time(dur))] {
+            glow_text(&p, Pos2::new(x, sb.max.y + 14.0), align, &t, 2.0, OVER);
+        }
 
         // ---- the queue, as a panel on the right (the three-lines button)
         if let Some(panel) = q_panel {
@@ -672,6 +645,13 @@ impl App {
         }
 
         // ---- buttons
+        // (with a skin worn: centred exactly between the seek bar and the window's bottom edge)
+        let row_y = if crate::winamp_ui::chrome_on() {
+            (sb.max.y + ui.ctx().screen_rect().max.y) / 2.0 - bh() / 2.0
+        } else {
+            full.max.y - 52.0
+        };
+        let row = Rect::from_min_size(Pos2::new(full.min.x + 28.0, row_y), Vec2::new(full.width() - 56.0, bh()));
         tour::mark("ARTBTNS", row);
         if prac {
             // practice mode: the loop tools on the left, the speed on the right, in the band along the top
@@ -782,6 +762,7 @@ impl App {
         if crate::winamp_ui::chrome_on() {
             // every symbol on one centre line, evenly spaced, the round play in the middle
             let cy = row.center().y;
+            let gap = 40.0;
             let mut n = 0usize;
             let mut bare = |icon: &str, on: bool, big: bool, tip: &str, x: f32| -> bool {
                 n += 1;
@@ -792,39 +773,36 @@ impl App {
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .tip(tip);
                 let p = ui.painter();
-                // (each in a colour that stands out from what's behind it, hovered a little more)
-                let i = n - 1;
+                // (one light colour over a soft dark glow, whatever the visuals do: readable over any picture)
                 if big {
-                    let disc = readable(pal().ink, i, 3.0);
-                    p.circle_filled(r.center(), d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 }, disc);
+                    let rad = d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 };
+                    glow_disc(p, r.center(), rad);
+                    p.circle_filled(r.center(), rad, OVER);
                     let off = if icon == "play" { 1.5 } else { 0.0 };
                     crate::vicon::named(
                         p,
                         Rect::from_center_size(r.center() + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)),
                         icon,
-                        crate::behind::stand_out(pal().display, disc, 4.5),
+                        Color32::from_rgb(20, 20, 22),
                     );
                 } else {
-                    let col = if on {
-                        pal().bar_txt
-                    } else if resp.hovered() {
-                        pal().ink
-                    } else {
-                        pal().ink2
-                    };
-                    let col = readable(col, i, if resp.hovered() { 7.0 } else { 4.5 });
-                    crate::vicon::named(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.62)), icon, col);
+                    // (hovered: a little brighter; on: a dot under it)
+                    let col = if resp.hovered() { Color32::WHITE } else { OVER };
+                    crate::vicon::named_glow(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.62)), icon, col);
                     if on {
-                        p.circle_filled(Pos2::new(r.center().x, r.max.y + 3.0), 2.0, col);
+                        let at = Pos2::new(r.center().x, r.max.y + 3.0);
+                        glow_disc(p, at, 2.0);
+                        p.circle_filled(at, 2.0, col);
                     }
                 }
                 resp.clicked()
             };
-            let x = |i: usize| spots[i].center().x;
-            if bare("shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }, x(0)) {
+            // (a little left of centre: the right-hand group is the wider one)
+            let x0 = mid.center().x - if row.width() < 1400.0 { 40.0 } else { 0.0 };
+            if bare("shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }, x0 - 2.5 * gap) {
                 acts.push(Action::Shuffle);
             }
-            if bare("prev", false, false, "Previous", x(1)) {
+            if bare("prev", false, false, "Previous", x0 - 1.5 * gap) {
                 acts.push(Action::Prev);
             }
             if bare(
@@ -832,11 +810,11 @@ impl App {
                 false,
                 true,
                 if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" },
-                x(2),
+                x0 - 0.5 * gap,
             ) {
                 acts.push(Action::Toggle);
             }
-            if bare("skip", false, false, "Next", x(3)) {
+            if bare("skip", false, false, "Next", x0 + 0.5 * gap) {
                 acts.push(Action::Next);
             }
             let rep_tip = match self.repeat {
@@ -844,22 +822,21 @@ impl App {
                 Repeat::All => "Repeat: all  (click for one)",
                 Repeat::One => "Repeat: one  (click for off)",
             };
-            if bare("loop", self.repeat != Repeat::Off, false, rep_tip, x(4)) {
+            if bare("loop", self.repeat != Repeat::Off, false, rep_tip, x0 + 1.5 * gap) {
                 acts.push(Action::Repeat);
             }
             if self.repeat == Repeat::One {
-                let c = Pos2::new(x(4) + 9.0, cy - 9.0);
-                let badge = readable(pal().bar_txt, 4, 3.0);
-                ui.painter().circle_filled(c, 6.0, badge);
-                let one = crate::behind::stand_out(pal().display, badge, 4.5);
-                crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, one));
+                let c = Pos2::new(x0 + 1.5 * gap + 9.0, cy - 9.0);
+                glow_disc(ui.painter(), c, 6.0);
+                ui.painter().circle_filled(c, 6.0, OVER);
+                crate::font::keep_caps(|| ptext(ui.painter(), c, Align::Center, "1", 1.0, Color32::from_rgb(20, 20, 22)));
             }
             if bare(
                 "heart",
                 liked_now,
                 false,
                 if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" },
-                x(5),
+                x0 + 2.5 * gap,
             ) {
                 if let Some(t) = &cur_t {
                     acts.push(Action::ToggleLike(t.clone()));
@@ -993,20 +970,27 @@ impl App {
     }
 }
 
-/// Where the bare symbols sit in the middle of the buttons' row (a skin worn): shuffle, previous, play (the big
-/// round one), next, repeat and the heart, 40 apart on the row's centre line, a little left of centre when the row
-/// is narrow (the right-hand group is the wider one).
-fn ctl_spots(row: Rect) -> [Rect; 6] {
-    let x0 = row.center().x - if row.width() < 1400.0 { 40.0 } else { 0.0 };
-    std::array::from_fn(|i| {
-        let d = if i == 2 { 40.0 } else { 26.0 };
-        Rect::from_center_size(Pos2::new(x0 + (i as f32 - 2.5) * 40.0, row.center().y), Vec2::splat(d))
-    })
+/// The one colour of what's drawn straight over the picture (the bare symbols and the times): near-white over a soft
+/// dark glow, so it reads over any cover or visual without changing with them.
+const OVER: Color32 = Color32::from_rgb(240, 240, 238);
+
+/// A soft dark glow round a round shape of radius `rad`, fading out over a few pixels (drawn under it).
+fn glow_disc(p: &egui::Painter, c: Pos2, rad: f32) {
+    for (grow, a) in [(4.0, 16), (2.8, 24), (1.7, 34), (0.8, 48)] {
+        p.circle_filled(c, rad + grow, Color32::from_black_alpha(a));
+    }
 }
 
-/// The spots read for what's behind them: 0-5 the symbols, 6 and 7 the times under the seek bar.
-fn behind_id(i: usize) -> egui::Id {
-    egui::Id::new(("np_behind", i))
+/// Text in `col` over a soft dark glow: the text drawn faintly round itself in two rings (further out, fainter), then
+/// itself on top.
+fn glow_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px: f32, col: Color32) {
+    for (r, n, a) in [(2.2, 12, 16), (1.2, 8, 36)] {
+        for k in 0..n {
+            let ang = k as f32 / n as f32 * std::f32::consts::TAU;
+            ptext(p, at + Vec2::new(ang.cos(), ang.sin()) * r, align, text, px, Color32::from_black_alpha(a));
+        }
+    }
+    ptext(p, at, align, text, px, col);
 }
 
 /// The cover as a fine grid of points, each placed through the same 3D tilt, so the picture stays a flat,

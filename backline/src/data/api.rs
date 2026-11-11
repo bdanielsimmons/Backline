@@ -539,9 +539,11 @@ impl Api {
             .build()
             .expect("http client");
 
+        // a long log starts again, the last one kept beside it as log.old.txt (what led up to a crash survives)
         if let Ok(m) = std::fs::metadata(config_dir().join("log.txt")) {
             if m.len() > 200_000 {
-                let _ = std::fs::remove_file(config_dir().join("log.txt"));
+                let _ = std::fs::remove_file(config_dir().join("log.old.txt"));
+                let _ = std::fs::rename(config_dir().join("log.txt"), config_dir().join("log.old.txt"));
             }
         }
         let mut s = Session {

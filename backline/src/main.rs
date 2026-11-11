@@ -40,6 +40,8 @@ mod api;
 mod cache;
 #[path = "data/canon.rs"]
 mod canon;
+#[path = "data/crashes.rs"]
+mod crashes;
 #[path = "data/chart.rs"]
 mod chart;
 #[path = "data/genskin.rs"]
@@ -133,8 +135,6 @@ mod melodies;
 mod music_data;
 #[path = "ui/onscreen.rs"]
 mod onscreen;
-#[path = "ui/behind.rs"]
-mod behind;
 #[path = "ui/palette.rs"]
 mod palette;
 #[path = "ui/plan.rs"]
@@ -1849,6 +1849,18 @@ pub(crate) fn fetch_audio(api: &Api, id: i64, lossless: bool, keep: bool, src: O
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> App {
+        // which graphics this computer draws with (when the screen goes wrong, the log says on what)
+        if let Some(gl) = cc.gl.as_ref() {
+            use eframe::glow::HasContext;
+            let (vendor, renderer, version) = unsafe {
+                (
+                    gl.get_parameter_string(eframe::glow::VENDOR),
+                    gl.get_parameter_string(eframe::glow::RENDERER),
+                    gl.get_parameter_string(eframe::glow::VERSION),
+                )
+            };
+            crate::api::log(&format!("graphics: {} / {} / OpenGL {}", vendor, renderer, version));
+        }
         let st = load_settings();
         // the look worn last, by its name (the one worn, or the one kept); an older version's number: where it went
         let worn_look = st["winamp"][1].as_str().filter(|_| st["winamp"][0].as_str() == Some(looks::LOOK_MD5));
@@ -3933,6 +3945,8 @@ fn main() -> eframe::Result<()> {
     if update::apply_staged_at_start() {
         return Ok(());
     }
+    // crashes Windows saw since the last look (ones the log above can't hear of), into the log
+    crashes::note_new();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Backline")
         .with_icon(Arc::new(app_icon()))

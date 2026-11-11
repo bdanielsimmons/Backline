@@ -322,6 +322,46 @@ pub(crate) fn peer_app() -> Result<(u64, String), String> {
     engine().ok_or_else(|| "Sync is off".to_string())?.app_there()
 }
 
+/// Copy the linked computer's logs here, into peer_logs/<its name>/ (those it has of log.txt, log.old.txt and
+/// crashes.txt), so what went wrong over there can be read here. The folder.
+pub(crate) fn fetch_peer_logs() -> Result<PathBuf, String> {
+    let e = engine().ok_or_else(|| "Sync is off".to_string())?;
+    let name = peer_name().ok_or_else(|| "No computer is linked".to_string())?;
+    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == ' ' { c } else { '_' }).collect();
+    let dir = crate::api::config_dir().join("peer_logs").join(safe.trim());
+    let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
+    let mut any = false;
+    for f in LOGS {
+        match e.fetch_with(Wire::GetLog { name: f.to_string() }, &dir.join(f), &got, &size, &stop) {
+            Ok(_) => any = true,
+            // (a Backline from before this hangs up on the first ask: no use asking for the rest)
+            Err(err) if !any && f == LOGS[0] => return Err(err),
+            Err(_) => {}
+        }
+    }
+    Ok(dir)
+}
+
+/// While a computer is linked: its logs copied here every 20 minutes (`fetch_peer_logs`), quietly, in the
+/// background, so they're on hand when something went wrong over there. Called every frame; cheap until it's due.
+pub(crate) fn keep_peer_logs() {
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    if peer_name().is_none() {
+        return;
+    }
+    {
+        let mut last = lock(&LAST);
+        if last.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(20 * 60)) {
+            return;
+        }
+        *last = Some(std::time::Instant::now());
+    }
+    std::thread::spawn(|| match fetch_peer_logs() {
+        Ok(d) => log(&format!("copied the linked computer's logs to {}", d.display())),
+        Err(e) => log(&format!("couldn't copy the linked computer's logs: {}", e)),
+    });
+}
+
 /// Copy the linked computer's own Backline to `to` here, whole and checked as a song is. Its size.
 pub(crate) fn fetch_app(to: &Path) -> Result<u64, String> {
     let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
@@ -1109,6 +1149,13 @@ impl Engine {
                     send_file(&mut c, &mut f)?;
                     log(&format!("sent {} this Backline (v9.{})", peer.name, crate::update::build()));
                 }
+                Wire::GetLog { name } => {
+                    let f = LOGS.contains(&name.as_str()).then(|| std::fs::File::open(self.dir.join(&name)));
+                    match f {
+                        Some(Ok(mut f)) => send_file(&mut c, &mut f)?,
+                        _ => c.send(&Wire::No { why: format!("{} has no {}", self.name, name) })?,
+                    }
+                }
                 Wire::Get { path } => {
                     if !lock(&self.shared).iter().any(|f| f.path == path) {
                         c.send(&Wire::No { why: format!("That song isn't in Backline on {}", self.name) })?;
@@ -1595,7 +1642,13 @@ enum Wire {
     BuildIs { build: u64, kind: String },
     /// asks for that Backline itself: answered as Get is (File, its bytes, Sum)
     GetApp,
+    /// asks for one of its logs (one of `LOGS`), answered as Get is: for a look at what went wrong over there
+    GetLog { name: String },
 }
+
+/// The logs a linked computer may ask for: this run's and the last (log.txt, log.old.txt), and the crashes Windows
+/// saw (crashes.txt).
+const LOGS: [&str; 3] = ["log.txt", "log.old.txt", "crashes.txt"];
 
 /// One item on the calling side: its hash (0: not there), the hash both last agreed on (0: never), when it changed
 /// there (ms), and its text when it changed (the other side may take it).
@@ -2062,6 +2115,39 @@ mod tests {
         let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
         assert_eq!(b.fetch_with(Wire::GetApp, &to, &got, &size, &stop).unwrap(), me.len() as u64);
         assert_eq!(std::fs::read(&to).unwrap(), me);
+        for e in [&a, &b] {
+            e.gen.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn logs_come_over_the_link() {
+        let (da, db) = (temp("logs_pc"), temp("logs_laptop"));
+        std::fs::write(da.join("log.txt"), "[01:02:03] graphics: the PC's
+").unwrap();
+        std::fs::write(da.join("crashes.txt"), "2026-11-06T13:26:40Z  backline.exe crashed in x.dll
+").unwrap();
+        std::fs::write(da.join("plan.json"), "{\"secret\": 1}").unwrap();
+        let a = computer(&da, 32, "PC");
+        let b = computer(&db, 42, "LAPTOP");
+        type_code(&b, &lock(&a.saved).code.clone());
+        a.call_join(at(&b), true).unwrap();
+        linked_to(&b);
+        *lock(&b.near) = HashMap::from([(32, Near { addr: at(&a), linked: true, joining: None })]);
+        let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
+        // the laptop asks for the PC's logs: the ones it has come over whole
+        let to = db.join("peer_logs").join("PC");
+        let ask = |name: &str| b.fetch_with(Wire::GetLog { name: name.to_string() }, &to.join(name), &got, &size, &stop);
+        ask("log.txt").unwrap();
+        ask("crashes.txt").unwrap();
+        assert_eq!(std::fs::read_to_string(to.join("log.txt")).unwrap(), "[01:02:03] graphics: the PC's
+");
+        assert!(std::fs::read_to_string(to.join("crashes.txt")).unwrap().contains("x.dll"));
+        // one it doesn't have: a plain no; anything that isn't a log: never sent
+        assert!(ask("log.old.txt").is_err());
+        assert!(ask("plan.json").is_err());
+        assert!(ask("../plan.json").is_err());
+        assert!(!to.join("plan.json").exists());
         for e in [&a, &b] {
             e.gen.fetch_add(1, Ordering::SeqCst);
         }

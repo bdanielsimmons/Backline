@@ -10,6 +10,8 @@ struct Pen<'a> {
     o: Pos2,
     s: f32,
     col: Color32,
+    /// how much wider than usual every stroke and shape is (an outline: the icon drawn this much wider, under itself)
+    grow: f32,
 }
 
 impl Pen<'_> {
@@ -17,11 +19,11 @@ impl Pen<'_> {
         self.o + Vec2::new(x * self.s, y * self.s)
     }
     fn sw(&self) -> f32 {
-        (self.s * 0.11).max(1.3)
+        (self.s * 0.11).max(1.3) + self.grow
     }
     fn poly(&self, pts: &[(f32, f32)]) {
         let v: Vec<Pos2> = pts.iter().map(|&(x, y)| self.pt(x, y)).collect();
-        self.p.add(Shape::convex_polygon(v, self.col, Stroke::new(self.s * 0.06, self.col)));
+        self.p.add(Shape::convex_polygon(v, self.col, Stroke::new(self.s * 0.06 + self.grow, self.col)));
     }
     fn line(&self, pts: &[(f32, f32)]) {
         let v: Vec<Pos2> = pts.iter().map(|&(x, y)| self.pt(x, y)).collect();
@@ -32,7 +34,8 @@ impl Pen<'_> {
         self.p.add(Shape::closed_line(v, Stroke::new(self.sw(), self.col)));
     }
     fn rect(&self, x0: f32, y0: f32, x1: f32, y1: f32, rad: f32) {
-        rfill(self.p, Rect::from_min_max(self.pt(x0, y0), self.pt(x1, y1)), rad * self.s, self.col);
+        let r = Rect::from_min_max(self.pt(x0, y0), self.pt(x1, y1)).expand(self.grow / 2.0);
+        rfill(self.p, r, rad * self.s + self.grow / 2.0, self.col);
     }
     fn frame(&self, x0: f32, y0: f32, x1: f32, y1: f32, rad: f32) {
         self.p.rect_stroke(
@@ -42,7 +45,7 @@ impl Pen<'_> {
         );
     }
     fn dot(&self, x: f32, y: f32, r: f32) {
-        self.p.circle_filled(self.pt(x, y), r * self.s, self.col);
+        self.p.circle_filled(self.pt(x, y), r * self.s + self.grow / 2.0, self.col);
     }
     fn circle(&self, x: f32, y: f32, r: f32) {
         self.p.circle_stroke(self.pt(x, y), r * self.s, Stroke::new(self.sw(), self.col));
@@ -62,7 +65,7 @@ impl Pen<'_> {
 pub fn draw(p: &egui::Painter, r: Rect, rows: &[&str], col: Color32) -> bool {
     // the drawing's square fits inside the icon's box (a wide icon such as the speaker would spill out otherwise)
     let s = r.width().max(r.height()).min(r.width().min(r.height()) * 1.15);
-    let pen = Pen { p, o: r.center() - Vec2::splat(s / 2.0), s, col };
+    let pen = Pen { p, o: r.center() - Vec2::splat(s / 2.0), s, col, grow: 0.0 };
     let is = |a: &[&str]| rows == a;
     if is(&IC_PLAY) || is(&PLAY_S) {
         pen.poly(&[(0.22, 0.1), (0.9, 0.5), (0.22, 0.9)]);
@@ -233,10 +236,25 @@ pub fn gem(p: &egui::Painter, r: Rect, a: Color32, b: Color32) {
     p.add(Shape::line(wave, Stroke::new((s * 0.07).max(1.2), b)));
 }
 
+/// `named` in `col` over a soft dark glow that fades out a few pixels round every stroke: readable over any picture
+/// in one colour (the light symbol over dark, the glow over light), with no hard edge. For Now Playing's controls
+/// over the visuals.
+pub fn named_glow(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
+    for (grow, a) in [(7.0, 18), (5.0, 26), (3.4, 36), (2.0, 50)] {
+        named_grown(p, r, name, Color32::from_black_alpha(a), grow);
+    }
+    named(p, r, name, col);
+}
+
 /// Line icons by name, for the side list and the list actions (a skin worn): thin strokes, Spotify-like.
 pub fn named(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
+    named_grown(p, r, name, col, 0.0);
+}
+
+/// `named`, every stroke `grow` wider.
+fn named_grown(p: &egui::Painter, r: Rect, name: &str, col: Color32, grow: f32) {
     let s = r.width().min(r.height());
-    let pen = Pen { p, o: r.center() - Vec2::splat(s / 2.0), s, col };
+    let pen = Pen { p, o: r.center() - Vec2::splat(s / 2.0), s, col, grow };
     match name {
         "play" => pen.poly(&[(0.26, 0.12), (0.88, 0.5), (0.26, 0.88)]),
         "shuffle" => {

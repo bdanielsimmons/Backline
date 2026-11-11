@@ -252,6 +252,8 @@ impl App {
                 }
             });
         }
+        // the linked computer's logs, kept here (so a crash over there can be looked into from this one)
+        crate::sync::keep_peer_logs();
         // any mouse or key activity counts as being here
         if ctx.input(|i| i.pointer.is_moving() || !i.events.is_empty()) {
             self.last_active = Instant::now();
