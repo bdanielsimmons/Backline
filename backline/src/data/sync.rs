@@ -316,6 +316,18 @@ pub(crate) fn fetch(path: &str, to: &Path, got: &AtomicU64, size: &AtomicU64, st
     engine().ok_or_else(|| "Sync is off".to_string())?.fetch(path, to, got, size, stop)
 }
 
+/// The Backline on the linked computer: its build and the release file it matches (asked: from a thread of your
+/// own). A Backline from before this hangs up: Err.
+pub(crate) fn peer_app() -> Result<(u64, String), String> {
+    engine().ok_or_else(|| "Sync is off".to_string())?.app_there()
+}
+
+/// Copy the linked computer's own Backline to `to` here, whole and checked as a song is. Its size.
+pub(crate) fn fetch_app(to: &Path) -> Result<u64, String> {
+    let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
+    engine().ok_or_else(|| "Sync is off".to_string())?.fetch_with(Wire::GetApp, to, &got, &size, &stop)
+}
+
 /// What's here, as last read: each item's hash and text, items unreadable just now ("library/": all of the library),
 /// the files' times (read again when they change), and each item's hash at the last look (a change since then is a
 /// change made here).
@@ -993,10 +1005,26 @@ impl Engine {
         }
     }
 
+    /// The linked computer's Backline: its build and the release file it matches.
+    fn app_there(&self) -> Result<(u64, String), String> {
+        let mut c = self.songs_call()?;
+        c.send(&Wire::Build)?;
+        match c.recv()? {
+            Wire::BuildIs { build, kind } => Ok((build, kind)),
+            Wire::No { why } => Err(why),
+            _ => Err("an unexpected answer".to_string()),
+        }
+    }
+
     /// One of the linked computer's song files, copied here (see `fetch`).
     fn fetch(&self, path: &str, to: &Path, got: &AtomicU64, size_out: &AtomicU64, stop: &AtomicBool) -> Result<u64, String> {
+        self.fetch_with(Wire::Get { path: path.to_string() }, to, got, size_out, stop)
+    }
+
+    /// A file of the linked computer's (a song, or its Backline: `ask`), copied here.
+    fn fetch_with(&self, ask: Wire, to: &Path, got: &AtomicU64, size_out: &AtomicU64, stop: &AtomicBool) -> Result<u64, String> {
         let mut c = self.songs_call()?;
-        c.send(&Wire::Get { path: path.to_string() })?;
+        c.send(&ask)?;
         let size = match c.recv()? {
             Wire::File { size } => size,
             Wire::No { why } => return Err(why),
@@ -1028,7 +1056,7 @@ impl Engine {
             }
             match c.recv()? {
                 Wire::Sum { mac: m } if m == h.finish() => {}
-                _ => return Err("The song came over damaged: try again".to_string()),
+                _ => return Err("It came over damaged: try again".to_string()),
             }
             out.flush().map_err(|e| e.to_string())
         })();
@@ -1065,6 +1093,22 @@ impl Engine {
                         .collect();
                     c.send(&Wire::Listing { files })?;
                 }
+                // which Backline runs here, and Backline itself (so the other computer needn't wait for a release)
+                Wire::Build => {
+                    c.send(&Wire::BuildIs { build: crate::update::build(), kind: crate::update::asset_name().to_string() })?;
+                }
+                Wire::GetApp => {
+                    let path = std::env::current_exe().map_err(|e| e.to_string())?.display().to_string();
+                    let mut f = match std::fs::File::open(&path) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            c.send(&Wire::No { why: format!("{} can't open its Backline: {}", self.name, e) })?;
+                            continue;
+                        }
+                    };
+                    send_file(&mut c, &mut f)?;
+                    log(&format!("sent {} this Backline (v9.{})", peer.name, crate::update::build()));
+                }
                 Wire::Get { path } => {
                     if !lock(&self.shared).iter().any(|f| f.path == path) {
                         c.send(&Wire::No { why: format!("That song isn't in Backline on {}", self.name) })?;
@@ -1077,22 +1121,7 @@ impl Engine {
                             continue;
                         }
                     };
-                    let size = f.metadata().map_err(|e| e.to_string())?.len();
-                    c.send(&Wire::File { size })?;
-                    let mut h = file_hasher(c.key.unwrap_or_default(), size);
-                    let mut buf = vec![0u8; 256 << 10];
-                    let mut left = size;
-                    while left > 0 {
-                        let want = left.min(buf.len() as u64) as usize;
-                        let n = f.read(&mut buf[..want]).map_err(|e| e.to_string())?;
-                        if n == 0 {
-                            return Err("a song got shorter while it was sent".to_string());
-                        }
-                        h.write(&buf[..n]);
-                        c.s.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-                        left -= n as u64;
-                    }
-                    c.send(&Wire::Sum { mac: h.finish() })?;
+                    send_file(&mut c, &mut f)?;
                     log(&format!("sent {} a song: {}", peer.name, path));
                 }
                 _ => return Err("an unexpected message".to_string()),
@@ -1511,6 +1540,26 @@ fn now_s() -> u64 {
     now_ms() / 1000
 }
 
+/// A file over a call: its size, its bytes, then their signature (the other side checks it as they come).
+fn send_file(c: &mut Conn, f: &mut std::fs::File) -> Result<(), String> {
+    let size = f.metadata().map_err(|e| e.to_string())?.len();
+    c.send(&Wire::File { size })?;
+    let mut h = file_hasher(c.key.unwrap_or_default(), size);
+    let mut buf = vec![0u8; 256 << 10];
+    let mut left = size;
+    while left > 0 {
+        let want = left.min(buf.len() as u64) as usize;
+        let n = f.read(&mut buf[..want]).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("a file got shorter while it was sent".to_string());
+        }
+        h.write(&buf[..n]);
+        c.s.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        left -= n as u64;
+    }
+    c.send(&Wire::Sum { mac: h.finish() })
+}
+
 /// What goes over the network, as JSON (each message signed once both hold the key: `Conn`).
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "t")]
@@ -1541,6 +1590,11 @@ enum Wire {
     Get { path: String },
     File { size: u64 },
     Sum { mac: u64 },
+    /// asks which Backline runs there, and the answer: its build and the release file it matches (system, edition)
+    Build,
+    BuildIs { build: u64, kind: String },
+    /// asks for that Backline itself: answered as Get is (File, its bytes, Sum)
+    GetApp,
 }
 
 /// One item on the calling side: its hash (0: not there), the hash both last agreed on (0: never), when it changed
@@ -1985,6 +2039,29 @@ mod tests {
         let to2 = db.join("again.mp3");
         assert!(b.fetch(&path, &to2, &got, &size, &stop).is_err());
         assert!(!to2.exists() && !PathBuf::from(format!("{}.part", to2.display())).exists());
+        for e in [&a, &b] {
+            e.gen.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn backline_itself_comes_over_the_link() {
+        let (da, db) = (temp("app_pc"), temp("app_laptop"));
+        let a = computer(&da, 31, "PC");
+        let b = computer(&db, 41, "LAPTOP");
+        type_code(&b, &lock(&a.saved).code.clone());
+        a.call_join(at(&b), true).unwrap();
+        linked_to(&b);
+        *lock(&b.near) = HashMap::from([(31, Near { addr: at(&a), linked: true, joining: None })]);
+        // the laptop hears which Backline the PC runs
+        let (build, kind) = b.app_there().unwrap();
+        assert_eq!((build, kind.as_str()), (crate::update::build(), crate::update::asset_name()));
+        // and takes it, byte for byte (here: the program running these tests)
+        let me = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+        let to = db.join("backline.new");
+        let (got, size, stop) = (AtomicU64::new(0), AtomicU64::new(0), AtomicBool::new(false));
+        assert_eq!(b.fetch_with(Wire::GetApp, &to, &got, &size, &stop).unwrap(), me.len() as u64);
+        assert_eq!(std::fs::read(&to).unwrap(), me);
         for e in [&a, &b] {
             e.gen.fetch_add(1, Ordering::SeqCst);
         }

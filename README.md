@@ -103,13 +103,15 @@ The library now has five lists: **TIDAL | FILES | YT | TUNES | DIARY**.
 - **SAVE LOOP** keeps named A-B loops per track (chips below; click to go, right-click to delete).
 - **MORE** opens: speed **TRAIN** (set how many loops to play, and how many percent faster after them),
   **PITCH** transpose without changing speed, **EAR** modes (left, right, mono, no-center, bass only),
-  **EXPORT WAV** of the loop (Music/Backline loops), **COUNT** in (2 or 4 clicks before each loop pass), a METRONOME button,
+  **COUNT** in (2 or 4 clicks before each loop pass), a METRONOME button,
 
 - **STEMS**: GET STEMS TOOL downloads (once, ~170 MB) the ONNX Runtime library and the HT-Demucs model from
   Hugging Face / GitHub. Then SPLIT THIS TRACK separates a stored track into drums, bass, other (guitar, keys, horns)
   and vocals; they are saved on disk (DISK view shows the size, CLEAR STEMS deletes them). Afterwards the pixel icons
   (drums, bass, other, vocals) switch each stem on or off; right-click an icon to hear only that one.
   Loops, slow-down, pitch and EQ all keep working on the mix.
+  **EXPORT WAV** (in STEMS) saves the A-B loop, or the whole song, as you hear it. Once a song is split it can also save
+  three versions at once (full, no vocals, no vocals/bass/drums) or each stem on its own, into a folder you pick once.
 - **TIMER** (button in the tools row, works in every mode): set focus minutes, rest minutes and how many blocks, then START.
   It floats bottom-right. When a block ends the window flashes (and chimes, unless you untick SOUND) and switches to REST; after the rest it waits
   (flashing) until you press NEXT FOCUS. The time also shows in the window title.

@@ -27,7 +27,7 @@ pub fn build() -> u64 {
 }
 
 /// Name of the release file that matches this program.
-fn asset_name() -> &'static str {
+pub(crate) fn asset_name() -> &'static str {
     match (cfg!(windows), crate::PRACTICE) {
         (true, true) => "backline-practice.exe",
         (true, false) => "backline-simple.exe",
@@ -120,15 +120,38 @@ pub fn notes(n: usize) -> Result<Vec<(String, String)>, String> {
     Ok(out.into_iter().take(n).map(|(_, t, b)| (t, b)).collect())
 }
 
+/// An update's `url` when it comes from the linked computer (SYNC) instead of a release.
+pub(crate) const FROM_LINKED: &str = "sync:linked";
+
+/// The linked computer runs a newer Backline of the same kind as this one: that update (taken over the link, no
+/// waiting for the release to be built).
+pub(crate) fn check_linked() -> Option<Info> {
+    let me = build();
+    if me == 0 {
+        return None;
+    }
+    let (b, kind) = crate::sync::peer_app().ok()?;
+    (b > me && kind == asset_name()).then(|| Info { build: b, tag: format!("v9.{}", b), url: FROM_LINKED.to_string() })
+}
+
 /// Download the new program and leave it next to this one as `<name>.new`.
 pub fn stage(info: &Info) -> Result<(), String> {
-    let bytes = http()?.get(&info.url).send().map_err(es)?.error_for_status().map_err(es)?.bytes().map_err(es)?;
     let dest = staged_path()?;
     let _ = std::fs::remove_file(&dest);
-    if cfg!(windows) {
+    if info.url == FROM_LINKED {
+        // the linked computer's own copy, over the link, checked as it comes
+        crate::sync::fetch_app(&dest)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755)).map_err(es)?;
+        }
+    } else if cfg!(windows) {
+        let bytes = http()?.get(&info.url).send().map_err(es)?.error_for_status().map_err(es)?.bytes().map_err(es)?;
         std::fs::write(&dest, &bytes).map_err(es)?;
     } else {
         // the Mac / Linux file is a .tar.gz holding one program called `backline`
+        let bytes = http()?.get(&info.url).send().map_err(es)?.error_for_status().map_err(es)?.bytes().map_err(es)?;
         let dir = api::config_dir().join("update");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).map_err(es)?;
@@ -215,6 +238,19 @@ impl App {
         let due = self.upd_checked.is_none_or(|t| t.elapsed() > Duration::from_secs(6 * 3600));
         if due && matches!(self.upd_state, 0 | 3) {
             self.start_update_check();
+        }
+        // linked with a computer running a newer Backline: take it from there (every two minutes it's asked)
+        let ask_linked = self.linked_upd_at.is_none_or(|t| t.elapsed() > Duration::from_secs(120));
+        if ask_linked && matches!(self.upd_state, 0 | 3) && build() > 0 && crate::sync::peer_name().is_some() {
+            self.linked_upd_at = Some(Instant::now());
+            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+            std::thread::spawn(move || {
+                if let Some(info) = check_linked() {
+                    api::log(&format!("update: the linked computer has {}, taking it over the link", info.tag));
+                    let _ = tx.send(Msg::UpdateFound(Ok(Some(info))));
+                    ctx.request_repaint();
+                }
+            });
         }
         // any mouse or key activity counts as being here
         if ctx.input(|i| i.pointer.is_moving() || !i.events.is_empty()) {

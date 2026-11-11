@@ -69,8 +69,13 @@ impl App {
                 app.practice = true;
                 app.more = true;
                 app.mtab = ["trainer", "pitch", "stems"].iter().position(|x| *x == t).unwrap_or(0) as u8;
-                // with the tour song playing, so the tab shows what it does (BACKLINE_REC_A=452: tuned to that A)
-                if let Some(p) = tour_song::ready() {
+                // with the tour song playing, so the tab shows what it does (BACKLINE_REC_A=452: tuned to that A;
+                // BACKLINE_SONG=<file>: that song instead; BACKLINE_MENU=export: with STEMS' EXPORT WAV menu open)
+                if std::env::var("BACKLINE_MENU").as_deref() == Ok("export") {
+                    app.ctx.memory_mut(|m| m.open_popup(egui::Id::new("export_menu")));
+                }
+                let song = std::env::var_os("BACKLINE_SONG").map(std::path::PathBuf::from).or_else(tour_song::ready);
+                if let Some(p) = song {
                     let t = sources::ext_for_file(&p).to_track();
                     if let Some(a) = std::env::var("BACKLINE_REC_A").ok().and_then(|a| meta::parse_hz(&a)) {
                         meta::set_a4(t.id, Some(a));

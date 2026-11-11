@@ -943,6 +943,21 @@ pub fn mix_stems_span(data: &[Vec<i16>; 4], on: [bool; 4], a: f32, b: f32) -> Ve
         .collect()
 }
 
+/// A 5 ms fade in and out, so a file cut from the middle of a song doesn't click at either end.
+pub fn fade_ends(data: &mut [i16], ch: u16, rate: u32) {
+    let ch = ch.max(1) as usize;
+    let frames = data.len() / ch;
+    let n = (rate as usize / 200).min(frames / 2);
+    for f in 0..n {
+        let g = f as f32 / n as f32;
+        for c in 0..ch {
+            for i in [f * ch + c, (frames - 1 - f) * ch + c] {
+                data[i] = (data[i] as f32 * g) as i16;
+            }
+        }
+    }
+}
+
 /// Write 16-bit samples as a WAV file.
 pub fn write_wav(path: &Path, ch: u16, rate: u32, data: &[i16]) -> Result<(), String> {
     if data.is_empty() {

@@ -426,6 +426,15 @@ enum Tab {
     Artists,
 }
 
+/// What EXPORT WAV saves: the song as you hear it, the three versions (full, no vocals, no vocals bass drums),
+/// or each stem on its own.
+#[derive(PartialEq, Clone, Copy)]
+pub(crate) enum ExportKind {
+    Hear,
+    Three,
+    Each,
+}
+
 enum Action {
     Open(Card),
     /// follow (true) or unfollow an artist on Tidal: their id
@@ -710,7 +719,7 @@ enum Action {
     CountIn,
     Chan,
     Transpose(i32),
-    Export,
+    Export(ExportKind),
     // ---- diary / chart
     SaveEntry,
     RightTab(u8),
@@ -1010,6 +1019,8 @@ struct App {
     mini: bool,
     /// the mini window's size, asked for again a moment after going mini (the title bar coming off can change it)
     mini_size_at: Option<(Instant, Vec2)>,
+    /// when the linked computer was last asked for a newer Backline (SYNC)
+    linked_upd_at: Option<Instant>,
     /// the full window's equalizer and playlist (show_eq, queue_hidden) while the mini player is on: the mini starts
     /// with both closed and opens its own, and leaving it brings these back
     mini_saved: (bool, bool),
@@ -1996,6 +2007,7 @@ impl App {
             sleep_mins: 0,
             mini: false,
             mini_size_at: None,
+            linked_upd_at: None,
             mini_saved: (false, false),
             mini_stack: (false, false),
             pinned: false,
