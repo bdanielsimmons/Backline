@@ -718,8 +718,9 @@ impl App {
         if !self.mini {
             let deck = pl.r(0.0, 0.0, 275.0, 116.0);
             crate::winamp_ui::round_corners(&p, deck, true);
-            // (Backline's looks: its border, one with the windows round it)
-            crate::winamp_ui::border_ring(&p, deck, None, deck.width() / 275.0);
+            // (Backline's looks: its border round its whole window - the column, when that's wider than the deck)
+            let window = Rect::from_min_max(Pos2::new(area.min.x - 14.0, deck.min.y), Pos2::new(area.max.x + 14.0, deck.max.y));
+            crate::winamp_ui::border_ring(&p, window.union(deck), None, deck.width() / 275.0);
         }
         self.wa_art = Some(t);
     }
@@ -1098,9 +1099,11 @@ impl App {
         piece((0.0, 72.0, 125.0, 38.0), Rect::from_min_size(bot.min, Vec2::new(125.0, 38.0) * k));
         let br = Rect::from_min_size(Pos2::new(outer.max.x - 150.0 * k, bot.min.y), Vec2::new(150.0, 38.0) * k);
         piece((126.0, 72.0, 150.0, 38.0), br);
-        // (Backline's looks: its border, one with the windows round it)
         if !self.mini {
-            crate::winamp_ui::border_ring(&p, outer, Some(list), k);
+            // its title strip moves the window too (Snap and all), short of its own buttons
+            let strip = Rect::from_min_size(outer.min, Vec2::new(outer.width(), 20.0 * k));
+            crate::winamp_ui::note_strip_control(outer, outer.max.x - 22.0 * k);
+            crate::app_bar_strip(ui, strip, id.with("app_bar"));
         }
 
         // ---- the tracks
@@ -1373,6 +1376,10 @@ impl App {
         }
         // the foot of the stack, rounded
         crate::winamp_ui::round_corners(&p, outer, false);
+        // (Backline's looks: its border, drawn last so nothing in the frame covers a line of it)
+        if !self.mini {
+            crate::winamp_ui::border_ring(&p, outer, Some(list), k);
+        }
         self.wa_art = Some(t);
     }
 }
