@@ -126,6 +126,8 @@ pub const F_PL_FIND: u32 = 106;
 /// PITCH: the A the record is tuned to, and the A you play at (Hz)
 pub const F_REC_A: u32 = 107;
 pub const F_MY_A: u32 = 108;
+/// PROGRESSION LAB: the progression's name
+pub const F_LAB_NAME: u32 = 109;
 
 impl App {
     /// A box you can type into. Shows `shown`; returns the typed text when you press Enter or click away.

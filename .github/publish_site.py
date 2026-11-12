@@ -55,43 +55,63 @@ def mb(n):
 def page(latest):
     f = latest["files"]
 
-    def row(name, label, what):
+    def link(name, label, cls):
         if name not in f:
             return ""
         e = f[name]
-        return (
-            f'<li><a href="{html.escape(e["path"])}">{label}</a> <span>{what}, build {e["build"]}, {mb(e["size"])}</span>'
-            f'<code>SHA-256 {e["sha256"]}</code></li>'
-        )
+        return f'<a class="{cls}" href="{html.escape(e["path"])}">{label}</a>'
 
+    def size(name):
+        return f' <span class="size">({mb(f[name]["size"])})</span>' if name in f else ""
+
+    # Plain steps for people who don't download apps often. The SHA-256s stay in latest.json (the app checks them).
+    win = link("backline-setup.msi", "Download for Windows", "big")
+    mac = link("backline-practice-mac.tar.gz", "Download for Mac", "big")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Backline downloads</title>
+<title>Get Backline</title>
 <style>
-:root {{ color-scheme: light dark; --bg: #f4f3f0; --fg: #1d1d1f; --dim: #6b6b70; --line: #d8d6d0; --link: #8a5a00; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --bg: #141416; --fg: #e8e6e3; --dim: #9a9aa0; --line: #2c2c30; --link: #e0b25c; }} }}
-body {{ background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 40px 16px; }}
-main {{ max-width: 640px; margin: 0 auto; }}
-h1 {{ font-size: 28px; margin: 0 0 4px; letter-spacing: .02em; }}
-h2 {{ font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 28px 0 8px; }}
-p {{ color: var(--dim); margin: 0 0 8px; }}
-ul {{ list-style: none; padding: 0; margin: 0; }}
-li {{ padding: 12px 0; border-top: 1px solid var(--line); }}
-a {{ color: var(--link); font-weight: 600; text-decoration: none; }}
-a:hover {{ text-decoration: underline; }}
-span {{ color: var(--dim); margin-left: 6px; }}
-code {{ display: block; font-size: 11px; color: var(--dim); overflow-wrap: anywhere; margin-top: 4px; }}
+:root {{ color-scheme: light dark; --bg: #f4f3f0; --fg: #1d1d1f; --dim: #5f5f66; --line: #d8d6d0; --btn: #8a5a00; --btn-fg: #fff; --card: #fff; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg: #141416; --fg: #e8e6e3; --dim: #a3a3aa; --line: #2c2c30; --btn: #e0b25c; --btn-fg: #141416; --card: #1d1d20; }} }}
+body {{ background: var(--bg); color: var(--fg); font: 18px/1.55 system-ui, sans-serif; margin: 0; padding: 40px 16px; }}
+main {{ max-width: 560px; margin: 0 auto; }}
+h1 {{ font-size: 34px; margin: 0 0 4px; }}
+.lead {{ color: var(--dim); margin: 0 0 28px; }}
+section {{ background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin: 0 0 18px; }}
+h2 {{ font-size: 22px; margin: 0 0 14px; }}
+a.big {{ display: block; text-align: center; background: var(--btn); color: var(--btn-fg); font-weight: 700; font-size: 20px;
+  text-decoration: none; border-radius: 10px; padding: 16px; }}
+.size {{ color: var(--dim); font-size: 15px; }}
+ol {{ margin: 16px 0 0; padding-left: 22px; }}
+li {{ margin: 0 0 8px; }}
+b {{ font-weight: 650; }}
+.small {{ color: var(--dim); font-size: 15px; margin: 14px 0 0; }}
+.small a {{ color: inherit; }}
 </style></head>
 <body><main>
 <h1>Backline</h1>
-<p>A retro music player made for practice. Once it's installed it updates itself.</p>
+<p class="lead">A music player made for practicing. Install it once and it keeps itself up to date.</p>
+<section>
 <h2>Windows</h2>
-<ul>{row("backline-setup.msi", "Installer", "the easy way")}{row("backline-practice.exe", "The app on its own", "no install, just run it")}</ul>
+{win}
+<ol>
+<li>Open the file you downloaded{size("backline-setup.msi")}. If your browser asks, choose <b>Keep</b>.</li>
+<li>If Windows says <b>"Windows protected your PC"</b>, click <b>More info</b>, then <b>Run anyway</b>.</li>
+<li>Click through the installer. Backline is then on your desktop and in the Start menu.</li>
+</ol>
+<p class="small">No installing allowed on your computer? {link("backline-practice.exe", "Get the app on its own", "")} and just double-click it.</p>
+</section>
+<section>
 <h2>Mac</h2>
-<ul>{row("backline-practice-mac.tar.gz", "Backline for Mac", "Apple Silicon and Intel")}</ul>
-<p>On a Mac: open the download, then the first time right-click <b>backline</b> and choose Open (it isn't signed).</p>
-<p>Want just the player? Turn on Hide the Practice Tools at the top of Preferences.</p>
+{mac}
+<ol>
+<li>Open the file you downloaded{size("backline-practice-mac.tar.gz")}. It turns into a file called <b>backline</b>.</li>
+<li>Double-click <b>backline</b>. The first time, your Mac says it can't check it: click <b>Done</b>.</li>
+<li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>. Scroll down and click <b>Open Anyway</b>.</li>
+</ol>
+</section>
+<p class="small">Just want the music player? In Backline, open Preferences and turn on <b>Hide the Practice Tools</b>.</p>
 </main></body></html>
 """
 

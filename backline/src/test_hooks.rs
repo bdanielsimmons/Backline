@@ -238,6 +238,26 @@ Second line: comp lighter here.", m.1.note);
                 // an Em9 grip to show
                 app.an_frets = [Some(0), Some(7), None, Some(12), Some(12), Some(7)];
             }
+            Ok("lab") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 9;
+                // a church walk in A-flat on the bench, its third chord picked
+                if app.store.lab_bench.chords.is_empty() {
+                    let c = |g: [Option<u8>; 6], beats: f32| crate::store::LabChord { grip: g, name: String::new(), beats, timed: true, art: 0 };
+                    app.store.lab_bench = crate::store::LabProg {
+                        name: "Church walk".into(),
+                        bpm: 72.0,
+                        chords: vec![
+                            c([None, None, Some(6), Some(5), Some(4), Some(4)], 2.0),
+                            c([None, None, Some(6), Some(6), Some(6), Some(4)], 1.5),
+                            c([None, None, Some(6), Some(7), Some(6), Some(7)], 0.5),
+                            c([None, Some(6), Some(6), Some(5), Some(4), Some(4)], 4.0),
+                        ],
+                        link: None,
+                    };
+                }
+                app.lab_sel = 2;
+            }
             Ok("superimpose") => {
                 app.sec = Sec::Lines;
                 app.ln_tab = 3;
@@ -548,4 +568,34 @@ pub(crate) fn shot(
         }
     }
     ctx.request_repaint();
+}
+
+/// BACKLINE_LAB_TAPS=<seconds after the downbeat, comma-separated>: a test copy on the Progression Lab starts TAP
+/// TIMING by itself 2 seconds in and taps at those times, to check it through without a hand on the keys.
+pub(crate) fn lab_auto(app: &mut App, acts: &mut Vec<Action>) {
+    use std::cell::Cell;
+    thread_local! {
+        static BEGAN: Cell<Option<Instant>> = const { Cell::new(None) };
+        static STARTED: Cell<bool> = const { Cell::new(false) };
+        static TAPPED: Cell<usize> = const { Cell::new(0) };
+    }
+    let Ok(v) = std::env::var("BACKLINE_LAB_TAPS") else { return };
+    let times: Vec<f32> = v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    let began = BEGAN.with(|b| *b.get().get_or_insert_with(Instant::now));
+    BEGAN.with(|b| b.set(Some(began)));
+    if !STARTED.with(|s| s.get()) {
+        if began.elapsed().as_secs_f32() >= 2.0 {
+            STARTED.with(|s| s.set(true));
+            app.lab_start_timing(acts);
+        }
+        return;
+    }
+    let Some(down) = app.lab_run.as_ref().and_then(|r| r.down) else { return };
+    let k = TAPPED.with(|t| t.get());
+    if let Some(at) = times.get(k) {
+        if Instant::now() >= down + Duration::from_secs_f32(*at) {
+            TAPPED.with(|t| t.set(k + 1));
+            app.lab_tap();
+        }
+    }
 }

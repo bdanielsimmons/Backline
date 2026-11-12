@@ -108,6 +108,8 @@ mod font;
 mod gp;
 #[path = "ui/harmony.rs"]
 mod harmony;
+#[path = "ui/lab.rs"]
+mod lab;
 #[path = "ui/help.rs"]
 mod help;
 #[path = "ui/history.rs"]
@@ -1402,6 +1404,22 @@ struct App {
     mv_motion: u8,
     mv_pedal: bool,
     mv_play: Option<(Instant, Vec<f32>)>,
+    /// PROGRESSION LAB: the chord picked, SNAP (0 off, 1 8ths, 2 16ths, 3 triplets), TAP TIMING running, a line
+    /// about it, playing (start, chord times), an edge being dragged (chord, its beats then, where the drag began,
+    /// a beat's width), the Lab holding the metronome's sound for its clicks, the metronome on, what's heard for a
+    /// linked loop (0 guitar, 1 record, 2 both), and WRITTEN OUT showing
+    lab_sel: usize,
+    lab_snap: u8,
+    lab_run: Option<lab::LabRun>,
+    lab_note: String,
+    lab_play: Option<(Instant, Vec<f32>)>,
+    lab_drag: Option<(usize, f32, f32, f32)>,
+    lab_clicks: bool,
+    lab_metro: bool,
+    lab_hear: u8,
+    lab_written: bool,
+    /// when the Lab's page was last drawn (its clicks and TAP TIMING stop when you go elsewhere)
+    lab_seen: Option<Instant>,
     /// VOICINGS: SHAPES or WALK THE CHANGES
     vc_page: u8,
     /// READING: key, position, rhythm level, bars, time (0 4/4, 1 3/4), tempo, the helps shown, the line, and a
@@ -2303,6 +2321,17 @@ impl App {
             mv_motion: 0,
             mv_pedal: true,
             mv_play: None,
+            lab_sel: 0,
+            lab_snap: 2,
+            lab_run: None,
+            lab_note: String::new(),
+            lab_play: None,
+            lab_drag: None,
+            lab_clicks: false,
+            lab_metro: true,
+            lab_hear: 0,
+            lab_written: true,
+            lab_seen: None,
             vc_page: 0,
             rd_key: 0,
             rd_pos: 1,
@@ -3742,6 +3771,10 @@ impl eframe::App for App {
             if !self.search_focus && self.ed.id == 0 && !panel {
                 let kp = |k: egui::Key| ctx.input(|i| i.key_pressed(k));
                 for cmd in self.key_commands(ctx) {
+                    // tapping a progression in: Space is the tap, not play / pause
+                    if cmd == prefs::Cmd::PlayPause && self.lab_tapping() {
+                        continue;
+                    }
                     self.run_cmd(cmd, &mut acts);
                 }
                 if kp(egui::Key::Escape) {

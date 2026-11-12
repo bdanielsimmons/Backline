@@ -65,7 +65,7 @@ pub(crate) use crate::triad_core::*;
 /// A move written out: a staff with each chord stacked in its own column, the tab under it, the chord names over
 /// it and the hammer-ons (H), slides (SL) and whammy dips (DIP) marked. Notes that move from the chord before are
 /// blue; the ones that stay are black. Returns a column clicked.
-fn steps_score(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usize>) -> Option<usize> {
+pub(crate) fn steps_score(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usize>) -> Option<usize> {
     let g = 6.0_f32;
     let col_w = 78.0_f32;
     let left = 44.0_f32;
@@ -181,7 +181,7 @@ fn steps_score(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usiz
 
 /// The notes of a move as the strings play them: (string, note, start in seconds, how hard). A hammered step only
 /// sounds the notes that change (softly, no pick) and lets the rest ring; a string that stops playing is damped.
-fn steps_events(steps: &[Step], spb: f32) -> (Vec<(usize, i32, f32, f32)>, Vec<f32>) {
+pub(crate) fn steps_events(steps: &[Step], spb: f32) -> (Vec<(usize, i32, f32, f32)>, Vec<f32>) {
     let mut ev = Vec::new();
     let mut starts = Vec::new();
     let mut t = 0.1_f32;
@@ -411,7 +411,7 @@ fn gospel_moves() -> Vec<MoveDef> {
 
 /// A move's grips as chord boxes in a row (wrapping onto more rows), each with its name, a hammer-on or a slide
 /// marked under it, the one sounding outlined. The one clicked, to hear it.
-fn steps_boxes(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usize>) -> Option<usize> {
+pub(crate) fn steps_boxes(ui: &mut egui::Ui, steps: &[Step], sharps: bool, lit: Option<usize>) -> Option<usize> {
     let cw = 104.0_f32;
     let mut hit = None;
     ui.horizontal_wrapped(|ui| {

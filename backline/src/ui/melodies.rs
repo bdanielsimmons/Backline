@@ -8,7 +8,7 @@ use super::*;
 use crate::transcription::{self, Beat, Move, Tune};
 
 /// What CHORD MELODIES shows: a tune's beats laid out, its suggested moves.
-type Spot = (usize, usize); // (bar, beat)
+pub(crate) type Spot = (usize, usize); // (bar, beat)
 
 /// The colours of a beat's chord tones by degree (the analyzer's).
 fn chord_root(name: &str) -> Option<i32> {
@@ -360,8 +360,8 @@ fn room(ui: &egui::Ui) -> f32 {
 /// What the pointer is on in the bars: a beat, a move's label, a move's band.
 #[derive(Default)]
 pub(crate) struct BarsOut {
-    hover: Option<Spot>,
-    grip: Option<Spot>,
+    pub(crate) hover: Option<Spot>,
+    pub(crate) grip: Option<Spot>,
     chip: Option<usize>,
     band: Option<usize>,
 }
@@ -1697,7 +1697,7 @@ impl App {
     /// Bars laid out in rows - chord names, grips, the notes written out (stems, beams, rests, dots, ties), tab, note
     /// names, each as shown - every beat given the room it needs, sized with the zoom. `live`: the song's own bars
     /// (the loop shown, moves marked, beats picked); says which beat and which move the pointer is on.
-    fn draw_bars(
+    pub(crate) fn draw_bars(
         &self,
         ui: &mut egui::Ui,
         bars: &[transcription::Bar],

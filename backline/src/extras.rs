@@ -610,7 +610,11 @@ impl App {
         if self.acc >= 5.0 {
             self.flush_practice();
         }
-        self.update_metro(playing);
+        // (TAP TIMING and PLAY in the Progression Lab use the metronome's sound for their clicks meanwhile)
+        self.lab_frame();
+        if !self.lab_clicks {
+            self.update_metro(playing);
+        }
         self.pomo_tick();
         self.plan_tick();
         if playing && self.last_cap.elapsed() > Duration::from_secs(60) {

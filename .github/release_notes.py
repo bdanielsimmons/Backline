@@ -66,9 +66,10 @@ if has_notes:
 out = ["## Changes", *(changes if has_notes else (changes or ["- Rebuild, no code changes"])), ""]
 out += [
     "## Downloads",
-    "- **Windows:** `backline-setup.msi` installs it (Start Menu shortcut, updates itself), or run `backline-practice.exe` (everything) / `backline-simple.exe` (no practice tools) as they are",
-    "- **Mac** (Apple Silicon and Intel): the `.tar.gz` files. Unpack, then right-click the app and choose Open"
-    " the first time (it isn't signed).",
+    "- **Windows:** `backline-setup.msi` installs it (Start Menu shortcut, updates itself), or run `backline-practice.exe` as it is."
+    " Just the player: turn on Hide the Practice Tools in Preferences",
+    "- **Mac** (Apple Silicon and Intel): `backline-practice-mac.tar.gz`. Unpack it and open `backline`; the first time,"
+    " click Open Anyway in System Settings > Privacy & Security (it isn't signed).",
 ]
 with open(notes_path, "w", encoding="utf-8") as f:
     f.write("\n".join(out) + "\n")

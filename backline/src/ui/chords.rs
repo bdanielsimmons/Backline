@@ -18,7 +18,7 @@ impl App {
         const GROUPS: [(&str, &[(u8, &str)]); 3] = [
             ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
             ("SHAPES", &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")]),
-            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "COMPING MOVES")]),
+            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "COMPING MOVES"), (9, "PROGRESSION LAB")]),
         ];
         let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
         let (names, tips) = crate::views::group_tabs(&GROUPS);
@@ -45,6 +45,7 @@ impl App {
             5 => self.passing(ui, acts),
             6 => self.scale_harmony(ui, acts),
             8 => self.progressions_page(ui, acts),
+            9 => self.lab(ui, acts),
             _ => self.moves(ui, acts),
         }
     }

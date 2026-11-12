@@ -99,6 +99,18 @@ impl App {
             app.chart_lock = b;
         }
         app.mine_stems = st["mine_stems"].as_bool().unwrap_or(false);
+        if let Some(v) = st["lab_snap"].as_u64() {
+            app.lab_snap = (v as u8).min(3);
+        }
+        if let Some(v) = st["lab_metro"].as_bool() {
+            app.lab_metro = v;
+        }
+        if let Some(v) = st["lab_hear"].as_u64() {
+            app.lab_hear = (v as u8).min(2);
+        }
+        if let Some(v) = st["lab_written"].as_bool() {
+            app.lab_written = v;
+        }
         if let Some(z) = st["neck_zoom"].as_f64() {
             app.neck_zoom = (z as f32).clamp(0.8, 2.2);
         }
@@ -415,6 +427,10 @@ impl App {
             "auto_restart": self.auto_restart,
             "intro": self.intro,
             "neck_zoom": self.neck_zoom,
+            "lab_snap": self.lab_snap,
+            "lab_metro": self.lab_metro,
+            "lab_hear": self.lab_hear,
+            "lab_written": self.lab_written,
             "q_drop": self.q_drop,
             "mine_off": self.mine_off,
             "mine_stems": self.mine_stems,

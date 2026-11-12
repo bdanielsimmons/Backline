@@ -630,6 +630,47 @@ pub struct Store {
     pub ear_quiet: bool,
     /// the atonal drills: their choices, and where you are in SCALE IN INTERVALS
     pub ear_atonal: EarAtonal,
+    /// PROGRESSION LAB: the progressions you kept, and the one on the bench
+    pub lab: Vec<LabProg>,
+    pub lab_bench: LabProg,
+}
+
+/// A progression in the PROGRESSION LAB: its name, its tempo, and its chords in order.
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
+#[serde(default)]
+pub struct LabProg {
+    pub name: String,
+    pub bpm: f32,
+    pub chords: Vec<LabChord>,
+    /// the song loop it came from, if it's linked to one
+    pub link: Option<LabLink>,
+}
+
+/// One chord of it: the grip (a fret per string, low E first; None not played), the name you picked (empty:
+/// Backline's reading of the grip), how long it holds in beats (any length: 1.5, 0.33...), whether that length has
+/// been set yet (a new chord is a placeholder until it's tapped or dragged), and how it's played (0 strummed,
+/// 1 hammered on from the chord before, 2 slid into).
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
+#[serde(default)]
+pub struct LabChord {
+    pub grip: [Option<u8>; 6],
+    pub name: String,
+    pub beats: f32,
+    pub timed: bool,
+    pub art: u8,
+}
+
+/// A song loop a progression is linked to: the song (as kept in `songs`), its title and artist when linked, the
+/// loop's start and end (seconds) and its name.
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
+#[serde(default)]
+pub struct LabLink {
+    pub song: i64,
+    pub title: String,
+    pub artist: String,
+    pub a: f32,
+    pub b: f32,
+    pub name: String,
 }
 
 /// The CHORD QUALITIES drill's choices: what's in play (0 levels, 1 look-alikes, 2 my set), the levels ticked and
