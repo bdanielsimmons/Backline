@@ -575,6 +575,8 @@ pub(crate) fn shot(
 
 /// BACKLINE_LAB_TAPS=<seconds after the downbeat, comma-separated>: a test copy on the Progression Lab starts TAP
 /// TIMING by itself 2 seconds in and taps at those times, to check it through without a hand on the keys.
+/// BACKLINE_LAB_LOOP=<a>,<b>[,play]: first the bench is linked to the song there, loop a to b, With the Loop picked
+/// (then with "play" it plays over the loop instead; along the record the tap times count from the start).
 pub(crate) fn lab_auto(app: &mut App, acts: &mut Vec<Action>) {
     use std::cell::Cell;
     thread_local! {
@@ -582,18 +584,45 @@ pub(crate) fn lab_auto(app: &mut App, acts: &mut Vec<Action>) {
         static STARTED: Cell<bool> = const { Cell::new(false) };
         static TAPPED: Cell<usize> = const { Cell::new(0) };
     }
-    let Ok(v) = std::env::var("BACKLINE_LAB_TAPS") else { return };
-    let times: Vec<f32> = v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    let looped = std::env::var("BACKLINE_LAB_LOOP").ok();
+    let taps = std::env::var("BACKLINE_LAB_TAPS").ok();
+    if looped.is_none() && taps.is_none() {
+        return;
+    }
+    let times: Vec<f32> = taps.unwrap_or_default().split(',').filter_map(|s| s.trim().parse().ok()).collect();
     let began = BEGAN.with(|b| *b.get().get_or_insert_with(Instant::now));
     BEGAN.with(|b| b.set(Some(began)));
     if !STARTED.with(|s| s.get()) {
         if began.elapsed().as_secs_f32() >= 2.0 {
             STARTED.with(|s| s.set(true));
-            app.lab_start_timing(acts);
+            if let Some(l) = looped {
+                let parts: Vec<&str> = l.split(',').map(|x| x.trim()).collect();
+                let num = |i: usize| parts.get(i).and_then(|x| x.parse::<f32>().ok()).unwrap_or(0.0);
+                if let Some(t) = app.cur_track() {
+                    app.remember_song(&t);
+                    app.store.lab_bench.link = Some(crate::store::LabLink {
+                        song: t.id,
+                        title: t.title.clone(),
+                        artist: t.artist.clone(),
+                        a: num(0),
+                        b: num(1),
+                        name: "TEST LOOP".into(),
+                        at: 0.0,
+                    });
+                    app.lab_with_loop = true;
+                }
+                if parts.get(2) == Some(&"play") {
+                    app.lab_play_all(acts);
+                    return;
+                }
+            }
+            if !times.is_empty() {
+                app.lab_start_timing(acts);
+            }
         }
         return;
     }
-    let Some(down) = app.lab_run.as_ref().and_then(|r| r.down) else { return };
+    let Some(down) = app.lab_run.as_ref().map(|r| r.down.unwrap_or(r.start)) else { return };
     let k = TAPPED.with(|t| t.get());
     if let Some(at) = times.get(k) {
         if Instant::now() >= down + Duration::from_secs_f32(*at) {

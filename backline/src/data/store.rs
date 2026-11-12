@@ -671,6 +671,8 @@ pub struct LabLink {
     pub a: f32,
     pub b: f32,
     pub name: String,
+    /// where the first chord starts, seconds into the loop (set when the timing is tapped over the record)
+    pub at: f32,
 }
 
 /// The CHORD QUALITIES drill's choices: what's in play (0 levels, 1 look-alikes, 2 my set), the levels ticked and

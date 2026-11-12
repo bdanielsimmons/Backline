@@ -33,7 +33,9 @@ pub(crate) struct LabRun {
     /// the chord sounding (None: not started yet), and when each started
     pub cur: Option<usize>,
     pub at: Vec<Instant>,
-    /// along the record: the song's speed (so lengths are put back to full speed)
+    /// along the record: where each chord started in the song (seconds)
+    pub pos: Vec<f32>,
+    /// along the record: the song's speed (a tap's lateness, in song time)
     pub ratio: f32,
     /// each chord heard on the guitar as it comes
     pub guitar: bool,
@@ -256,6 +258,18 @@ impl App {
 
     /// The chord sounding while the bench plays, if it is playing (the Lab's clicks stop when it ends).
     fn lab_lit(&mut self, ui: &egui::Ui) -> Option<usize> {
+        if self.lab_loop_play {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+            let beat = self.lab_loop_beat()?;
+            let mut s = 0.0;
+            for (i, c) in self.store.lab_bench.chords.iter().enumerate() {
+                if beat < s + c.beats {
+                    return Some(i);
+                }
+                s += c.beats;
+            }
+            return None;
+        }
         let (t0, starts) = self.lab_play.as_ref()?;
         let el = t0.elapsed().as_secs_f32();
         if el > starts.last().copied().unwrap_or(0.0) + 0.3 {
@@ -265,6 +279,35 @@ impl App {
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         starts.windows(2).position(|w| el >= w[0] && el < w[1])
+    }
+
+    /// Over the loop: where the record is, as a beat of the progression (None before its first chord, or while the
+    /// song is paused or isn't the linked one).
+    fn lab_loop_beat(&self) -> Option<f32> {
+        if !self.lab_loop_play || !self.lab_linked_here() || self.paused || self.stopped {
+            return None;
+        }
+        let l = self.store.lab_bench.link.as_ref()?;
+        let t = self.pos() - (l.a + l.at);
+        (t >= 0.0).then(|| t * self.store.lab_bench.bpm.max(30.0) / 60.0)
+    }
+
+    /// Where PLAY is, in beats of the progression: on the clock, or following the record.
+    fn lab_play_beat(&self) -> Option<f32> {
+        if self.lab_loop_play {
+            return self.lab_loop_beat();
+        }
+        let (t0, st) = self.lab_play.as_ref()?;
+        let el = t0.elapsed().as_secs_f32() - st.first().copied().unwrap_or(0.0);
+        (el >= 0.0).then(|| el * self.store.lab_bench.bpm.max(30.0) / 60.0)
+    }
+
+    /// Over the record: Backline's own metronome is held quiet (the record keeps the time) until
+    /// `lab_quiet_clicks` gives it back.
+    fn lab_hush_metro(&mut self) {
+        self.player.send(Cmd::Pcm(0, Vec::new(), Vec::new(), 0.0));
+        self.player.ctl.set_song_clicks(None);
+        self.lab_clicks = true;
     }
 
     /// The Lab gives the metronome's sound back (the metronome takes it up again if it's on).
@@ -293,6 +336,21 @@ impl App {
             self.lab_note = "THAT SONG ISN'T IN YOUR LIBRARY ANY MORE.".into();
             return;
         };
+        if self.lab_linked_here() && self.stopped {
+            // there but stopped: start it on the loop, as the Loops page does
+            self.practice = true;
+            self.loops.insert(l.song, (l.a, l.b));
+            self.loop_next = Some((l.song, (l.a, l.b)));
+            if let Some(c) = self.cur {
+                self.play_index(c);
+            }
+            if self.buffering {
+                self.pending_seek = Some(l.a);
+            } else {
+                self.player.send(Cmd::Seek(l.a));
+            }
+            return;
+        }
         self.play_saved(&v, Some((l.a, l.b)));
         if self.lab_linked_here() && self.paused {
             acts.push(Action::Toggle);
@@ -302,6 +360,7 @@ impl App {
     fn lab_stop(&mut self) {
         self.player.send(Cmd::StopOnce);
         self.lab_play = None;
+        self.lab_loop_play = false;
         self.lab_quiet_clicks();
     }
 
@@ -317,24 +376,24 @@ impl App {
         }
     }
 
-    fn lab_play_all(&mut self, acts: &mut Vec<Action>) {
+    pub(crate) fn lab_play_all(&mut self, acts: &mut Vec<Action>) {
         self.lab_stop();
-        let over = self.lab_over_loop();
-        // over the record, the record alone: the guitar on top of it never lines up exactly
-        let guitar = !over;
-        if over {
+        if self.lab_over_loop() {
+            // the record's loop alone: no guitar on top (it never lines up exactly) and no clicks (Backline's own
+            // metronome is held quiet too); the page follows the record
             self.lab_go_to_loop(acts);
-        } else {
-            self.lab_quiet_song(acts);
+            self.lab_hush_metro();
+            self.lab_loop_play = true;
+            self.lab_note = "PLAYING THE LOOP: THE CHORDS FOLLOW THE RECORD.".into();
+            return;
         }
+        self.lab_quiet_song(acts);
         let p = &self.store.lab_bench;
         let spb = 60.0 / p.bpm.max(30.0);
         let (ev, starts) = steps_events(&steps_of(p, self.chord_sp), spb);
         let total = starts.last().copied().unwrap_or(1.0);
-        if guitar {
-            self.player.send(Cmd::Once(crate::band::string_events(&ev, total + 1.8), 0.9));
-        }
-        if !over && self.lab_metro {
+        self.player.send(Cmd::Once(crate::band::string_events(&ev, total + 1.8), 0.9));
+        if self.lab_metro {
             let lead = vec![0i16; (0.1 * crate::band::RATE) as usize];
             self.player.send(Cmd::Pcm(0, lead, click_bar(p.bpm, true), 0.8));
             self.lab_clicks = true;
@@ -354,7 +413,11 @@ impl App {
         if (over && (away || !self.lab_repeat)) || (away && self.lab_play.is_some()) {
             self.lab_play = None;
         }
-        if self.lab_clicks && self.lab_run.is_none() && self.lab_play.is_none() {
+        // over the loop: until you leave, or the song changes
+        if self.lab_loop_play && (away || (!self.lab_linked_here() && self.cur.is_some() && !self.stopped)) {
+            self.lab_loop_play = false;
+        }
+        if self.lab_clicks && self.lab_run.is_none() && self.lab_play.is_none() && !self.lab_loop_play {
             self.lab_quiet_clicks();
         }
     }
@@ -404,7 +467,8 @@ impl App {
             // along the record: from the loop's start, the first tap is the first chord
             self.lab_go_to_loop(acts);
             let ratio = if self.practice { self.speed as f32 / 100.0 } else { 1.0 };
-            self.lab_run = Some(LabRun { start: now, down: None, cur: None, at: Vec::new(), ratio, guitar: false });
+            self.lab_hush_metro();
+            self.lab_run = Some(LabRun { start: now, down: None, cur: None, at: Vec::new(), pos: Vec::new(), ratio, guitar: false });
             self.lab_note = "TAP (OR PRESS SPACE) AS EACH CHORD STARTS IN THE RECORD. ONE MORE TAP ENDS IT.".into();
             return;
         }
@@ -422,7 +486,7 @@ impl App {
             }
         }
         let down = now + Duration::from_secs_f32(4.0 * spb);
-        self.lab_run = Some(LabRun { start: now, down: Some(down), cur: None, at: Vec::new(), ratio: 1.0, guitar: true });
+        self.lab_run = Some(LabRun { start: now, down: Some(down), cur: None, at: Vec::new(), pos: Vec::new(), ratio: 1.0, guitar: true });
         self.lab_note = "COUNT-OFF... THE FIRST CHORD COMES IN ON 1.".into();
     }
 
@@ -454,14 +518,23 @@ impl App {
         let now = Instant::now() - Duration::from_secs_f32(TAP_LATE);
         let (cur, counting, guitar, ratio) = (run.cur, run.down.is_some(), run.guitar, run.ratio);
         let began = cur.and_then(|c| run.at.get(c).copied());
+        // along the record, taps are read in the song's own time (so its speed doesn't matter)
+        let along = !counting;
+        let pos = self.pos() - TAP_LATE * ratio;
+        let began_pos = cur.and_then(|c| run.pos.get(c).copied());
+        let loop_len = self.store.lab_bench.link.as_ref().map_or(0.0, |l| (l.b - l.a).max(0.0));
         match cur {
             // still counting off: too early
             None if counting => {}
-            // along the record: this tap starts the first chord
+            // along the record: this tap starts the first chord, and says where it sits in the loop
             None => {
                 if let Some(r) = self.lab_run.as_mut() {
                     r.at.push(now);
+                    r.pos.push(pos);
                     r.cur = Some(0);
+                }
+                if let Some(l) = self.store.lab_bench.link.as_mut() {
+                    l.at = (pos - l.a).clamp(0.0, (l.b - l.a).max(0.0));
                 }
                 self.lab_sel = 0;
                 if guitar {
@@ -471,15 +544,22 @@ impl App {
                 self.lab_last_note();
             }
             Some(c) => {
-                let secs = began.map_or(0.0, |b| now.saturating_duration_since(b).as_secs_f32());
+                let secs = if along {
+                    // (the loop came round: count across its end)
+                    let d = pos - began_pos.unwrap_or(pos);
+                    if d < 0.0 { d + loop_len } else { d }
+                } else {
+                    began.map_or(0.0, |b| now.saturating_duration_since(b).as_secs_f32())
+                };
                 if let Some(ch) = self.store.lab_bench.chords.get_mut(c) {
-                    ch.beats = one_length(secs, ratio, bpm, snap);
+                    ch.beats = one_length(secs, 1.0, bpm, snap);
                     ch.timed = true;
                 }
                 self.store_dirty = true;
                 if c + 1 < n {
                     if let Some(r) = self.lab_run.as_mut() {
                         r.at.push(now);
+                        r.pos.push(pos);
                         r.cur = Some(c + 1);
                     }
                     self.lab_sel = c + 1;
@@ -638,15 +718,19 @@ impl App {
             if running && retro_btn(ui, "STOP", false).clicked() {
                 self.lab_end_timing(false);
             }
-            let playing = lit.is_some();
+            let playing = lit.is_some() || self.lab_loop_play;
             if !running && retro_btn(ui, if playing { "STOP" } else { "PLAY" }, playing).tip("Hear it at its tempo").clicked() {
                 if playing {
+                    if self.lab_loop_play {
+                        self.lab_quiet_song(acts);
+                    }
                     self.lab_stop();
                 } else {
                     self.lab_play_all(acts);
                 }
             }
-            if !running && retro_btn(ui, "REPEAT", self.lab_repeat).tip("Play goes round and round until you stop it").clicked() {
+            // (over the loop the record goes round by itself)
+            if !running && !self.lab_over_loop() && retro_btn(ui, "REPEAT", self.lab_repeat).tip("Play goes round and round until you stop it").clicked() {
                 self.lab_repeat = !self.lab_repeat;
                 self.dirty = true;
             }
@@ -734,11 +818,7 @@ impl App {
                 let spb = 60.0 / bpm.max(30.0);
                 ((r.start.elapsed().as_secs_f32() / spb).floor() as usize) % 4
             });
-            let beat = beat.or_else(|| {
-                let (t0, st) = self.lab_play.as_ref()?;
-                let el = t0.elapsed().as_secs_f32() - st.first().copied().unwrap_or(0.0);
-                (el >= 0.0).then(|| ((el / (60.0 / bpm.max(30.0))).floor() as usize) % 4)
-            });
+            let beat = beat.or_else(|| self.lab_play_beat().map(|b| (b.floor() as usize) % 4));
             for k in 0..4 {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(26.0, 26.0), Sense::hover());
                 let on = beat == Some(k);
@@ -835,7 +915,7 @@ impl App {
                 if k > 0 && !running {
                     let (name, a, b) = loops[k - 1].clone();
                     self.remember_song(&t);
-                    self.store.lab_bench.link = Some(LabLink { song: t.id, title: t.title.clone(), artist: t.artist.clone(), a, b, name: name.clone() });
+                    self.store.lab_bench.link = Some(LabLink { song: t.id, title: t.title.clone(), artist: t.artist.clone(), a, b, name: name.clone(), at: 0.0 });
                     // the song's own tempo, when Backline found its beat
                     if let Some((id, period, _)) = self.beat {
                         if id == t.id && period > 0.0 {
@@ -861,12 +941,23 @@ impl App {
         let bpm = self.store.lab_bench.bpm.max(30.0);
         let chords = self.store.lab_bench.chords.clone();
         let run_cur = self.lab_run.as_ref().and_then(|r| r.cur);
-        // the lengths shown: the chord being tapped grows as it holds
+        let pos_now = self.pos();
+        let loop_len = self.store.lab_bench.link.as_ref().map_or(0.0, |l| (l.b - l.a).max(0.0));
+        // the lengths shown: the chord being tapped grows as it holds (along the record, in the song's time)
         let lens: Vec<f32> = chords
             .iter()
             .enumerate()
             .map(|(i, c)| match (run_cur, self.lab_run.as_ref()) {
-                (Some(k), Some(r)) if k == i => (r.at[k].elapsed().as_secs_f32() * r.ratio * bpm / 60.0).max(0.1),
+                (Some(k), Some(r)) if k == i => {
+                    let secs = match r.pos.get(k) {
+                        Some(p) if r.down.is_none() => {
+                            let d = pos_now - p;
+                            if d < 0.0 { d + loop_len } else { d }
+                        }
+                        _ => r.at[k].elapsed().as_secs_f32(),
+                    };
+                    (secs * bpm / 60.0).max(0.1)
+                }
                 _ => c.beats,
             })
             .collect();
@@ -963,9 +1054,8 @@ impl App {
             }
         }
         // the playhead while it plays
-        if let (Some((t0, st)), Some(_)) = (self.lab_play.as_ref(), lit) {
-            let el = t0.elapsed().as_secs_f32() - st.first().copied().unwrap_or(0.0);
-            let beat = (el.max(0.0) * bpm / 60.0).min(total - 1e-3);
+        if let (Some(beat), Some(_)) = (self.lab_play_beat(), lit) {
+            let beat = beat.min(total - 1e-3);
             let r = (beat / per).floor() as usize;
             let (top, bot) = lane(r.min(rows - 1));
             let x = x_at(beat - r as f32 * per);

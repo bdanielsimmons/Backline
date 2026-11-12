@@ -1417,6 +1417,8 @@ struct App {
     lab_clicks: bool,
     lab_metro: bool,
     lab_with_loop: bool,
+    /// PLAY over the linked loop: the record plays and the page follows it
+    lab_loop_play: bool,
     lab_repeat: bool,
     /// TAP TEMPO's taps so far
     lab_tempo_taps: Vec<Instant>,
@@ -2336,6 +2338,7 @@ impl App {
             lab_clicks: false,
             lab_metro: true,
             lab_with_loop: false,
+            lab_loop_play: false,
             lab_repeat: false,
             lab_tempo_taps: Vec::new(),
             lab_written: true,
