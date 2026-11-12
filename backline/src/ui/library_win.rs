@@ -98,7 +98,7 @@ impl App {
         logo_mark(p, Pos2::new(c.x - half - 14.0 - m, ty - m / 2.0), mpx);
         logo_mark(p, Pos2::new(c.x + half + 14.0, ty - m / 2.0), mpx);
         ptext(p, Pos2::new(c.x, ty), Align::Center, title, tpx, pal().ink);
-        if PRACTICE {
+        if practice_tools() {
             ptext(p, c + Vec2::new(0.0, -56.0), Align::Center, "A retro player for Tidal and more", 2.0, pal().ink2);
             ptext(p, c + Vec2::new(0.0, -36.0), Align::Center, "PRACTICE EDITION: LOOP, SLOW DOWN, LEARN TUNES", 1.0, pal().dim);
         } else {
@@ -1075,7 +1075,7 @@ impl App {
             if menu_item(ui, "Now Playing") {
                 acts.push(Action::ToggleArt);
             }
-            if PRACTICE
+            if practice_tools()
                 && menu_item(ui, if self.practice { "Listen (practice tools off)" } else { "Practice (loop, slow down)" })
             {
                 acts.push(Action::TogglePractice);
@@ -1353,7 +1353,7 @@ impl App {
             ("cloud", "SoundCloud", here(Sec::Sc), 6),
             ("youtube", "YouTube", here(Sec::Yt), 7),
         ];
-        if PRACTICE {
+        if practice_tools() {
             rows.extend([
                 // practice in three groups: what you play, how it works, every day
                 ("", "Repertoire", false, 0),
@@ -1478,7 +1478,7 @@ impl App {
     /// skin's guide. Returns the row's height.
     /// Listen / Practice: the app's two modes as a switch with words, under the name (returns its height).
     fn mode_switch(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
-        if !PRACTICE {
+        if !practice_tools() {
             return 0.0;
         }
         let h = 30.0 * font::ui_scale();
@@ -1539,7 +1539,7 @@ impl App {
         crate::vicon::gem(&p, gem, pal().ink, pal().ink2);
         let d = 30.0 * sc;
         let mut y = gem.max.y + 10.0;
-        if PRACTICE {
+        if practice_tools() {
             for (k, (icon, on, tip)) in [
                 ("headphones", !self.practice, "Listen: no loop, no slow-down."),
                 ("wave", self.practice, "Practice: loop, slow down, the band and your tools.  (P)"),
@@ -1608,7 +1608,7 @@ impl App {
             },
             1,
         )];
-        if PRACTICE {
+        if practice_tools() {
             items.push(("focus", self.lib_hidden, "Hide the library: just the player and your tools.".into(), 2));
         }
         items.push(("mini", false, "Mini player.".into(), 4));
@@ -1744,7 +1744,7 @@ impl App {
                 }
             }
             // on a practice page with the side list (no tab row to hold it): ALL PAGES, at the end of this row
-            let pages = crate::PRACTICE
+            let pages = crate::practice_tools()
                 && !tabs
                 && !side
                 && self.sec.practice();

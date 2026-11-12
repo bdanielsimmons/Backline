@@ -116,7 +116,7 @@ impl App {
         inset(p, tb, pal().display);
         let title_txt = match &track {
             Some(t) => format!("{} - {}  ({})", t.artists_text(), t.title, fmt_time(t.duration)),
-            None => format!("Backline {}: a retro player for Tidal", VERSION),
+            None => format!("Backline {}: a retro player for Tidal", crate::version()),
         };
         marquee(ui, tb, &title_txt, px_big, pal().ink);
         crate::TITLE_SCROLL.store((9.0 * spx(px_big)).to_bits(), std::sync::atomic::Ordering::Relaxed);
@@ -724,7 +724,7 @@ impl App {
         let room = crate::title_right(inner) - title_end;
         // (name, width, how much it matters: lower stays longer); in the order they sit, right to left
         let mut items: Vec<(&str, f32, u8)> = vec![("PIN", fit("PIN"), 4), ("MINI", fit("MINI"), 1)];
-        if PRACTICE {
+        if practice_tools() {
             items.extend([("PRACTICE", fit("PRACTICE"), 0), ("LISTEN", fit("LISTEN"), 0), ("FOCUS", fit("FOCUS"), 3)]);
         }
         items.push(("OFFLINE", fit("OFFLINE"), 3));

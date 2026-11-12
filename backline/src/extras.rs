@@ -498,7 +498,7 @@ impl App {
 
     /// The queue's window shows the lead sheet (focus mode only: elsewhere the chart has its page).
     pub(crate) fn chart_in_queue(&self) -> bool {
-        crate::PRACTICE && self.lib_hidden && self.rtab == 1
+        crate::practice_tools() && self.lib_hidden && self.rtab == 1
     }
 
     /// Put the lead sheet on the song playing: its tune when it is in one, else its changes looked up.

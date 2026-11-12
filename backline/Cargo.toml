@@ -38,6 +38,8 @@ quick-xml = "0.37"
 swash = "0.1"
 lofty = "0.22"
 trash = "5"
+# checks each update against the SHA-256 the download site publishes for it
+sha2 = "0.10"
 
 # the real macOS menu bar
 [target.'cfg(target_os = "macos")'.dependencies]

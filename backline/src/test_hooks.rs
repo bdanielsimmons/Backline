@@ -34,6 +34,7 @@ impl App {
         }
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
+            Ok("prefs") => app.show_prefs = true,
             // the practice panel, the playing song's second loop open to edit (its note box)
             Ok("loopnote") => {
                 app.practice = true;

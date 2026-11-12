@@ -1,7 +1,7 @@
 //! Preferences: how updates behave and which keys do what. Opened with the PREFS button (or from Help).
 //! Key bindings live in `App::binds` (one slot per entry of CMDS, None = unbound) and are saved with the settings.
 
-use crate::{check_box, pal, para, retro_btn, retro_btn_w, section_header, title_line, Action, App, Tip, PRACTICE};
+use crate::{check_box, pal, para, retro_btn, retro_btn_w, section_header, title_line, Action, App, Tip, practice_tools};
 use eframe::egui::{self, Key};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -255,6 +255,14 @@ impl App {
                     ui.set_height(size.y - 24.0);
                     title_line(ui, "PREFERENCES", 3.0, pal().ink);
                     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(size.y - 90.0).show(ui, |ui| {
+                        section_header(ui, "SIMPLE");
+                        if check_box(ui, "HIDE THE PRACTICE TOOLS", !practice_tools())
+                            .tip("Hides the practice tools: Practice mode, loops, tunes, the Diary, Ear, Reading, Chords, Lines, the timer and the metronome. Nothing is deleted. Turn it off to have them back.")
+                            .clicked()
+                        {
+                            acts.push(Action::ToggleSimple);
+                        }
+
                         section_header(ui, "STORAGE");
                         if self.cache_at.elapsed() > std::time::Duration::from_secs(1) {
                             self.cache_stats = crate::cache::stats();
@@ -552,7 +560,7 @@ impl App {
                         }
                         let groups = ["PLAYING", "NOW PLAYING", "PRACTICE"];
                         for (g, gname) in groups.iter().enumerate() {
-                            if g == 2 && !PRACTICE {
+                            if g == 2 && !practice_tools() {
                                 continue;
                             }
                             ui.add_space(4.0);

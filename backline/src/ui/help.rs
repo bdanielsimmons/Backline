@@ -1,7 +1,7 @@
 //! The help / about overlay (the ? button or F1): what Backline is, how it is meant to be used, the keys,
 //! and a little about where it came from. Short chunks on purpose - read only what you need.
 
-use crate::{pal, para, retro_btn, section_header, tab_row, title_line, Action, App, PRACTICE};
+use crate::{pal, para, retro_btn, section_header, tab_row, title_line, Action, App, practice_tools};
 use eframe::egui;
 
 fn points(ui: &mut egui::Ui, items: &[&str]) {
@@ -36,7 +36,7 @@ impl App {
                     ui.set_width(size.x - 24.0);
                     ui.set_height(size.y - 24.0);
                     title_line(ui, "HELP", 3.0, pal().ink);
-                    let tabs: Vec<&str> = if PRACTICE {
+                    let tabs: Vec<&str> = if practice_tools() {
                         vec!["TOUR", "START", "KEYS", "PRACTICE", "ABOUT"]
                     } else {
                         vec!["TOUR", "START", "KEYS", "ABOUT"]
@@ -78,7 +78,7 @@ fn tour_tab(ui: &mut egui::Ui, pick: &mut Option<u8>) {
     if retro_btn(ui, "TAKE THE TOUR", true).clicked() {
         *pick = Some(0);
     }
-    if PRACTICE {
+    if practice_tools() {
         ui.add_space(8.0);
         para(ui, "The practice tools have their own tour. Take it when you want to loop and slow down music.", pal().ink);
         if retro_btn(ui, "PRACTICE TOUR", false).clicked() {
@@ -151,7 +151,7 @@ fn keys_tab(ui: &mut egui::Ui, binds: &[Option<egui::Key>], open_prefs: &mut boo
         *open_prefs = true;
     }
     for (g, name) in ["PLAYING", "NOW PLAYING", "PRACTICE"].iter().enumerate() {
-        if g == 2 && !PRACTICE {
+        if g == 2 && !practice_tools() {
             continue;
         }
         section_header(ui, name);
@@ -197,9 +197,9 @@ fn about_tab(ui: &mut egui::Ui) {
     section_header(ui, "VERSION");
     let b = crate::update::build();
     let v = if b > 0 {
-        format!("Backline {} build {}", crate::VERSION, b)
+        format!("Backline {} build {}", crate::version(), b)
     } else {
-        format!("Backline {} (local build)", crate::VERSION)
+        format!("Backline {} (local build)", crate::version())
     };
     para(ui, &v, pal().ink);
     para(ui, "Backline checks for updates automatically. It installs them the next time you open it, or when you click the bar at the top.", pal().ink2);

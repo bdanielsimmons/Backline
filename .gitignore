@@ -14,3 +14,4 @@ reading_book.txt
 # stray build output that once landed in src/ (never commit)
 /backline/src/release/
 /backline/src/.rustc_info.json
+__pycache__/

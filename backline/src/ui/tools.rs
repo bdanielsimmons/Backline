@@ -202,7 +202,7 @@ impl App {
     // ---------------------------------------------------------------- TIMER
     /// Flash border, the focus timer and the metronome (each opens from its pill; one big panel at a time).
     pub(crate) fn floating_tools(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
-        if !crate::PRACTICE {
+        if !crate::practice_tools() {
             return;
         }
         self.timer_logic(acts);

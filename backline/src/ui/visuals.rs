@@ -1278,7 +1278,7 @@ impl App {
         // (never while practising: playing along with a loop for minutes isn't stepping away; nor while the visuals
         // are in their own window, already showing)
         let playing =
-            self.cur.is_some() && !self.paused && !self.stopped && !(crate::PRACTICE && self.practice) && self.pop.is_none();
+            self.cur.is_some() && !self.paused && !self.stopped && !(crate::practice_tools() && self.practice) && self.pop.is_none();
         if self.vis_idle > 0 && playing && !self.vis_full && self.vis_idle_since.elapsed().as_secs() >= self.vis_idle as u64 * 60
         {
             self.vis_set_full(true, true);

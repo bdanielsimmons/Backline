@@ -215,7 +215,7 @@ pub(crate) fn goto_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, t
 
 /// Right-click menu for loop points (shared by the seek bar and the practice timeline).
 pub(crate) fn loop_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: f32, both: bool, loop_on: bool, practice: bool) {
-    if !PRACTICE {
+    if !practice_tools() {
         return;
     }
     if menu_item(ui, &format!("Loop start (A) here  {}", fmt_t(t))) {
@@ -774,7 +774,7 @@ pub(crate) fn song_items(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: &Track, l
         acts.push(Action::ToggleLike(t.clone()));
         ui.close_menu();
     }
-    if PRACTICE && menu_item(ui, "Add to a Tune...") {
+    if practice_tools() && menu_item(ui, "Add to a Tune...") {
         acts.push(Action::PickTune(t.clone()));
         ui.close_menu();
     }

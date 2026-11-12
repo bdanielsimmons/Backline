@@ -54,7 +54,13 @@ impl App {
         }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
-        app.wv_notes = PRACTICE && st["wv_notes"].as_bool().unwrap_or(false);
+        // SIMPLE: settings from before it was a switch don't have it, so the copy starts as the edition it was built
+        // as, and saves that, so the update after (one app for everyone) keeps it
+        match st["simple"].as_bool() {
+            Some(b) => crate::SIMPLE.store(b, Ordering::Relaxed),
+            None => app.dirty = true,
+        }
+        app.wv_notes = practice_tools() && st["wv_notes"].as_bool().unwrap_or(false);
         if let Some(v) = st["export_pick"].as_u64() {
             app.export_pick = (v as usize).min(crate::extras::EXPORT_AS.len() - 1);
         }
@@ -425,6 +431,7 @@ impl App {
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],
             "loop_safe": skin::LOOP_SAFE.load(Ordering::Relaxed),
             "reduce_motion": skin::calm(),
+            "simple": !crate::practice_tools(),
             "intro_file": self.intro_file,
             "intro_sound": self.intro_sound,
             "art_op": self.art_op,

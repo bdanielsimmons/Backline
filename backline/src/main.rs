@@ -222,9 +222,21 @@ const EQ_PRESETS: [(&str, [f32; 10]); 4] = [
 ];
 
 /// Shown in the player and the log so you can tell which build you are running.
-const VERSION: &str = if PRACTICE { "v9 STUDIO" } else { "v9" };
-/// Built with `--no-default-features` the practice tools (files, tunes, diary, loops, timer) are left out.
-const PRACTICE: bool = cfg!(feature = "practice");
+fn version() -> &'static str {
+    if practice_tools() {
+        "v9 STUDIO"
+    } else {
+        "v9"
+    }
+}
+/// SIMPLE (in PREFERENCES): just the player, the practice tools (files, tunes, diary, loops, timer) hidden. Nothing
+/// is deleted, so turning it off brings them back as they were. A copy built with `--no-default-features` (the old
+/// simple edition) starts with it on, and keeps it on through every update after.
+pub(crate) static SIMPLE: AtomicBool = AtomicBool::new(!cfg!(feature = "practice"));
+/// The practice tools are showing (SIMPLE is off).
+pub(crate) fn practice_tools() -> bool {
+    !SIMPLE.load(Ordering::Relaxed)
+}
 
 /// Points in the waveform visualizer.
 const WAVE_N: usize = 128;
@@ -543,6 +555,8 @@ enum Action {
     TogglePin,
     ToggleEq,
     TogglePractice,
+    /// SIMPLE in PREFERENCES: just the player, or the practice tools too
+    ToggleSimple,
     /// move the whole A-B loop by its own length: on to the next phrase (true) or back to the one before
     ShiftLoop(bool),
     SetAAt(f32),
@@ -2644,7 +2658,7 @@ impl App {
             app.queue = Arc::new(l.queue.iter().map(|v| v.to_track()).collect());
             app.cur = Some(l.index.min(l.queue.len() - 1));
         }
-        crate::api::log(&format!("backline {} started (token saved: {})", VERSION, app.api.has_token()));
+        crate::api::log(&format!("backline {} started (token saved: {})", version(), app.api.has_token()));
         // a test copy (a test profile, BACKLINE_OPEN or BACKLINE_MUTE) makes no sound - not even the opening chime:
         // it plays, but nothing reaches the speakers
         // (BACKLINE_SHOW: a test copy put in front of you to try - with sound)

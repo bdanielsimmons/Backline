@@ -39,9 +39,9 @@ Every release lists its full changes on the [Releases page](../../releases).
 1. Upload everything in this folder to your GitHub repo (keep `.github/workflows/build.yml`;
    if hidden folders get dropped, create that file in the GitHub web UI and paste in `build.yml.copy`).
 2. Actions tab -> the `build` run -> wait ~5-10 min.
-3. Each run makes four downloads (Artifacts, bottom of the run page):
-   - `backline-windows-practice` / `backline-mac-practice`: the full app with the practice studio
-   - `backline-windows-simple` / `backline-mac-simple`: just the Tidal player, none of the practice tools
+3. Each run makes the downloads (Artifacts, bottom of the run page): `backline-windows-practice` /
+   `backline-mac-practice`. Want just the player? Turn on SIMPLE at the top of PREFERENCES: the practice tools hide
+   (nothing is deleted). The `-simple` downloads are the same app with SIMPLE on to start, kept for older copies.
    Windows: unzip and run the `.exe`. Mac (Apple Silicon and Intel in one): unzip, then `tar -xzf` the archive, and the first
    time right-click `backline` -> Open (or run `xattr -dr com.apple.quarantine backline`) because it is not signed.
    Stem separation is Windows-only for now; everything else works on both.

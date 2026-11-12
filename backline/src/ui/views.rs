@@ -14,7 +14,7 @@ pub(crate) use crate::widgets::{dim_line, form_label, label};
 use crate::{
     bh, cache, chip, col_header, col_on, fill_rect, fmt_t, fmt_time, inset, lcd_box, list_row, menu_item, outline, pal, para,
     play_buttons, retro_btn, retro_btn_w, section_header, tab_row, table_header, title_line, track_cells, window_deco, Action,
-    App, Ed, RowState, Sec, Side, Tip, PRACTICE,
+    App, Ed, RowState, Sec, Side, Tip, practice_tools,
 };
 use crate::{check_box, dropdown};
 use eframe::egui::{self, Align, Pos2, Rect, Sense, Vec2};
@@ -360,15 +360,15 @@ impl App {
         // the BACKLINE tab covers its own page and the pages opened from it
         let side = self.side.is_some();
         let in_practice = PRACTICE_SECS.iter().any(|s| s.0 == self.sec);
-        let tabs: &[&str] = if PRACTICE { &["MUSIC", "PRACTICE", "BACKLINE"] } else { &["MUSIC", "BACKLINE"] };
+        let tabs: &[&str] = if practice_tools() { &["MUSIC", "PRACTICE", "BACKLINE"] } else { &["MUSIC", "BACKLINE"] };
         let last = tabs.len() - 1;
-        let cur = if side { last } else { (PRACTICE && in_practice) as usize };
+        let cur = if side { last } else { (practice_tools() && in_practice) as usize };
         let top = ui.cursor().min.y;
         if let Some(i) = tab_row(ui, tabs, cur) {
             if i == last {
                 acts.push(Action::BacklinePage);
             } else if i != cur {
-                let to_practice = PRACTICE && i == 1;
+                let to_practice = practice_tools() && i == 1;
                 let music: Vec<Sec> = [Sec::Mine, Sec::Lists, Sec::Tidal, Sec::Files, Sec::Sc, Sec::Yt]
                     .into_iter()
                     .filter(|s| *s != Sec::Tidal || !self.offline)
@@ -406,7 +406,7 @@ impl App {
             }
             return;
         }
-        if PRACTICE && in_practice {
+        if practice_tools() && in_practice {
             let cur = PRACTICE_SECS.iter().position(|s| s.0 == self.sec).unwrap_or(0);
             // the tabs, then ALL PAGES at the end of the row: every page in one list
             let go_w = pages_w();
@@ -604,7 +604,7 @@ impl App {
 
     /// "Pick up where you left off" in one press.
     pub(crate) fn continue_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        if !PRACTICE || !(self.cur.is_none() || self.stopped) {
+        if !practice_tools() || !(self.cur.is_none() || self.stopped) {
             return;
         }
         let Some(l) = &self.store.last else { return };
@@ -697,7 +697,7 @@ impl App {
     /// Called at the top of the queue window: in focus mode (no library, so no Chart page), the QUEUE / CHART chips
     /// in the window's title strip (`ui`, the panel's), the lead sheet on its page (`page`).
     pub(crate) fn right_header(&mut self, ui: &mut egui::Ui, page: &mut egui::Ui, acts: &mut Vec<Action>) -> bool {
-        if !PRACTICE || !self.lib_hidden {
+        if !practice_tools() || !self.lib_hidden {
             return false;
         }
         self.right_tabs(ui, acts);
@@ -1044,7 +1044,7 @@ impl App {
         }
         if self.store.files.is_empty() && !self.files_busy {
             ui.add_space(6.0);
-            let tail = if PRACTICE { " Loops, speed and sections all work on them." } else { "" };
+            let tail = if practice_tools() { " Loops, speed and sections all work on them." } else { "" };
             para(ui, &format!("Drag audio files or folders onto this window, or use + ADD. Nothing is copied: files stay where they are.{}", tail), pal().ink2);
         }
         if !self.store.folders.is_empty() {
@@ -1127,7 +1127,7 @@ impl App {
         self.saved_lists(ui, acts, "yt");
         if self.store.yt.is_empty() {
             para(ui, "One-time setup: press GET YT-DLP. Then paste a link and press ADD.", pal().ink2);
-            if PRACTICE {
+            if practice_tools() {
                 para(ui, "Play-alongs, lessons, live takes: anything you want to loop and slow down.", pal().ink2);
             }
             para(
@@ -1257,7 +1257,7 @@ impl App {
             .store
             .last
             .as_ref()
-            .filter(|_| crate::PRACTICE && (self.cur.is_none() || self.stopped))
+            .filter(|_| crate::practice_tools() && (self.cur.is_none() || self.stopped))
             .map(|l| (l.version.title.clone(), l.version.artist.clone(), crate::fmt_time(l.pos)));
         egui::Area::new(egui::Id::new("news_panel"))
             .order(egui::Order::Tooltip)
@@ -1361,7 +1361,7 @@ impl App {
                         para(ui, "A checked item marked REPLACES YOURS replaces the one you have.", pal().red);
                     }
                     // the plain player has no DIARY, MY PLAN, LINES or READING: say so, rather than unlock into nothing
-                    if !crate::PRACTICE && !p.parts.is_empty() {
+                    if !crate::practice_tools() && !p.parts.is_empty() {
                         crate::views::dim_line(
                             ui,
                             "THIS IS THE PLAIN PLAYER: MY PLAN, THE BOOKS, LINES AND CHORD MELODIES ARE IN THE PRACTICE VERSION.",

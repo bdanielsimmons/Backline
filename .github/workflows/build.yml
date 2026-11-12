@@ -127,3 +127,23 @@ jobs:
             git commit -qm "README: what's new in $tag [no release]" README.md
             git push origin HEAD:main || echo "README not updated: main moved on meanwhile"
           fi
+      # the download site (GitHub Pages): the folder made here, put on the site by the next job
+      - name: Make the download site
+        run: python3 .github/publish_site.py "${{ github.run_number }}" dist "$RUNNER_TEMP/notes.md" "https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}" site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # Puts the release's download site on GitHub Pages (the app updates from there, see data/update.rs)
+  site:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

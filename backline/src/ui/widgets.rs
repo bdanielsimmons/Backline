@@ -6,7 +6,7 @@ use crate::font::{self, fit, ptext, ptext_fit, snap, spx, text_w, thick, wrap};
 use crate::icons::*;
 use crate::skin::*;
 use crate::{tour, update, winamp_ui};
-use crate::{HEAD_H, PRACTICE, ROW_H, VERSION};
+use crate::{practice_tools, version, HEAD_H, ROW_H};
 use eframe::egui::{self, Align, Color32, Pos2, Rect, Rounding, Sense, Stroke, Vec2};
 
 pub(crate) const BTN_H: f32 = 26.0;
@@ -426,8 +426,8 @@ pub(crate) fn logo(ui: &mut egui::Ui) {
     let (tsz, ty, gy) = (3.0, -8.0, 13.0);
     ptext(p, Pos2::new(rect.min.x + 50.0, rect.center().y + ty), Align::Min, "BACKLINE", tsz, pal().ink);
     let tag =
-        if PRACTICE { "A RETRO PLAYER FOR TIDAL AND MORE - MADE FOR PRACTICE" } else { "A RETRO PLAYER FOR TIDAL AND MORE" };
-    let version = if update::build() > 0 { format!("{} .{}", VERSION, update::build()) } else { VERSION.to_string() };
+        if practice_tools() { "A RETRO PLAYER FOR TIDAL AND MORE - MADE FOR PRACTICE" } else { "A RETRO PLAYER FOR TIDAL AND MORE" };
+    let version = if update::build() > 0 { format!("{} .{}", version(), update::build()) } else { version().to_string() };
     // the tagline stops short of the version number, whatever the font's width
     let vw = text_w(&version, 1.0);
     let tag_w = rect.width() - 51.0 - vw - 24.0;

@@ -5,7 +5,7 @@
 //! a slower speed, a loop, an EQ preset. When it ends, everything comes back: what was showing, the queue, the
 //! song and where it was, the speed, the loop and the equalizer.
 
-use crate::{pal, retro_btn, title_line, Action, App, PRACTICE};
+use crate::{pal, retro_btn, title_line, Action, App, practice_tools};
 use eframe::egui::{self, Color32, Pos2, Rect};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -304,7 +304,7 @@ pub(crate) struct TourPlay {
 }
 
 fn steps(kind: u8) -> &'static [Step] {
-    if kind == 1 && PRACTICE {
+    if kind == 1 && practice_tools() {
         PRACTICE_TOUR
     } else {
         BASIC
@@ -559,7 +559,7 @@ impl App {
         if self.art_view != want_art {
             self.art_view = want_art;
         }
-        if PRACTICE && self.practice != want_practice {
+        if practice_tools() && self.practice != want_practice {
             self.apply(Action::TogglePractice);
         }
         self.more = want_more;
@@ -687,7 +687,7 @@ impl App {
         self.tour_unplay();
         if let Some((art, practice, more, mtab)) = self.tour_restore.take() {
             self.art_view = art;
-            if PRACTICE && self.practice != practice {
+            if practice_tools() && self.practice != practice {
                 self.apply(Action::TogglePractice);
             }
             self.more = more;

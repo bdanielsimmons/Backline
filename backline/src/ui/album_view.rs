@@ -26,7 +26,7 @@ impl App {
         // ---- layout
         let bar_h = 96.0;
         // in practice mode the loop and speed tools get their own band along the top; everything else moves down
-        let prac = PRACTICE && self.practice;
+        let prac = practice_tools() && self.practice;
         let strip_h = bh() + 14.0;
         let top = 28.0 + if prac { strip_h + 10.0 } else { 0.0 };
         let area = Rect::from_min_max(full.min + Vec2::new(28.0, top), Pos2::new(full.max.x - 28.0, full.max.y - bar_h - 12.0));
@@ -499,7 +499,7 @@ impl App {
             pal().bar_txt,
         );
         // saved loops and the live A-B loop, laid over the bar so you can see where the work is (practice mode only)
-        if PRACTICE && self.practice && active && dur > 0.0 {
+        if practice_tools() && self.practice && active && dur > 0.0 {
             let x_at = |t: f32| sb.min.x + 2.0 + (sb.width() - 4.0) * (t / dur).clamp(0.0, 1.0);
             let secs: Vec<(String, f32, f32)> = self
                 .cur_track()
@@ -944,7 +944,7 @@ impl App {
                 if icon_btn(ui, &IC_MENU, self.art_queue, ink).tip("Queue").clicked() {
                     self.art_queue = !self.art_queue;
                 }
-                if PRACTICE
+                if practice_tools()
                     && retro_btn(ui, "PRACTICE", self.practice).tip("Practice mode: loop and speed tools  (P)").clicked()
                 {
                     acts.push(Action::TogglePractice);

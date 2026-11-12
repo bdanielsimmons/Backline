@@ -710,7 +710,29 @@ impl App {
                     "SAVING TRACKS TO DISK".to_string()
                 });
             }
-            Action::TogglePractice if PRACTICE => {
+            Action::ToggleSimple => {
+                let simple = practice_tools();
+                if simple {
+                    // leave practice the way the Listen button would, while it still answers: the song at its own
+                    // speed, no loop, the metronome stopped, off any practice page
+                    if self.practice {
+                        self.apply(Action::TogglePractice);
+                    }
+                    if self.mt.on {
+                        self.apply(Action::Opt(Opt::MetroOn));
+                    }
+                    if self.sec.practice() {
+                        self.apply(Action::Home);
+                    }
+                    self.timer_open = false;
+                    self.metro_open = false;
+                    self.export_open = false;
+                }
+                crate::SIMPLE.store(simple, std::sync::atomic::Ordering::Relaxed);
+                self.dirty = true;
+                self.set_note(if simple { "SIMPLE: JUST THE PLAYER" } else { "PRACTICE TOOLS ON" });
+            }
+            Action::TogglePractice if practice_tools() => {
                 self.practice = !self.practice;
                 if self.practice {
                     self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
@@ -947,7 +969,7 @@ impl App {
                     // coming over from a music page, a practice page turns practice mode on (its panel opens); between
                     // practice pages your Listen / Practice choice stays as you set it
                     let from_music = !self.sec.practice();
-                    if crate::PRACTICE && !self.practice && from_music {
+                    if crate::practice_tools() && !self.practice && from_music {
                         self.practice = true;
                         self.loop_on = self.loop_a.is_some() && self.loop_b.is_some();
                         self.sync_loop();
@@ -1189,9 +1211,9 @@ impl App {
                         if on("melodies") {
                             self.cm_list = None;
                         }
-                        if !done.is_empty() && !crate::PRACTICE {
-                            // kept in Backline's folder: the practice version, opened later, finds them there
-                            self.set_note(&format!("SAVED: {}. THEY SHOW UP IN THE PRACTICE VERSION", done.join(", ")));
+                        if !done.is_empty() && !crate::practice_tools() {
+                            // kept in Backline's folder: with SIMPLE turned off they're there
+                            self.set_note(&format!("SAVED: {}. TURN OFF SIMPLE IN PREFERENCES TO USE THEM", done.join(", ")));
                         } else if !done.is_empty() {
                             self.set_note(&format!("UNLOCKED: {}", done.join(", ")));
                         }

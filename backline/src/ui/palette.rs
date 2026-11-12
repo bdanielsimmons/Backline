@@ -3,7 +3,7 @@
 //! the one place that turns an action name into the action (used by the palette and the Mac menu bar).
 
 use crate::prefs::{Cmd, CMDS};
-use crate::{fill_rect, pal, ptext, ptext_fit, raised_h, retro_btn_w, Action, App, Tip, PRACTICE};
+use crate::{fill_rect, pal, ptext, ptext_fit, raised_h, retro_btn_w, Action, App, Tip, practice_tools};
 use eframe::egui::{self, Align, Color32, Pos2, Sense, Vec2};
 
 /// (what you see, the action name, only in the practice build)
@@ -161,7 +161,7 @@ impl App {
 
     pub(crate) fn run_named(&mut self, id: &str) {
         if let Some(c) = CMDS.iter().find(|c| c.id == id) {
-            if c.group == 2 && !PRACTICE {
+            if c.group == 2 && !practice_tools() {
                 return;
             }
             let mut acts = Vec::new();
@@ -199,8 +199,8 @@ impl App {
                 self.show_help = false;
                 self.tour_start(0);
             }
-            "metro" if PRACTICE => self.apply(Action::MetroPanel),
-            "timer" if PRACTICE => self.apply(Action::TimerPanel),
+            "metro" if practice_tools() => self.apply(Action::MetroPanel),
+            "timer" if practice_tools() => self.apply(Action::TimerPanel),
             "update_check" => {
                 if matches!(self.upd_state, 0 | 3) {
                     self.start_update_check();
@@ -219,7 +219,7 @@ impl App {
         // typing, arrows, enter, escape
         let mut run: Option<String> = None;
         let rows: Vec<(&str, &str)> =
-            ITEMS.iter().filter(|i| (PRACTICE || !i.2) && matches(i.0, &self.palette_q)).map(|i| (i.0, i.1)).collect();
+            ITEMS.iter().filter(|i| (practice_tools() || !i.2) && matches(i.0, &self.palette_q)).map(|i| (i.0, i.1)).collect();
         if self.palette_sel >= rows.len() {
             self.palette_sel = rows.len().saturating_sub(1);
         }
