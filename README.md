@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Progression Lab: grip a chord move, tap its timing with a count-off, and see it written out
 - Export a loop as full, no vocals and no vocals/bass/drums, or each stem on its own, with one save window
 - Updates come over Sync from your other computer
 - One Skins page: every Backline look shown as its player, Winamp skins a switch away; Greyscale and 15 more looks
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Pitch tab tuning in Hz: find or type the record's A (A = 452), set yours, and match them in one click
 - Copy songs from your other computer: browse its files, pick the ones you want, and they copy in the background
 - Save a radio or mix as a playlist, in Backline or on Tidal, and add songs to playlists without leaving the page
-- Search, stars and #tags for your diary notes, flipped through by year, month or day
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
