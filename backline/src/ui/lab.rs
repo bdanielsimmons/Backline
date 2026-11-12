@@ -281,6 +281,36 @@ impl App {
         starts.windows(2).position(|w| el >= w[0] && el < w[1])
     }
 
+    /// The progressions linked to a song's loop (a to b): the kept ones (by index), and the one on the bench when it
+    /// isn't kept under its name.
+    pub(crate) fn lab_moves_on(&self, song: i64, a: f32, b: f32) -> Vec<(String, Option<usize>)> {
+        let hit = |l: &Option<LabLink>| l.as_ref().is_some_and(|l| l.song == song && (l.a - a).abs() < 0.05 && (l.b - b).abs() < 0.05);
+        let mut out: Vec<(String, Option<usize>)> =
+            self.store.lab.iter().enumerate().filter(|(_, p)| hit(&p.link)).map(|(k, p)| (p.name.clone(), Some(k))).collect();
+        let bench = &self.store.lab_bench;
+        let kept = self.store.lab.iter().any(|p| p.name.trim().eq_ignore_ascii_case(bench.name.trim()));
+        if hit(&bench.link) && !kept {
+            out.push((if bench.name.trim().is_empty() { "UNNAMED".to_string() } else { bench.name.clone() }, None));
+        }
+        out
+    }
+
+    /// Open the Progression Lab, with a kept progression put on the bench (None: the bench as it is). Undo brings
+    /// back what was on it.
+    pub(crate) fn open_lab(&mut self, kept: Option<usize>, acts: &mut Vec<Action>) {
+        if let Some(p) = kept.and_then(|k| self.store.lab.get(k).cloned()) {
+            self.lab_stop();
+            self.store.lab_bench = p;
+            self.lab_sel = 0;
+            self.lab_note.clear();
+            self.store_dirty = true;
+        }
+        self.chords_tab = 9;
+        if self.sec != Sec::Chords {
+            acts.push(Action::Section(Sec::Chords));
+        }
+    }
+
     /// Over the loop: where the record is, as a beat of the progression (None before its first chord, or while the
     /// song is paused or isn't the linked one).
     fn lab_loop_beat(&self) -> Option<f32> {

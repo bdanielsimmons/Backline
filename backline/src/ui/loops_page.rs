@@ -827,7 +827,10 @@ impl App {
                 Row::Loop(i, s, w) => {
                     let on = playing && la.is_some_and(|a| (a - s.a).abs() < 0.05) && lb.is_some_and(|b| (b - s.b).abs() < 0.05);
                     let nl = note_lines(&s.note, ui.available_width() - 80.0);
-                    let h = if nl.is_empty() { 32.0 } else { 30.0 + nl.len() as f32 * note_lh() + 6.0 };
+                    // the Progression Lab moves linked to this loop: a tag each, under the name and the note
+                    let moves = self.lab_moves_on(c.id, s.a, s.b);
+                    let tags_h = if moves.is_empty() { 0.0 } else { 26.0 };
+                    let h = if nl.is_empty() { 32.0 + tags_h } else { 30.0 + nl.len() as f32 * note_lh() + 6.0 + tags_h };
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
                     let p = ui.painter();
                     if on {
@@ -847,6 +850,29 @@ impl App {
                     let mw = ptext(p, Pos2::new(r.max.x - 40.0, cy), Align::Max, &meta, 1.0, pal().ink2);
                     ptext_fit(p, Pos2::new(r.min.x + 36.0, cy), Align::Min, &s.name, 1.6, (r.width() - mw - 90.0).max(20.0), if on { pal().bar_txt } else { pal().ink });
                     draw_note_lines(p, r.min.x + 36.0, r.min.y + 28.0, &nl, pal().ink2);
+                    let mut tag_hit = false;
+                    if !moves.is_empty() {
+                        let ty = r.min.y + 28.0 + nl.len() as f32 * note_lh() + if nl.is_empty() { 0.0 } else { 4.0 };
+                        let mut x = r.min.x + 36.0;
+                        for (k, (name, kept)) in moves.iter().enumerate() {
+                            let label = format!("MOVE: {}", name);
+                            let w = crate::font::text_w(&label, 1.0) + 18.0;
+                            let tr = Rect::from_min_size(Pos2::new(x, ty), Vec2::new(w, 20.0));
+                            let th = ui
+                                .interact(tr, ui.id().with(("loop_move", c.id, *i, k)), Sense::click())
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .tip("Open it in the Progression Lab");
+                            let p = ui.painter();
+                            p.rect_filled(tr, 10.0, if th.hovered() { pal().sel } else { pal().panel_dk });
+                            p.rect_stroke(tr, 10.0, Stroke::new(1.0_f32, pal().accent));
+                            ptext(p, Pos2::new(tr.min.x + 9.0, tr.center().y), Align::Min, &label, 1.0, pal().ink);
+                            if th.clicked() {
+                                tag_hit = true;
+                                self.open_lab(*kept, acts);
+                            }
+                            x += w + 6.0;
+                        }
+                    }
                     let star_r = Rect::from_center_size(Pos2::new(r.max.x - 18.0, cy), Vec2::splat(24.0));
                     let sh = ui
                         .interact(star_r, ui.id().with(("loop_star", c.id, *i)), Sense::click())
@@ -867,7 +893,7 @@ impl App {
                         }
                     }
                     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play this loop. Right-click to rename or add a note.");
-                    if resp.clicked() && !sh.clicked() {
+                    if resp.clicked() && !sh.clicked() && !tag_hit {
                         if let Some(v) = &c.v {
                             acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
                         }
