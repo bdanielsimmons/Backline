@@ -230,6 +230,7 @@ fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go
                 ("COMPING MOVES", Chords(7, ANY)),
                 ("  GOSPEL", Chords(7, 0)),
                 ("  QUARTAL & CLUSTERS", Chords(7, 1)),
+                ("PROGRESSION LAB", Chords(9, ANY)),
             ],
         ),
         ("EAR", vec![("EAR TRAINING", Ear)]),
