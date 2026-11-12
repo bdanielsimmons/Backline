@@ -105,8 +105,11 @@ impl App {
         if let Some(v) = st["lab_metro"].as_bool() {
             app.lab_metro = v;
         }
-        if let Some(v) = st["lab_hear"].as_u64() {
-            app.lab_hear = (v as u8).min(2);
+        if let Some(v) = st["lab_with_loop"].as_bool() {
+            app.lab_with_loop = v;
+        }
+        if let Some(v) = st["lab_repeat"].as_bool() {
+            app.lab_repeat = v;
         }
         if let Some(v) = st["lab_written"].as_bool() {
             app.lab_written = v;
@@ -429,7 +432,8 @@ impl App {
             "neck_zoom": self.neck_zoom,
             "lab_snap": self.lab_snap,
             "lab_metro": self.lab_metro,
-            "lab_hear": self.lab_hear,
+            "lab_with_loop": self.lab_with_loop,
+            "lab_repeat": self.lab_repeat,
             "lab_written": self.lab_written,
             "q_drop": self.q_drop,
             "mine_off": self.mine_off,

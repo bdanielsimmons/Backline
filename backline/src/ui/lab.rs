@@ -17,7 +17,9 @@ use crate::views::field;
 /// SNAP's choices; a length moves by `snap_step` (Off still moves in 20ths of a beat, so an edge can be dragged).
 pub(crate) const SNAPS: [&str; 4] = ["OFF", "8THS", "16THS", "TRIPLETS"];
 const ARTS: [&str; 3] = ["STRUM", "HAMMER ON", "SLIDE IN"];
-const HEARS: [&str; 3] = ["GUITAR", "RECORD", "BOTH"];
+/// How it plays (and TAP TIMING runs) when it's linked to a loop: on its own (your chords and the click; a song
+/// playing pauses), or the record's loop alone.
+const PLAYS: [&str; 2] = ["UNACCOMPANIED", "WITH THE LOOP"];
 /// a new chord's placeholder length, until it's timed
 const PLACEHOLDER: f32 = 2.0;
 /// how late a tap lands after the sound it answers (the sound's way out, and the hand)
@@ -303,20 +305,36 @@ impl App {
         self.lab_quiet_clicks();
     }
 
+    /// Over the linked loop's record (WITH THE LOOP picked), or on its own.
+    fn lab_over_loop(&self) -> bool {
+        self.lab_with_loop && self.store.lab_bench.link.is_some()
+    }
+
+    /// On its own: a song playing pauses, so only your chords and the click are heard (like the Trainer).
+    fn lab_quiet_song(&mut self, acts: &mut Vec<Action>) {
+        if self.cur.is_some() && !self.paused && !self.stopped {
+            acts.push(Action::Toggle);
+        }
+    }
+
     fn lab_play_all(&mut self, acts: &mut Vec<Action>) {
         self.lab_stop();
-        let hear = if self.lab_linked_here() { self.lab_hear } else { 0 };
-        if hear > 0 {
+        let over = self.lab_over_loop();
+        // over the record, the record alone: the guitar on top of it never lines up exactly
+        let guitar = !over;
+        if over {
             self.lab_go_to_loop(acts);
+        } else {
+            self.lab_quiet_song(acts);
         }
         let p = &self.store.lab_bench;
         let spb = 60.0 / p.bpm.max(30.0);
         let (ev, starts) = steps_events(&steps_of(p, self.chord_sp), spb);
         let total = starts.last().copied().unwrap_or(1.0);
-        if hear != 1 {
+        if guitar {
             self.player.send(Cmd::Once(crate::band::string_events(&ev, total + 1.8), 0.9));
         }
-        if hear == 0 && self.lab_metro {
+        if !over && self.lab_metro {
             let lead = vec![0i16; (0.1 * crate::band::RATE) as usize];
             self.player.send(Cmd::Pcm(0, lead, click_bar(p.bpm, true), 0.8));
             self.lab_clicks = true;
@@ -331,12 +349,38 @@ impl App {
         if self.lab_run.is_some() && away {
             self.lab_end_timing(false);
         }
+        // (finished with REPEAT on and the page open: the page starts it again)
         let over = self.lab_play.as_ref().is_some_and(|(t0, st)| t0.elapsed().as_secs_f32() > st.last().copied().unwrap_or(0.0) + 0.3);
-        if over || (away && self.lab_play.is_some()) {
+        if (over && (away || !self.lab_repeat)) || (away && self.lab_play.is_some()) {
             self.lab_play = None;
         }
         if self.lab_clicks && self.lab_run.is_none() && self.lab_play.is_none() {
             self.lab_quiet_clicks();
+        }
+    }
+
+    /// TAP TEMPO: each tap clicks; two or more (none more than 2 seconds apart) set the tempo from their spacing.
+    fn lab_tempo_tap(&mut self) {
+        let now = Instant::now();
+        if self.lab_tempo_taps.last().is_some_and(|t| now.duration_since(*t).as_secs_f32() > 2.0) {
+            self.lab_tempo_taps.clear();
+        }
+        self.lab_tempo_taps.push(now);
+        if self.lab_tempo_taps.len() > 6 {
+            self.lab_tempo_taps.remove(0);
+        }
+        let (hi, _) = crate::band::click_sounds();
+        self.player.send(Cmd::Once(hi.iter().map(|x| (x * 0.9 * 32767.0) as i16).collect(), 0.9));
+        let t = &self.lab_tempo_taps;
+        if t.len() >= 2 {
+            let each = t[t.len() - 1].duration_since(t[0]).as_secs_f32() / (t.len() - 1) as f32;
+            if each > 0.0 {
+                self.store.lab_bench.bpm = (60.0 / each).round().clamp(30.0, 240.0);
+                self.store_dirty = true;
+            }
+            self.lab_note = format!("TEMPO {} BPM FROM YOUR TAPS.", self.store.lab_bench.bpm.round() as i32);
+        } else {
+            self.lab_note = "KEEP TAPPING ON THE BEAT.".into();
         }
     }
 
@@ -349,7 +393,7 @@ impl App {
         self.lab_stop();
         let bpm = self.store.lab_bench.bpm.max(30.0);
         let spb = 60.0 / bpm;
-        let record = self.lab_linked_here() && self.lab_hear > 0;
+        let record = self.lab_over_loop();
         let now = Instant::now();
         for c in self.store.lab_bench.chords.iter_mut() {
             c.timed = false;
@@ -360,10 +404,11 @@ impl App {
             // along the record: from the loop's start, the first tap is the first chord
             self.lab_go_to_loop(acts);
             let ratio = if self.practice { self.speed as f32 / 100.0 } else { 1.0 };
-            self.lab_run = Some(LabRun { start: now, down: None, cur: None, at: Vec::new(), ratio, guitar: self.lab_hear == 2 });
+            self.lab_run = Some(LabRun { start: now, down: None, cur: None, at: Vec::new(), ratio, guitar: false });
             self.lab_note = "TAP (OR PRESS SPACE) AS EACH CHORD STARTS IN THE RECORD. ONE MORE TAP ENDS IT.".into();
             return;
         }
+        self.lab_quiet_song(acts);
         // a bar of clicks, then the first chord on 1 (laid on the same clock as the clicks, so it lands on it)
         self.player.send(Cmd::Pcm(0, click_bar(bpm, true), click_bar(bpm, self.lab_metro), 0.8));
         self.lab_clicks = true;
@@ -482,7 +527,12 @@ impl App {
         }
         self.lab_run_tick();
         crate::test_hooks::lab_auto(self, acts);
+        let was_playing = self.lab_play.is_some();
         let lit = self.lab_lit(ui);
+        // REPEAT: round again
+        if was_playing && self.lab_play.is_none() && self.lab_repeat && self.lab_run.is_none() {
+            self.lab_play_all(acts);
+        }
         if self.lab_run.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
             // Space taps (the player's own Space is held back meanwhile, see `key_commands`); Esc stops
@@ -596,6 +646,10 @@ impl App {
                     self.lab_play_all(acts);
                 }
             }
+            if !running && retro_btn(ui, "REPEAT", self.lab_repeat).tip("Play goes round and round until you stop it").clicked() {
+                self.lab_repeat = !self.lab_repeat;
+                self.dirty = true;
+            }
             let named = !self.store.lab_bench.name.trim().is_empty();
             if retro_btn(ui, "KEEP IT", false).tip("Keep it under its name (a kept one by the same name is replaced)").clicked() || out.enter {
                 if named {
@@ -633,6 +687,10 @@ impl App {
             if retro_btn_w(ui, "+", 28.0, false).clicked() && !running {
                 self.store.lab_bench.bpm = (bpm + 2.0).min(240.0);
                 self.store_dirty = true;
+            }
+            ui.add_space(8.0);
+            if retro_btn(ui, "TAP TEMPO", false).tip("Tap it on the beat a few times and the tempo follows").clicked() && !running {
+                self.lab_tempo_tap();
             }
             ui.add_space(8.0);
             if retro_btn(ui, "METRONOME", self.lab_metro).tip("Clicks while you tap the timing and when it plays").clicked() {
@@ -741,16 +799,13 @@ impl App {
                 if retro_btn(ui, &label, self.lab_linked_here()).tip("Go to this loop in the song").clicked() && !running {
                     self.lab_go_to_loop(acts);
                 }
-                if let Some(h) = dropdown(ui, "lab_hear", "HEAR", &HEARS, self.lab_hear as usize, 140.0) {
-                    self.lab_hear = h as u8;
+                if let Some(h) = dropdown(ui, "lab_play_as", "PLAY", &PLAYS, usize::from(self.lab_with_loop), 190.0) {
+                    self.lab_with_loop = h == 1;
                     self.dirty = true;
                 }
                 if retro_btn(ui, "UNLINK", false).tip("This progression stops pointing at the loop").clicked() && !running {
                     self.store.lab_bench.link = None;
                     self.store_dirty = true;
-                }
-                if self.lab_hear > 0 && !self.lab_linked_here() {
-                    crate::views::dim_line(ui, "GO TO THE LOOP FIRST TO HEAR THE RECORD.", 1.0, pal().dim);
                 }
                 return;
             }
@@ -790,10 +845,8 @@ impl App {
                     if self.store.lab_bench.name.trim().is_empty() {
                         self.store.lab_bench.name = format!("{} - {}", t.title, name);
                     }
-                    self.lab_hear = 1;
-                    self.dirty = true;
                     self.store_dirty = true;
-                    self.lab_note = format!("LINKED TO {}. TAP TIMING NOW RUNS OVER THE RECORD.", name);
+                    self.lab_note = format!("LINKED TO {}. PICK WITH THE LOOP TO PLAY OR TAP OVER THE RECORD.", name);
                 }
             }
         });

@@ -1416,7 +1416,10 @@ struct App {
     lab_drag: Option<(usize, f32, f32, f32)>,
     lab_clicks: bool,
     lab_metro: bool,
-    lab_hear: u8,
+    lab_with_loop: bool,
+    lab_repeat: bool,
+    /// TAP TEMPO's taps so far
+    lab_tempo_taps: Vec<Instant>,
     lab_written: bool,
     /// when the Lab's page was last drawn (its clicks and TAP TIMING stop when you go elsewhere)
     lab_seen: Option<Instant>,
@@ -2332,7 +2335,9 @@ impl App {
             lab_drag: None,
             lab_clicks: false,
             lab_metro: true,
-            lab_hear: 0,
+            lab_with_loop: false,
+            lab_repeat: false,
+            lab_tempo_taps: Vec::new(),
             lab_written: true,
             lab_seen: None,
             lab_undo: Vec::new(),
