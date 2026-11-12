@@ -251,7 +251,10 @@ Second line: comp lighter here.", m.1.note);
                             c([None, None, Some(6), Some(5), Some(4), Some(4)], 2.0),
                             c([None, None, Some(6), Some(6), Some(6), Some(4)], 1.5),
                             c([None, None, Some(6), Some(7), Some(6), Some(7)], 0.5),
-                            c([None, Some(6), Some(6), Some(5), Some(4), Some(4)], 4.0),
+                            c([None, Some(6), Some(6), Some(5), Some(4), Some(4)], 2.0),
+                            // a single note walking down, then a rest
+                            c([None, Some(3), None, None, None, None], 1.0),
+                            c([None; 6], 1.0),
                         ],
                         link: None,
                     };

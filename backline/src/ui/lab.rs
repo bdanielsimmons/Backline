@@ -119,7 +119,22 @@ fn shown(c: &LabChord, sp: theory::Spelling) -> String {
     if !c.name.is_empty() {
         return c.name.clone();
     }
-    grip_name(&c.grip, sp).unwrap_or_else(|| "-".to_string())
+    if let Some(n) = grip_name(&c.grip, sp) {
+        return n;
+    }
+    let notes = grip_notes(&c.grip);
+    if notes.is_empty() {
+        return "REST".to_string();
+    }
+    // a single note (or notes that aren't a chord): their names, in brackets so they don't read as a chord
+    let mut names: Vec<&str> = Vec::new();
+    for m in &notes {
+        let n = theory::note_name(m.rem_euclid(12), sp.sharps);
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    format!("({})", names.join(" "))
 }
 
 fn art_of(a: u8) -> Art {
@@ -187,9 +202,11 @@ pub(crate) fn as_bars(p: &LabProg, sp: theory::Spelling, snap: u8) -> (Vec<crate
     let mut at = 0.0_f32;
     for (i, c) in p.chords.iter().enumerate() {
         let name = shown(c, sp);
+        // a chord symbol over it only when it is a chord (a single note or a rest gets none)
+        let symbol = (!c.name.is_empty() || grip_name(&c.grip, sp).is_some()).then(|| name.clone());
         let notes: Vec<(i32, i32, i32)> =
             c.grip.iter().enumerate().filter_map(|(s, f)| f.map(|f| (theory::STANDARD[s] + f as i32, s as i32, f as i32))).collect();
-        if !grips.iter().any(|g| g.name == name) && !notes.is_empty() {
+        if symbol.is_some() && notes.len() >= 2 && !grips.iter().any(|g| g.name == name) {
             grips.push(crate::transcription::Grip { name: name.clone(), frets: c.grip.map(|f| f.map_or(-1, |f| f as i8)) });
         }
         for (k, (s, l)) in written_pieces(at, c.beats, snap).into_iter().enumerate() {
@@ -202,7 +219,7 @@ pub(crate) fn as_bars(p: &LabProg, sp: theory::Spelling, snap: u8) -> (Vec<crate
                 at: s - b as f32 * 4.0,
                 len: l,
                 notes: notes.iter().map(|(m, st, f)| [*m, *st, *f, i32::from(k > 0)]).collect(),
-                chord: (k == 0).then(|| name.clone()),
+                chord: if k == 0 { symbol.clone() } else { None },
             });
             which[b].push(i);
         }
@@ -374,6 +391,15 @@ impl App {
                 self.lab_note = "TAP (OR PRESS SPACE) AS EACH CHORD CHANGES. ONE MORE TAP AFTER THE LAST ENDS IT.".into();
             }
         }
+        self.lab_last_note();
+    }
+
+    /// On the last chord: say the next tap ends it.
+    fn lab_last_note(&mut self) {
+        let last = self.store.lab_bench.chords.len().saturating_sub(1);
+        if self.lab_run.as_ref().and_then(|r| r.cur) == Some(last) {
+            self.lab_note = "LAST CHORD: TAP ONCE MORE (OR PRESS SPACE) TO END.".into();
+        }
     }
 
     pub(crate) fn lab_tap(&mut self) {
@@ -396,6 +422,8 @@ impl App {
                 if guitar {
                     self.lab_hear(0);
                 }
+                self.lab_note = "TAP (OR PRESS SPACE) AS EACH CHORD CHANGES. ONE MORE TAP AFTER THE LAST ENDS IT.".into();
+                self.lab_last_note();
             }
             Some(c) => {
                 let secs = began.map_or(0.0, |b| now.saturating_duration_since(b).as_secs_f32());
@@ -413,6 +441,7 @@ impl App {
                     if guitar {
                         self.lab_hear(c + 1);
                     }
+                    self.lab_last_note();
                 } else {
                     self.lab_end_timing(true);
                 }
@@ -447,6 +476,10 @@ impl App {
         let n = self.store.lab_bench.chords.len();
         self.lab_sel = self.lab_sel.min(n - 1);
         self.lab_seen = Some(Instant::now());
+        // Ctrl+Z takes back the last change (the player's Z is held back on this page, see `key_commands`)
+        if self.lab_run.is_none() && self.ed.id == 0 && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)) {
+            self.lab_undo_last();
+        }
         self.lab_run_tick();
         crate::test_hooks::lab_auto(self, acts);
         let lit = self.lab_lit(ui);
@@ -469,6 +502,50 @@ impl App {
             self.lab_body(ui, acts, lit, sp);
             ui.add_space(20.0);
         });
+        self.lab_history();
+    }
+
+    /// The Lab's page is the one open.
+    pub(crate) fn lab_here(&self) -> bool {
+        self.sec == Sec::Chords && self.chords_tab == 9
+    }
+
+    /// Undo's memory: after each frame, a change to the bench keeps what it was before (a drag or a tapped timing
+    /// counts once, when it's done; the name alone doesn't count).
+    fn lab_history(&mut self) {
+        if self.lab_drag.is_some() || self.lab_run.is_some() {
+            return;
+        }
+        let now = &self.store.lab_bench;
+        let Some(was) = self.lab_was.as_ref() else {
+            self.lab_was = Some(now.clone());
+            return;
+        };
+        if was == now {
+            return;
+        }
+        let mut renamed = was.clone();
+        renamed.name = now.name.clone();
+        if &renamed != now {
+            self.lab_undo.push(was.clone());
+            if self.lab_undo.len() > 60 {
+                self.lab_undo.remove(0);
+            }
+        }
+        self.lab_was = Some(now.clone());
+    }
+
+    fn lab_undo_last(&mut self) {
+        let Some(p) = self.lab_undo.pop() else {
+            self.lab_note = "NOTHING TO UNDO.".into();
+            return;
+        };
+        self.lab_stop();
+        self.store.lab_bench = p.clone();
+        self.lab_was = Some(p);
+        self.lab_sel = self.lab_sel.min(self.store.lab_bench.chords.len().saturating_sub(1));
+        self.store_dirty = true;
+        self.lab_note = "UNDONE.".into();
     }
 
     fn lab_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, lit: Option<usize>, sp: theory::Spelling) {
@@ -492,7 +569,16 @@ impl App {
             }
             let tip = "A bar of clicks, then each chord in turn: tap (or press Space) as it changes, and once more after \
                 the last. Esc stops. Linked to a loop with Record or Both heard, it runs over the record instead.";
-            if retro_btn(ui, if running { "TAP (SPACE)" } else { "TAP TIMING" }, running).tip(tip).clicked() {
+            // what the next tap does: wait through the count-off, start (along a record), next, or end on the last chord
+            let last = self.store.lab_bench.chords.len().saturating_sub(1);
+            let tap_label = match self.lab_run.as_ref() {
+                Some(r) if r.cur.is_none() && r.down.is_some() => "WAIT...",
+                Some(r) if r.cur.is_none() => "START (SPACE)",
+                Some(r) if r.cur == Some(last) => "END (SPACE)",
+                Some(_) => "NEXT (SPACE)",
+                None => "TAP TIMING",
+            };
+            if retro_btn(ui, tap_label, running).tip(tip).clicked() {
                 if running {
                     self.lab_tap();
                 } else {
@@ -531,6 +617,9 @@ impl App {
                 self.lab_sel = 0;
                 self.lab_note.clear();
                 self.store_dirty = true;
+            }
+            if retro_btn(ui, "UNDO", false).tip("Take back the last change (Ctrl+Z)").clicked() && !running {
+                self.lab_undo_last();
             }
         });
         // tempo, metronome, snap, key
@@ -878,7 +967,10 @@ impl App {
             let (r, _) = ui.allocate_exact_size(Vec2::new(crate::font::text_w(&name, 3.0).max(40.0) + 12.0, 34.0), Sense::hover());
             ptext(ui.painter(), Pos2::new(r.min.x, r.center().y), Align::LEFT, &name, 3.0, pal().ink);
             let holding = self.lab_run.as_ref().and_then(|r| r.cur) == Some(shown_i);
-            let hold = if holding {
+            let on_last = shown_i + 1 == self.store.lab_bench.chords.len();
+            let hold = if holding && on_last {
+                "LAST CHORD: TAP TO END".to_string()
+            } else if holding {
                 "HOLDING: TAP WHEN IT CHANGES".to_string()
             } else if cur.timed {
                 hold_text(cur.beats, self.lab_snap, bpm)
@@ -934,6 +1026,12 @@ impl App {
                 }
                 self.lab_sel = i.saturating_sub(1);
                 self.store_dirty = true;
+            }
+            if retro_btn(ui, "CLEAR ALL", false).tip("Take every chord out (Undo brings them back)").clicked() && !running {
+                self.store.lab_bench.chords = vec![blank()];
+                self.lab_sel = 0;
+                self.store_dirty = true;
+                self.lab_note = "CLEARED. UNDO BRINGS THEM BACK.".into();
             }
         });
         ui.add_space(4.0);
@@ -1020,7 +1118,7 @@ impl App {
             let open = self.store.lab_bench.name.trim().to_lowercase();
             let mut load = None;
             for (k, p) in self.store.lab.iter().enumerate() {
-                let label = if p.link.is_some() { format!("{} ♪", p.name) } else { p.name.clone() };
+                let label = if p.link.is_some() { format!("{} · LOOP", p.name) } else { p.name.clone() };
                 if retro_btn(ui, &label, p.name.trim().to_lowercase() == open).tip("Open it").clicked() {
                     load = Some(k);
                 }
@@ -1079,6 +1177,23 @@ mod tests {
         assert_eq!(hold_text(4.0 / 3.0, 3, 72.0), "HOLDS A QUARTER + TRIPLET 8TH");
         assert_eq!(hold_text(1.5, 0, 60.0), "HOLDS 1.50 SECONDS");
         assert_eq!(note_words(1.13), None);
+    }
+
+    #[test]
+    fn single_notes_and_rests_are_steps_too() {
+        let sp = theory::Spelling::default();
+        let one = LabChord { grip: [None, Some(6), None, None, None, None], beats: 1.0, timed: true, ..Default::default() };
+        let rest = LabChord { grip: [None; 6], beats: 1.0, timed: true, ..Default::default() };
+        let n = shown(&one, sp);
+        assert!(n.starts_with('(') && n.ends_with(')'), "{}", n);
+        assert_eq!(shown(&rest, sp), "REST");
+        let p = LabProg { name: String::new(), bpm: 60.0, chords: vec![one, rest], link: None };
+        let (bars, grips, _) = as_bars(&p, sp, 2);
+        // no chord symbol or grip box for a single note; the rest is a beat with no notes
+        assert!(grips.is_empty());
+        assert_eq!(bars[0].beats[0].notes.len(), 1);
+        assert!(bars[0].beats[0].chord.is_none());
+        assert!(bars[0].beats[1].notes.is_empty());
     }
 
     #[test]

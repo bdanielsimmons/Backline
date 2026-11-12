@@ -1420,6 +1420,9 @@ struct App {
     lab_written: bool,
     /// when the Lab's page was last drawn (its clicks and TAP TIMING stop when you go elsewhere)
     lab_seen: Option<Instant>,
+    /// UNDO: the bench as it was before each change (newest last), and as it was after the last frame
+    lab_undo: Vec<store::LabProg>,
+    lab_was: Option<store::LabProg>,
     /// VOICINGS: SHAPES or WALK THE CHANGES
     vc_page: u8,
     /// READING: key, position, rhythm level, bars, time (0 4/4, 1 3/4), tempo, the helps shown, the line, and a
@@ -2332,6 +2335,8 @@ impl App {
             lab_hear: 0,
             lab_written: true,
             lab_seen: None,
+            lab_undo: Vec::new(),
+            lab_was: None,
             vc_page: 0,
             rd_key: 0,
             rd_pos: 1,
@@ -3773,6 +3778,10 @@ impl eframe::App for App {
                 for cmd in self.key_commands(ctx) {
                     // tapping a progression in: Space is the tap, not play / pause
                     if cmd == prefs::Cmd::PlayPause && self.lab_tapping() {
+                        continue;
+                    }
+                    // the Lab's Ctrl+Z is its undo, not the player's Z
+                    if self.lab_here() && ctx.input(|i| i.modifiers.command) {
                         continue;
                     }
                     self.run_cmd(cmd, &mut acts);
