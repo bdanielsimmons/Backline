@@ -117,6 +117,9 @@ impl App {
         if let Some(v) = st["lab_count_in"].as_bool() {
             app.lab_count_in = v;
         }
+        if let Some(v) = st["lab_loop_chords"].as_bool() {
+            app.lab_loop_chords = v;
+        }
         if let Some(z) = st["neck_zoom"].as_f64() {
             app.neck_zoom = (z as f32).clamp(0.8, 2.2);
         }
@@ -439,6 +442,7 @@ impl App {
             "lab_repeat": self.lab_repeat,
             "lab_tab": self.lab_tab,
             "lab_count_in": self.lab_count_in,
+            "lab_loop_chords": self.lab_loop_chords,
             "q_drop": self.q_drop,
             "mine_off": self.mine_off,
             "mine_stems": self.mine_stems,

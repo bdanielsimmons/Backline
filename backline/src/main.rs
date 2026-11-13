@@ -1428,6 +1428,11 @@ struct App {
     /// being dragged (where the first chord was, where the drag began)
     lab_count_in: bool,
     lab_count: Option<Instant>,
+    /// HEAR MY CHORDS over the record: on, when the pass laid down last starts (its first chord), and where the song
+    /// was last frame (to notice a jump)
+    lab_loop_chords: bool,
+    lab_pass: Option<Instant>,
+    lab_last_pos: Option<(Instant, f32)>,
     lab_line_drag: Option<(f32, f32)>,
     /// when the Lab's page was last drawn (its clicks and TAP TIMING stop when you go elsewhere)
     lab_seen: Option<Instant>,
@@ -2350,6 +2355,9 @@ impl App {
             lab_tab: 0,
             lab_count_in: true,
             lab_count: None,
+            lab_loop_chords: true,
+            lab_pass: None,
+            lab_last_pos: None,
             lab_line_drag: None,
             lab_seen: None,
             lab_undo: Vec::new(),

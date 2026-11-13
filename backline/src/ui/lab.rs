@@ -22,7 +22,7 @@ use crate::views::field;
 pub(crate) const SNAPS: [&str; 4] = ["OFF", "8THS", "16THS", "TRIPLETS"];
 const ARTS: [&str; 3] = ["STRUM", "HAMMER ON", "SLIDE IN"];
 /// How it plays (and TAP TIMING runs) when it's linked to a loop: on its own (your chords and the click; a song
-/// playing pauses), or the record's loop alone.
+/// playing pauses), or over the record's loop (your chords on top in time with it, or muted: HEAR MY CHORDS).
 const PLAYS: [&str; 2] = ["UNACCOMPANIED", "WITH THE LOOP"];
 /// The page's tabs.
 const TABS: [&str; 3] = ["CHORDS", "TIMING", "WRITTEN OUT"];
@@ -417,6 +417,8 @@ impl App {
     fn lab_stop(&mut self) {
         self.player.send(Cmd::StopOnce);
         self.lab_count = None;
+        self.lab_pass = None;
+        self.lab_last_pos = None;
         self.lab_play = None;
         self.lab_loop_play = false;
         self.lab_quiet_clicks();
@@ -443,8 +445,9 @@ impl App {
         (from < l.a).then_some(from.max(0.0))
     }
 
-    /// COUNT ME IN over the record: once the song is going from where it was sent, the four clicks before the first
-    /// chord, as one sound timed from where the song is now (so they land in time with it, at its speed).
+    /// Over the record, once the song is going from where PLAY (or TAP TIMING) sent it: with COUNT ME IN, the four
+    /// clicks before the first chord, as one sound timed from where the song is now (so they land in time with it, at
+    /// its speed). Until then HEAR MY CHORDS waits too.
     fn lab_count_tick(&mut self, since: Instant) {
         let waited = since.elapsed().as_secs_f32();
         let Some(l) = self.store.lab_bench.link.clone().filter(|_| waited < 8.0) else {
@@ -463,7 +466,7 @@ impl App {
             return;
         }
         self.lab_count = None;
-        if pos >= first {
+        if !self.lab_count_in || pos >= first {
             return;
         }
         let speed = if self.practice { self.speed as f32 / 100.0 } else { 1.0 }.max(0.25);
@@ -488,6 +491,79 @@ impl App {
         }
     }
 
+    /// HEAR MY CHORDS over the record: each time round the loop, your chords on the guitar from where they're
+    /// lined up, as one sound a pass timed from where the song is (cut where the loop ends, as the record jumps
+    /// back there). After a mute, a pause or a jump in the song, the rest of the pass, in time.
+    fn lab_guitar_tick(&mut self) {
+        if !self.lab_loop_play || !self.lab_loop_chords || self.lab_count.is_some() {
+            return;
+        }
+        let Some(l) = self.store.lab_bench.link.clone() else { return };
+        if !self.lab_linked_here() || self.paused || self.stopped || self.buffering {
+            if self.lab_pass.take().is_some() {
+                self.player.send(Cmd::StopOnce);
+            }
+            self.lab_last_pos = None;
+            return;
+        }
+        let pos = self.pos();
+        let now = Instant::now();
+        let speed = if self.practice { self.speed as f32 / 100.0 } else { 1.0 }.max(0.25);
+        // a jump in the song (not the loop coming round): what's laid down no longer lines up
+        if let Some((t, p)) = self.lab_last_pos {
+            let expect = p + now.duration_since(t).as_secs_f32() * speed;
+            let wrapped = p >= l.b - 0.5 && pos <= l.a + 0.5;
+            if (pos - expect).abs() > 0.3 && !wrapped && self.lab_pass.take().is_some() {
+                self.player.send(Cmd::StopOnce);
+            }
+        }
+        self.lab_last_pos = Some((now, pos));
+        if self.lab_pass.is_some_and(|t| now < t + Duration::from_millis(300)) {
+            return;
+        }
+        let looping = self.player.ctl.ab().is_some_and(|(a, b)| (a - l.a).abs() < 0.05 && (b - l.b).abs() < 0.05);
+        let first = l.a + l.at;
+        // when this pass's first chord comes (real seconds from now), and how far into the pass to begin: before
+        // its first chord, near the loop's end (the next pass), or in it after a mute, a pause or a jump
+        let (wait, from) = if pos < first - 0.02 {
+            ((first - pos) / speed, 0.0)
+        } else if looping && pos < l.b && l.b - pos <= 0.35 {
+            ((l.b - pos + l.at) / speed, 0.0)
+        } else if self.lab_pass.is_none() && (!looping || pos < l.b - 0.35) {
+            (0.0, (pos - first) / speed)
+        } else {
+            return;
+        };
+        let spb = 60.0 / self.store.lab_bench.bpm.max(30.0) / speed;
+        let (ev, starts) = steps_events(&steps_of(&self.store.lab_bench, self.chord_sp), spb);
+        let total = starts.last().copied().unwrap_or(0.1) - 0.1;
+        let cut = if looping { ((l.b - first) / speed).max(0.2) } else { total + 1.5 };
+        if from >= cut || from >= total + 1.5 {
+            self.lab_pass = Some(now);
+            return;
+        }
+        // (the chord sounding where it begins is struck again there)
+        let k = starts.windows(2).position(|w| from >= w[0] - 0.1 && from < w[1] - 0.1);
+        let cur_start = k.map_or(f32::INFINITY, |k| starts[k] - 0.1);
+        let mut evs: Vec<(usize, i32, f32, f32)> = Vec::new();
+        for e in &ev {
+            let tau = e.2 - 0.1;
+            if tau >= cut {
+                continue;
+            }
+            if tau >= from {
+                evs.push((e.0, e.1, wait + tau - from, e.3));
+            } else if from > 0.0 && tau >= cur_start && e.1 >= 0 {
+                evs.push((e.0, e.1, wait + 0.02, e.3 * 0.8));
+            }
+        }
+        self.lab_pass = Some(now + Duration::from_secs_f32(wait));
+        if evs.iter().any(|e| e.1 >= 0) {
+            let end = wait + (cut - from).max(0.1);
+            self.player.send(Cmd::Once(crate::band::string_events(&evs, end), 0.9));
+        }
+    }
+
     pub(crate) fn lab_play_all(&mut self, acts: &mut Vec<Action>) {
         self.lab_stop();
         if self.lab_over_loop() {
@@ -497,8 +573,14 @@ impl App {
             self.lab_go_to_loop(acts, from);
             self.lab_hush_metro();
             self.lab_loop_play = true;
-            self.lab_count = self.lab_count_in.then(Instant::now);
-            self.lab_note = "PLAYING THE LOOP: THE CHORDS FOLLOW THE RECORD.".into();
+            self.lab_count = Some(Instant::now());
+            self.lab_pass = None;
+            self.lab_last_pos = None;
+            self.lab_note = if self.lab_loop_chords {
+                "PLAYING THE LOOP WITH YOUR CHORDS OVER IT.".into()
+            } else {
+                "PLAYING THE LOOP: THE CHORDS FOLLOW THE RECORD.".into()
+            };
             return;
         }
         self.lab_quiet_song(acts);
@@ -525,6 +607,7 @@ impl App {
         if let Some(t0) = self.lab_count {
             self.lab_count_tick(t0);
         }
+        self.lab_guitar_tick();
         if self.lab_run.is_some() && away {
             self.lab_end_timing(false);
         }
@@ -536,6 +619,10 @@ impl App {
         // over the loop: until you leave, or the song changes
         if self.lab_loop_play && (away || (!self.lab_linked_here() && self.cur.is_some() && !self.stopped)) {
             self.lab_loop_play = false;
+            // (your chords over it stop too)
+            if self.lab_pass.take().is_some() {
+                self.player.send(Cmd::StopOnce);
+            }
         }
         if self.lab_clicks && self.lab_run.is_none() && self.lab_play.is_none() && !self.lab_loop_play {
             self.lab_quiet_clicks();
@@ -840,6 +927,18 @@ impl App {
             });
             ui.add_space(14.0);
             self.lab_play_btn(ui, acts, lit);
+            if self.lab_over_loop() {
+                ui.add_space(10.0);
+                let tip = "Your chords on the guitar over the record, in time with it (from where they're lined up). \
+                    Untick to mute them.";
+                if crate::check_box(ui, "HEAR MY CHORDS", self.lab_loop_chords).tip(tip).clicked() {
+                    self.lab_loop_chords = !self.lab_loop_chords;
+                    if !self.lab_loop_chords && self.lab_pass.take().is_some() {
+                        self.player.send(Cmd::StopOnce);
+                    }
+                    self.dirty = true;
+                }
+            }
             if !self.lab_note.is_empty() {
                 ui.add_space(10.0);
                 crate::views::dim_line(ui, &self.lab_note.clone(), 1.0, pal().accent);
