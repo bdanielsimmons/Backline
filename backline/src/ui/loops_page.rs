@@ -863,8 +863,8 @@ impl App {
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .tip("Open it in the Progression Lab");
                             let p = ui.painter();
-                            p.rect_filled(tr, 10.0, if th.hovered() { pal().sel } else { pal().panel_dk });
-                            p.rect_stroke(tr, 10.0, Stroke::new(1.0_f32, pal().accent));
+                            p.rect_filled(tr, crate::corner(), if th.hovered() { pal().sel } else { pal().panel_dk });
+                            p.rect_stroke(tr, crate::corner(), Stroke::new(1.0_f32, pal().accent));
                             ptext(p, Pos2::new(tr.min.x + 9.0, tr.center().y), Align::Min, &label, 1.0, pal().ink);
                             if th.clicked() {
                                 tag_hit = true;

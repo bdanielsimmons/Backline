@@ -299,7 +299,7 @@ impl App {
                     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     let p = ui.painter();
                     let lit = k == role;
-                    p.rect_filled(r, 14.0, if lit { pal().btn_hi } else if resp.hovered() { pal().sel } else { pal().btn_face });
+                    p.rect_filled(r, crate::corner(), if lit { pal().btn_hi } else if resp.hovered() { pal().sel } else { pal().btn_face });
                     p.circle_filled(Pos2::new(r.min.x + 14.0, r.center().y), 7.0, col);
                     p.circle_stroke(Pos2::new(r.min.x + 14.0, r.center().y), 7.0, Stroke::new(1.0_f32, pal().edge));
                     crate::font::ptext(p, Pos2::new(r.min.x + 28.0, r.center().y), Align::Min, &label, 1.6, pal().ink);

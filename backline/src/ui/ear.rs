@@ -3232,8 +3232,8 @@ fn chips(ui: &mut egui::Ui, texts: &[String]) {
             let w = text_w(text, 1.5) + 24.0;
             let (r, _) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
             let p = ui.painter();
-            p.rect_filled(r, 14.0, pal().panel_dk.gamma_multiply(0.35));
-            p.rect_stroke(r, 14.0, Stroke::new(1.0_f32, pal().panel_dk));
+            p.rect_filled(r, 6.0, pal().panel_dk.gamma_multiply(0.35));
+            p.rect_stroke(r, 6.0, Stroke::new(1.0_f32, pal().panel_dk));
             ptext(p, r.center(), Align::Center, text, 1.5, pal().ink2);
         }
     });
@@ -3261,7 +3261,7 @@ fn centred_pills(ui: &mut egui::Ui, id: &str, labels: &[&str], state: impl Fn(us
                 for &i in row {
                     let (lit, wrong) = state(i);
                     let resp = retro_btn_w(ui, labels[i], w / sc, lit);
-                    let rad = (resp.rect.height() / 2.0).min(14.0);
+                    let rad = crate::corner();
                     if wrong {
                         ui.painter().rect_stroke(resp.rect.expand(1.0), rad, Stroke::new(2.0_f32, bad_col()));
                     } else if lit {

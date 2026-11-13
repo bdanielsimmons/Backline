@@ -1418,7 +1418,7 @@ impl App {
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         let p = ui.painter();
         let col = if self.chart_lock { pal().bar_txt } else { pal().ink2 };
-        p.rect_filled(r, r.height() / 2.0, if self.chart_lock { pal().display } else { pal().panel.lerp_to_gamma(pal().display, 0.35) });
+        p.rect_filled(r, crate::corner(), if self.chart_lock { pal().display } else { pal().panel.lerp_to_gamma(pal().display, 0.35) });
         p.rect_stroke(
             r,
             r.height() / 2.0,
@@ -2069,7 +2069,7 @@ fn panel_frame() -> egui::Frame {
     egui::Frame::none()
         .fill(pal().app_bg)
         .stroke(egui::Stroke::new(if chrome { 1.0_f32 } else { 2.0 }, pal().edge))
-        .rounding(if chrome { 12.0 } else { 0.0 })
+        .rounding(if chrome { 6.0 } else { 0.0 })
         .inner_margin(14.0)
 }
 
@@ -2082,7 +2082,7 @@ fn panel_title(p: &egui::Painter, r: Rect, text: &str) {
     }
 }
 
-/// The face of a pill: round with a skin worn, a raised button without.
+/// The face of a pill: flat with small corners with a skin worn, a raised button without.
 fn pill_face(p: &egui::Painter, r: Rect, open: bool, hot: bool) {
     if crate::winamp_ui::chrome_on() {
         let fill = if open {
@@ -2092,8 +2092,8 @@ fn pill_face(p: &egui::Painter, r: Rect, open: bool, hot: bool) {
         } else {
             pal().display.lerp_to_gamma(pal().panel, 0.4)
         };
-        p.rect_filled(r, r.height() / 2.0, fill);
-        p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0_f32, if open { pal().bar_txt } else { pal().edge }));
+        p.rect_filled(r, crate::corner(), fill);
+        p.rect_stroke(r, crate::corner(), egui::Stroke::new(1.0_f32, if open { pal().bar_txt } else { pal().edge }));
     } else {
         crate::raised_h(p, r, open, hot);
     }
@@ -2168,7 +2168,7 @@ fn group_box(ui: &mut egui::Ui, title: &str, w: f32, add: impl FnOnce(&mut egui:
     let chrome = crate::winamp_ui::chrome_on();
     egui::Frame::none()
         .stroke(egui::Stroke::new(1.0_f32, pal().groove))
-        .rounding(if chrome { 8.0 } else { 0.0 })
+        .rounding(if chrome { 6.0 } else { 0.0 })
         .inner_margin(10.0)
         .show(ui, |ui| {
             ui.set_width(w - 22.0);
@@ -2210,7 +2210,7 @@ fn popup(ui: &mut egui::Ui, id: &str, anchor: &egui::Response, w: f32, up: bool,
             egui::Frame::none()
                 .fill(pal().panel_lt)
                 .stroke(egui::Stroke::new(if chrome { 1.0_f32 } else { 2.0 }, pal().edge))
-                .rounding(if chrome { 10.0 } else { 0.0 })
+                .rounding(if chrome { 6.0 } else { 0.0 })
                 .inner_margin(10.0)
                 .show(ui, |ui| {
                     ui.set_width(w - 24.0);

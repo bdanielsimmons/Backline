@@ -1406,8 +1406,8 @@ struct App {
     mv_play: Option<(Instant, Vec<f32>)>,
     /// PROGRESSION LAB: the chord picked, SNAP (0 off, 1 8ths, 2 16ths, 3 triplets), TAP TIMING running, a line
     /// about it, playing (start, chord times), an edge being dragged (chord, its beats then, where the drag began,
-    /// a beat's width), the Lab holding the metronome's sound for its clicks, the metronome on, what's heard for a
-    /// linked loop (0 guitar, 1 record, 2 both), and WRITTEN OUT showing
+    /// a beat's width), the Lab holding the metronome's sound for its clicks, the metronome on, and how a linked loop
+    /// is heard (on its own, or the record's loop)
     lab_sel: usize,
     lab_snap: u8,
     lab_run: Option<lab::LabRun>,
@@ -1422,7 +1422,13 @@ struct App {
     lab_repeat: bool,
     /// TAP TEMPO's taps so far
     lab_tempo_taps: Vec<Instant>,
-    lab_written: bool,
+    /// the tab open: 0 Chords, 1 Timing, 2 Written Out
+    lab_tab: u8,
+    /// COUNT ME IN over the record (four clicks before the first chord), one under way (since when), and LINE UP
+    /// being dragged (where the first chord was, where the drag began)
+    lab_count_in: bool,
+    lab_count: Option<Instant>,
+    lab_line_drag: Option<(f32, f32)>,
     /// when the Lab's page was last drawn (its clicks and TAP TIMING stop when you go elsewhere)
     lab_seen: Option<Instant>,
     /// UNDO: the bench as it was before each change (newest last), and as it was after the last frame
@@ -2341,7 +2347,10 @@ impl App {
             lab_loop_play: false,
             lab_repeat: false,
             lab_tempo_taps: Vec::new(),
-            lab_written: true,
+            lab_tab: 0,
+            lab_count_in: true,
+            lab_count: None,
+            lab_line_drag: None,
             lab_seen: None,
             lab_undo: Vec::new(),
             lab_was: None,

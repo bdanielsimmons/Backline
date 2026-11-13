@@ -62,7 +62,7 @@ fn tag(p: &egui::Painter, at: Pos2, text: &str, bg: Color32, fg: Color32) {
     let sc = crate::font::ui_scale();
     let w = crate::font::text_w(text, 1.0) + 16.0 * sc;
     let r = Rect::from_min_max(Pos2::new(at.x, at.y - 20.0 * sc), Pos2::new(at.x + w, at.y));
-    p.rect_filled(r, r.height() / 2.0, bg);
+    p.rect_filled(r, crate::corner(), bg);
     crate::font::ptext(p, r.center(), Align::Center, text, 1.0, fg);
 }
 
@@ -537,7 +537,7 @@ impl App {
         egui::Frame::none()
             .fill(pal().row_alt)
             .stroke(Stroke::new(1.0_f32, pal().groove))
-            .rounding(10.0)
+            .rounding(6.0)
             .inner_margin(egui::Margin::symmetric(14.0, 10.0))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -845,7 +845,7 @@ impl App {
         egui::Frame::none()
             .fill(pal().row_alt)
             .stroke(Stroke::new(1.0_f32, pal().groove))
-            .rounding(10.0)
+            .rounding(6.0)
             .inner_margin(egui::Margin::symmetric(14.0, 10.0))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -894,9 +894,9 @@ impl App {
         let w = (ui.clip_rect().max.x - ui.cursor().min.x).min(ui.available_width()) - 6.0;
         let (pill, _) = ui.allocate_exact_size(Vec2::new(w.max(160.0), h), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(pill, h / 2.0, pal().display);
+        p.rect_filled(pill, crate::corner(), pal().display);
         let focused = self.ed.id == crate::tools::F_WINAMP;
-        p.rect_stroke(pill, h / 2.0, Stroke::new(1.0_f32, if focused { pal().ink2 } else { pal().groove.gamma_multiply(1.6) }));
+        p.rect_stroke(pill, crate::corner(), Stroke::new(1.0_f32, if focused { pal().ink2 } else { pal().groove.gamma_multiply(1.6) }));
         let ir = Rect::from_center_size(Pos2::new(pill.min.x + 18.0 * sc, pill.center().y), Vec2::splat(16.0 * sc));
         crate::vicon::named(p, ir, "search", pal().ink2);
         let clear_w = if self.wa_q.is_empty() { 0.0 } else { 30.0 * sc };
@@ -1484,8 +1484,8 @@ impl App {
         let h = 30.0 * font::ui_scale();
         let area = Rect::from_min_max(Pos2::new(r.min.x + 10.0, y), Pos2::new(r.max.x - 10.0, y + h));
         let p = ui.painter().clone();
-        p.rect_filled(area, h / 2.0, pal().panel.lerp_to_gamma(pal().display, 0.35));
-        p.rect_stroke(area, h / 2.0, Stroke::new(1.0_f32, pal().panel_hover));
+        p.rect_filled(area, crate::corner(), pal().panel.lerp_to_gamma(pal().display, 0.35));
+        p.rect_stroke(area, crate::corner(), Stroke::new(1.0_f32, pal().panel_hover));
         let half = area.width() / 2.0;
         for (k, (icon, word, on)) in
             [("headphones", "LISTEN", !self.practice), ("wave", "PRACTICE", self.practice)].into_iter().enumerate()
@@ -1500,9 +1500,9 @@ impl App {
                     "Practice: loop, slow down, the band and your tools.  (P)"
                 });
             if on {
-                p.rect_filled(cell, cell.height() / 2.0, pal().ink);
+                p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), pal().ink);
             } else if resp.hovered() {
-                p.rect_filled(cell, cell.height() / 2.0, Color32::from_white_alpha(14));
+                p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), Color32::from_white_alpha(14));
             }
             let col = if on { pal().display } else { pal().ink2 };
             let tw = text_w(word, 1.4);
@@ -1975,8 +1975,8 @@ impl App {
         let y = area.max.y - 18.0 * sc - h / 2.0 + (1.0 - a) * 6.0;
         let r = Rect::from_center_size(Pos2::new(area.center().x, y), Vec2::new(w, h));
         let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lib_toast")));
-        p.rect_filled(r.translate(Vec2::new(0.0, 3.0)), h / 2.0, egui::Color32::from_black_alpha((110.0 * a) as u8));
-        p.rect_filled(r, h / 2.0, pal().bar_txt.gamma_multiply(a));
+        p.rect_filled(r.translate(Vec2::new(0.0, 3.0)), crate::corner(), egui::Color32::from_black_alpha((110.0 * a) as u8));
+        p.rect_filled(r, crate::corner(), pal().bar_txt.gamma_multiply(a));
         // a tick, then the words
         let ink = pal().display.gamma_multiply(a);
         let c = Pos2::new(r.min.x + 20.0 * sc, r.center().y);

@@ -143,11 +143,17 @@ pub(crate) fn inset(p: &egui::Painter, r: Rect, fill: Color32) {
     fill_rect(p, Rect::from_min_size(Pos2::new(r.max.x - t2, r.min.y), Vec2::new(t2, r.height())), pal().panel_lt);
 }
 
+/// The corner of buttons, chips, fields and tags with a skin worn: small, so they read as squared-off boxes rather
+/// than round pills.
+pub(crate) fn corner() -> f32 {
+    (4.0 * font::ui_scale()).clamp(3.0, 7.0)
+}
+
 /// Raised bevelled button face.
 pub(crate) fn raised_h(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
-    // with a skin worn: a pill, flat, a fine edge
+    // with a skin worn: flat, small corners, a fine edge
     if winamp_ui::chrome_on() {
-        let rad = (r.height() / 2.0).min(14.0);
+        let rad = corner();
         let fill = if down {
             pal().panel_dk
         } else if hover {
@@ -662,7 +668,7 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let down = resp.is_pointer_button_down_on() || active;
     if winamp_ui::chrome_on() && active {
-        let rad = (rect.height() / 2.0).min(14.0);
+        let rad = corner();
         ui.painter().rect_filled(rect, rad, pal().ink);
         winamp_ui::as_title(|| ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().display));
         return resp.on_hover_cursor(egui::CursorIcon::PointingHand);

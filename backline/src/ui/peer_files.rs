@@ -568,9 +568,9 @@ impl App {
         let (w, h) = (tw + 76.0 * sc, 30.0 * sc);
         let r = Rect::from_min_size(Pos2::new(area.min.x + 14.0 * sc, area.max.y - 14.0 * sc - h), Vec2::new(w, h));
         let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lib_copying")));
-        p.rect_filled(r.translate(Vec2::new(0.0, 2.0)), h / 2.0, egui::Color32::from_black_alpha(90));
-        p.rect_filled(r, h / 2.0, pal().panel);
-        p.rect_stroke(r, h / 2.0, egui::Stroke::new(1.0_f32, pal().edge));
+        p.rect_filled(r.translate(Vec2::new(0.0, 2.0)), crate::corner(), egui::Color32::from_black_alpha(90));
+        p.rect_filled(r, crate::corner(), pal().panel);
+        p.rect_stroke(r, crate::corner(), egui::Stroke::new(1.0_f32, pal().edge));
         // the arrow, coming down over and over
         let t = ui.input(|i| i.time) as f32;
         let fall = (t * 1.4).fract();

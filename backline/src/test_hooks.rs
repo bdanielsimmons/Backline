@@ -260,6 +260,10 @@ Second line: comp lighter here.", m.1.note);
                     };
                 }
                 app.lab_sel = 2;
+                // BACKLINE_LAB_TAB=0..2: the tab open (Chords, Timing, Written Out)
+                if let Some(t) = std::env::var("BACKLINE_LAB_TAB").ok().and_then(|v| v.parse::<u8>().ok()) {
+                    app.lab_tab = t.min(2);
+                }
             }
             Ok("superimpose") => {
                 app.sec = Sec::Lines;

@@ -1264,6 +1264,9 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
         // a single letter: a note or a loop end ("A AND B", "TO B") stays a capital; otherwise it is the word "a"
         let next = words.get(i + 1).copied().unwrap_or("");
         let prev = if i > 0 { words[i - 1] } else { "" };
+        // (a title ending in "in" or "on" ends on a capital: "Count Me In", "Hammer On", "EQ On"; one leading into
+        // what follows keeps it small: "Written by", "Solo with")
+        let last_up = matches!(core, "IN" | "ON") && words[i + 1..].iter().all(|w| w.is_empty());
         // (B to G alone are always notes; A is one beside "and", "or", a dash or "=", after a colon or before a bracket)
         // (beside another note letter it is a note too: "D E F G A B C", "A B" as a loop's ends)
         let note = |w: &str| {
@@ -1323,7 +1326,7 @@ pub(crate) fn display_case(text: &str) -> std::borrow::Cow<'_, str> {
             out.push_str(&w.to_lowercase());
         } else if roman || w.chars().any(|c| c.is_ascii_digit()) || KEEP.contains(&core) || (letter_name && !first) {
             out.push_str(w);
-        } else if title && !first && SMALL.contains(&core) {
+        } else if title && !first && !last_up && SMALL.contains(&core) {
             out.push_str(&w.to_lowercase());
         } else {
             let mut up = title || first;
@@ -1605,6 +1608,10 @@ mod tests {
         assert_eq!(display_case("UP-TEMPO"), "Up-Tempo");
         assert_eq!(display_case("EQ"), "EQ");
         assert_eq!(display_case("90S & 2000S"), "90s & 2000s");
+        // a title ending in "in" or "on" ends on a capital; one leading into a value doesn't
+        assert_eq!(display_case("COUNT ME IN"), "Count Me In");
+        assert_eq!(display_case("WRITTEN BY"), "Written by");
+        assert_eq!(display_case("LINK TO A LOOP"), "Link to a Loop");
         assert_eq!(display_case("G = 5    A = 13"), "G = 5    A = 13");
         assert_eq!(display_case("1 OF 10 KINDS IN YOUR SET"), "1 of 10 kinds in your set");
         assert_eq!(display_case("Already mixed"), "Already mixed");

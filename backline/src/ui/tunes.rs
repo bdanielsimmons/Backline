@@ -53,8 +53,8 @@ impl App {
                 let w = (text_w(n, 2.0).max(text_w(who, 1.3)) + 28.0).clamp(120.0, 300.0);
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 44.0), Sense::click());
                 let hot = resp.hovered();
-                ui.painter().rect_filled(r, 8.0, if hot { pal().panel } else { pal().panel.lerp_to_gamma(pal().display, 0.35) });
-                ui.painter().rect_stroke(r, 8.0, egui::Stroke::new(1.0_f32, pal().panel_hover));
+                ui.painter().rect_filled(r, crate::corner(), if hot { pal().panel } else { pal().panel.lerp_to_gamma(pal().display, 0.35) });
+                ui.painter().rect_stroke(r, crate::corner(), egui::Stroke::new(1.0_f32, pal().panel_hover));
                 crate::font::keep_caps(|| {
                     crate::row_text(ui.painter(), Pos2::new(r.min.x + 12.0, r.min.y + 15.0), Align::Min, n, w - 20.0, pal().ink);
                     crate::row_text(

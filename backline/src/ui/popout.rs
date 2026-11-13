@@ -311,7 +311,7 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
         crate::raised_h(&p, rect, h.is_pointer_button_down_on(), h.hovered());
         // (on: a near-white pill, its symbol in near-black)
         if on {
-            p.rect_filled(rect, ph / 2.0, lit);
+            p.rect_filled(rect, crate::corner(), lit);
         }
         h
     };
@@ -404,7 +404,7 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
     let show_name = r.width() - 2.0 * m - name_w - gap >= 170.0;
     if show_name {
         let label = Rect::from_min_size(Pos2::new(r.max.x - m - name_w, r.min.y + m), Vec2::new(name_w, ph));
-        p.rect_filled(label, ph / 2.0, Color32::from_black_alpha(170));
+        p.rect_filled(label, crate::corner(), Color32::from_black_alpha(170));
         crate::ptext_fit(&p, label.center(), Align::Center, &name, 1.0, name_w - 20.0, Color32::from_white_alpha(235));
     }
     // the song's card: Now Playing's caption, soft white on near-black (or soft black on near-white)
@@ -417,7 +417,7 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
         let room = r.width() - 2.0 * m - 22.0 - if show_name { name_w + gap } else { 0.0 };
         let tw = crate::text_w(&now.title, 1.5).max(crate::text_w(&now.artist, 1.05)).min(room).min(320.0);
         let card = Rect::from_min_size(r.min + Vec2::splat(m), Vec2::new(tw + 22.0, 44.0));
-        p.rect_filled(card, 8.0, plate);
+        p.rect_filled(card, 6.0, plate);
         crate::ptext_fit(&p, Pos2::new(card.min.x + 11.0, card.min.y + 15.0), Align::Min, &now.title, 1.5, tw, ink);
         crate::ptext_fit(&p, Pos2::new(card.min.x + 11.0, card.min.y + 31.0), Align::Min, &now.artist, 1.05, tw, ink.gamma_multiply(0.85));
     }

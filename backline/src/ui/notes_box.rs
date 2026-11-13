@@ -154,7 +154,7 @@ pub(crate) fn draw_notes(p: &egui::Painter, o: Pos2, w: f32, laid: &Laid, alpha:
             if pc.look.tag {
                 // a #tag: a chip in the links' colour
                 let r = Rect::from_min_max(Pos2::new(at.x, at.y - lh / 2.0 + 1.0), Pos2::new(at.x + pc.w, at.y + lh / 2.0 - 1.0));
-                p.rect_filled(r, r.height() / 2.0, fade(link_col().gamma_multiply(if is_hot { 0.34 } else { 0.18 })));
+                p.rect_filled(r, crate::corner(), fade(link_col().gamma_multiply(if is_hot { 0.34 } else { 0.18 })));
                 ptext(p, Pos2::new(tx, at.y), Align::Min, &pc.text, pc.px, fade(link_col()));
                 continue;
             }
