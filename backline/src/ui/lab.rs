@@ -5,7 +5,7 @@
 //! - TIMING: TAP TIMING runs through the chords: a bar of clicks with four lights, the first chord comes in on 1 and
 //!   holds, and each tap (Space) moves to the next; one more tap ends it. Tempo, metronome, snap, and the loop it's
 //!   linked to. Over the loop's record there's no metronome: LINE UP puts the first chord on the record (drag,
-//!   nudge, or find the first hit; `LabLink::at`) and COUNT ME IN lays four clicks on the song's clock before it,
+//!   nudge, or find the first hit; `LabLink::at`) and the METRONOME lays four clicks on the song's clock before it,
 //!   starting the song early when the loop's lead-in is too short.
 //! - WRITTEN OUT: the Chord Melodies notation (grips, staff, tab, in rhythm; hammer-ons and slides marked).
 //! Lengths read as note values on a grid ("a dotted 8th"), or seconds with Snap Off. The progression on the bench
@@ -47,7 +47,7 @@ pub(crate) struct LabRun {
     pub ratio: f32,
     /// each chord heard on the guitar as it comes
     pub guitar: bool,
-    /// along the record with COUNT ME IN: the song time the first chord starts by itself (no tap needed)
+    /// along the record with the METRONOME's count-in: the song time the first chord starts by itself (no tap needed)
     pub auto: Option<f32>,
 }
 
@@ -373,13 +373,13 @@ impl App {
             let notes = grip_notes(&c.grip);
             if !notes.is_empty() {
                 self.player.send(Cmd::StopOnce);
-                self.player.send(Cmd::Once(crate::band::chord_sound(&notes), 0.9));
+                self.player.send(Cmd::Once(self.lab_level(crate::band::chord_sound(&notes)), 0.9));
             }
         }
     }
 
     /// Go to the linked loop (start the song if it isn't the one playing) and play from its start, or from `from`
-    /// (a little before it, to make room for COUNT ME IN).
+    /// (a little before it, to make room for the METRONOME's count-in).
     fn lab_go_to_loop(&mut self, acts: &mut Vec<Action>, from: Option<f32>) {
         let Some(l) = self.store.lab_bench.link.clone() else { return };
         let Some(v) = self.store.songs.get(&l.song).cloned() else {
@@ -436,16 +436,16 @@ impl App {
         }
     }
 
-    /// COUNT ME IN over the record: where the song starts so the four clicks fit before the first chord (a little
+    /// the METRONOME's count-in over the record: where the song starts so the four clicks fit before the first chord (a little
     /// before the first click, so they can be laid on the song's clock), when the loop's own start is too late.
     fn lab_lead_start(&self) -> Option<f32> {
-        let l = self.store.lab_bench.link.as_ref().filter(|_| self.lab_count_in)?;
+        let l = self.store.lab_bench.link.as_ref().filter(|_| self.lab_metro)?;
         let spb = 60.0 / self.store.lab_bench.bpm.max(30.0);
         let from = l.a + l.at - 4.0 * spb - 0.4;
         (from < l.a).then_some(from.max(0.0))
     }
 
-    /// Over the record, once the song is going from where PLAY (or TAP TIMING) sent it: with COUNT ME IN, the four
+    /// Over the record, once the song is going from where PLAY (or TAP TIMING) sent it: with the METRONOME's count-in, the four
     /// clicks before the first chord, as one sound timed from where the song is now (so they land in time with it, at
     /// its speed). Until then HEAR MY CHORDS waits too.
     fn lab_count_tick(&mut self, since: Instant) {
@@ -466,7 +466,7 @@ impl App {
             return;
         }
         self.lab_count = None;
-        if !self.lab_count_in || pos >= first {
+        if !self.lab_metro || pos >= first {
             return;
         }
         let speed = if self.practice { self.speed as f32 / 100.0 } else { 1.0 }.max(0.25);
@@ -560,7 +560,7 @@ impl App {
         self.lab_pass = Some(now + Duration::from_secs_f32(wait));
         if evs.iter().any(|e| e.1 >= 0) {
             let end = wait + (cut - from).max(0.1);
-            self.player.send(Cmd::Once(crate::band::string_events(&evs, end), 0.9));
+            self.player.send(Cmd::Once(self.lab_level(crate::band::string_events(&evs, end)), 0.9));
         }
     }
 
@@ -588,7 +588,7 @@ impl App {
         let spb = 60.0 / p.bpm.max(30.0);
         let (ev, starts) = steps_events(&steps_of(p, self.chord_sp), spb);
         let total = starts.last().copied().unwrap_or(1.0);
-        self.player.send(Cmd::Once(crate::band::string_events(&ev, total + 1.8), 0.9));
+        self.player.send(Cmd::Once(self.lab_level(crate::band::string_events(&ev, total + 1.8)), 0.9));
         if self.lab_metro {
             let lead = vec![0i16; (0.1 * crate::band::RATE) as usize];
             self.player.send(Cmd::Pcm(0, lead, click_bar(p.bpm, true), 0.8));
@@ -671,13 +671,13 @@ impl App {
         }
         self.lab_sel = 0;
         if record {
-            // along the record: from the loop's start, the first tap is the first chord - or with COUNT ME IN, four
+            // along the record: from the loop's start, the first tap is the first chord - or with the METRONOME's count-in, four
             // clicks lead in and the first chord starts by itself where it's lined up
             let from = self.lab_lead_start();
             self.lab_go_to_loop(acts, from);
             let ratio = if self.practice { self.speed as f32 / 100.0 } else { 1.0 };
             self.lab_hush_metro();
-            let auto = if self.lab_count_in { self.store.lab_bench.link.as_ref().map(|l| l.a + l.at) } else { None };
+            let auto = if self.lab_metro { self.store.lab_bench.link.as_ref().map(|l| l.a + l.at) } else { None };
             self.lab_count = auto.map(|_| now);
             self.lab_run = Some(LabRun { start: now, down: None, cur: None, at: Vec::new(), pos: Vec::new(), ratio, guitar: false, auto });
             self.lab_note = if auto.is_some() {
@@ -689,7 +689,7 @@ impl App {
         }
         self.lab_quiet_song(acts);
         // a bar of clicks, then the first chord on 1 (laid on the same clock as the clicks, so it lands on it)
-        self.player.send(Cmd::Pcm(0, click_bar(bpm, true), click_bar(bpm, self.lab_metro), 0.8));
+        self.player.send(Cmd::Pcm(0, click_bar(bpm, self.lab_metro), click_bar(bpm, self.lab_metro), 0.8));
         self.lab_clicks = true;
         if let Some(c) = self.store.lab_bench.chords.first() {
             let notes = grip_notes(&c.grip);
@@ -697,7 +697,7 @@ impl App {
                 let mut pcm = vec![0i16; (4.0 * spb * crate::band::RATE) as usize];
                 pcm.extend(crate::band::chord_sound(&notes));
                 self.player.send(Cmd::StopOnce);
-                self.player.send(Cmd::Once(pcm, 0.9));
+                self.player.send(Cmd::Once(self.lab_level(pcm), 0.9));
             }
         }
         let down = now + Duration::from_secs_f32(4.0 * spb);
@@ -706,7 +706,7 @@ impl App {
         self.lab_note = "COUNT-OFF... THE FIRST CHORD COMES IN ON 1.".into();
     }
 
-    /// The downbeat reached (or, along the record with COUNT ME IN, the song at the first chord): it's on.
+    /// The downbeat reached (or, along the record with the METRONOME's count-in, the song at the first chord): it's on.
     fn lab_run_tick(&mut self) {
         let pos = self.pos();
         let going = self.lab_linked_here() && !self.paused && !self.stopped;
@@ -914,8 +914,9 @@ impl App {
     fn lab_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, lit: Option<usize>, sp: theory::Spelling) {
         self.lab_header(ui);
         ui.add_space(8.0);
-        // the three tabs, PLAY (there whichever is open), and what's happening
-        ui.horizontal(|ui| {
+        // the three tabs, PLAY (there whichever is open) with the metronome and your chords' volume, and what's
+        // happening
+        ui.horizontal_wrapped(|ui| {
             // (the tabs kept to their own width, so PLAY sits beside them)
             let tw = TABS.iter().map(|t| crate::font::text_w(t, 2.0) + 22.0).sum::<f32>() + 16.0;
             let th = 26.0 * crate::font::ui_scale() + 4.0;
@@ -927,6 +928,16 @@ impl App {
             });
             ui.add_space(14.0);
             self.lab_play_btn(ui, acts, lit);
+            ui.add_space(10.0);
+            let tip = if self.lab_over_loop() {
+                "Four clicks before the first chord, in time with the record (the record keeps the time after that)"
+            } else {
+                "Clicks when it plays and while you tap the timing (the count-off too; the four lights still count it)"
+            };
+            if crate::check_box(ui, "METRONOME", self.lab_metro).tip(tip).clicked() {
+                self.lab_metro = !self.lab_metro;
+                self.dirty = true;
+            }
             if self.lab_over_loop() {
                 ui.add_space(10.0);
                 let tip = "Your chords on the guitar over the record, in time with it (from where they're lined up). \
@@ -938,7 +949,12 @@ impl App {
                     }
                     self.dirty = true;
                 }
+            } else {
+                ui.add_space(10.0);
+                crate::views::form_label(ui, "MY CHORDS");
             }
+            ui.add_space(4.0);
+            self.lab_vol_bar(ui);
             if !self.lab_note.is_empty() {
                 ui.add_space(10.0);
                 crate::views::dim_line(ui, &self.lab_note.clone(), 1.0, pal().accent);
@@ -1034,6 +1050,37 @@ impl App {
         }
     }
 
+    /// MY CHORDS' volume: the Lab's guitar louder or softer against the song (the player's volume stays the song's).
+    fn lab_vol_bar(&mut self, ui: &mut egui::Ui) {
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(110.0, bh()), Sense::click_and_drag());
+        crate::inset(ui.painter(), r, pal().display);
+        let inner = r.shrink(4.0);
+        let fill = Rect::from_min_size(inner.min, Vec2::new(inner.width() * self.lab_vol, inner.height()));
+        ui.painter().rect_filled(fill, if crate::winamp_ui::chrome_on() { 2.0 } else { 0.0 }, pal().ink2);
+        let resp = resp
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
+            .tip("Your chords' volume, separate from the song's (the player's own volume)");
+        if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
+            self.lab_vol = ((p.x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
+            self.dirty = true;
+        }
+        // over the record: the rest of this time round again, at the new volume
+        if (resp.drag_stopped() || resp.clicked()) && self.lab_pass.take().is_some() {
+            self.player.send(Cmd::StopOnce);
+        }
+    }
+
+    /// The Lab's guitar at MY CHORDS' volume.
+    fn lab_level(&self, mut pcm: Vec<i16>) -> Vec<i16> {
+        let k = self.lab_vol * self.lab_vol;
+        if (k - 1.0).abs() > 1e-3 {
+            for s in pcm.iter_mut() {
+                *s = (*s as f32 * k) as i16;
+            }
+        }
+        pcm
+    }
+
     /// PLAY (or STOP while it plays, or while TAP TIMING runs).
     fn lab_play_btn(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, lit: Option<usize>) {
         if self.lab_run.is_some() {
@@ -1056,7 +1103,7 @@ impl App {
         }
     }
 
-    /// TIMING: tapping the timing (and its four lights), the tempo, the metronome (or COUNT ME IN over the record),
+    /// TIMING: tapping the timing (and its four lights), the tempo, the metronome (or the METRONOME's count-in over the record),
     /// snap, the loop and how it's heard, and lining the chords up with the loop.
     fn lab_timing(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let running = self.lab_run.is_some();
@@ -1064,8 +1111,8 @@ impl App {
         let record = self.lab_over_loop();
         ui.horizontal_wrapped(|ui| {
             let tip = if record {
-                "Over the record: tap (or press Space) as each chord starts, and once more after the last. With Count Me \
-                 In, four clicks lead in and the first chord starts by itself where it's lined up below. Esc stops."
+                "Over the record: tap (or press Space) as each chord starts, and once more after the last. With the \
+                 metronome on, four clicks lead in and the first chord starts by itself where it's lined up below. Esc stops."
             } else {
                 "A bar of clicks, then each chord in turn: tap (or press Space) as it changes, and once more after the \
                  last. Esc stops."
@@ -1105,25 +1152,14 @@ impl App {
         });
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            if record {
-                // (over the record there's no metronome: the record keeps the time)
-                let tip = "Four clicks before the first chord, in time with the record (from where it's lined up below)";
-                if crate::check_box(ui, "COUNT ME IN", self.lab_count_in).tip(tip).clicked() {
-                    self.lab_count_in = !self.lab_count_in;
-                    self.dirty = true;
-                }
-            } else {
-                if crate::check_box(ui, "METRONOME", self.lab_metro).tip("Clicks while you tap the timing and when it plays").clicked() {
-                    self.lab_metro = !self.lab_metro;
-                    self.dirty = true;
-                }
-                ui.add_space(8.0);
+            // (over the record it goes round by itself)
+            if !record {
                 if crate::check_box(ui, "REPEAT", self.lab_repeat).tip("Play goes round and round until you stop it").clicked() {
                     self.lab_repeat = !self.lab_repeat;
                     self.dirty = true;
                 }
+                ui.add_space(14.0);
             }
-            ui.add_space(14.0);
             if let Some(s) = dropdown(ui, "lab_snap", "SNAP", &SNAPS, self.lab_snap as usize, 130.0) {
                 self.lab_snap = s as u8;
                 if s > 0 {
@@ -1165,10 +1201,10 @@ impl App {
         }
     }
 
-    /// COUNT ME IN under way over the record: which of the four clicks it's on.
+    /// the METRONOME's count-in under way over the record: which of the four clicks it's on.
     fn lab_lead_beat(&self) -> Option<usize> {
         let along = self.lab_loop_play || self.lab_run.as_ref().is_some_and(|r| r.auto.is_some() && r.cur.is_none());
-        if !along || !self.lab_count_in || !self.lab_linked_here() || self.paused || self.stopped {
+        if !along || !self.lab_metro || !self.lab_linked_here() || self.paused || self.stopped {
             return None;
         }
         let l = self.store.lab_bench.link.as_ref()?;
@@ -1274,8 +1310,8 @@ impl App {
     }
 
     /// LINE UP: the loop's record with the chords over it, the first at `LabLink::at`. Drag them (or nudge them, or
-    /// find the record's first hit) until the first sits on the record's first chord; PLAY, TAP TIMING and COUNT ME
-    /// IN start from there.
+    /// find the record's first hit) until the first sits on the record's first chord; PLAY, TAP TIMING and the
+    /// metronome's count-in start from there.
     fn lab_line_up(&mut self, ui: &mut egui::Ui) {
         let Some(l) = self.store.lab_bench.link.clone() else { return };
         let running = self.lab_run.is_some();
@@ -1356,7 +1392,7 @@ impl App {
             }
         }
         // the count-in's clicks (the ones that fall inside the loop)
-        if self.lab_over_loop() && self.lab_count_in {
+        if self.lab_over_loop() && self.lab_metro {
             for k in 1..=4 {
                 let x = rect.min.x + (at - k as f32 * spb) * px;
                 if x >= rect.min.x {
@@ -1703,7 +1739,7 @@ impl App {
                     self.store_dirty = true;
                 }
             });
-            if !found.is_empty() {
+            if !notes.is_empty() {
                 tool_group(ui, "CALL IT", |ui| {
                     for (k, s) in found.iter().take(5).enumerate() {
                         let nm = s.name(sp);
@@ -1711,6 +1747,22 @@ impl App {
                         if retro_btn(ui, &nm, on).clicked() && !running {
                             self.store.lab_bench.chords[self.lab_sel].name = if k == 0 { String::new() } else { nm };
                             self.store_dirty = true;
+                        }
+                    }
+                    // CUSTOM: type your own name (Enter or click away keeps it; an empty one goes back to the
+                    // analyzer's)
+                    let custom = !cur.name.is_empty() && !found.iter().any(|s| s.name(sp) == cur.name);
+                    if self.ed.id == crate::tools::F_LAB_CUSTOM {
+                        if let Some(t) = self.entry(ui, crate::tools::F_LAB_CUSTOM, 150.0, &cur.name) {
+                            if !running {
+                                self.store.lab_bench.chords[self.lab_sel].name = t.trim().to_string();
+                                self.store_dirty = true;
+                            }
+                        }
+                    } else {
+                        let label = if custom { cur.name.clone() } else { "CUSTOM".to_string() };
+                        if retro_btn(ui, &label, custom).tip("Call it what you like").clicked() && !running {
+                            self.ed.id = crate::tools::F_LAB_CUSTOM;
                         }
                     }
                 });

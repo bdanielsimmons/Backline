@@ -1424,13 +1424,14 @@ struct App {
     lab_tempo_taps: Vec<Instant>,
     /// the tab open: 0 Chords, 1 Timing, 2 Written Out
     lab_tab: u8,
-    /// COUNT ME IN over the record (four clicks before the first chord), one under way (since when), and LINE UP
-    /// being dragged (where the first chord was, where the drag began)
-    lab_count_in: bool,
+    /// over the record, PLAY or TAP TIMING waiting for the song to get going (since when; then the metronome's four
+    /// clicks before the first chord), and LINE UP being dragged (where the first chord was, where the drag began)
     lab_count: Option<Instant>,
     /// HEAR MY CHORDS over the record: on, when the pass laid down last starts (its first chord), and where the song
     /// was last frame (to notice a jump)
     lab_loop_chords: bool,
+    /// MY CHORDS' volume (0..1; the song keeps the player's)
+    lab_vol: f32,
     lab_pass: Option<Instant>,
     lab_last_pos: Option<(Instant, f32)>,
     lab_line_drag: Option<(f32, f32)>,
@@ -2353,9 +2354,9 @@ impl App {
             lab_repeat: false,
             lab_tempo_taps: Vec::new(),
             lab_tab: 0,
-            lab_count_in: true,
             lab_count: None,
             lab_loop_chords: true,
+            lab_vol: 1.0,
             lab_pass: None,
             lab_last_pos: None,
             lab_line_drag: None,

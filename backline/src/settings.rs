@@ -114,8 +114,8 @@ impl App {
         if let Some(v) = st["lab_tab"].as_u64() {
             app.lab_tab = (v as u8).min(2);
         }
-        if let Some(v) = st["lab_count_in"].as_bool() {
-            app.lab_count_in = v;
+        if let Some(v) = st["lab_vol"].as_f64() {
+            app.lab_vol = (v as f32).clamp(0.0, 1.0);
         }
         if let Some(v) = st["lab_loop_chords"].as_bool() {
             app.lab_loop_chords = v;
@@ -441,7 +441,7 @@ impl App {
             "lab_with_loop": self.lab_with_loop,
             "lab_repeat": self.lab_repeat,
             "lab_tab": self.lab_tab,
-            "lab_count_in": self.lab_count_in,
+            "lab_vol": self.lab_vol,
             "lab_loop_chords": self.lab_loop_chords,
             "q_drop": self.q_drop,
             "mine_off": self.mine_off,

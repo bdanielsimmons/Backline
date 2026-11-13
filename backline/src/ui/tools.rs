@@ -128,6 +128,8 @@ pub const F_REC_A: u32 = 107;
 pub const F_MY_A: u32 = 108;
 /// PROGRESSION LAB: the progression's name
 pub const F_LAB_NAME: u32 = 109;
+/// PROGRESSION LAB: a chord's own name (CALL IT > CUSTOM)
+pub const F_LAB_CUSTOM: u32 = 110;
 
 impl App {
     /// A box you can type into. Shows `shown`; returns the typed text when you press Enter or click away.
