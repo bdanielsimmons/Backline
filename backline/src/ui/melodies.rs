@@ -377,6 +377,10 @@ struct Head {
     tied: bool,
     side: i8,
     acc_col: u8,
+    /// the string it's played on (0 = low E), and how it's reached from the note before on that string: 2
+    /// hammered on, 3 slid into (anything else: picked or tied)
+    string: i32,
+    lig: i32,
 }
 
 /// One thing written in a bar: a beat's notes (or a rest), its value (in quarters, 4 = whole) and dots, a triplet,
@@ -513,7 +517,17 @@ fn bar_items(bar: &transcription::Bar, sharps: bool, g: f32, tab: bool) -> Vec<I
                 .iter()
                 .map(|n| {
                     let (letter, acc, oct) = lines::spell(n[0] + 12, sharps);
-                    Head { step: oct * 7 + letter, acc, mark: None, midi: n[0], tied: n[3] == 1, side: 0, acc_col: 0 }
+                    Head {
+                        step: oct * 7 + letter,
+                        acc,
+                        mark: None,
+                        midi: n[0],
+                        tied: n[3] == 1,
+                        side: 0,
+                        acc_col: 0,
+                        string: n[1],
+                        lig: n[3],
+                    }
                 })
                 .collect();
             heads.sort_by_key(|h| (h.step, h.acc));
@@ -1873,8 +1887,11 @@ impl App {
                     p.line_segment([Pos2::new(rect.min.x + 4.0, tab_y(s)), Pos2::new(x_end, tab_y(s))], line);
                 }
             }
-            // the last head of each pitch, for ties
+            // the last head of each pitch, for ties; and the last head and tab number on each string, for
+            // hammer-ons and slides
             let mut heads_at: Vec<(i32, Pos2)> = Vec::new();
+            let mut head_on: [Option<Pos2>; 6] = [None; 6];
+            let mut tab_on: [Option<Pos2>; 6] = [None; 6];
             let mut x = rect.min.x + left;
             for &b in &row {
                 let bar = &bars[b];
@@ -2081,12 +2098,35 @@ impl App {
                                         Stroke::new(1.2_f32, ink),
                                     ));
                                 }
+                                // hammered on (a slur) or slid into (a line) from the note before on its string
+                                if let Some(from) = head_on.get(h.string as usize).copied().flatten().filter(|_| h.lig >= 2) {
+                                    if h.lig == 2 {
+                                        let s = if it.up { 1.0 } else { -1.0 };
+                                        let a = Pos2::new(from.x + hw, from.y + s * 0.7 * g);
+                                        let z = Pos2::new(hx - hw, y + s * 0.7 * g);
+                                        let mid = Pos2::new((a.x + z.x) / 2.0, (a.y + z.y) / 2.0 + s * 1.3 * g);
+                                        p.add(egui::epaint::QuadraticBezierShape::from_points_stroke(
+                                            [a, mid, z],
+                                            false,
+                                            Color32::TRANSPARENT,
+                                            Stroke::new(1.4_f32, ink),
+                                        ));
+                                    } else {
+                                        p.line_segment(
+                                            [Pos2::new(from.x + 1.4 * hw, from.y), Pos2::new(hx - 1.4 * hw, y)],
+                                            Stroke::new(1.4_f32, ink),
+                                        );
+                                    }
+                                }
                             }
                             for h in &it.heads {
                                 let at = Pos2::new(dx(h), ys(h.step));
                                 match heads_at.iter_mut().find(|a| a.0 == h.midi) {
                                     Some(a) => a.1 = at,
                                     None => heads_at.push((h.midi, at)),
+                                }
+                                if let Some(o) = head_on.get_mut(h.string as usize) {
+                                    *o = Some(at);
                                 }
                             }
                             // the stem, and the flags of a note on its own
@@ -2132,6 +2172,32 @@ impl App {
                                     pal().panel_lt,
                                 );
                                 ptext(p, c, Align::Center, &txt, 1.0, if n[3] == 1 { pal().dim } else { ink });
+                                let s = n[1] as usize;
+                                // a hammer-on: a slur over from the fret before on this string, H over it; a slide:
+                                // a line from it, rising or falling with the frets
+                                if let Some(from) = tab_on[s].filter(|_| n[3] >= 2) {
+                                    let half = crate::font::text_w(&txt, 1.0) / 2.0 + 2.0;
+                                    if n[3] == 2 {
+                                        // low over the string (clear of the one above), the H over the tab
+                                        let a = Pos2::new(from.x + half, from.y - 0.3 * tg);
+                                        let z = Pos2::new(c.x - half, c.y - 0.3 * tg);
+                                        let mid = Pos2::new((a.x + z.x) / 2.0, a.y - 0.4 * tg);
+                                        p.add(egui::epaint::QuadraticBezierShape::from_points_stroke(
+                                            [a, mid, z],
+                                            false,
+                                            Color32::TRANSPARENT,
+                                            Stroke::new(1.2_f32, ink),
+                                        ));
+                                        ptext(p, Pos2::new(mid.x, tab_y(5) - 0.75 * tg), Align::Center, "H", 1.0, ink);
+                                    } else {
+                                        let up = if from.y == c.y { 0.25 * tg } else { 0.0 };
+                                        p.line_segment(
+                                            [Pos2::new(from.x + half, c.y + up), Pos2::new(c.x - half, c.y - up)],
+                                            Stroke::new(1.2_f32, ink),
+                                        );
+                                    }
+                                }
+                                tab_on[s] = Some(c);
                             }
                         }
                         if show[4] {

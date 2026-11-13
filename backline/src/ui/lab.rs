@@ -22,6 +22,8 @@ const ARTS: [&str; 3] = ["STRUM", "HAMMER ON", "SLIDE IN"];
 const PLAYS: [&str; 2] = ["UNACCOMPANIED", "WITH THE LOOP"];
 /// a new chord's placeholder length, until it's timed
 const PLACEHOLDER: f32 = 2.0;
+/// Written Out drawn this much bigger than the page (the notation is small next to the buttons)
+const WRITTEN_SIZE: f32 = 1.75;
 /// how late a tap lands after the sound it answers (the sound's way out, and the hand)
 const TAP_LATE: f32 = 0.05;
 
@@ -213,6 +215,15 @@ pub(crate) fn as_bars(p: &LabProg, sp: theory::Spelling, snap: u8) -> (Vec<crate
         if symbol.is_some() && notes.len() >= 2 && !grips.iter().any(|g| g.name == name) {
             grips.push(crate::transcription::Grip { name: name.clone(), frets: c.grip.map(|f| f.map_or(-1, |f| f as i8)) });
         }
+        // hammered on or slid into: the notes that move are reached from the fret before on their string (2, 3), the
+        // ones that stay ring on (tied)
+        let prev = if i > 0 { p.chords.get(i - 1).map(|q| q.grip) } else { None };
+        let reached = |s: i32, f: i32| match (c.art, prev.and_then(|g| g[s as usize])) {
+            (1 | 2, Some(pf)) if pf as i32 == f => 1,
+            (1, Some(_)) => 2,
+            (2, Some(_)) => 3,
+            _ => 0,
+        };
         for (k, (s, l)) in written_pieces(at, c.beats, snap).into_iter().enumerate() {
             let b = (s / 4.0 + 1e-4).floor() as usize;
             while bars.len() <= b {
@@ -222,7 +233,7 @@ pub(crate) fn as_bars(p: &LabProg, sp: theory::Spelling, snap: u8) -> (Vec<crate
             bars[b].beats.push(crate::transcription::Beat {
                 at: s - b as f32 * 4.0,
                 len: l,
-                notes: notes.iter().map(|(m, st, f)| [*m, *st, *f, i32::from(k > 0)]).collect(),
+                notes: notes.iter().map(|(m, st, f)| [*m, *st, *f, if k > 0 { 1 } else { reached(*st, *f) }]).collect(),
                 chord: if k == 0 { symbol.clone() } else { None },
             });
             which[b].push(i);
@@ -886,7 +897,9 @@ impl App {
                 which.iter().enumerate().find_map(|(b, w)| w.iter().position(|x| *x == c).map(|k| (b, k)))
             });
             ui.add_space(4.0);
-            let out = self.draw_bars(ui, &bars, &grips, sp.sharps, now, false, &[], 0, Some([true, true, true, true, false]));
+            let out = crate::font::with_scale(crate::font::ui_scale() * WRITTEN_SIZE, || {
+                self.draw_bars(ui, &bars, &grips, sp.sharps, now, false, &[], 0, Some([true, true, true, true, false]))
+            });
             if ui.input(|i| i.pointer.primary_clicked()) && !running {
                 if let Some(c) = out.grip.or(out.hover).and_then(|(b, k)| which.get(b).and_then(|w| w.get(k)).copied()) {
                     self.lab_sel = c;
@@ -1412,5 +1425,28 @@ mod tests {
         assert!(last.chord.is_some());
         assert!(bars[1].beats[0].notes.iter().all(|n| n[3] == 1));
         assert_eq!(which[1], vec![1]);
+    }
+
+    #[test]
+    fn hammer_ons_are_written_from_the_fret_before() {
+        let c = |g: [Option<u8>; 6], art: u8| LabChord { grip: g, name: String::new(), beats: 1.0, timed: true, art };
+        // an Ab triad (D, G, B strings at the 1st fret), then the G string hammered to the 2nd fret with the rest held,
+        // then a single A hammered from nothing on the A string (no fret before: picked)
+        let p = LabProg {
+            name: "hammer".into(),
+            bpm: 72.0,
+            chords: vec![
+                c([None, None, Some(1), Some(1), Some(1), None], 0),
+                c([None, None, Some(1), Some(2), Some(1), None], 1),
+                c([None, Some(0), None, None, None, None], 1),
+            ],
+            link: None,
+        };
+        let (bars, _, _) = as_bars(&p, theory::Spelling::default(), 2);
+        let lig = |k: usize, s: i32| bars[0].beats[k].notes.iter().find(|n| n[1] == s).map(|n| n[3]);
+        assert_eq!(lig(1, 3), Some(2), "the G string is hammered on");
+        assert_eq!((lig(1, 2), lig(1, 4)), (Some(1), Some(1)), "the D and B strings ring on");
+        assert_eq!(lig(2, 1), Some(0));
+        assert!(bars[0].beats[0].notes.iter().all(|n| n[3] == 0));
     }
 }

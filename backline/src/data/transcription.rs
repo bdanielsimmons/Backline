@@ -43,7 +43,8 @@ pub struct Beat {
     /// start and length in quarter notes, from the top of the bar
     pub at: f32,
     pub len: f32,
-    /// each note as [pitch (MIDI), string (0 = low E), fret, tied (1) or struck (0)]
+    /// each note as [pitch (MIDI), string (0 = low E), fret, tied (1) or struck (0)] - or, written by the Progression
+    /// Lab, hammered on (2) or slid into (3) from the fret before on its string
     pub notes: Vec<[i32; 4]>,
     /// the chord name written over it
     #[serde(skip_serializing_if = "Option::is_none")]
