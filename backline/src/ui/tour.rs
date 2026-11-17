@@ -311,6 +311,9 @@ fn steps(kind: u8) -> &'static [Step] {
     }
 }
 
+/// How loud the tour's song plays, as a share of the volume set (it's background music for the tour).
+const TOUR_LEVEL: f32 = 0.5;
+
 impl App {
     pub(crate) fn tour_start(&mut self, kind: u8) {
         self.show_help = false;
@@ -413,6 +416,8 @@ impl App {
         self.loop_b = None;
         self.loop_on = false;
         self.apply(Action::PlayIndex(0));
+        // quieter than your own music: the tour talks over it (your volume comes back when it ends)
+        self.player.send(crate::player::Cmd::Volume((self.volume * TOUR_LEVEL).powi(2)));
     }
 
     /// Show the step's feature working on the tour's song (only what differs, so nothing restarts).
@@ -501,6 +506,7 @@ impl App {
         (self.show_prefs, self.side) = s.pages;
         if s.song.is_some() {
             self.apply(Action::StopBtn);
+            self.player.send(crate::player::Cmd::Volume(self.volume * self.volume));
         }
         self.queue = s.queue;
         self.orig_queue = s.orig_queue;

@@ -1985,7 +1985,8 @@ impl App {
             prefetched: None,
             prefetching: 0,
             player: Player::new(),
-            volume: 0.8,
+            // (a first run starts well below full: the tour's song is the first thing heard)
+            volume: 0.6,
             shuffle: false,
             repeat: Repeat::Off,
             seek_drag: None,
