@@ -1799,18 +1799,23 @@ impl App {
         self.set_note(&format!("ADDED TO {}", n.to_uppercase()));
     }
 
-    /// Who wrote a tune and when, into the tune's empty fields (what you typed is kept).
+    /// Who wrote a tune and when, from a lookup: into a field that's empty or still holds what a lookup put
+    /// there (what you typed is kept). A tune from before lookups were kept had its guesses from the older,
+    /// rougher lookup (a reissue's year, another song's writers), so those are replaced, even by nothing.
     pub(crate) fn fill_details(&mut self, name: &str, w: &sources::Work) {
         let Some(i) = self.find_tune(name) else { return };
         let t = &mut self.store.tunes[i];
-        if t.written_by.is_empty() && !w.writers.is_empty() {
+        let old = t.looked.len() < 2;
+        let guess = |now: &str, k: usize| now.is_empty() || old || t.looked.get(k).is_some_and(|l| l == now);
+        let (by, year) = (guess(&t.written_by, 0), guess(&t.year, 1));
+        if by && (old || !w.writers.is_empty()) {
             t.written_by = w.writers.clone();
-            self.store_dirty = true;
         }
-        if t.year.is_empty() && !w.year.is_empty() {
+        if year && (old || !w.year.is_empty()) {
             t.year = w.year.clone();
-            self.store_dirty = true;
         }
+        t.looked = vec![w.writers.clone(), w.year.clone()];
+        self.store_dirty = true;
     }
 
     pub(crate) fn new_tune_named(&mut self, name: &str) -> usize {

@@ -327,6 +327,10 @@ pub struct Tune {
     /// swing, ballad, bossa...
     pub style: String,
     pub versions: Vec<Version>,
+    /// what the last lookup gave for WRITTEN BY and YEAR, so a better lookup replaces its own guesses but never
+    /// what you typed; empty for tunes from before this was kept (their guesses came from a rougher lookup)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub looked: Vec<String>,
 }
 
 impl Tune {

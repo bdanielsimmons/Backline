@@ -105,7 +105,8 @@ pub fn parse_ireal_url(text: &str) -> Result<Vec<Song>, String> {
         let (measures, time) = parse_music(&raw);
         songs.push(Song {
             title: title.to_string(),
-            composer: composer.to_string(),
+            // iReal writes the last name first ("Warren Harry")
+            composer: crate::sources::tidy_composer(composer, true),
             style: style.to_string(),
             key: key.to_string(),
             bpm: bpm.trim().parse().unwrap_or(0),

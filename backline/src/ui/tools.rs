@@ -1229,6 +1229,10 @@ impl App {
             }
             (Some(i), _) => {
                 let t = &self.store.tunes[i];
+                // its writer and year looked up (once a session) like on its own page
+                if t.written_by.is_empty() || t.year.is_empty() || t.looked.is_empty() {
+                    acts.push(Action::TuneDetails(i));
+                }
                 (t.name.clone(), t.key.clone(), t.bpm, t.credit_line(), t.chart.clone(), false)
             }
             (None, Some(title)) => {

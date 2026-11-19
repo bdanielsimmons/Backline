@@ -441,10 +441,10 @@ impl App {
             }
             ui.add_space(4.0);
         }
-        // who wrote it, when, where from: looked up once for you (MusicBrainz), yours to fix
+        // who wrote it, when, where from: looked up for you (Wikidata, MusicBrainz), yours to fix
         {
             let t = &self.store.tunes[i];
-            if t.written_by.is_empty() || t.year.is_empty() {
+            if t.written_by.is_empty() || t.year.is_empty() || t.looked.is_empty() {
                 acts.push(Action::TuneDetails(i));
             }
         }
