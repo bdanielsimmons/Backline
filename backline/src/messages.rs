@@ -455,6 +455,41 @@ impl App {
                     self.set_err(format!("TIDAL PLAYLIST: {}", e))
                 }
             },
+            Msg::PlaylistImportStep(s) => self.toast(&s),
+            Msg::PlaylistImported(r) => {
+                self.pl_importing = false;
+                match r {
+                    Ok(im) if !im.tracks.is_empty() => {
+                        // YouTube clips play (and are kept) as clips
+                        for e in &im.clips {
+                            self.srcmap.insert(e.id, crate::sources::Src::Yt(e.src.clone()));
+                        }
+                        let read = if im.total > im.tracks.len() + im.missing.len() {
+                            format!(" (the first {} of its {})", im.tracks.len() + im.missing.len(), im.total)
+                        } else {
+                            String::new()
+                        };
+                        self.toast(&format!("Found {} of {} songs{}", im.tracks.len(), im.tracks.len() + im.missing.len(), read));
+                        self.pl_link.clear();
+                        let d = crate::new_playlist::NewPl {
+                            name: im.name,
+                            tracks: im.tracks,
+                            desc: format!("From {}", im.from),
+                            missing: im.missing,
+                            ..Default::default()
+                        };
+                        self.open_new_playlist(d);
+                    }
+                    Ok(im) => {
+                        self.toast = None;
+                        self.set_err(format!("PLAYLIST LINK: none of its {} songs were found", im.missing.len()));
+                    }
+                    Err(e) => {
+                        self.toast = None;
+                        self.set_err(format!("PLAYLIST LINK: {}", e));
+                    }
+                }
+            }
             Msg::TidalListDone(r) => match r {
                 Ok(note) => self.toast(&note),
                 Err(e) => {

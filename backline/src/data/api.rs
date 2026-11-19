@@ -1282,6 +1282,13 @@ impl Api {
         Ok(p)
     }
 
+    /// Songs only, the closest `limit` (finding a song from another app: `playlist_link`).
+    pub fn search_tracks(&self, q: &str, limit: usize) -> Res<Vec<Track>> {
+        let n = limit.to_string();
+        let v = self.get("/search", &[("query", q), ("limit", n.as_str()), ("types", "TRACKS")])?;
+        Ok(tracks_from(arr(&v["tracks"]["items"])))
+    }
+
     /// Recordings worth studying, best first: Tidal's 0-100 popularity, adjusted for practice. Karaoke, tribute and
     /// compilation tracks sink; artists already in your tunes float up. With a style (1 jazz, 2 gospel) the search is
     /// widened and players of that world (and the composer's own recording) float above chart pop. One per artist.

@@ -52,6 +52,8 @@ mod lines;
 mod meta;
 #[path = "data/pack.rs"]
 mod pack;
+#[path = "data/playlist_link.rs"]
+mod playlist_link;
 #[path = "data/search.rs"]
 mod search;
 #[path = "data/sources.rs"]
@@ -321,6 +323,9 @@ enum Msg {
     TidalListRemoved(String, i64, usize, Result<(), String>),
     /// a new playlist made on your Tidal account (what to say), shown once the library is loaded again
     TidalListMade(Result<String, String>),
+    /// a playlist link being read: how far it's got; then what it found (or why not)
+    PlaylistImportStep(String),
+    PlaylistImported(Result<playlist_link::Imported, String>),
     /// one of your Tidal playlists renamed: (its id, the new name), or why not
     TidalListRenamed(String, String, Result<(), String>),
     /// a song is in that Tidal playlist already: (its id, its name, the song), to ask before adding it again
@@ -671,6 +676,8 @@ enum Action {
     /// open the New Playlist panel with these songs in it, named (a radio, a mix): you can change the name;
     /// on Tidal (true) or in Backline
     PlaylistNewFrom(String, Vec<Track>, bool),
+    /// read a playlist link from another app (Apple Music, Spotify), find its songs, then the New Playlist panel
+    PlaylistImport(String),
     /// open ADD TO PLAYLIST for a song, or a loop of it (from, to, the loop's name)
     PlaylistPicker(Track, Option<(f32, f32, String)>),
     /// copy songs from the other computer to this one (into your files)
@@ -1190,6 +1197,9 @@ struct App {
     tuning_busy: bool,
     upd_checked: Option<Instant>,
     new_pl: String,
+    /// LISTS > PLAYLISTS: a playlist link pasted in, and whether one is being read
+    pl_link: String,
+    pl_importing: bool,
     pl_open: Option<usize>,
     /// what the queue was started from (a page's name, as a radio's), to name a playlist made of it
     queue_from: String,
@@ -2195,6 +2205,8 @@ impl App {
             tuning_busy: false,
             upd_checked: None,
             new_pl: String::new(),
+            pl_link: String::new(),
+            pl_importing: false,
             pl_open: None,
             queue_from: String::new(),
             toast: None,
