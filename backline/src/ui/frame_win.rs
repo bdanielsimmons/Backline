@@ -70,6 +70,100 @@ pub(crate) fn install(cc: &eframe::CreationContext<'_>) {
 #[cfg(not(windows))]
 pub(crate) fn install(_cc: &eframe::CreationContext<'_>) {}
 
+/// The main screen's work area (the taskbar kept clear), in points: where the window first opens.
+#[cfg(windows)]
+pub(crate) fn work_area() -> Option<egui::Rect> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::HiDpi::GetDpiForSystem;
+    use windows::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS};
+    let mut r = RECT::default();
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut r as *mut RECT as *const _), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) }
+        .as_bool();
+    // (pixels once the program knows the screen's scale; before that Windows answers in points, and says 96 here)
+    let k = 96.0 / unsafe { GetDpiForSystem() }.max(96) as f32;
+    (ok && r.right > r.left && r.bottom > r.top).then(|| {
+        egui::Rect::from_min_max(egui::pos2(r.left as f32 * k, r.top as f32 * k), egui::pos2(r.right as f32 * k, r.bottom as f32 * k))
+    })
+}
+
+#[cfg(not(windows))]
+pub(crate) fn work_area() -> Option<egui::Rect> {
+    None
+}
+
+/// The window kept on its screen: moved in when it hangs past an edge of the screen's work area (the taskbar kept
+/// clear), and made smaller when it's bigger than that, so nothing at its bottom (the tour's card, the player) is out
+/// of reach. Not while it fills the screen or is minimized.
+#[cfg(windows)]
+pub(crate) fn fit_on_screen(h: isize) {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, IsZoomed, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+    let h = HWND(h);
+    if h.0 == 0 || unsafe { IsZoomed(h).as_bool() || IsIconic(h).as_bool() } {
+        return;
+    }
+    let mut wr = RECT::default();
+    if !unsafe { GetWindowRect(h, &mut wr) }.as_bool() {
+        return;
+    }
+    // (what shows of it: a framed window's edges for sizing are see-through)
+    let (l, t, r, b) = crate::onscreen::bounds(h).unwrap_or((wr.left, wr.top, wr.right, wr.bottom));
+    let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    if !unsafe { GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mut mi) }.as_bool() {
+        return;
+    }
+    let wa = mi.rcWork;
+    let Some((x, y, w, ht)) = fit_into((l, t, r, b), (wa.left, wa.top, wa.right, wa.bottom)) else {
+        return;
+    };
+    // (back to the window's own rectangle: the see-through edges round what shows)
+    let (el, et, er, eb) = (l - wr.left, t - wr.top, wr.right - r, wr.bottom - b);
+    unsafe { SetWindowPos(h, HWND(0), x - el, y - et, w + el + er, ht + et + eb, SWP_NOZORDER | SWP_NOACTIVATE) };
+    crate::api::log(&format!("window: moved onto the screen ({}x{} at {},{}; work area {}x{})", w, ht, x, y, wa.right - wa.left, wa.bottom - wa.top));
+}
+
+#[cfg(not(windows))]
+pub(crate) fn fit_on_screen(_h: isize) {}
+
+/// Where a window (left, top, right, bottom) goes to be all on a work area (the same): no bigger than it, moved in
+/// from any edge it hangs past. Left, top, width, height; None when it's on it already.
+fn fit_into(win: (i32, i32, i32, i32), wa: (i32, i32, i32, i32)) -> Option<(i32, i32, i32, i32)> {
+    let (l, t, r, b) = win;
+    let (w, h) = ((r - l).min(wa.2 - wa.0), (b - t).min(wa.3 - wa.1));
+    let (x, y) = (l.min(wa.2 - w).max(wa.0), t.min(wa.3 - h).max(wa.1));
+    ((x, y, w, h) != (l, t, r - l, b - t)).then_some((x, y, w, h))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_window_past_the_screen_comes_onto_it() {
+        // a 1920 x 1080 screen at 150%, the taskbar 48 high: a window 1920 x 1230 from the top runs past the bottom
+        let wa = (0, 0, 1920, 1032);
+        assert_eq!(fit_into((0, 0, 1920, 1230), wa), Some((0, 0, 1920, 1032)));
+        // opened lower down: up, and no taller than the work area
+        assert_eq!(fit_into((100, 150, 1300, 1250), wa), Some((100, 0, 1200, 1032)));
+        // hanging past the bottom but short enough: just moved up
+        assert_eq!(fit_into((100, 600, 1300, 1100), wa), Some((100, 532, 1200, 500)));
+        // past the left, and on a second screen to the right
+        assert_eq!(fit_into((-50, 10, 950, 610), wa), Some((0, 10, 1000, 600)));
+        assert_eq!(fit_into((1800, 100, 2800, 700), (1920, 0, 3840, 1040)), Some((1920, 100, 1000, 600)));
+        // already on it: left be
+        assert_eq!(fit_into((100, 100, 1100, 900), wa), None);
+        assert_eq!(fit_into((0, 0, 1920, 1032), wa), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_work_area_is_found() {
+        let wa = work_area().expect("the work area");
+        assert!(wa.width() >= 640.0 && wa.height() >= 400.0, "{wa:?}");
+    }
+}
+
 #[cfg(windows)]
 unsafe extern "system" fn proc_(
     hwnd: windows::Win32::Foundation::HWND,

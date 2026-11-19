@@ -669,7 +669,7 @@ impl App {
                     // the full window's equalizer and playlist as they were
                     (self.show_eq, self.queue_hidden) = self.mini_saved;
                     self.ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
-                    self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(980.0, 640.0)));
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(crate::min_inner()));
                     let sz = if self.saved_size.x > 100.0 { self.saved_size } else { Vec2::new(1280.0, 820.0) };
                     // never bigger than the screen (the title bar and the taskbar take some of it)
                     let room = self.ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1920.0, 1080.0))

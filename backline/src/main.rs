@@ -3646,6 +3646,10 @@ impl eframe::App for App {
                 self.last_size = sz;
                 self.frames += 1;
                 ctx.request_repaint();
+                // once it has settled: all of it on the screen (Windows can open it hanging past the bottom)
+                if self.frames == 5 && !hidden_test_copy() && tour::demo_kind().is_none() {
+                    frame_win::fit_on_screen(onscreen::main_window());
+                }
             }
         }
         self.drain(ctx);
@@ -4022,6 +4026,19 @@ impl eframe::App for App {
     }
 }
 
+/// What the full window leaves of the screen's work area (points): a little at the sides, a title bar's height and a
+/// little at the bottom.
+const SCREEN_KEEP: Vec2 = Vec2::new(16.0, 40.0);
+
+/// The smallest the full window goes (points): 980 x 640, less on a screen without the room for that.
+pub(crate) fn min_inner() -> Vec2 {
+    let min = Vec2::new(980.0, 640.0);
+    match frame_win::work_area() {
+        Some(wa) => min.min(wa.size() - SCREEN_KEEP),
+        None => min,
+    }
+}
+
 fn main() -> eframe::Result<()> {
     std::panic::set_hook(Box::new(|info| {
         let loc = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
@@ -4040,11 +4057,19 @@ fn main() -> eframe::Result<()> {
     }
     // crashes Windows saw since the last look (ones the log above can't hear of), into the log
     crashes::note_new();
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Backline")
-        .with_icon(Arc::new(app_icon()))
-        .with_inner_size([1280.0, 820.0])
-        .with_min_inner_size([980.0, 640.0]);
+    let mut viewport =
+        egui::ViewportBuilder::default().with_title("Backline").with_icon(Arc::new(app_icon())).with_min_inner_size(min_inner());
+    // its size: 1280 x 820, or less on a screen without the room (a laptop's, scaled up), in the middle of it then so
+    // nothing at its bottom (the tour's card, the player) is past the edge
+    let size = Vec2::new(1280.0, 820.0);
+    match frame_win::work_area() {
+        Some(wa) if size.x > wa.width() - SCREEN_KEEP.x || size.y > wa.height() - SCREEN_KEEP.y => {
+            let size = size.min(wa.size() - SCREEN_KEEP);
+            viewport = viewport.with_inner_size(size).with_position(wa.min + (wa.size() - size - Vec2::new(0.0, SCREEN_KEEP.y)) / 2.0);
+            crate::api::log(&format!("start: a small screen ({:.0}x{:.0}): the window opens at {:.0}x{:.0}", wa.width(), wa.height(), size.x, size.y));
+        }
+        _ => viewport = viewport.with_inner_size(size),
+    }
     // recording a demo: a fixed size, away to the side, never taking the keyboard from what you are doing
     if tour::demo_kind().is_some() {
         viewport = viewport
