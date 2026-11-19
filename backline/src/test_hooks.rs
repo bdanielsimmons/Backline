@@ -32,6 +32,25 @@ impl App {
         if std::env::var_os("BACKLINE_PRACTICE").is_some() {
             app.practice = true;
         }
+        // (BACKLINE_TIDAL_SAVE=<name>: your Backline playlist of that name made on your Tidal account too, as SAVE TO
+        // TIDAL then Create on Tidal do; for your own copy, started by hand on your behalf: it makes no test copy, so
+        // it keeps its sound. Once: gone from the surroundings, so a restart doesn't make it again)
+        if let Ok(name) = std::env::var("BACKLINE_TIDAL_SAVE") {
+            std::env::remove_var("BACKLINE_TIDAL_SAVE");
+            match app.store.playlists.iter().find(|p| p.name == name) {
+                Some(pl) if !pl.items.is_empty() && pl.items.iter().all(|v| v.kind == "tidal") && app.api.has_token() => {
+                    let d = new_playlist::NewPl {
+                        name: pl.name.clone(),
+                        desc: pl.desc.clone(),
+                        tracks: pl.items.iter().map(|v| v.to_track()).collect(),
+                        tidal: true,
+                        ..Default::default()
+                    };
+                    app.apply(Action::PlaylistMake(d));
+                }
+                _ => crate::api::log(&format!("BACKLINE_TIDAL_SAVE: no Backline playlist {:?} of Tidal songs, or not logged in", name)),
+            }
+        }
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
             Ok("prefs") => app.show_prefs = true,

@@ -148,6 +148,7 @@ Superimpose. Plain text everywhere (`font::set_modern(true)`); the pixel font on
   Add `BACKLINE_SHOW=1` to open one in front of you, with sound, to try it by hand.
 - `BACKLINE_OPEN=<name>` opens a screen at start: practice trainer pitch stems zoom lists loops loopsong groups prog news mini mini_eq_pl mine yt diary listening visuals nowplaying newplaylist saveradio renamelist toast dupe addto peerfiles peerask (BACKLINE_PEER_NAME; pitch with BACKLINE_REC_A; trainer / pitch / stems play BACKLINE_SONG=<file> when given, with BACKLINE_MENU=export the EXPORT panel opens, BACKLINE_LOOP=<a>-<b> sets that loop)
   diarynotes diarywrite tunepage diarysong pent libfilter minefilter scales countoff eq buttonmap bookmarks loopmarks triads cluster group export superimpose
+- `BACKLINE_TIDAL_SAVE=<playlist name>` (the owner's own copy, started on their behalf; no test copy, so not muted): makes that Backline playlist of Tidal songs on their Tidal account at start, once (`open_for_test`)
   fingerings melodies analyzer voicings harmony arpeggios artist (BACKLINE_ARTIST=<id>) artists record routine ear
   (BACKLINE_EAR=<drill index 0-12> opens a drill with a question answered; the atonal ones are 8-12) atonal triadpairs (BACKLINE_TP_MODE=1: through the changes)
   (LINES > ATONAL; BACKLINE_AT_VIEW=1 the generated lines, BACKLINE_AT_SEL=<note> a note open to fix). With
