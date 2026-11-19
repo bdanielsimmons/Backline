@@ -1,6 +1,7 @@
 //! A notes box that reads formatted (headings, lists, bold, underline, links) and writes in the text box with its
 //! marks faint (`notes_box`), the tool strip over it (`note_tools`). The marks themselves: notes_fmt.rs.
 
+use crate::Within;
 use super::*;
 
 // -------------------------------------------------------------- notes with formatting
@@ -328,7 +329,7 @@ pub(crate) fn notes_box(
     if ed.id == id || text.trim().is_empty() {
         let chars: Vec<char> = text.chars().collect();
         let lines = layout_lines(&chars, px, w - 16.0).len().max(1);
-        let h = ((lines + 1) as f32 * lh + 6.0).clamp(min_h, max_h);
+        let h = ((lines + 1) as f32 * lh + 6.0).within(min_h, max_h);
         let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
         return (field_x(ui, ed, id, text, r, hint, true, true), r, None);
     }

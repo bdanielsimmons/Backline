@@ -386,7 +386,7 @@ impl App {
             app.pomo_sound = b;
         }
         // the focus timer as it was (closed, updated, crashed): held where it was, CONTINUE to carry on
-        let num = |k: &str, lo: u64, hi: u64, d: u32| st[k].as_u64().map_or(d, |v| v.clamp(lo, hi) as u32);
+        let num = |k: &str, lo: u64, hi: u64, d: u32| st[k].as_u64().map_or(d, |v| v.within(lo, hi) as u32);
         app.pomo_focus = num("pomo_focus", 1, 180, app.pomo_focus);
         app.pomo_break = num("pomo_break", 1, 60, app.pomo_break);
         app.pomo_cycles = num("pomo_cycles", 1, 16, app.pomo_cycles);

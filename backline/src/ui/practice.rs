@@ -1,6 +1,7 @@
 //! The PRACTICE panel: the waveform with its loops and marks, the A-B loop and speed, saved loops and bookmarks
 //! with their notes, and the tools behind its tabs (trainer, pitch, stems, record).
 
+use crate::Within;
 use super::*;
 
 // little 7x7 pictures for the stems: drums, bass (a woofer), other (keys), vocals (a mic)
@@ -280,7 +281,7 @@ impl App {
         if zoom > 1.0 && !dragging && !self.wv_free && (shown < start || shown > start + span) {
             start = shown - span * 0.05;
         }
-        let start = start.clamp(0.0, (dur1 - span).max(0.0));
+        let start = start.within(0.0, (dur1 - span).max(0.0));
         self.wv_zoom = zoom;
         self.wv_start = start;
         let at = |t: f32| inn.min.x + inn.width() * ((t - start) / span).clamp(0.0, 1.0);
@@ -304,7 +305,7 @@ impl App {
                 let n = f.len();
                 for c in 0..cols {
                     let a = (((start + span * c as f32 / cols as f32) * 1000.0) as usize).min(n - 1);
-                    let b = (((start + span * (c + 1) as f32 / cols as f32) * 1000.0) as usize).clamp(a + 1, n);
+                    let b = (((start + span * (c + 1) as f32 / cols as f32) * 1000.0) as usize).within(a + 1, n);
                     let (lo, hi) = f[a..b].iter().fold((0i8, 0i8), |(l, h), p| (l.min(p[0]), h.max(p[1])));
                     let x = inn.min.x + c as f32;
                     let (y0, y1) = (mid - hi as f32 / 127.0 * half, mid - lo as f32 / 127.0 * half);
@@ -575,7 +576,7 @@ impl App {
                 if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
                     let t = time_at(pp.x);
                     if self.marker_drag == 3 {
-                        let a = (t - self.pan_off).clamp(0.0, (dur - self.pan_len).max(0.0));
+                        let a = (t - self.pan_off).within(0.0, (dur - self.pan_len).max(0.0));
                         acts.push(Action::SetAAt(a));
                         acts.push(Action::SetBAt(a + self.pan_len));
                     } else if self.marker_drag == 1 {
@@ -589,7 +590,7 @@ impl App {
                 }
             } else if let Some(anc) = self.sel_anchor {
                 if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
-                    let (x1, x2) = (at(anc), pp.x.clamp(inn.min.x, inn.max.x));
+                    let (x1, x2) = (at(anc), pp.x.within(inn.min.x, inn.max.x));
                     let (lo, hi) = if x1 < x2 { (x1, x2) } else { (x2, x1) };
                     fill_rect(
                         &p,

@@ -1,6 +1,7 @@
 //! Audio that doesn't come from Tidal: files on this computer, YouTube clips (through yt-dlp),
 //! plus helpers that work on any audio: waveform peaks and WAV export of a loop.
 
+use crate::Within;
 use crate::decode::SymSource;
 use crate::store::{hash_id, Ext};
 use rodio::Source;
@@ -938,7 +939,7 @@ pub fn mix_stems_span(data: &[Vec<i16>; 4], on: [bool; 4], a: f32, b: f32) -> Ve
     (s0..s1.max(s0))
         .map(|i| {
             let v: i32 = (0..4).filter(|k| on[*k]).map(|k| data[k].get(i).copied().unwrap_or(0) as i32).sum();
-            v.clamp(i16::MIN as i32, i16::MAX as i32) as i16
+            v.within(i16::MIN as i32, i16::MAX as i32) as i16
         })
         .collect()
 }

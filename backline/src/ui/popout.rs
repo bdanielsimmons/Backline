@@ -18,6 +18,7 @@
 // (only Windows has the window, for now)
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use crate::Within;
 use crate::player::{Ctl, Viz};
 use crate::visuals::{self, Frame, PRESETS};
 use crate::App;
@@ -480,16 +481,16 @@ fn place(lo: i32, hi: i32, wlo: i32, whi: i32, snap: i32, gap: i32) -> i32 {
 fn sized(r: [i32; 4], sides: [bool; 4], dx: i32, dy: i32, min: [i32; 2], max: [i32; 2]) -> [i32; 4] {
     let [mut l, mut t, mut rt, mut b] = r;
     if sides[0] {
-        l = (l + dx).clamp(rt - max[0], rt - min[0]);
+        l = (l + dx).within(rt - max[0], rt - min[0]);
     }
     if sides[2] {
-        rt = (rt + dx).clamp(l + min[0], l + max[0]);
+        rt = (rt + dx).within(l + min[0], l + max[0]);
     }
     if sides[1] {
-        t = (t + dy).clamp(b - max[1], b - min[1]);
+        t = (t + dy).within(b - max[1], b - min[1]);
     }
     if sides[3] {
-        b = (b + dy).clamp(t + min[1], t + max[1]);
+        b = (b + dy).within(t + min[1], t + max[1]);
     }
     [l, t, rt, b]
 }
@@ -643,6 +644,7 @@ impl App {
 mod win {
     use super::{lock, steady, ui, Asked, Own, Pop, GAP, MAX, MIN, SNAP, START, TITLE};
     use crate::player::{Ctl, Viz};
+    use crate::Within;
     use eframe::egui::{self, CursorIcon, Pos2, Vec2};
     use eframe::{egui_glow, glow};
     use std::sync::{Arc, Mutex};
@@ -690,7 +692,7 @@ mod win {
         let px = |v: Vec2| [(v.x * k).round() as i32, (v.y * k).round() as i32];
         let (lo, hi) = (px(MIN), px(MAX));
         let size = asked.map(px).or(last.map(|r| [r[2], r[3]])).unwrap_or(px(START));
-        let size = [size[0].clamp(lo[0], hi[0]), size[1].clamp(lo[1], hi[1])];
+        let size = [size[0].within(lo[0], hi[0]), size[1].within(lo[1], hi[1])];
         if crate::hidden_test_copy() {
             // (a test copy's, like its main window: off every screen)
             return [-11000, 40, size[0], size[1]];

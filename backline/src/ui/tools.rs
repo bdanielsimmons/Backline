@@ -1,5 +1,6 @@
 //! Floating tools (focus timer, metronome), the lead sheet with its band, and the typed number boxes.
 
+use crate::Within;
 use crate::band;
 use crate::chart;
 use crate::extras::{Knob, Opt};
@@ -648,7 +649,7 @@ impl App {
         if let Some(t) = self.entry(ui, id, w, &shown) {
             let t = t.trim();
             if let Ok(n) = t.parse::<u32>() {
-                out = Some(n.clamp(lo, hi));
+                out = Some(n.within(lo, hi));
             } else if t.eq_ignore_ascii_case("off") {
                 out = Some(lo);
             }
@@ -1714,7 +1715,7 @@ impl App {
             // the bars grow to fill the sheet's height (up to twice their size), the chord names with them
             let base = if tonic.is_some() { 64.0 } else { 54.0 };
             let rows = chart.bars.len().div_ceil(per).max(1) as f32;
-            let ch = ((ui.available_height() - 12.0) / rows - 8.0).clamp(base, base * 2.0).floor();
+            let ch = ((ui.available_height() - 12.0) / rows - 8.0).within(base, base * 2.0).floor();
             let z = ch / base;
             for (ri, row) in chart.bars.chunks(per).enumerate() {
                 let (rr, _) = ui.allocate_exact_size(Vec2::new(w, ch + 8.0), Sense::hover());

@@ -457,7 +457,7 @@ impl App {
             Action::SeekRel(d) => {
                 if self.cur.is_some() && !self.stopped {
                     let dur = self.cur_track().map(|t| t.duration).unwrap_or(0.0);
-                    let t = (self.pos() + d).clamp(0.0, (dur - 1.0).max(0.0));
+                    let t = (self.pos() + d).within(0.0, (dur - 1.0).max(0.0));
                     self.player.send(Cmd::Seek(t));
                 }
             }
@@ -749,7 +749,7 @@ impl App {
                     return;
                 }
                 self.practice = true;
-                let t = t.clamp(0.0, self.track_len());
+                let t = t.within(0.0, self.track_len());
                 self.loop_a = Some(t);
                 if let Some(b) = self.loop_b {
                     if b <= t + 0.1 {
@@ -765,7 +765,7 @@ impl App {
                     return;
                 }
                 self.practice = true;
-                let t = t.clamp(0.0, self.track_len());
+                let t = t.within(0.0, self.track_len());
                 self.loop_b = Some(t);
                 match self.loop_a {
                     Some(a) if a + 0.1 < t => {}
@@ -786,7 +786,7 @@ impl App {
                     return;
                 };
                 let len = b - a;
-                let na = (if on { a + len } else { a - len }).clamp(0.0, (self.track_len() - len).max(0.0));
+                let na = (if on { a + len } else { a - len }).within(0.0, (self.track_len() - len).max(0.0));
                 self.loop_a = Some(na);
                 self.loop_b = Some(na + len);
                 self.loop_on = true;

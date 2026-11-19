@@ -68,7 +68,7 @@ pub(crate) fn resample(src: &[f32], n: usize, k: f32) -> Vec<f32> {
                 let (a, b) = (i * len / n, ((i + 1) * len / n).max(i * len / n + 1).min(len));
                 src[a..b].iter().copied().fold(0.0, f32::max)
             } else {
-                let pos = ((i as f32 + 0.5) * len as f32 / n as f32 - 0.5).clamp(0.0, (len - 1) as f32);
+                let pos = ((i as f32 + 0.5) * len as f32 / n as f32 - 0.5).within(0.0, (len - 1) as f32);
                 let (i0, fr) = (pos.floor() as usize, pos.fract());
                 src[i0] * (1.0 - fr) + src[(i0 + 1).min(len - 1)] * fr
             };

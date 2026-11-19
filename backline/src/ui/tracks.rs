@@ -589,7 +589,7 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
             let (a, b) = (vis[k], vis[k + 1]);
             let sum: f32 = vis.iter().map(|&i| w[i]).sum();
             let min = 0.1 * sum;
-            let d = (r.drag_delta().x / avail * sum).clamp(min - w[a], w[b] - min);
+            let d = (r.drag_delta().x / avail * sum).within(min - w[a], w[b] - min);
             w[a] += d;
             w[b] -= d;
             COLS_CHANGED.store(true, Ordering::Relaxed);
@@ -720,7 +720,7 @@ pub(crate) fn row_window(ui: &mut egui::Ui, n: usize, art: bool) -> (usize, usiz
     let top = ui.cursor().min.y;
     let ahead = clip.height().max(200.0);
     let first = (((clip.min.y - ahead - top) / h).floor().max(0.0) as usize).min(n);
-    let last = ((((clip.max.y + ahead) - top) / h).ceil().max(0.0) as usize).clamp(first, n);
+    let last = ((((clip.max.y + ahead) - top) / h).ceil().max(0.0) as usize).within(first, n);
     row_room(ui, first, art);
     (first, last)
 }

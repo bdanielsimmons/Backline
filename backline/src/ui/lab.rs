@@ -63,7 +63,7 @@ pub(crate) fn snap_step(snap: u8) -> f32 {
 /// A length put on the grid (at least one step, at most 16 bars).
 pub(crate) fn snap_to(beats: f32, snap: u8) -> f32 {
     let s = snap_step(snap);
-    ((beats / s).round() * s).clamp(s, 64.0)
+    ((beats / s).round() * s).within(s, 64.0)
 }
 
 /// A length as note values ("DOTTED 8TH", "HALF + 8TH", "QUARTER + TRIPLET 8TH"), or None when it isn't one.
@@ -767,7 +767,7 @@ impl App {
                     r.cur = Some(0);
                 }
                 if let Some(l) = self.store.lab_bench.link.as_mut() {
-                    l.at = (pos - l.a).clamp(0.0, (l.b - l.a).max(0.0));
+                    l.at = (pos - l.a).within(0.0, (l.b - l.a).max(0.0));
                 }
                 self.lab_sel = 0;
                 if guitar {
@@ -1362,7 +1362,7 @@ impl App {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
             }
         }
-        let at = at.clamp(0.0, (len - 0.05).max(0.0));
+        let at = at.within(0.0, (len - 0.05).max(0.0));
         if (at - l.at).abs() > 1e-4 {
             if let Some(link) = self.store.lab_bench.link.as_mut() {
                 link.at = at;
@@ -1381,7 +1381,7 @@ impl App {
                 let col = pal().ink2.gamma_multiply(0.5);
                 for x in 0..cols {
                     let i0 = (x * n / cols).min(n - 1);
-                    let i1 = ((x + 1) * n / cols).clamp(i0 + 1, n);
+                    let i1 = ((x + 1) * n / cols).within(i0 + 1, n);
                     let v = e[i0..i1].iter().copied().fold(0.0, f32::max);
                     let xx = rect.min.x + x as f32 + 0.5;
                     p.line_segment([Pos2::new(xx, mid - v * amp - 0.5), Pos2::new(xx, mid + v * amp + 0.5)], Stroke::new(1.0_f32, col));

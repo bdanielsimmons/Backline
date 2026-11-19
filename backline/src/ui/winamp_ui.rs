@@ -1178,10 +1178,10 @@ impl App {
         let row_h = 13.0 * tk;
         let rows = ((list.height() - 4.0) / row_h).floor().max(1.0) as usize;
         let max_top = queue.len().saturating_sub(rows) as f32;
-        let mut first = self.wa_pl_top.clamp(0.0, max_top);
+        let mut first = self.wa_pl_top.within(0.0, max_top);
         if self.q_scroll {
             if let Some(c) = cur {
-                first = (c as f32 - rows as f32 / 2.0).clamp(0.0, max_top);
+                first = (c as f32 - rows as f32 / 2.0).within(0.0, max_top);
             }
             self.q_scroll = false;
         }
@@ -1189,7 +1189,7 @@ impl App {
         let _ = ui.interact(list, id.with("list"), Sense::hover());
         if ui.input(|i| i.pointer.hover_pos()).is_some_and(|pp| list.contains(pp)) {
             let wheel = ui.input(|i| i.smooth_scroll_delta.y);
-            first = (first - wheel / row_h).clamp(0.0, max_top);
+            first = (first - wheel / row_h).within(0.0, max_top);
         }
         let digits = format!("{}", queue.len()).len();
         let clip = p.with_clip_rect(list);

@@ -251,7 +251,7 @@ pub(crate) fn block_moves(b: &Block) -> Option<&'static str> {
 
 /// The rung you are on: the week's, moved.
 pub(crate) fn rung_now(plan: &Plan, week: &Week, mv: &Moves) -> usize {
-    (week.rung.max(1) as i32 + mv.rung).clamp(1, plan.rungs.len().max(1) as i32) as usize
+    (week.rung.max(1) as i32 + mv.rung).within(1, plan.rungs.len().max(1) as i32) as usize
 }
 
 /// The project's step for this day: every week's steps in a row, moved along them. The week it comes from (1 the
@@ -263,7 +263,7 @@ pub(crate) fn project_at(plan: &Plan, week: &Week, wd: usize, mv: &Moves) -> Opt
         return None;
     }
     let here = plan.weeks[..wi].iter().map(|w| w.steps.len()).sum::<usize>() + wd.min(week.steps.len().saturating_sub(1));
-    let g = (here as i32 + mv.project).clamp(0, all.len() as i32 - 1) as usize;
+    let g = (here as i32 + mv.project).within(0, all.len() as i32 - 1) as usize;
     let (i, k) = all[g];
     Some((i + 1, k))
 }
@@ -605,7 +605,7 @@ impl PlanState {
         let plan = self.file.as_ref()?.as_ref().ok()?.clone();
         let start = day_number(&plan.start)?;
         let today = store::today_days();
-        let w = week_of(start, today).clamp(1, plan.weeks.len() as i64);
+        let w = week_of(start, today).within(1, plan.weeks.len() as i64);
         let week = plan.weeks[(w - 1) as usize].clone();
         let day = plan.days[weekday(today)].clone();
         let blocks = day_blocks(&plan, &day);
@@ -1077,11 +1077,11 @@ impl App {
         self.plan_progress(ui, &plan, &week_now);
 
         // ---- the week looked at
-        let shown = (now_w.clamp(1, n) + self.plan.look).clamp(1, n);
+        let shown = (now_w.within(1, n) + self.plan.look).within(1, n);
         ui.add_space(6.0);
         section_header(ui, "THE WEEKS");
         if let Some(w) = week_strip(ui, &plan, now_w, shown) {
-            self.plan.look = w - now_w.clamp(1, n);
+            self.plan.look = w - now_w.within(1, n);
         }
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "<", false).tip("Previous week.").clicked() && shown > 1 {

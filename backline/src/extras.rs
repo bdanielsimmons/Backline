@@ -2,6 +2,7 @@
 //! diary, saved sections, the speed trainer, metronome and the rest. (Their actions are carried out in actions.rs,
 //! their messages taken in by messages.rs; the drawing is in the ui/ files.)
 
+use crate::Within;
 use crate::api::{self, Track};
 use crate::band;
 use crate::player::Cmd;
@@ -2019,7 +2020,7 @@ impl App {
     }
 
     pub(crate) fn knob_set(&mut self, k: Knob, v: f32) {
-        let u = |lo: f32, hi: f32| v.round().clamp(lo, hi) as u32;
+        let u = |lo: f32, hi: f32| v.round().within(lo, hi) as u32;
         match k {
             Knob::Focus => self.pomo_focus = u(1.0, 180.0),
             Knob::Rest => self.pomo_break = u(1.0, 60.0),

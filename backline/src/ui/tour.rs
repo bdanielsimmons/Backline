@@ -5,6 +5,7 @@
 //! a slower speed, a loop, an EQ preset. When it ends, everything comes back: what was showing, the queue, the
 //! song and where it was, the speed, the loop and the equalizer.
 
+use crate::Within;
 use crate::{pal, retro_btn, title_line, Action, App, practice_tools};
 use eframe::egui::{self, Color32, Pos2, Rect};
 use std::cell::RefCell;
@@ -1047,7 +1048,7 @@ impl App {
                         2 | 4 | 5 => 5.0,
                         _ => 3.0,
                     };
-                    let stay = (1.5 + words / 6.0).clamp(least, 8.0);
+                    let stay = (1.5 + words / 6.0).within(least, 8.0);
                     // the first step waits for the tour's song to be playing
                     let waiting = i == 0 && self.tour_play.as_ref().is_some_and(|s| s.song.is_none());
                     if waiting {

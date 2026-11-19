@@ -19,7 +19,7 @@ impl App {
             if self.lib_hidden {
                 let fits = (screen.width() / 275.0).min(screen.height() * 0.5 / 116.0).max(1.0);
                 // (sized by the line under it: that size, in the middle of its window)
-                return if self.stack_w > 0.0 { (self.stack_w / 275.0).clamp(1.0, fits) } else { fits };
+                return if self.stack_w > 0.0 { (self.stack_w / 275.0).within(1.0, fits) } else { fits };
             }
             let by_w = ((screen.width() - 640.0) * ppp / 275.0).floor();
             let by_h = (screen.height() * 0.45 * ppp / 116.0).floor();
@@ -28,9 +28,9 @@ impl App {
                 // dragged: as wide as you made it (the deck's pixels then not all the same size), the deck no
                 // taller than half the window, the library (with its side list) at least 640 points wide
                 let max_k = (screen.height() * 0.5 / 116.0).max(1.0);
-                (self.stack_w / 275.0).clamp(1.0, max_k).min(((screen.width() - 640.0) / 275.0).max(1.0))
+                (self.stack_w / 275.0).within(1.0, max_k).min(((screen.width() - 640.0) / 275.0).max(1.0))
             } else {
-                by_w.min(by_h).clamp(1.0, (2.0 * ppp).round().max(2.0)) / ppp
+                by_w.min(by_h).within(1.0, (2.0 * ppp).round().max(2.0)) / ppp
             }
         });
         // practising with a skin: the deck about a quarter of the window tall, or the size you gave it (the line
@@ -48,9 +48,9 @@ impl App {
             let want = if self.prac_stack_w > 0.0 { self.prac_stack_w / 275.0 } else { k.min((screen.height() * 0.25 / 116.0).max(1.0)) };
             if self.lib_hidden {
                 col_w = Some(screen.width());
-                want.clamp(1.0, most).min(screen.width() / 275.0)
+                want.within(1.0, most).min(screen.width() / 275.0)
             } else {
-                want.clamp(least, most.min((screen.width() - 640.0) / 275.0).max(least))
+                want.within(least, most.min((screen.width() - 640.0) / 275.0).max(least))
             }
         });
         if let Some(k) = skin_k {
@@ -65,7 +65,7 @@ impl App {
         } else if let Some(k) = skin_k {
             (screen.width() - 275.0 * k).max(280.0)
         } else {
-            (self.lib_frac * screen.width()).clamp(280.0, (screen.width() - 560.0).max(280.0))
+            (self.lib_frac * screen.width()).within(280.0, (screen.width() - 560.0).max(280.0))
         };
         let right_w = screen.width() - lib_w;
         let inner_w = right_w - 28.0;
@@ -80,7 +80,7 @@ impl App {
                 (screen.height() * 0.6).max(120.0)
             }
         } else {
-            self.prac_h.clamp(120.0, (screen.height() * 0.6).max(120.0))
+            self.prac_h.within(120.0, (screen.height() * 0.6).max(120.0))
         };
         let max_inner_h = ((screen.height() - practice_h) * 0.5 - 44.0).max(120.0);
         let auto_s = (inner_w / 300.0).min(max_inner_h / 138.0).clamp(0.8, 3.0);
@@ -255,7 +255,7 @@ impl App {
             match splitter(ctx, "split_eq", r, false) {
                 Some(Some(py)) => {
                     let h = py - screen.min.y - player_h;
-                    self.eq_h_user = Some(h.clamp(140.0, (screen.height() * 0.6).max(140.0)));
+                    self.eq_h_user = Some(h.within(140.0, (screen.height() * 0.6).max(140.0)));
                     self.dirty = true;
                 }
                 Some(None) => {
@@ -322,7 +322,7 @@ impl App {
                     } else {
                         (screen.height() * 0.6).max(220.0)
                     };
-                    self.prac_h = (screen.max.y - py).clamp(120.0, most);
+                    self.prac_h = (screen.max.y - py).within(120.0, most);
                     self.dirty = true;
                 }
                 Some(None) => {

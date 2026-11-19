@@ -1,6 +1,7 @@
 //! Side sounds for practising: metronome patterns, a small synth "band" that plays a chart, and a
 //! beat finder that locks the metronome to a recording. Everything is generated as 44.1 kHz mono.
 
+use crate::Within;
 use crate::chart::{self, Chart};
 use crate::decode::SymSource;
 use rodio::Source;
@@ -104,7 +105,7 @@ impl Mix {
         let t60 = (3.4 - (midi - 40) as f32 * 0.05).clamp(1.1, 3.4);
         let rho = 0.001f32.powf(1.0 / (f * t60));
         let damp = DAMP;
-        let len = ((d * self.spb) as usize).clamp(1, (RATE * 4.5) as usize);
+        let len = ((d * self.spb) as usize).within(1, (RATE * 4.5) as usize);
         let fade = ((RATE * 0.06) as usize).min(len);
         let (mut idx, mut prev, mut ax, mut ay, mut warm) = (0usize, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
         // the guitar's body: two soft wooden resonances (about 100 and 200 Hz), a little of each under the string

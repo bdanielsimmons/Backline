@@ -591,7 +591,7 @@ pub(crate) fn make_line(seed: u64, key: usize, pos: u8, level: usize, bars: usiz
                     if (i as i32 + step) < 0 || (i as i32 + step) >= avail.len() as i32 {
                         step = -step;
                     }
-                    i = (i as i32 + step).clamp(0, avail.len() as i32 - 1) as usize;
+                    i = (i as i32 + step).within(0, avail.len() as i32 - 1) as usize;
                 }
             }
             notes.push(RNote {

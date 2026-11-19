@@ -216,6 +216,24 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use viz::viz_draw;
 use winamp_ui::skin_menu;
 
+/// `clamp` that can't crash: std's panics when the low end comes out above the high end (a rounding hair when both
+/// ends are worked out, as a layout's are; an empty list's "len - 1"). Here the high end wins then. Use it whenever
+/// an end isn't a fixed number.
+pub(crate) trait Within: Sized {
+    fn within(self, lo: Self, hi: Self) -> Self;
+}
+
+macro_rules! within_ord {
+    ($($t:ty),*) => {$(
+        impl Within for $t {
+            fn within(self, lo: $t, hi: $t) -> $t {
+                self.max(lo).min(hi)
+            }
+        }
+    )*};
+}
+within_ord!(f32, f64, i16, i32, i64, u8, u16, u32, u64, usize);
+
 const EQ_PRESETS: [(&str, [f32; 10]); 4] = [
     ("FLAT", [0.0; 10]),
     ("BASS", [6.0, 5.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
@@ -4039,6 +4057,73 @@ pub(crate) fn min_inner() -> Vec2 {
     }
 }
 
+/// The calls that led to a panic, Backline's and egui's only, nearest first ("ui::layout::Layout::place
+/// (ui\layout.rs:325)"), from a backtrace's text. Empty from a build without line tables (the released ones): its
+/// frames have no names.
+fn panic_trail(bt: &str) -> Vec<String> {
+    let mut frames: Vec<(String, String)> = Vec::new();
+    for l in bt.lines().map(str::trim) {
+        if let Some(at) = l.strip_prefix("at ") {
+            if let Some(f) = frames.last_mut() {
+                if f.1.is_empty() {
+                    let short = at.rsplit_once("\\src\\").or_else(|| at.rsplit_once("/src/")).map_or(at, |(_, s)| s);
+                    f.1 = short.to_string();
+                }
+            }
+        } else if let Some((n, name)) = l.split_once(": ") {
+            if n.chars().all(|c| c.is_ascii_digit()) {
+                frames.push((name.to_string(), String::new()));
+            }
+        }
+    }
+    let ours = |s: &str| {
+        let s = s.trim_start_matches('<');
+        s.starts_with("backline::") || s.starts_with("egui::") || s.starts_with("emath::")
+    };
+    frames
+        .into_iter()
+        .filter(|(name, _)| ours(name))
+        .take(12)
+        .map(|(name, at)| {
+            let name = name.strip_prefix("backline::").unwrap_or(&name).to_string();
+            if at.is_empty() {
+                name
+            } else {
+                format!("{} ({})", name, at)
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod crash_guard_tests {
+    use super::*;
+
+    #[test]
+    fn within_never_panics() {
+        // the crash of 2026-11-19: both ends worked out, the low one a hair above the high one
+        assert_eq!(87.0f32.within(87.912155, 87.91211), 87.91211);
+        assert_eq!(5.0f32.within(0.0, 10.0), 5.0);
+        assert_eq!(f32::NAN.within(0.0, 1.0), 0.0);
+        assert_eq!(3usize.within(1, 0), 0);
+        assert_eq!((-3i32).within(0, -1), -1);
+    }
+
+    #[test]
+    fn trail_keeps_backlines_calls() {
+        let bt = "   0: std::backtrace::Backtrace::create\n             at /rustc/x/library\\std\\src\\backtrace.rs:331\n  14: backline::layout::Layout::place\n             at C:\\Users\\x\\backline\\src\\ui\\layout.rs:325\n  15: <backline::App as eframe::epi::App>::update\n  16: egui::context::Context::run\n             at C:\\x\\egui-0.29.1\\src\\context.rs:800\n  17: <unknown>\n";
+        assert_eq!(
+            panic_trail(bt),
+            vec![
+                "layout::Layout::place (ui\\layout.rs:325)",
+                "<backline::App as eframe::epi::App>::update",
+                "egui::context::Context::run (context.rs:800)"
+            ]
+        );
+        assert!(panic_trail("   0: <unknown>\n   1: <unknown>\n").is_empty());
+    }
+}
+
 fn main() -> eframe::Result<()> {
     std::panic::set_hook(Box::new(|info| {
         let loc = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
@@ -4050,6 +4135,9 @@ fn main() -> eframe::Result<()> {
             "?".to_string()
         };
         crate::api::log(&format!("PANIC at {}: {}", loc, msg));
+        for l in panic_trail(&std::backtrace::Backtrace::force_capture().to_string()) {
+            crate::api::log(&format!("  from {}", l));
+        }
     }));
     // an update downloaded last time is installed before anything opens
     if update::apply_staged_at_start() {

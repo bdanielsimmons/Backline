@@ -738,7 +738,7 @@ impl App {
                     acts.push(Action::EditLook);
                 }
                 ui.vertical(|ui| {
-                    ui.set_width((seen - cw - gap).clamp(0.0, 360.0 * sc));
+                    ui.set_width((seen - cw - gap).within(0.0, 360.0 * sc));
                     para(ui, "Pick your own colors. The rest of the look follows them, so it stays easy to read.", pal().ink2);
                     if retro_btn(ui, "Choose Colors", false).tip(tip).clicked() {
                         acts.push(Action::EditLook);
@@ -1269,11 +1269,11 @@ impl App {
             let least = nav_least();
             let rail = NAV_RAIL * font::ui_scale();
             let most = (all.width() * 0.45).max(least);
-            let auto = (212.0 * font::ui_scale()).clamp(160.0, (all.width() * 0.34).max(160.0));
+            let auto = (212.0 * font::ui_scale()).within(160.0, (all.width() * 0.34).max(160.0));
             let sw = if self.nav_w < 0.0 || (self.nav_w == 0.0 && auto < least) {
                 rail
             } else if self.nav_w > 0.0 {
-                self.nav_w.clamp(least, most)
+                self.nav_w.within(least, most)
             } else {
                 auto
             };
@@ -1283,7 +1283,7 @@ impl App {
                 Some(Some(x)) => {
                     let want = x - all.min.x;
                     // (past halfway down to the strip: the strip)
-                    self.nav_w = if want < (least + rail) / 2.0 { -1.0 } else { want.clamp(least, most) };
+                    self.nav_w = if want < (least + rail) / 2.0 { -1.0 } else { want.within(least, most) };
                     self.dirty = true;
                 }
                 Some(None) => {

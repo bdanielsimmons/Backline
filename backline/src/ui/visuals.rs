@@ -5,6 +5,7 @@
 //! The feedback trick (most presets): every frame takes the last one, warps it a little (zoom, spin, swirl), fades
 //! it, and draws the music on top. Each spot that shows visuals has its own pair of pictures to do that with.
 
+use crate::Within;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use eframe::egui_glow;
 use eframe::glow::{self, HasContext};
@@ -360,7 +361,7 @@ impl Frame {
             if n == 0 {
                 return 0.0;
             }
-            let (i, j) = (((a * n as f32) as usize).min(n - 1), ((b * n as f32) as usize).clamp(1, n));
+            let (i, j) = (((a * n as f32) as usize).min(n - 1), ((b * n as f32) as usize).within(1, n));
             bands[i..j.max(i + 1)].iter().sum::<f32>() / (j.max(i + 1) - i) as f32
         };
         let mut f = Frame {

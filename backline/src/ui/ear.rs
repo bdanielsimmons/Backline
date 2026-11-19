@@ -699,7 +699,7 @@ pub(crate) fn chord_pool(o: &crate::store::EarChords, st: &EarStats) -> Vec<usiz
 /// How many of a level's chords are in play.
 pub(crate) fn level_in_play(o: &crate::store::EarChords, level: usize) -> usize {
     let all = level_chords(level).len();
-    o.grown.get(level).copied().unwrap_or(0).clamp(START.min(all), all)
+    o.grown.get(level).copied().unwrap_or(0).within(START.min(all), all)
 }
 
 /// Intervals, easiest to tell apart first: name, semitones.
@@ -1682,7 +1682,7 @@ fn render(parts: &[Part]) -> Vec<i16> {
             out[off + i] += *s as i32;
         }
     }
-    out.into_iter().map(|s| s.clamp(i16::MIN as i32, i16::MAX as i32) as i16).collect()
+    out.into_iter().map(|s| s.within(i16::MIN as i32, i16::MAX as i32) as i16).collect()
 }
 
 /// The answer chime: right, a soft 5th up high (E5 B5); wrong, one quiet low note (A2); after `wait` seconds.
@@ -1925,7 +1925,7 @@ fn level_of(st: &EarStats, drill: usize) -> usize {
     if st.level == 0 {
         START.min(all)
     } else {
-        st.level.clamp(START.min(all), all)
+        st.level.within(START.min(all), all)
     }
 }
 
@@ -2513,7 +2513,7 @@ impl App {
                 }
             };
             line(ui, DRILLS[drill].name, 2.2, pal().ink);
-            let shown = (self.ear.n + (!answered && self.ear.q.is_some() && self.ear.done.is_none()) as u32).clamp(1, session);
+            let shown = (self.ear.n + (!answered && self.ear.q.is_some() && self.ear.done.is_none()) as u32).within(1, session);
             // (a scale is a run, the day's line a try)
             let word = match kind {
                 10 => "RUN",

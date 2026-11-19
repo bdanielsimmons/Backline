@@ -2219,7 +2219,7 @@ impl App {
                     let (x0, xn) = (ms[0].1, ms[n - 1].1);
                     let mut ya = ms[0].2 + s * 3.5 * g;
                     let yb0 = ms[n - 1].2 + s * 3.5 * g;
-                    let mut yb = ya + (yb0 - ya).clamp(-g, g);
+                    let mut yb = ya + (yb0 - ya).within(-g, g);
                     let at = |ya: f32, yb: f32, x: f32| ya + (yb - ya) * (x - x0) / (xn - x0).max(1.0);
                     // every stem at least this long
                     let mut push: f32 = 0.0;

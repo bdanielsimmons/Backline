@@ -426,7 +426,7 @@ impl App {
                         // scrolling takes over for a few seconds; otherwise the view follows the song
                         self.lyric_free = (self.lyric_free - dt).max(0.0);
                         if over && wheel.abs() > 0.0 {
-                            scroll = (scroll - wheel / lh).clamp(0.0, (n.max(1) - 1) as f32);
+                            scroll = (scroll - wheel / lh).within(0.0, (n.max(1) - 1) as f32);
                             self.lyric_free = 4.0;
                         } else if l.synced && self.lyric_free <= 0.0 {
                             let tgt = idx.unwrap_or(0) as f32;
