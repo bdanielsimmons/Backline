@@ -20,14 +20,34 @@ pub const NAMES: [&str; 4] = ["DRUMS", "BASS", "OTHER", "VOCALS"];
 const FILES: [&str; 4] = ["drums", "bass", "other", "vocals"];
 
 const MODEL_URL: &str = "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs_fp16weights.onnx";
-/// The ONNX Runtime for this system (Windows: a .zip; Mac, both chips: a .tgz; Linux: a .tgz).
-const RUNTIME_URL: &str = if cfg!(windows) {
-    "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-win-x64-1.22.0.zip"
+/// The ONNX Runtime library for this system, 1.22 (the version the `ort` crate wants), as Microsoft's NuGet package
+/// names it: runtimes/<RUNTIME_RID>/native/<RUNTIME_FILE>. It comes from Backline's own download site (the release
+/// workflow puts it there, from that package), else from the package itself. Microsoft's GitHub releases, where it
+/// came from before, are gone (404 since 2026-11-19).
+const RUNTIME_RID: &str = if cfg!(windows) {
+    "win-x64"
 } else if cfg!(target_os = "macos") {
-    "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-osx-universal2-1.22.0.tgz"
+    if cfg!(target_arch = "aarch64") {
+        "osx-arm64"
+    } else {
+        "osx-x64"
+    }
 } else {
-    "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz"
+    "linux-x64"
 };
+const RUNTIME_FILE: &str = if cfg!(windows) {
+    "onnxruntime.dll"
+} else if cfg!(target_os = "macos") {
+    "libonnxruntime.dylib"
+} else {
+    "libonnxruntime.so"
+};
+const RUNTIME_NUGET: &str =
+    "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.22.0/microsoft.ml.onnxruntime.1.22.0.nupkg";
+
+fn runtime_on_site() -> String {
+    format!("{}/tools/onnxruntime-1.22.0/{}/{}", crate::update::SITE, RUNTIME_RID, RUNTIME_FILE)
+}
 
 const SEG: usize = 343_980; // 7.8 s at 44.1 kHz
 const OVERLAP: usize = SEG / 4;
@@ -59,13 +79,7 @@ pub fn dir() -> PathBuf {
 }
 
 fn dll_path() -> PathBuf {
-    dir().join(if cfg!(windows) {
-        "onnxruntime.dll"
-    } else if cfg!(target_os = "macos") {
-        "libonnxruntime.dylib"
-    } else {
-        "libonnxruntime.so"
-    })
+    dir().join(RUNTIME_FILE)
 }
 
 fn model_path() -> PathBuf {
@@ -223,59 +237,31 @@ fn download_file(url: &str, dest: &Path, label: &str, min_len: u64) -> Result<()
     std::fs::rename(&tmp, dest).map_err(|e| e.to_string())
 }
 
+/// The runtime library taken out of Microsoft's NuGet package (a zip of every system's, a few hundred MB): only when
+/// Backline's site can't give it.
+fn runtime_from_nuget() -> Result<(), String> {
+    let pkg = dir().join("onnxruntime.nupkg");
+    download_file(RUNTIME_NUGET, &pkg, "DOWNLOADING RUNTIME", 1_000_000)?;
+    set_stage("UNPACKING RUNTIME");
+    let got = (|| {
+        let f = std::fs::File::open(&pkg).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipArchive::new(std::io::BufReader::new(f)).map_err(|e| e.to_string())?;
+        let want = format!("runtimes/{}/native/{}", RUNTIME_RID, RUNTIME_FILE);
+        let mut e = zip.by_name(&want).map_err(|_| format!("{} isn't in Microsoft's package", want))?;
+        let mut data = Vec::new();
+        e.read_to_end(&mut data).map_err(|e| e.to_string())?;
+        std::fs::write(dll_path(), data).map_err(|e| e.to_string())
+    })();
+    let _ = std::fs::remove_file(&pkg);
+    got
+}
+
 /// One-time setup: the ONNX Runtime library and the Demucs model.
 pub fn download_tool() -> Result<(), String> {
-    if !dll_path().exists() && !cfg!(windows) {
-        // Mac / Linux: a .tgz holding lib/libonnxruntime.<version>.dylib (or .so.<version>) - the real file, not
-        // the links to it
-        let tgz = dir().join("onnxruntime.tgz");
-        download_file(RUNTIME_URL, &tgz, "DOWNLOADING RUNTIME", 1_000_000)?;
-        set_stage("UNPACKING RUNTIME");
-        let f = std::fs::File::open(&tgz).map_err(|e| e.to_string())?;
-        let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(f));
-        let mut found = false;
-        for entry in ar.entries().map_err(|e| e.to_string())? {
-            let mut e = entry.map_err(|e| e.to_string())?;
-            if !e.header().entry_type().is_file() {
-                continue;
-            }
-            let name = e.path().map_err(|e| e.to_string())?.to_string_lossy().to_string();
-            let file = name.rsplit('/').next().unwrap_or("");
-            if name.contains("/lib/") && file.starts_with("libonnxruntime.") && (file.ends_with(".dylib") || file.contains(".so"))
-            {
-                let mut data = Vec::new();
-                e.read_to_end(&mut data).map_err(|e| e.to_string())?;
-                std::fs::write(dll_path(), data).map_err(|e| e.to_string())?;
-                found = true;
-                break;
-            }
-        }
-        let _ = std::fs::remove_file(&tgz);
-        if !found {
-            return Err("the runtime library was not in the download".to_string());
-        }
-    }
     if !dll_path().exists() {
-        let zip_path = dir().join("onnxruntime.zip");
-        download_file(RUNTIME_URL, &zip_path, "DOWNLOADING RUNTIME", 1_000_000)?;
-        set_stage("UNPACKING RUNTIME");
-        let bytes = std::fs::read(&zip_path).map_err(|e| e.to_string())?;
-        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
-        let mut found = false;
-        for i in 0..zip.len() {
-            let mut f = zip.by_index(i).map_err(|e| e.to_string())?;
-            let name = f.name().replace('\\', "/");
-            if name.ends_with("/lib/onnxruntime.dll") {
-                let mut data = Vec::new();
-                f.read_to_end(&mut data).map_err(|e| e.to_string())?;
-                std::fs::write(dll_path(), data).map_err(|e| e.to_string())?;
-                found = true;
-                break;
-            }
-        }
-        let _ = std::fs::remove_file(&zip_path);
-        if !found {
-            return Err("onnxruntime.dll not found in the download".to_string());
+        if let Err(e) = download_file(&runtime_on_site(), &dll_path(), "DOWNLOADING RUNTIME", 1_000_000) {
+            crate::api::log(&format!("stems: the runtime isn't on Backline's site ({}), so from Microsoft's package", e));
+            runtime_from_nuget()?;
         }
     }
     if !model_path().exists() {

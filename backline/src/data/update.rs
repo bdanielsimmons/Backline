@@ -13,8 +13,9 @@ use std::time::{Duration, Instant};
 const REPO: &str = "bdanielsimmons/Backline";
 
 /// Backline's download site (no slash at the end): GitHub Pages, made by the release workflow's `site` job. It stays
-/// public when the repository is private (that needs GitHub Pro on the account).
-const SITE: &str = "https://bdanielsimmons.github.io/Backline";
+/// public when the repository is private (that needs GitHub Pro on the account). The stem tool's runtime is there too
+/// (tools/, see stems.rs).
+pub(crate) const SITE: &str = "https://bdanielsimmons.github.io/Backline";
 
 #[derive(Clone)]
 pub struct Info {

@@ -10,17 +10,29 @@ Pages swaps the whole site in on each deploy, so the folder holds everything the
   notes.json   the latest 30 releases' notes, newest first (the app's WHAT'S NEW).
   index.html   a plain page with the downloads, for anyone given the link.
   robots.txt   asks search engines to leave the site out (it's for people given the link).
+  tools/onnxruntime-<version>/<system>/<library>   the stem tool's runtime, which the app downloads from here (see
+               runtime() below), with its license.
 """
 import hashlib
 import html
+import io
 import json
 import os
 import shutil
 import sys
 import urllib.error
 import urllib.request
+import zipfile
 
 FILES = ["backline-practice.exe", "backline-setup.msi", "backline-practice-mac.tar.gz"]
+
+# The stem tool's runtime: ONNX Runtime 1.22 (the version the app's `ort` crate wants), one library per system, by
+# the names Microsoft's NuGet package gives them (runtimes/<system>/native/<library>). Microsoft's GitHub releases,
+# where the app got it before, are gone (404 since 2026-11-19); a NuGet package can't be deleted.
+ORT = "1.22.0"
+ORT_NUGET = f"https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/{ORT}/microsoft.ml.onnxruntime.{ORT}.nupkg"
+ORT_LIBS = ["win-x64/onnxruntime.dll", "osx-arm64/libonnxruntime.dylib", "osx-x64/libonnxruntime.dylib",
+            "linux-x64/libonnxruntime.so"]
 
 
 def fetch(url):
@@ -116,6 +128,45 @@ b {{ font-weight: 650; }}
 """
 
 
+def runtime(site, out):
+    """The stem tool's runtime into the site: from Microsoft's NuGet package, or kept from the live site when NuGet
+    can't be reached. With neither, the job stops, so a site without it is never put up."""
+    base = f"tools/onnxruntime-{ORT}"
+    got = {}
+    try:
+        data = fetch(ORT_NUGET)
+        z = zipfile.ZipFile(io.BytesIO(data))
+        names = set(z.namelist())
+        print(f"runtime package: {mb(len(data))}, libraries:",
+              sorted(n for n in names if n.startswith("runtimes/") and "/native/" in n))
+        for lib in ORT_LIBS:
+            system, file = lib.split("/")
+            name = f"runtimes/{system}/native/{file}"
+            if name in names:
+                got[lib] = z.read(name)
+            else:
+                print(f"::warning::{name} isn't in the runtime package")
+        # MIT: its license and notices go with it
+        for name in names:
+            if "/" not in name and name.lower().startswith(("license", "thirdpartynotices")):
+                got[name] = z.read(name)
+    except (urllib.error.URLError, OSError, zipfile.BadZipFile) as e:
+        print(f"::warning::the runtime package couldn't be had ({e}), so the live site's runtime is kept")
+        for lib in ORT_LIBS + ["LICENSE", "LICENSE.txt", "ThirdPartyNotices.txt"]:
+            try:
+                got[lib] = fetch(f"{site}/{base}/{lib}")
+            except urllib.error.HTTPError:
+                pass
+    if "win-x64/onnxruntime.dll" not in got:
+        sys.exit("the stem tool's runtime: neither NuGet nor the live site has it")
+    for name, data in got.items():
+        dest = os.path.join(out, base, name)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
+        print(f"{base}/{name}: {mb(len(data))}")
+
+
 def write(out, key, text):
     with open(os.path.join(out, key), "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
@@ -168,6 +219,7 @@ def main():
         notes.insert(0, {"build": n, "tag": f"v9.{n}", "body": body})
         notes = sorted(notes, key=lambda x: -x.get("build", 0))[:30]
 
+    runtime(site, out)
     write(out, "notes.json", json.dumps(notes, indent=1))
     write(out, "latest.json", json.dumps(latest, indent=1))
     write(out, "index.html", page(latest))
