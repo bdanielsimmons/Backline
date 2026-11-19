@@ -4192,7 +4192,30 @@ fn main() -> eframe::Result<()> {
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     crate::api::log(&format!("start: build {}", update::build()));
-    let r = eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc)))));
+    // the graphics can turn the window down for a moment (a laptop woken in the middle of a restart for an update:
+    // the driver isn't up yet), so try again a few times, a couple of seconds apart, before saying so; only while
+    // Backline itself hasn't started (tried by failing the first two on purpose: the third opened and ran)
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    const TRIES: u32 = 6;
+    let mut tried = 1;
+    let r = loop {
+        let r = eframe::run_native(
+            "Backline",
+            options.clone(),
+            Box::new(|cc| {
+                STARTED.store(true, Ordering::Relaxed);
+                Ok(Box::new(App::new(cc)))
+            }),
+        );
+        match &r {
+            Err(e) if tried < TRIES && !STARTED.load(Ordering::Relaxed) => {
+                crate::api::log(&format!("start: the window could not open (try {} of {}), trying again: {}", tried, TRIES, e));
+                tried += 1;
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            _ => break r,
+        }
+    };
     // the window couldn't open (graphics, often after sleep or a driver update): say so, don't just vanish
     if let Err(e) = &r {
         crate::api::log(&format!("start: the window could not open: {}", e));
