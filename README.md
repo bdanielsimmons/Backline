@@ -20,6 +20,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- NOTES ON THE NECK in Ear Training: learn the note names on the fretboard, one string's landmarks at a time
+- Paste an Apple Music or Spotify playlist link and it becomes a Backline playlist, found on Tidal or YouTube
 - Progression Lab: grip a chord move, tap its timing with a count-off, and see it written out
 - Export a loop as full, no vocals and no vocals/bass/drums, or each stem on its own, with one save window
 - Updates come over Sync from your other computer
@@ -28,8 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - All Loops sorted into Recent, then each month, with how many songs under each
 - Fourteen Backline looks and a Custom look made from two colors
 - Pitch tab tuning in Hz: find or type the record's A (A = 452), set yours, and match them in one click
-- Copy songs from your other computer: browse its files, pick the ones you want, and they copy in the background
-- Save a radio or mix as a playlist, in Backline or on Tidal, and add songs to playlists without leaving the page
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
