@@ -285,6 +285,23 @@ impl App {
         edit: bool,
         remove: bool,
     ) -> CardAct {
+        self.voicing_card_with(ui, acts, grip, bass, name, tint, edit, remove, None)
+    }
+
+    /// The same card with more under the tab (THE CHORD BOOK's other names and note), above the buttons.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn voicing_card_with(
+        &mut self,
+        ui: &mut egui::Ui,
+        acts: &mut Vec<Action>,
+        grip: &[Option<u8>; 6],
+        bass: i32,
+        name: &str,
+        tint: Tint,
+        edit: bool,
+        remove: bool,
+        extra: Option<&dyn Fn(&mut egui::Ui, f32)>,
+    ) -> CardAct {
         let notes = grip_notes(grip);
         let pcs: Vec<i32> = notes.iter().map(|m| m.rem_euclid(12)).collect();
         let sharps = self.chord_sp.sharps;
@@ -309,6 +326,9 @@ impl App {
             chord_staff(ui.painter(), sr.shrink2(Vec2::new(6.0, 0.0)), &notes, Some(grip), tint, sharps);
             if b.union(s).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear it").clicked() {
                 acts.push(Action::PlayNotes(notes.clone()));
+            }
+            if let Some(f) = extra {
+                f(ui, cw);
             }
             ui.horizontal(|ui| {
                 ui.add_space(4.0);

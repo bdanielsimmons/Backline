@@ -42,6 +42,8 @@ mod cache;
 mod canon;
 #[path = "data/crashes.rs"]
 mod crashes;
+#[path = "data/chord_book.rs"]
+mod chord_book;
 #[path = "data/chart.rs"]
 mod chart;
 #[path = "data/genskin.rs"]
@@ -52,6 +54,8 @@ mod lines;
 mod meta;
 #[path = "data/pack.rs"]
 mod pack;
+#[path = "data/playlist_link.rs"]
+mod playlist_link;
 #[path = "data/search.rs"]
 mod search;
 #[path = "data/sources.rs"]
@@ -93,6 +97,8 @@ mod chrome;
 mod chords;
 #[path = "ui/clusters.rs"]
 mod clusters;
+#[path = "ui/chord_book.rs"]
+mod chord_book_ui;
 #[path = "ui/credits.rs"]
 mod credits;
 #[path = "ui/peer_files.rs"]
@@ -101,6 +107,8 @@ mod peer_files;
 mod new_playlist;
 #[path = "ui/ear.rs"]
 mod ear;
+#[path = "ui/neck_notes.rs"]
+mod neck_notes;
 #[path = "ui/font.rs"]
 mod font;
 #[path = "data/gp.rs"]
@@ -321,6 +329,9 @@ enum Msg {
     TidalListRemoved(String, i64, usize, Result<(), String>),
     /// a new playlist made on your Tidal account (what to say), shown once the library is loaded again
     TidalListMade(Result<String, String>),
+    /// a playlist link being read: how far it's got; then what it found (or why not)
+    PlaylistImportStep(String),
+    PlaylistImported(Result<playlist_link::Imported, String>),
     /// one of your Tidal playlists renamed: (its id, the new name), or why not
     TidalListRenamed(String, String, Result<(), String>),
     /// a song is in that Tidal playlist already: (its id, its name, the song), to ask before adding it again
@@ -671,6 +682,8 @@ enum Action {
     /// open the New Playlist panel with these songs in it, named (a radio, a mix): you can change the name;
     /// on Tidal (true) or in Backline
     PlaylistNewFrom(String, Vec<Track>, bool),
+    /// read a playlist link from another app (Apple Music, Spotify), find its songs, then the New Playlist panel
+    PlaylistImport(String),
     /// open ADD TO PLAYLIST for a song, or a loop of it (from, to, the loop's name)
     PlaylistPicker(Track, Option<(f32, f32, String)>),
     /// copy songs from the other computer to this one (into your files)
@@ -1190,6 +1203,9 @@ struct App {
     tuning_busy: bool,
     upd_checked: Option<Instant>,
     new_pl: String,
+    /// LISTS > PLAYLISTS: a playlist link pasted in, and whether one is being read
+    pl_link: String,
+    pl_importing: bool,
     pl_open: Option<usize>,
     /// what the queue was started from (a page's name, as a radio's), to name a playlist made of it
     queue_from: String,
@@ -1450,6 +1466,40 @@ struct App {
     lab_loop_chords: bool,
     /// MY CHORDS' volume (0..1; the song keeps the player's)
     lab_vol: f32,
+    /// THE CHORD BOOK (CHORDS > SHAPES, only when chord_book.txt is in Backline's folder): the book once read (None:
+    /// no file), whether it has been read, and the string set and family open
+    cb_book: Option<std::sync::Arc<crate::chord_book::Book>>,
+    cb_tried: bool,
+    cb_set: usize,
+    cb_fam: usize,
+    /// CARDS or WALK; in WALK the voicing shown (its place in his order), the slide to it under way (since when,
+    /// from which grip), AUTO walking on (since the last step), and hearing each voicing as you walk to it
+    cb_view: u8,
+    cb_at: usize,
+    cb_anim: Option<(Instant, [Option<u8>; 6])>,
+    cb_auto: Option<Instant>,
+    cb_sound: bool,
+    /// WALK hides the note names and degrees (a quiz: play it, say them, then show), and the step shown anyway
+    cb_hide: bool,
+    cb_shown: Option<usize>,
+    /// WALK's order in a family that starts from its stations: 0 the lesson's (the stations first, each again where
+    /// the walk turns to it), 1 by station (each once, the chords built from it after it)
+    cb_order: u8,
+    /// a rule tried on the neck: (the step, the rule)
+    cb_try: Option<(usize, usize)>,
+    /// HOW IT WORKS: the step of his chain on the neck
+    cb_demo: usize,
+    /// RULES shows all of them (else the core ones)
+    cb_more_rules: bool,
+    /// the voicings you starred (chord_book_stars.json, read when first needed; None again when SYNC brings it)
+    cb_stars: Option<Vec<String>>,
+    /// 2-5-1: the key (a pitch class; None = the set's own), minor (ii-V-i), the grip the 2 starts on, the other
+    /// choices taken for the 5 and the 1 (0 = the nearest), and the chord on the neck
+    cb_cad_key: Option<i32>,
+    cb_cad_minor: bool,
+    cb_cad_start: usize,
+    cb_cad_pick: [usize; 2],
+    cb_cad_step: usize,
     lab_pass: Option<Instant>,
     lab_last_pos: Option<(Instant, f32)>,
     lab_line_drag: Option<(f32, f32)>,
@@ -1548,6 +1598,9 @@ struct App {
     hm_vamp: Vec<u8>,
     /// EAR: the drill, the question, this session
     ear: ear::Ear,
+    /// EAR > NOTES ON THE NECK as it runs; and whether My Plan's block on now has it in it
+    nn: neck_notes::NeckDrill,
+    nn_inline: bool,
     /// LINES > ATONAL: your lines (from the private file) or generated ones, the note being fixed, the generator's
     /// choices
     at: atonal::AtState,
@@ -2195,6 +2248,8 @@ impl App {
             tuning_busy: false,
             upd_checked: None,
             new_pl: String::new(),
+            pl_link: String::new(),
+            pl_importing: false,
             pl_open: None,
             queue_from: String::new(),
             toast: None,
@@ -2376,6 +2431,27 @@ impl App {
             lab_count: None,
             lab_loop_chords: true,
             lab_vol: 1.0,
+            cb_book: None,
+            cb_tried: false,
+            cb_set: 0,
+            cb_fam: 0,
+            cb_view: 0,
+            cb_at: 0,
+            cb_anim: None,
+            cb_auto: None,
+            cb_sound: true,
+            cb_hide: false,
+            cb_order: 0,
+            cb_shown: None,
+            cb_try: None,
+            cb_demo: 0,
+            cb_more_rules: false,
+            cb_stars: None,
+            cb_cad_key: None,
+            cb_cad_minor: false,
+            cb_cad_start: 0,
+            cb_cad_pick: [0, 0],
+            cb_cad_step: 0,
             lab_pass: None,
             lab_last_pos: None,
             lab_line_drag: None,
@@ -2447,6 +2523,8 @@ impl App {
             hm_solo: 0,
             hm_vamp: Vec::new(),
             ear: Default::default(),
+            nn: Default::default(),
+            nn_inline: false,
             at: Default::default(),
             plan: Default::default(),
             si_any: false,
@@ -3833,9 +3911,14 @@ impl eframe::App for App {
                     if self.lab_here() && ctx.input(|i| i.modifiers.command) {
                         continue;
                     }
+                    // the chord book's walk: its arrow keys walk it; NOTES ON THE NECK: the letters are its answers
+                    if self.cb_owns(cmd) || self.nn_owns(cmd) {
+                        continue;
+                    }
                     self.run_cmd(cmd, &mut acts);
                 }
-                if kp(egui::Key::Escape) {
+                // (Esc in the walk, with a chord being tried: back to the walk's chord)
+                if kp(egui::Key::Escape) && !self.cb_trying_here() {
                     if self.fullscreen {
                         acts.push(Action::ToggleFullscreen);
                     } else if self.art_view {
@@ -4191,7 +4274,7 @@ fn main() -> eframe::Result<()> {
         }
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
-    crate::api::log(&format!("start: build {}", update::build()));
+    crate::api::log(&format!("start: build {}", update::version_text()));
     // the graphics can turn the window down for a moment (a laptop woken in the middle of a restart for an update:
     // the driver isn't up yet), so try again a few times, a couple of seconds apart, before saying so; only while
     // Backline itself hasn't started (tried by failing the first two on purpose: the third opened and ran)

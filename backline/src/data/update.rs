@@ -1,5 +1,7 @@
 //! Self-update. Every release is build `v9.N` (N = the Actions run number, which the build stamps into the program
-//! as BACKLINE_BUILD). Releases are put on Backline's own download site (`SITE`, on GitHub Pages), where
+//! as BACKLINE_BUILD). A dev build made here is stamped `<N>a<k>` (alpha k after release N, like 393a2): it counts
+//! as release N for updates, so the next release replaces it, and two linked computers pass newer alphas along
+//! (`order`). Releases are put on Backline's own download site (`SITE`, on GitHub Pages), where
 //! `latest.json` names the newest build of each file with its SHA-256, and `notes.json` holds the latest releases'
 //! notes; GitHub's releases are asked only when the site can't be (or isn't set up yet). The app downloads the
 //! file for this system next to itself, checks it against its SHA-256, and swaps it in on the next start (or
@@ -30,9 +32,50 @@ fn es<E: ToString>(e: E) -> String {
     e.to_string()
 }
 
-/// This program's build number (0 for a local build that was not made by the release workflow).
+/// This program's release number (0 for a local build that was not made by the release workflow). A dev build's is
+/// the release it's built on.
 pub fn build() -> u64 {
-    option_env!("BACKLINE_BUILD").and_then(|s| s.parse().ok()).unwrap_or(0)
+    parse_build(option_env!("BACKLINE_BUILD").unwrap_or("")).0
+}
+
+/// A dev build's alpha number (0 for a release).
+pub fn alpha() -> u64 {
+    parse_build(option_env!("BACKLINE_BUILD").unwrap_or("")).1
+}
+
+/// "393" is release 393, "393a2" its second alpha ("393a" the first).
+fn parse_build(s: &str) -> (u64, u64) {
+    let s = s.trim();
+    match s.split_once('a') {
+        Some((n, a)) => (n.parse().unwrap_or(0), a.parse().unwrap_or(1).clamp(1, 99)),
+        None => (s.parse().unwrap_or(0), 0),
+    }
+}
+
+/// Where a build stands among all of them: release N is N * 100, its alphas N * 100 + k, all before release N + 1.
+/// What two linked computers tell each other. Copies from before alphas said their plain number, always under
+/// `ORDERED`, and are never taken over the link (their builds are all older than the scheme).
+pub fn order_of(build: u64, alpha: u64) -> u64 {
+    build * 100 + alpha.min(99)
+}
+
+pub fn order() -> u64 {
+    order_of(build(), alpha())
+}
+
+pub(crate) const ORDERED: u64 = 10_000;
+
+/// A build's name from its order: "v9.393", or "v9.393a2" for an alpha.
+pub fn tag_of(order: u64) -> String {
+    match order % 100 {
+        0 => format!("v9.{}", order / 100),
+        a => format!("v9.{}a{}", order / 100, a),
+    }
+}
+
+/// This build's number as the log says it: "393", or "393a2".
+pub fn version_text() -> String {
+    tag_of(order()).trim_start_matches("v9.").to_string()
 }
 
 /// Name of the release file that matches this program. One app for everyone (SIMPLE is a switch now), so a copy of
@@ -107,7 +150,7 @@ fn pick(v: &serde_json::Value, site: &str, asset: &str, me: u64) -> Option<Info>
     let b = f["build"].as_u64()?;
     let path = f["path"].as_str()?;
     let sha = f["sha256"].as_str().filter(|h| h.len() == 64)?.to_ascii_lowercase();
-    (b > me).then(|| Info { build: b, tag: format!("v9.{}", b), url: format!("{}/{}", site, path), sha256: Some(sha) })
+    (b > me).then(|| Info { build: order_of(b, 0), tag: format!("v9.{}", b), url: format!("{}/{}", site, path), sha256: Some(sha) })
 }
 
 /// GitHub's latest release, from before the site (and while the repository is public).
@@ -140,7 +183,7 @@ fn check_github(me: u64) -> Result<Option<Info>, String> {
         .and_then(|x| x["browser_download_url"].as_str())
         .ok_or("the release has no file for this system")?
         .to_string();
-    Ok(Some(Info { build: n, tag, url, sha256: None }))
+    Ok(Some(Info { build: order_of(n, 0), tag, url, sha256: None }))
 }
 
 /// The notes of the latest `n` releases up to this one, newest first: (tag, notes). For the WHAT'S NEW panel.
@@ -214,13 +257,12 @@ pub(crate) const FROM_LINKED: &str = "sync:linked";
 /// The linked computer runs a newer Backline of the same kind as this one: that update (taken over the link, no
 /// waiting for the release to be built).
 pub(crate) fn check_linked() -> Option<Info> {
-    let me = build();
-    if me == 0 {
+    if build() == 0 {
         return None;
     }
     let (b, kind) = crate::sync::peer_app().ok()?;
-    (b > me && kind == asset_name())
-        .then(|| Info { build: b, tag: format!("v9.{}", b), url: FROM_LINKED.to_string(), sha256: None })
+    (b >= ORDERED && b > order() && kind == asset_name())
+        .then(|| Info { build: b, tag: tag_of(b), url: FROM_LINKED.to_string(), sha256: None })
 }
 
 /// Download the new program and leave it next to this one as `<name>.new`.
@@ -293,7 +335,8 @@ pub fn apply_staged_at_start() -> bool {
         let _ = std::fs::remove_file(old);
     }
     let Ok(txt) = std::fs::read_to_string(marker()) else { return false };
-    if txt.trim().parse::<u64>().unwrap_or(0) <= build() {
+    // (the marker holds the staged build's order; an older copy's plain number is always under this one's)
+    if txt.trim().parse::<u64>().unwrap_or(0) <= order() {
         // already running that build (or newer): drop the leftovers
         let _ = std::fs::remove_file(marker());
         if let Ok(p) = staged_path() {
@@ -332,7 +375,7 @@ impl App {
         // build it runs every few seconds), and every two minutes in case it's one that doesn't say
         static ASKED_FOR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let there = crate::sync::peer_build();
-        let news = there > build() && ASKED_FOR.load(std::sync::atomic::Ordering::Relaxed) != there;
+        let news = there >= ORDERED && there > order() && ASKED_FOR.load(std::sync::atomic::Ordering::Relaxed) != there;
         let ask_linked = news || self.linked_upd_at.is_none_or(|t| t.elapsed() > Duration::from_secs(120));
         if ask_linked && matches!(self.upd_state, 0 | 3) && build() > 0 && crate::sync::peer_name().is_some() {
             ASKED_FOR.store(there, std::sync::atomic::Ordering::Relaxed);
@@ -406,16 +449,30 @@ mod tests {
             "backline-practice-mac.tar.gz": { "build": 376, "path": "builds/376/backline-practice-mac.tar.gz", "sha256": h.to_uppercase() },
         }});
         let i = pick(&v, "https://dl.example", "backline-practice.exe", 372).unwrap();
-        assert_eq!((i.build, i.tag.as_str(), i.url.as_str()), (380, "v9.380", "https://dl.example/builds/380/backline-practice.exe"));
+        assert_eq!((i.build, i.tag.as_str(), i.url.as_str()), (38000, "v9.380", "https://dl.example/builds/380/backline-practice.exe"));
         assert_eq!(i.sha256.as_deref(), Some(h.as_str()));
         // the Mac file is its own build (built less often); the hash is compared in lowercase
         let mac = pick(&v, "https://dl.example", "backline-practice-mac.tar.gz", 372).unwrap();
-        assert_eq!((mac.build, mac.sha256.as_deref()), (376, Some(h.as_str())));
+        assert_eq!((mac.build, mac.sha256.as_deref()), (37600, Some(h.as_str())));
         // not newer, not there, or no proper hash: nothing to take
         assert!(pick(&v, "https://dl.example", "backline-practice.exe", 380).is_none());
         assert!(pick(&v, "https://dl.example", "backline-linux.tar.gz", 1).is_none());
         let bad = serde_json::json!({ "files": { "backline-practice.exe": { "build": 400, "path": "x", "sha256": "abc" } } });
         assert!(pick(&bad, "https://dl.example", "backline-practice.exe", 1).is_none());
+    }
+
+    #[test]
+    fn alphas_sit_between_releases() {
+        assert_eq!(parse_build("393"), (393, 0));
+        assert_eq!(parse_build("393a2"), (393, 2));
+        assert_eq!(parse_build("393a"), (393, 1));
+        assert_eq!(parse_build(""), (0, 0));
+        // release 393 < its alphas < release 394
+        assert!(order_of(393, 0) < order_of(393, 1) && order_of(393, 2) < order_of(394, 0));
+        assert_eq!(tag_of(order_of(393, 2)), "v9.393a2");
+        assert_eq!(tag_of(order_of(394, 0)), "v9.394");
+        // an older copy's plain number (409) is under every order
+        assert!(409 < ORDERED && ORDERED <= order_of(100, 0));
     }
 
     #[test]

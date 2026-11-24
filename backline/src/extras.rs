@@ -1614,6 +1614,8 @@ impl App {
                 "atonal_lines.json" => self.at.seen = None,
                 "reading_book.txt" if self.rd_book_loaded => self.rd_reload(),
                 "pattern_book.txt" => crate::lines::reload_book(),
+                "chord_book.txt" => self.cb_tried = false,
+                "chord_book_stars.json" => self.cb_stars = None,
                 _ => {}
             }
         }

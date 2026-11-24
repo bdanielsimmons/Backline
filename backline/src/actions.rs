@@ -1328,6 +1328,26 @@ impl App {
             Action::PlaylistNewFrom(name, tracks, tidal) => {
                 self.open_new_playlist(crate::new_playlist::NewPl { name, tracks, tidal, ..Default::default() });
             }
+            Action::PlaylistImport(url) => {
+                if self.pl_importing {
+                    return;
+                }
+                if crate::playlist_link::source(&url).is_none() {
+                    self.toast("Paste a playlist link from Apple Music or Spotify");
+                    return;
+                }
+                self.pl_importing = true;
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let step = |s: String| {
+                        let _ = tx.send(Msg::PlaylistImportStep(s));
+                        ctx.request_repaint();
+                    };
+                    let r = crate::playlist_link::import(&api, &url, step);
+                    let _ = tx.send(Msg::PlaylistImported(r));
+                    ctx.request_repaint();
+                });
+            }
             Action::PlaylistPicker(track, lp) => {
                 self.pl_picker = Some(crate::new_playlist::Picker { track, lp, tidal: self.pl_last_tidal });
                 self.pl_find.clear();

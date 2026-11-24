@@ -30,6 +30,8 @@ pub(crate) struct NewPl {
     pub edit: Option<usize>,
     /// one of your Tidal playlists being renamed (its id)
     pub tidal_edit: Option<String>,
+    /// from a playlist link: its songs that weren't found ("Title - Artist")
+    pub missing: Vec<String>,
 }
 
 /// ADD TO PLAYLIST, while it's open: the song, and which of your playlists are shown.
@@ -111,6 +113,13 @@ fn starts_with(tracks: &[Track], lp: Option<&(f32, f32, String)>) -> Option<Stri
         (None, 1) => format!("Starts with {}", song),
         (None, n) => format!("{} songs, starting with {}", n, song),
     })
+}
+
+/// The songs from a playlist link that weren't found, in a line (the first four, then how many more).
+fn not_found(missing: &[String]) -> String {
+    let shown = missing.iter().take(4).cloned().collect::<Vec<_>>().join("; ");
+    let more = if missing.len() > 4 { format!(" and {} more", missing.len() - 4) } else { String::new() };
+    format!("Not found ({}), add these yourself: {}{}", missing.len(), shown, more)
 }
 
 /// A picture for a playlist, kept in Backline's folder (so it stays when the original moves): its new path.
@@ -406,6 +415,9 @@ impl App {
             title_line(ui, head, 3.0, pal().ink);
             if let Some(what) = starts_with(&d.tracks, d.loop_ab.as_ref()) {
                 para(ui, &what, pal().ink2);
+            }
+            if !d.missing.is_empty() {
+                para(ui, &not_found(&d.missing), pal().dim);
             }
             if renaming {
                 para(ui, "On your Tidal account.", pal().ink2);

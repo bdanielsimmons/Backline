@@ -24,6 +24,9 @@ pub(crate) struct Block {
     pub ahead: String,
     #[serde(default)]
     pub behind: String,
+    /// a page it's done on, opened from the block ("ear:<drill key>": that EAR TRAINING drill)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub open: String,
 }
 
 /// A tune's changes, a bar each (two chords in a bar with a space between).
@@ -322,6 +325,7 @@ pub(crate) fn block_col(name: &str) -> Color32 {
     let pick = [
         ("warm", (185, 160, 230)),
         ("ear", (143, 179, 239)),
+        ("neck", (120, 210, 170)),
         ("sandole", (239, 143, 176)),
         ("tune", (111, 211, 211)),
         ("project", (111, 207, 143)),
@@ -1072,7 +1076,7 @@ impl App {
         if blocks.is_empty() {
             text_block(ui, "Nothing on the timer today.", 2.0, pal().ink2, 6.0);
         } else {
-            self.plan_session(ui, &plan, &week_now, &day, &blocks);
+            self.plan_session(ui, acts, &plan, &week_now, &day, &blocks);
         }
         self.plan_progress(ui, &plan, &week_now);
 
@@ -1237,7 +1241,7 @@ impl App {
 
     /// Today's session: the blocks as a bar (click one to go to it), the one on now big with its time, start,
     /// pause, back, skip, a minute more, and what to do in it.
-    fn plan_session(&mut self, ui: &mut egui::Ui, plan: &Plan, week: &Week, day: &Day, blocks: &[Block]) {
+    fn plan_session(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, plan: &Plan, week: &Week, day: &Day, blocks: &[Block]) {
         let done = self.plan.done_today();
         let total: u32 = blocks.iter().map(|b| b.min).sum::<u32>().max(1);
         let cur = self.plan.block.min(blocks.len() - 1);
@@ -1285,6 +1289,14 @@ impl App {
             }
             if retro_btn(ui, "AUTO NEXT", self.plan.auto).tip("When a block ends, start the next one automatically.").clicked() {
                 act = Some(6);
+            }
+            // (a block done on a page of its own: open it; NOTES ON THE NECK is right in the block)
+            if let Some(d) = b.open.strip_prefix("ear:").filter(|k| *k != "neck").and_then(|k| crate::ear::DRILLS.iter().position(|d| d.key == k)) {
+                ui.add_space(10.0);
+                if retro_btn(ui, &format!("OPEN {}", crate::ear::DRILLS[d].name), false).tip("Open it in EAR TRAINING (the timer keeps going)").clicked() {
+                    self.ear = crate::ear::Ear { drill: d, ..Default::default() };
+                    acts.push(Action::Section(Sec::Ear));
+                }
             }
         });
         // space starts and pauses (when no text box has the keyboard)
@@ -1334,6 +1346,15 @@ impl App {
         let mv = self.plan.mv();
         let week_no = plan.start_week();
         text_block(ui, &fill_moved(&b.what, plan, week, day, &mv, week_no), 2.0, pal().ink, 6.0);
+        // NOTES ON THE NECK, right in its block
+        self.nn_inline = b.open == "ear:neck";
+        if self.nn_inline {
+            ui.add_space(6.0);
+            egui::Frame::none().stroke(Stroke::new(1.0_f32, pal().edge)).rounding(2.0).inner_margin(10.0).show(ui, |ui| {
+                self.nn_view(ui, acts, true);
+            });
+            ui.add_space(8.0);
+        }
         let ink2 = pal().ink2;
         fact(ui, "AHEAD?", &fill_moved(&b.ahead, plan, week, day, &mv, week_no), ink2);
         fact(ui, "BEHIND?", &fill_moved(&b.behind, plan, week, day, &mv, week_no), ink2);
@@ -1401,8 +1422,8 @@ mod tests {
             title: "T".into(),
             start: "2026-10-26".into(),
             blocks: vec![
-                Block { name: "Warm-up".into(), min: 5, what: "Go".into(), ahead: String::new(), behind: String::new() },
-                Block { name: "Tune".into(), min: 10, what: "{tune}: {tune_step}. Ladder {rung}: {rung_how}".into(), ahead: String::new(), behind: String::new() },
+                Block { name: "Warm-up".into(), min: 5, what: "Go".into(), ahead: String::new(), behind: String::new(), open: String::new() },
+                Block { name: "Tune".into(), min: 10, what: "{tune}: {tune_step}. Ladder {rung}: {rung_how}".into(), ahead: String::new(), behind: String::new(), open: String::new() },
             ],
             days: vec![day("Mon", true), day("Tue", true), day("Wed", true), day("Thu", true), day("Fri", true), day("Sat", false), day("Sun", false)],
             weeks: vec![Week { phase: "A".into(), project: "P".into(), done: "D".into(), focus: vec![], tune: "Blue Bossa".into(), line: "L".into(), rung: 2, steps: vec![], changes: vec![], song: String::new() }],
@@ -1497,7 +1518,7 @@ mod tests {
     #[test]
     fn progress_counts_the_minutes_and_the_days_in_a_row() {
         let mut p = sample();
-        p.days[0].blocks = vec![Block { name: "Fun".into(), min: 40, what: String::new(), ahead: String::new(), behind: String::new() }];
+        p.days[0].blocks = vec![Block { name: "Fun".into(), min: 40, what: String::new(), ahead: String::new(), behind: String::new(), open: String::new() }];
         let mut log = BTreeMap::new();
         // 2026-10-26 is a Monday: warm-up 5 and fun 40 (block 2) done; the Tuesday after, the tune block (10)
         log.insert("2026-10-26".to_string(), vec![0, 2]);

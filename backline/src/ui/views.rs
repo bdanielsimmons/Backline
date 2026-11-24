@@ -79,6 +79,7 @@ pub(crate) const F_CHART: u32 = 12;
 pub(crate) const F_IREAL: u32 = 13;
 const F_SC: u32 = 14;
 const F_NEW_PL: u32 = 50;
+const F_PL_LINK: u32 = 120;
 
 /// "LABEL  [ text field ]" on one row (or a taller multi-line box).
 pub(crate) fn field_row(
@@ -1589,6 +1590,19 @@ impl App {
                 acts.push(Action::PlaylistNew(None));
             }
         });
+        // a playlist from another app: its songs found on Tidal (or YouTube, without Tidal)
+        ui.horizontal_wrapped(|ui| {
+            let w = (ui.available_width() - 110.0).max(80.0);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
+            let o = field(ui, &mut self.ed, F_PL_LINK, &mut self.pl_link, rect, "Apple Music or Spotify playlist link", false);
+            let busy = self.pl_importing;
+            let go = retro_btn_w(ui, if busy { "FINDING..." } else { "FIND SONGS" }, 102.0, false)
+                .tip("Paste a playlist link from Apple Music or Spotify: its songs are found on Tidal (on YouTube without Tidal) and made a playlist.")
+                .clicked();
+            if (o.enter || go) && !busy {
+                acts.push(Action::PlaylistImport(self.pl_link.trim().to_string()));
+            }
+        });
         self.share_buttons(ui, acts);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "SAVE QUEUE AS PLAYLIST", false)
@@ -1648,6 +1662,16 @@ impl App {
             }
             if retro_btn(ui, "RENAME / EDIT", false).tip("Its name, description and cover").clicked() {
                 acts.push(Action::PlaylistEdit(pi));
+            }
+            // all Tidal songs: the same playlist on your Tidal account
+            let items = &self.store.playlists[pi].items;
+            if !items.is_empty()
+                && items.iter().all(|v| v.kind == "tidal")
+                && self.api.has_token()
+                && !self.offline
+                && retro_btn(ui, "SAVE TO TIDAL", false).tip("Make this playlist on your Tidal account too.").clicked()
+            {
+                acts.push(Action::PlaylistNewFrom(name.clone(), items.iter().map(|v| v.to_track()).collect(), true));
             }
         });
         // its cover (a record while it has none) beside the name; a click picks one

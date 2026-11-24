@@ -114,6 +114,24 @@ impl App {
         if let Some(v) = st["lab_tab"].as_u64() {
             app.lab_tab = (v as u8).min(2);
         }
+        if let Some(v) = st["cb_set"].as_u64() {
+            app.cb_set = v as usize;
+        }
+        if let Some(v) = st["cb_fam"].as_u64() {
+            app.cb_fam = v as usize;
+        }
+        if let Some(v) = st["cb_view"].as_u64() {
+            app.cb_view = (v as u8).min(4);
+        }
+        if let Some(v) = st["cb_sound"].as_bool() {
+            app.cb_sound = v;
+        }
+        if let Some(v) = st["cb_order"].as_u64() {
+            app.cb_order = (v as u8).min(1);
+        }
+        if let Some(v) = st["cb_hide"].as_bool() {
+            app.cb_hide = v;
+        }
         if let Some(v) = st["lab_vol"].as_f64() {
             app.lab_vol = (v as f32).clamp(0.0, 1.0);
         }
@@ -442,6 +460,12 @@ impl App {
             "lab_repeat": self.lab_repeat,
             "lab_tab": self.lab_tab,
             "lab_vol": self.lab_vol,
+            "cb_set": self.cb_set,
+            "cb_fam": self.cb_fam,
+            "cb_view": self.cb_view,
+            "cb_sound": self.cb_sound,
+            "cb_hide": self.cb_hide,
+            "cb_order": self.cb_order,
             "lab_loop_chords": self.lab_loop_chords,
             "q_drop": self.q_drop,
             "mine_off": self.mine_off,

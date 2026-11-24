@@ -634,6 +634,8 @@ pub struct Store {
     pub ear_quiet: bool,
     /// the atonal drills: their choices, and where you are in SCALE IN INTERVALS
     pub ear_atonal: EarAtonal,
+    /// EAR > NOTES ON THE NECK: each spot's record, the strings with every fret in, your choices, the sessions
+    pub neck: NeckStats,
     /// PROGRESSION LAB: the progressions you kept, and the one on the bench
     pub lab: Vec<LabProg>,
     pub lab_bench: LabProg,
@@ -772,6 +774,33 @@ pub struct EarStats {
     pub sessions: Vec<(i64, u32, u32)>,
     /// the most answers right in a row
     pub best: u32,
+}
+
+/// NOTES ON THE NECK: each spot's record (by "string:fret", strings from the low E, 0), the strings whose frets
+/// between the landmarks have joined, the strings drilled (an index of the drill's choices), every fret or the
+/// landmarks only, no sound, and each finished session (day number, right, asked, seconds a note).
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct NeckStats {
+    pub spots: HashMap<String, NeckSpot>,
+    pub open: Vec<usize>,
+    pub strings: usize,
+    pub every: bool,
+    pub mute: bool,
+    pub sessions: Vec<(i64, u32, u32, f32)>,
+    /// the landmarks already shown before being asked ("string:fret")
+    pub taught: Vec<String>,
+}
+
+/// One spot on the neck: asked, right, the seconds a right answer takes (smoothed, the recent ones counting most), and
+/// the last few answers (newest last).
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct NeckSpot {
+    pub asked: u32,
+    pub right: u32,
+    pub secs: f32,
+    pub recent: Vec<bool>,
 }
 
 /// A voicing you kept: its name and its grip (a fret per string, low E first; None = not played).

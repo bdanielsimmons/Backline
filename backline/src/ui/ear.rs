@@ -30,7 +30,7 @@ pub(crate) struct Drill {
     pub about: &'static str,
 }
 
-pub(crate) const DRILLS: [Drill; 13] = [
+pub(crate) const DRILLS: [Drill; 14] = [
     Drill {
         name: "CHORD QUALITIES",
         key: "quality",
@@ -97,7 +97,16 @@ pub(crate) const DRILLS: [Drill; 13] = [
         key: "sight",
         about: "A new line each day, its first note Do. Hear the first note, sing the line, then hear it and mark yourself. NEXT NOTE: a line stops; sing the note that comes next.",
     },
+    // the neck
+    Drill {
+        name: "NOTES ON THE NECK",
+        key: "neck",
+        about: "A note lights on the neck: name it, as quick as you can, and say it out loud. The landmarks first (frets 0, 3, 5, 7, 10 and 12, most of them known from tuning); once a string's landmarks are quick, its other frets join. The slow ones come up more.",
+    },
 ];
+
+/// Where NOTES ON THE NECK is in DRILLS (the menu heads it NECK; it runs on its own, see neck_notes.rs).
+pub(crate) const NECK: usize = 13;
 
 // ------------------------------------------------------------------ the theory each drill asks about
 
@@ -1862,6 +1871,9 @@ fn tone_col(t: i32) -> Color32 {
 
 /// Each drill's colour, a dot beside the drill menu.
 fn drill_col(d: usize) -> Color32 {
+    if d == NECK {
+        return tone_col(7);
+    }
     if d >= ATONAL {
         // the atonal ones all purple
         return tone_col(14);
@@ -1976,6 +1988,12 @@ impl App {
     /// one sung and marked right).
     pub(crate) fn ear_demo(&mut self, drill: usize) {
         self.ear = Ear { drill: drill.min(DRILLS.len() - 1), ..Default::default() };
+        if self.ear.drill == NECK {
+            if let Ok(how) = std::env::var("BACKLINE_NN") {
+                self.nn_demo(&how);
+            }
+            return;
+        }
         let kind = self.ear_kind();
         let (_, level, pool) = self.ear_in_play();
         let q = match kind {
@@ -2277,7 +2295,7 @@ impl App {
             ui.painter().circle_filled(r.center(), 5.0, drill_col(drill));
             // the menu in two groups, each drill with its colour
             let dots: Vec<Color32> = (0..DRILLS.len()).map(drill_col).collect();
-            let heads = [(0, "TONAL"), (ATONAL, "ATONAL")];
+            let heads = [(0, "TONAL"), (ATONAL, "ATONAL"), (NECK, "NECK")];
             if let Some(i) = crate::dropdown_grouped(ui, "ear_drill", "DRILL", &names, drill, &heads, &dots) {
                 if i != drill {
                     self.ear = Ear { drill: i, dir: self.ear.dir, ..Default::default() };
@@ -2297,6 +2315,10 @@ impl App {
                     }
                 }
             }
+            if drill == NECK {
+                self.nn_options(ui);
+                return;
+            }
             if drill >= ATONAL {
                 self.ear_atonal_options(ui, acts, drill);
             }
@@ -2306,6 +2328,11 @@ impl App {
             }
         });
         para(ui, DRILLS[drill].about, pal().ink2);
+        if drill == NECK {
+            self.nn_view(ui, acts, false);
+            ui.add_space(16.0);
+            return;
+        }
         if drill == 0 {
             ui.add_space(6.0);
             self.ear_chord_controls(ui, acts);

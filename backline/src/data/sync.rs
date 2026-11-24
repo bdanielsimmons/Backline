@@ -44,7 +44,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const FIND_PORT: u16 = 47390;
 const SYNC_PORT: u16 = 47391;
 /// Whole files that sync, in Backline's folder.
-const FILES: [&str; 7] = [
+const FILES: [&str; 9] = [
     "plan.json",
     "plan_log.json",
     "plan_moves.json",
@@ -52,9 +52,11 @@ const FILES: [&str; 7] = [
     "atonal_lines.json",
     "reading_book.txt",
     "pattern_book.txt",
+    "chord_book.txt",
+    "chord_book_stars.json",
 ];
 /// Files that are one piece (never put together): the newer change wins.
-const WHOLE: [&str; 3] = ["plan.json", "reading_book.txt", "pattern_book.txt"];
+const WHOLE: [&str; 4] = ["plan.json", "reading_book.txt", "pattern_book.txt", "chord_book.txt"];
 /// library.json's parts each computer keeps to itself: the song files on its own disk (its folders, the ones taken
 /// out, the ones copied from the other computer), its takes, and what it played.
 const LOCAL: [&str; 7] = ["files", "folders", "removed_files", "takes", "last", "recent", "copied"];
@@ -297,8 +299,9 @@ pub(crate) fn share(files: Vec<Shared>) {
     }
 }
 
-/// The Backline build the linked computer last said it runs (heard every few seconds; 0 until it's heard, or an
-/// older Backline that doesn't say).
+/// The Backline build the linked computer last said it runs, as its order (update::order; heard every few seconds;
+/// 0 until it's heard, or an older Backline that doesn't say; a plain number under update::ORDERED from one before
+/// alphas).
 static PEER_BUILD: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn peer_build() -> u64 {
@@ -617,7 +620,8 @@ impl Engine {
         if reply {
             f.push('R');
         }
-        f.push_str(&crate::update::build().to_string());
+        // (its order: alphas count, see update::order)
+        f.push_str(&crate::update::order().to_string());
         let joining = lock(&self.joining).as_ref().filter(|j| Instant::now() < j.1).map_or(0, |j| j.2);
         format!("BLSYNC1|{}|{}|{}|{}|{}", s.id, self.port.load(Ordering::Relaxed), f, joining, self.name)
     }
@@ -1146,7 +1150,7 @@ impl Engine {
                 }
                 // which Backline runs here, and Backline itself (so the other computer needn't wait for a release)
                 Wire::Build => {
-                    c.send(&Wire::BuildIs { build: crate::update::build(), kind: crate::update::asset_name().to_string() })?;
+                    c.send(&Wire::BuildIs { build: crate::update::order(), kind: crate::update::asset_name().to_string() })?;
                 }
                 Wire::GetApp => {
                     let path = std::env::current_exe().map_err(|e| e.to_string())?.display().to_string();
@@ -1158,7 +1162,7 @@ impl Engine {
                         }
                     };
                     send_file(&mut c, &mut f)?;
-                    log(&format!("sent {} this Backline (v9.{})", peer.name, crate::update::build()));
+                    log(&format!("sent {} this Backline ({})", peer.name, crate::update::tag_of(crate::update::order())));
                 }
                 Wire::GetLog { name } => {
                     let f = LOGS.contains(&name.as_str()).then(|| std::fs::File::open(self.dir.join(&name)));
@@ -2122,7 +2126,7 @@ mod tests {
         *lock(&b.near) = HashMap::from([(31, Near { addr: at(&a), linked: true, joining: None })]);
         // the laptop hears which Backline the PC runs
         let (build, kind) = b.app_there().unwrap();
-        assert_eq!((build, kind.as_str()), (crate::update::build(), crate::update::asset_name()));
+        assert_eq!((build, kind.as_str()), (crate::update::order(), crate::update::asset_name()));
         // and takes it, byte for byte (here: the program running these tests)
         let me = std::fs::read(std::env::current_exe().unwrap()).unwrap();
         let to = db.join("backline.new");

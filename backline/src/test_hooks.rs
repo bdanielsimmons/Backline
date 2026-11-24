@@ -32,6 +32,25 @@ impl App {
         if std::env::var_os("BACKLINE_PRACTICE").is_some() {
             app.practice = true;
         }
+        // (BACKLINE_TIDAL_SAVE=<name>: your Backline playlist of that name made on your Tidal account too, as SAVE TO
+        // TIDAL then Create on Tidal do; for your own copy, started by hand on your behalf: it makes no test copy, so
+        // it keeps its sound. Once: gone from the surroundings, so a restart doesn't make it again)
+        if let Ok(name) = std::env::var("BACKLINE_TIDAL_SAVE") {
+            std::env::remove_var("BACKLINE_TIDAL_SAVE");
+            match app.store.playlists.iter().find(|p| p.name == name) {
+                Some(pl) if !pl.items.is_empty() && pl.items.iter().all(|v| v.kind == "tidal") && app.api.has_token() => {
+                    let d = new_playlist::NewPl {
+                        name: pl.name.clone(),
+                        desc: pl.desc.clone(),
+                        tracks: pl.items.iter().map(|v| v.to_track()).collect(),
+                        tidal: true,
+                        ..Default::default()
+                    };
+                    app.apply(Action::PlaylistMake(d));
+                }
+                _ => crate::api::log(&format!("BACKLINE_TIDAL_SAVE: no Backline playlist {:?} of Tidal songs, or not logged in", name)),
+            }
+        }
         match std::env::var("BACKLINE_OPEN").as_deref() {
             Ok("practice") => app.practice = true,
             Ok("prefs") => app.show_prefs = true,
@@ -231,12 +250,55 @@ Second line: comp lighter here.", m.1.note);
             Ok("plan") => {
                 app.sec = Sec::Diary;
                 app.diary_tab = 3;
+                // BACKLINE_PLAN_BLOCK=<n>: that block of today's session on
+                if let Some(k) = std::env::var("BACKLINE_PLAN_BLOCK").ok().and_then(|s| s.parse::<usize>().ok()) {
+                    app.plan.block = k;
+                    app.plan.day = crate::store::today_days();
+                }
             }
             Ok("analyzer") => {
                 app.sec = Sec::Chords;
                 app.chords_tab = 1;
                 // an Em9 grip to show
                 app.an_frets = [Some(0), Some(7), None, Some(12), Some(12), Some(7)];
+            }
+            Ok("chordbook") => {
+                app.sec = Sec::Chords;
+                app.chords_tab = 10;
+                // BACKLINE_CB_SET / BACKLINE_CB_FAM: the string set and family to open (from 0)
+                if let Some(v) = std::env::var("BACKLINE_CB_SET").ok().and_then(|v| v.parse().ok()) {
+                    app.cb_set = v;
+                }
+                if let Some(v) = std::env::var("BACKLINE_CB_FAM").ok().and_then(|v| v.parse().ok()) {
+                    app.cb_fam = v;
+                }
+                // BACKLINE_CB_MAP=1: the MAP
+                if std::env::var("BACKLINE_CB_MAP").is_ok() {
+                    app.cb_view = 4;
+                }
+                // BACKLINE_CB_CAD=<k>: 2-5-1, at chord k
+                if let Some(k) = std::env::var("BACKLINE_CB_CAD").ok().and_then(|v| v.parse().ok()) {
+                    app.cb_view = 3;
+                    app.cb_cad_step = k;
+                }
+                // BACKLINE_CB_HOW=<k>: HOW IT WORKS, at step k of his chain
+                if let Some(k) = std::env::var("BACKLINE_CB_HOW").ok().and_then(|v| v.parse().ok()) {
+                    app.cb_view = 2;
+                    app.cb_demo = k;
+                }
+                // BACKLINE_CB_WALK=<n>: WALK, at the n-th voicing (from 0)
+                // BACKLINE_CB_ORDER=<0|1>: the lesson's order, or by station
+                if let Some(v) = std::env::var("BACKLINE_CB_ORDER").ok().and_then(|v| v.parse::<u8>().ok()) {
+                    app.cb_order = v.min(1);
+                }
+                if let Some(v) = std::env::var("BACKLINE_CB_WALK").ok().and_then(|v| v.parse().ok()) {
+                    app.cb_view = 1;
+                    app.cb_at = v;
+                    // BACKLINE_CB_TRY=<k>: with the k-th rule tried on the neck
+                    if let Some(k) = std::env::var("BACKLINE_CB_TRY").ok().and_then(|k| k.parse().ok()) {
+                        app.cb_try = Some((v, k));
+                    }
+                }
             }
             Ok("lab") => {
                 app.sec = Sec::Chords;
