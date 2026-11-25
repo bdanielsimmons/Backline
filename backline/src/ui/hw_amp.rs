@@ -9,7 +9,8 @@
 
 use super::*;
 
-/// The style sheet's units placed on screen: `o` is where its (24, 34) lands, `s` how big one unit is.
+/// The style sheet's units placed on screen: `o` is where its (12, 34) lands (the gear's top left), `s` how big one
+/// unit is.
 #[derive(Clone, Copy)]
 struct Mu {
     o: Pos2,
@@ -18,7 +19,7 @@ struct Mu {
 
 impl Mu {
     fn p(&self, x: f32, y: f32) -> Pos2 {
-        Pos2::new(self.o.x + (x - 24.0) * self.s, self.o.y + (y - 34.0) * self.s)
+        Pos2::new(self.o.x + (x - 12.0) * self.s, self.o.y + (y - 34.0) * self.s)
     }
     fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
         Rect::from_min_size(self.p(x, y), Vec2::new(w * self.s, h * self.s))
@@ -41,8 +42,8 @@ impl App {
     pub(crate) fn np_amp(&mut self, ui: &mut egui::Ui, r: Rect, tex: Option<egui::TextureId>, dt: f32, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let now = ui.input(|i| i.time);
-        let s = (r.width() / 912.0).min(r.height() / 504.0).max(0.3);
-        let m = Mu { o: r.center() - Vec2::new(456.0, 252.0) * s, s };
+        let s = (r.width() / 924.0).min(r.height() / 504.0).max(0.3);
+        let m = Mu { o: r.center() - Vec2::new(462.0, 252.0) * s, s };
         self.hw_textures(ui.ctx());
         self.hw_measure(dt, now);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
@@ -50,55 +51,65 @@ impl App {
             ui.ctx().request_repaint();
         }
 
-        // ---- the left: the cover, the time, Up Next
-        let cover = m.r(24.0, 34.0, 260.0, 260.0);
-        p.rect_filled(cover.translate(Vec2::new(0.0, m.v(6.0))), m.v(6.0), Color32::from_black_alpha(90));
+        // ---- the room: the gear stands on a floor, each piece's shadow under it
+        let floor_y = m.p(0.0, 538.0).y;
+        let whole = ui.max_rect();
+        vgrad(&p, Rect::from_min_max(Pos2::new(whole.min.x, floor_y - m.v(30.0)), whole.max), Color32::TRANSPARENT, Color32::from_black_alpha(120));
+        for (x0, x1) in [(12.0, 294.0), (300.0, 936.0)] {
+            let (a, b) = (m.p(x0, 538.0), m.p(x1, 538.0));
+            shadow(&p, Pos2::new((a.x + b.x) / 2.0, a.y + m.v(4.0)), (b.x - a.x) * 0.56, m.v(14.0), 0.75);
+        }
+
+        // ---- the left: a black unit of its own, the cover in a framed window, the time and Up Next on screens
+        cabinet(&p, m, m.r(12.0, 34.0, 282.0, 504.0), self.hw_tex.as_ref().map(|t| t[0].id()));
+        black_panel(&p, m, m.r(19.0, 41.0, 268.0, 490.0));
+        let cb = m.r(27.0, 49.0, 252.0, 252.0);
+        bezel(&p, m, cb, 4.0, true);
+        let cover = cb.shrink(m.v(9.0));
         match tex {
             Some(id) => {
-                egui::Image::new(egui::load::SizedTexture::new(id, cover.size())).rounding(Rounding::same(m.v(6.0))).paint_at(ui, cover);
+                egui::Image::new(egui::load::SizedTexture::new(id, cover.size())).rounding(Rounding::same(m.v(2.0))).paint_at(ui, cover);
             }
             None => paint_record(&p, cover, None),
         }
-        let scr = m.r(24.0, 306.0, 260.0, 72.0);
+        p.rect_stroke(cover, m.v(2.0), Stroke::new(1.0_f32, Color32::from_black_alpha(160)));
+        let sb = m.r(27.0, 311.0, 252.0, 68.0);
+        bezel(&p, m, sb, 4.0, false);
+        let scr = sb.shrink(m.v(5.0));
         crate::styles::lcd(&p, scr);
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-        let lw = scr.width() - m.v(28.0);
-        crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(14.0), scr.min.y + m.v(27.0)), Align::Min, &fmt_time(pos), 4.2 * s, lw);
+        let lw = scr.width() - m.v(24.0);
+        crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), Align::Min, &fmt_time(pos), 3.9 * s, lw);
         if let Some(tr) = self.cur_track() {
-            crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(14.0), scr.max.y - m.v(14.0)), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.25 * s, lw);
+            crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.max.y - m.v(11.0)), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15 * s, lw);
         }
-        let up = m.r(24.0, 390.0, 260.0, 148.0);
+        let ub = m.r(27.0, 389.0, 252.0, 134.0);
+        bezel(&p, m, ub, 4.0, false);
+        let up = ub.shrink(m.v(5.0));
         crate::styles::lcd(&p, up);
-        crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(14.0), up.min.y + m.v(15.0)), Align::Min, "UP NEXT", 1.2 * s, lw);
+        crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(12.0), up.min.y + m.v(12.0)), Align::Min, "UP NEXT", 1.1 * s, lw);
         let from = self.cur.map_or(0, |c| c + 1);
         let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(from).take(5).collect();
         if rows.is_empty() {
-            crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(14.0), up.min.y + m.v(40.0)), Align::Min, "NOTHING AFTER THIS SONG", 1.25 * s, lw);
+            crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(12.0), up.min.y + m.v(34.0)), Align::Min, "NOTHING AFTER THIS SONG", 1.15 * s, lw);
         }
         for (k, (i, tr)) in rows.iter().enumerate() {
-            let row = Rect::from_min_size(Pos2::new(up.min.x + m.v(8.0), up.min.y + m.v(27.0 + 21.5 * k as f32)), Vec2::new(up.width() - m.v(16.0), m.v(21.0)));
+            let row = Rect::from_min_size(Pos2::new(up.min.x + m.v(6.0), up.min.y + m.v(22.0 + 19.0 * k as f32)), Vec2::new(up.width() - m.v(12.0), m.v(18.5)));
             let h = ui.interact(row, ui.id().with(("hw_next", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play this song");
             if h.hovered() {
                 p.rect_filled(row, m.v(2.0), crate::styles::amber().gamma_multiply(0.1));
             }
             let len = fmt_time(tr.duration);
-            let tw = text_w(&len, 1.3 * s);
-            crate::styles::lcd_text(&p, Pos2::new(row.min.x + m.v(6.0), row.center().y), Align::Min, &tr.title, 1.3 * s, row.width() - tw - m.v(22.0));
-            crate::styles::lcd_text(&p, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &len, 1.3 * s, tw + 4.0);
+            let tw = text_w(&len, 1.2 * s);
+            crate::styles::lcd_text(&p, Pos2::new(row.min.x + m.v(6.0), row.center().y), Align::Min, &tr.title, 1.2 * s, row.width() - tw - m.v(22.0));
+            crate::styles::lcd_text(&p, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &len, 1.2 * s, tw + 4.0);
             if h.clicked() {
                 acts.push(Action::PlayIndex(*i));
             }
         }
 
-        // ---- the cabinet: black tolex
-        let cab = m.r(300.0, 34.0, 636.0, 504.0);
-        p.rect_filled(cab.translate(Vec2::new(0.0, m.v(10.0))), m.v(14.0), Color32::from_black_alpha(110));
-        p.rect_filled(cab, m.v(12.0), Color32::from_rgb(29, 27, 25));
-        if let Some(t) = &self.hw_tex {
-            tiled(&p, cab.shrink(m.v(3.0)), t[0].id(), m.v(64.0), Color32::from_white_alpha(255));
-        }
-        p.rect_stroke(cab, m.v(12.0), Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
-        p.line_segment([cab.left_top() + Vec2::new(m.v(12.0), 1.5), cab.right_top() + Vec2::new(-m.v(12.0), 1.5)], Stroke::new(1.0_f32, Color32::from_white_alpha(14)));
+        // ---- the amp's cabinet: black tolex
+        cabinet(&p, m, m.r(300.0, 34.0, 636.0, 504.0), self.hw_tex.as_ref().map(|t| t[0].id()));
 
         // ---- the panel
         let pan = m.r(314.0, 48.0, 608.0, 230.0);
@@ -257,21 +268,17 @@ impl App {
             _ => {
                 let o = inner.min;
                 let at = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(o + Vec2::new(m.v(x), m.v(y)), Vec2::new(m.v(w), m.v(h)));
-                let info = self.cur_track().and_then(|t| crate::meta::get(t.id));
-                let a4 = info.and_then(|i| i.a4);
-                let subs = [
-                    match a4 {
-                        Some(a) => format!("CENTS · A = {:.0} Hz", a),
-                        None => "CENTS FROM A440".to_string(),
-                    },
-                    "CORRELATION".to_string(),
-                    "LUFS".to_string(),
+                let tips = [
+                    "Balance: which side of the record is louder, in dB (old stereo jazz records often put a whole instrument on one side)",
+                    "Stereo: how alike the two sides are (+1 the same, as mono; 0 unrelated; below 0 the sides work against each other)",
+                    "Loudness, in LUFS as streaming services measure it (momentary: the last moment, about 400 ms)",
                 ];
-                for (k, sub) in subs.iter().enumerate() {
+                for (k, sub) in ["WHICH SIDE IS LOUDER · dB", "CORRELATION", "LUFS"].iter().enumerate() {
                     let b = at(14.0 + 202.0 * k as f32, 9.0, 170.0, 96.0);
                     bezel(&p, m, b, 4.0, false);
                     let win = b.shrink(m.v(6.0));
-                    small_meter(&p, win, k, self.hw_need[k], sub, k == 0 && a4.is_none());
+                    small_meter(&p, win, k, self.hw_need[k], sub);
+                    ui.interact(b, ui.id().with(("hw_meter", k)), Sense::hover()).tip(tips[k]);
                 }
                 let strip = at(14.0, 114.0, 574.0, 107.0);
                 bezel(&p, m, strip, 4.0, false);
@@ -324,12 +331,17 @@ impl App {
         self.hw_tex = Some([ctx.load_texture("hw_tolex", tolex, egui::TextureOptions::LINEAR_REPEAT), ctx.load_texture("hw_cloth", cloth, egui::TextureOptions::LINEAR_REPEAT)]);
     }
 
-    /// What the meters show, measured from the last moment of sound: the VU levels (a VU's ballistics), the peak
-    /// lights, how alike the two sides are (correlation), the loudness (BS.1770's K-weighting, eased over about 400
-    /// ms, as a momentary loudness meter) and the record's tuning.
+    /// What the meters show, measured from the last moment of sound: the VU levels (a VU's ballistics, 0 VU set to the
+    /// song's own level), the peak lights (only when the record really clips), which side is louder, how alike the two
+    /// sides are (correlation) and the loudness (BS.1770's K-weighting, eased over about 400 ms, as a momentary
+    /// loudness meter).
     fn hw_measure(&mut self, dt: f32, now: f64) {
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
-        let (mut lv, mut corr, mut ms) = ([0.0f32; 2], None, 0.0f32);
+        let song = self.cur_track().map_or(0, |t| t.id);
+        if self.hw_ref.0 != song {
+            self.hw_ref = (song, 0.0, 0);
+        }
+        let (mut lv, mut corr, mut ms, mut bal) = ([0.0f32; 2], None, 0.0f32, None);
         if playing {
             if let Ok(v) = self.player.viz.lock() {
                 let rate = v.rate.max(8000) as f32;
@@ -339,22 +351,40 @@ impl App {
                 let (lw, rw) = (&l[n - w..], &r[n - w..]);
                 if w > 0 {
                     let (mut sl, mut sr, mut slr) = (0.0f32, 0.0f32, 0.0f32);
-                    let (mut pl, mut pr) = (0.0f32, 0.0f32);
+                    // clipping: three samples in a row at full scale (a loud master touching 0 dBFS once isn't)
+                    let (mut run, mut clip) = ([0u32; 2], [false; 2]);
                     for (a, b) in lw.iter().zip(rw) {
                         sl += a * a;
                         sr += b * b;
                         slr += a * b;
-                        pl = pl.max(a.abs());
-                        pr = pr.max(b.abs());
+                        for (c, x) in [a, b].into_iter().enumerate() {
+                            if x.abs() >= 0.999 {
+                                run[c] += 1;
+                                clip[c] |= run[c] >= 3;
+                            } else {
+                                run[c] = 0;
+                            }
+                        }
                     }
                     lv = [(sl / w as f32).sqrt(), (sr / w as f32).sqrt()];
                     if sl * sr > 1e-9 {
                         corr = Some((slr / (sl * sr).sqrt()).clamp(-1.0, 1.0));
                     }
-                    for (c, pk) in [pl, pr].into_iter().enumerate() {
-                        if pk >= 0.99 {
-                            self.hw_peak[c] = now + 0.4;
+                    if sl + sr > w as f32 * 1e-6 {
+                        bal = Some((10.0 * (sr.max(1e-12) / sl.max(1e-12)).log10()).clamp(-14.0, 14.0));
+                    }
+                    for (c, on) in clip.into_iter().enumerate() {
+                        if on {
+                            self.hw_peak[c] = now + 0.5;
                         }
+                    }
+                    // the song's own level so far (both sides; silence and quiet moments left out)
+                    let msw = (sl + sr) / (2.0 * w as f32);
+                    let (_, sum, cnt) = self.hw_ref;
+                    let mean = if cnt > 0 { sum / cnt as f64 } else { 0.0 };
+                    if msw > 1e-5 && (cnt < 20 || msw as f64 > mean * 0.01) {
+                        self.hw_ref.1 += msw as f64;
+                        self.hw_ref.2 += 1;
                     }
                 }
                 if n > 1024 {
@@ -362,7 +392,10 @@ impl App {
                 }
             }
         }
-        let refa = 10f32.powf(-18.0 / 20.0);
+        // 0 VU: 3 dB over the song's average level, as a deck's level is set for what it records (records are mastered
+        // 8 to 12 dB hotter than the studio's -18 dBFS, which kept the needles in the red); the studio's level until
+        // there's anything to go by
+        let refa = if self.hw_ref.2 > 0 { (self.hw_ref.1 / self.hw_ref.2 as f64).sqrt() as f32 * 10f32.powf(3.0 / 20.0) } else { 10f32.powf(-18.0 / 20.0) };
         let k = 1.0 - (-dt / 0.065).exp();
         for (c, l) in lv.iter().enumerate() {
             self.vu[c] += (l / refa - self.vu[c]) * k;
@@ -373,9 +406,11 @@ impl App {
         }
         ease(&mut self.hw_ms, ms, 0.4);
         let lufs = if self.hw_ms > 1e-10 { -0.691 + 10.0 * self.hw_ms.log10() } else { -60.0 };
-        let a4 = self.cur_track().and_then(|t| crate::meta::get(t.id)).and_then(|i| i.a4);
-        let cents = a4.map_or(-70.0, |a| 1200.0 * (a / 440.0).log2());
-        ease(&mut self.hw_need[0], cents, 0.3);
+        if let Some(b) = bal {
+            ease(&mut self.hw_need[0], b, 0.3);
+        } else if !playing {
+            ease(&mut self.hw_need[0], 0.0, 0.3);
+        }
         ease(&mut self.hw_need[1], if playing { self.hw_corr } else { -1.2 }, 0.15);
         ease(&mut self.hw_need[2], lufs.max(-40.0), 0.1);
     }
@@ -450,6 +485,38 @@ impl App {
         p.rect_stroke(w, m.v(3.0), Stroke::new(1.0_f32, Color32::from_black_alpha(220)));
         self.lyric_scroll = scroll;
     }
+}
+
+/// Hardware's Now Playing behind the gear: a dark room, its wall a shade warmer up high, and a soft warm light on it.
+pub(crate) fn room(p: &egui::Painter, whole: Rect) {
+    vgrad(p, whole, Color32::from_rgb(28, 25, 22), Color32::from_rgb(11, 10, 9));
+    const SEG: usize = 48;
+    const RINGS: usize = 10;
+    let c = Pos2::new(whole.center().x, whole.min.y + whole.height() * 0.3);
+    let (rx, ry) = (whole.width() * 0.5, whole.height() * 0.55);
+    let warm = Color32::from_rgb(52, 36, 20);
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(c, add(warm, 1.0));
+    for ring in 1..=RINGS {
+        let t = ring as f32 / RINGS as f32;
+        let f = 1.0 - t * t * (3.0 - 2.0 * t);
+        for k in 0..SEG {
+            let a = k as f32 / SEG as f32 * std::f32::consts::TAU;
+            mesh.colored_vertex(c + Vec2::new(a.cos() * rx * t, a.sin() * ry * t), add(warm, f));
+        }
+    }
+    for k in 0..SEG {
+        mesh.add_triangle(0, (1 + k) as u32, (1 + (k + 1) % SEG) as u32);
+    }
+    for ring in 1..RINGS {
+        for k in 0..SEG {
+            let a0 = (1 + (ring - 1) * SEG + k) as u32;
+            let a1 = (1 + (ring - 1) * SEG + (k + 1) % SEG) as u32;
+            mesh.add_triangle(a0, a1, a1 + SEG as u32);
+            mesh.add_triangle(a0, a1 + SEG as u32, a0 + SEG as u32);
+        }
+    }
+    p.add(mesh);
 }
 
 /// A colour added onto what's under it (premultiplied with no alpha), at `a` of its strength.
@@ -621,6 +688,44 @@ fn caps(p: &egui::Painter, at: Pos2, anchor: egui::Align2, text: &str, size: f32
     }
 }
 
+/// A cabinet in black tolex: its grain, a dark edge, a faint light along the top.
+fn cabinet(p: &egui::Painter, m: Mu, r: Rect, grain: Option<egui::TextureId>) {
+    p.rect_filled(r, m.v(12.0), Color32::from_rgb(29, 27, 25));
+    if let Some(id) = grain {
+        tiled(p, r.shrink(m.v(3.0)), id, m.v(64.0), Color32::from_white_alpha(255));
+    }
+    p.rect_stroke(r, m.v(12.0), Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
+    p.line_segment([r.left_top() + Vec2::new(m.v(12.0), 1.5), r.right_top() + Vec2::new(-m.v(12.0), 1.5)], Stroke::new(1.0_f32, Color32::from_white_alpha(16)));
+}
+
+/// A soft shadow on the floor: an oval `rx` by `ry` round `c`, darkest in the middle, fading to nothing.
+fn shadow(p: &egui::Painter, c: Pos2, rx: f32, ry: f32, a: f32) {
+    const SEG: usize = 48;
+    const RINGS: usize = 8;
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(c, Color32::from_black_alpha((a * 255.0) as u8));
+    for ring in 1..=RINGS {
+        let t = ring as f32 / RINGS as f32;
+        let f = 1.0 - t * t * (3.0 - 2.0 * t);
+        for k in 0..SEG {
+            let ang = k as f32 / SEG as f32 * std::f32::consts::TAU;
+            mesh.colored_vertex(c + Vec2::new(ang.cos() * rx * t, ang.sin() * ry * t), Color32::from_black_alpha((a * f * 255.0) as u8));
+        }
+    }
+    for k in 0..SEG {
+        mesh.add_triangle(0, (1 + k) as u32, (1 + (k + 1) % SEG) as u32);
+    }
+    for ring in 1..RINGS {
+        for k in 0..SEG {
+            let a0 = (1 + (ring - 1) * SEG + k) as u32;
+            let a1 = (1 + (ring - 1) * SEG + (k + 1) % SEG) as u32;
+            mesh.add_triangle(a0, a1, a1 + SEG as u32);
+            mesh.add_triangle(a0, a1 + SEG as u32, a0 + SEG as u32);
+        }
+    }
+    p.add(mesh);
+}
+
 /// The amp's black panel: a dark gradient, a soft sheen at the top, and a fine cream line just inside its edge.
 fn black_panel(p: &egui::Painter, m: Mu, r: Rect) {
     p.rect_filled(r.translate(Vec2::new(0.0, 1.0)), m.v(4.0), Color32::from_black_alpha(160));
@@ -691,7 +796,7 @@ fn vu_face(p: &egui::Painter, win: Rect, amp: f32, name: &str, peak: bool) {
     caps(&cp, f(120.0, 113.0), egui::Align2::CENTER_CENTER, name, t(7.5), t(2.6), Color32::from_rgb(42, 35, 24), true);
     cp.text(f(16.0, 97.0), egui::Align2::CENTER_CENTER, "−", egui::FontId::proportional(t(19.0)), FACE_INK);
     cp.text(f(224.0, 97.0), egui::Align2::CENTER_CENTER, "+", egui::FontId::proportional(t(19.0)), FACE_RED);
-    caps(&cp, f(9.0, 131.0), egui::Align2::LEFT_CENTER, "0 VU = −18 dBFS", t(5.6), t(0.6), FACE_SOFT, false);
+    caps(&cp, f(9.0, 131.0), egui::Align2::LEFT_CENTER, "0 VU = SONG LEVEL", t(5.6), t(0.6), FACE_SOFT, false);
     caps(&cp, f(231.0, 131.0), egui::Align2::RIGHT_CENTER, "VOLUME UNITS", t(5.6), t(0.6), FACE_SOFT, false);
     // the peak light
     let pk = f(222.0, 15.0);
@@ -781,7 +886,7 @@ fn glint(p: &egui::Painter, f: &impl Fn(f32, f32) -> Pos2, w: f32, right: f32, l
 /// One of the three small meters under the panel (0 tuning, 1 stereo, 2 loudness): the same cream face, its scale,
 /// its name and unit, the needle at `v` (in the meter's own units). `rest`: nothing to show, the needle rests.
 #[allow(clippy::type_complexity)]
-fn small_meter(p: &egui::Painter, win: Rect, which: usize, v: f32, sub: &str, rest: bool) {
+fn small_meter(p: &egui::Painter, win: Rect, which: usize, v: f32, sub: &str) {
     let k = (win.width() / 200.0).max(win.height() / 120.0);
     let f = |x: f32, y: f32| Pos2::new(win.center().x + (x - 100.0) * k, win.center().y + (y - 60.0) * k);
     let cp = p.with_clip_rect(win);
@@ -791,12 +896,12 @@ fn small_meter(p: &egui::Painter, win: Rect, which: usize, v: f32, sub: &str, re
     type Tick = (f32, &'static str, bool);
     let (min, max, ticks, minor, bands, title): (f32, f32, Vec<Tick>, Vec<f32>, Vec<(f32, f32, Color32)>, &str) = match which {
         0 => (
-            -50.0,
-            50.0,
-            vec![(-50.0, "50", false), (-25.0, "25", false), (0.0, "0", false), (25.0, "25", false), (50.0, "50", false)],
-            (-9..=9).map(|i| i as f32 * 5.0).collect(),
-            vec![(-3.0, 3.0, Color32::from_rgb(47, 122, 69))],
-            "TUNING",
+            -12.0,
+            12.0,
+            vec![(-12.0, "12", false), (-6.0, "6", false), (0.0, "0", false), (6.0, "6", false), (12.0, "12", false)],
+            (-11..=11).map(|i| i as f32).collect(),
+            vec![(-1.0, 1.0, Color32::from_rgb(47, 122, 69))],
+            "BALANCE",
         ),
         1 => (
             -1.0,
@@ -835,10 +940,10 @@ fn small_meter(p: &egui::Painter, win: Rect, which: usize, v: f32, sub: &str, re
     caps(&cp, f(100.0, 88.0), egui::Align2::CENTER_CENTER, title, t(13.0), t(1.5), Color32::from_rgb(42, 35, 24), true);
     caps(&cp, f(100.0, 99.5), egui::Align2::CENTER_CENTER, sub, t(6.4), t(1.0), FACE_SOFT, false);
     if which == 0 {
-        cp.text(f(22.0, 100.0), egui::Align2::CENTER_CENTER, "♭", egui::FontId::proportional(t(17.0)), FACE_INK);
-        cp.text(f(178.0, 100.0), egui::Align2::CENTER_CENTER, "♯", egui::FontId::proportional(t(17.0)), FACE_INK);
+        caps(&cp, f(22.0, 100.0), egui::Align2::CENTER_CENTER, "L", t(14.0), 0.0, FACE_INK, true);
+        caps(&cp, f(178.0, 100.0), egui::Align2::CENTER_CENTER, "R", t(14.0), 0.0, FACE_INK, true);
     }
-    let x = if rest { min - (max - min) * 0.06 } else { v.clamp(min - (max - min) * 0.06, max + (max - min) * 0.03) };
+    let x = v.clamp(min - (max - min) * 0.06, max + (max - min) * 0.03);
     let a = ang(x);
     let (n0, n1) = (pt(a, 16.0), pt(a, r + 9.0));
     let sh = Vec2::new(t(2.0), t(2.4));

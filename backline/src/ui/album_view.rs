@@ -253,7 +253,7 @@ impl App {
                 return;
             }
             STYLE_HARDWARE => {
-                p.rect_filled(whole, 0.0, crate::styles::HW_BODY);
+                crate::hw_amp::room(p, whole);
                 return;
             }
             _ => {}

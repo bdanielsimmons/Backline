@@ -1072,6 +1072,8 @@ struct App {
     hw_ms: f32,
     hw_need: [f32; 3],
     hw_peak: [f64; 2],
+    /// (the song's level so far, for 0 VU: its id, the sum of its loud moments' mean squares, how many)
+    hw_ref: (i64, f64, u32),
     hw_tex: Option<[egui::TextureHandle; 2]>,
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
@@ -2208,7 +2210,8 @@ impl App {
             hw_vis: 0,
             hw_corr: 1.0,
             hw_ms: 0.0,
-            hw_need: [-70.0, -1.2, -40.0],
+            hw_need: [0.0, -1.2, -40.0],
+            hw_ref: (0, 0.0, 0),
             hw_peak: [0.0; 2],
             hw_tex: None,
             fullscreen: false,
