@@ -213,6 +213,12 @@ Second line: comp lighter here.", m.1.note);
                     app.vis_preset = visuals::find(&v);
                     app.vis_np = true;
                 }
+                // (BACKLINE_LYRICS=1: made-up synced lyrics for the song, for pictures of the lyrics)
+                if let (Some(_), Some(t)) = (std::env::var_os("BACKLINE_LYRICS"), app.cur_track()) {
+                    let words = ["The streetlights hum a minor key", "the last bus sighing up the hill", "I count the bars till you come home", "and play it slow, and play it still", "The radio is half asleep", "it hums along the way you do"];
+                    let lines = (0..40).map(|i| (i as f32 * 3.0, words[i % words.len()].to_string())).collect();
+                    app.lyrics = Some(Lyrics { id: t.id, status: 1, lines, synced: true });
+                }
                 // (BACKLINE_POP=1: the visuals in their own window too)
                 if std::env::var_os("BACKLINE_POP").is_some() {
                     app.pop_toggle();

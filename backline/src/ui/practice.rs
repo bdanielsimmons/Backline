@@ -244,6 +244,11 @@ impl App {
             .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
         inset(ui.painter(), bar, pal().display);
         let mut inn = bar.shrink2(Vec2::new(5.0, 5.0));
+        // Hardware, zoomed in: a thin strip along the top shows the whole song and the part in view (its scrollbar)
+        let strip_on = crate::skin::style() == crate::skin::STYLE_HARDWARE && self.wv_zoom > 1.0 && active && !notes_on;
+        let strip_h = if strip_on { 20.0 } else { 0.0 };
+        inn.min.y += strip_h;
+        let top = bar.min.y + strip_h;
         // (the note view's keyboard down the left)
         let keys = Rect::from_min_max(inn.min, Pos2::new(inn.min.x + 18.0, inn.max.y));
         if notes_on {
@@ -332,6 +337,41 @@ impl App {
                     }
                 }
             }
+            // the whole song along the top (Hardware, zoomed in): the part played brighter, the loop shaded, the part
+            // in view framed; click or drag it to look somewhere else
+            if strip_on {
+                let sr = Rect::from_min_max(Pos2::new(inn.min.x, bar.min.y + 5.0), Pos2::new(inn.max.x, top - 2.0));
+                if let (Some(id), (wid, Some(w))) = (tid, &self.wave) {
+                    if *wid == id && w.len() > 2 {
+                        let cols = (sr.width() / 2.0).max(1.0) as usize;
+                        let (mid, n) = (sr.center().y, w.len());
+                        for c in 0..cols {
+                            let a = (c * n / cols).min(n - 1);
+                            let b = ((c + 1) * n / cols).max(a + 1).min(n);
+                            let h = (w[a..b].iter().copied().max().unwrap_or(0) as f32 / 255.0) * (sr.height() * 0.5 - 1.0);
+                            let x = sr.min.x + c as f32 * 2.0;
+                            let heard = (dur1 * c as f32 / cols as f32) < shown;
+                            fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), pal().ink2.gamma_multiply(if heard { 0.8 } else { 0.35 }));
+                        }
+                    }
+                }
+                let sx = |t: f32| sr.min.x + sr.width() * (t / dur1).clamp(0.0, 1.0);
+                if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
+                    fill_rect(&p, Rect::from_min_max(Pos2::new(sx(a), sr.min.y), Pos2::new(sx(b).max(sx(a) + 1.0), sr.max.y)), crate::skin::loop_col().gamma_multiply(0.3));
+                }
+                let view = Rect::from_min_max(Pos2::new(sx(start), sr.min.y - 1.0), Pos2::new(sx(start + span).max(sx(start) + 3.0), sr.max.y + 1.0));
+                p.rect_stroke(view, 1.0, egui::Stroke::new(1.0_f32, pal().ink));
+                fill_rect(&p, Rect::from_min_max(Pos2::new(sx(shown) - 0.5, sr.min.y), Pos2::new(sx(shown) + 0.5, sr.max.y)), pal().ink);
+                let r = ui
+                    .interact(sr.expand2(Vec2::new(0.0, 2.0)), ui.id().with("wv_strip"), Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::Grab)
+                    .tip("The whole song: click or drag to look at another part. Playback continues.");
+                if let Some(pp) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
+                    let t = ((pp.x - sr.min.x) / sr.width()).clamp(0.0, 1.0) * dur1;
+                    self.wv_start = (t - span / 2.0).within(0.0, (dur1 - span).max(0.0));
+                    self.wv_free = true;
+                }
+            }
             // saved sections as faint bands along the bottom
             if let Some(list) = tid.filter(|id| !self.is_demo(*id)).and_then(|id| self.store.sections.get(&id)) {
                 for s in list {
@@ -350,7 +390,7 @@ impl App {
                 if let Some(t) = v {
                     fill_rect(
                         &p,
-                        Rect::from_min_max(Pos2::new(at(t) - 1.0, bar.min.y + 2.0), Pos2::new(at(t) + 1.0, bar.max.y - 2.0)),
+                        Rect::from_min_max(Pos2::new(at(t) - 1.0, top + 2.0), Pos2::new(at(t) + 1.0, bar.max.y - 2.0)),
                         crate::skin::loop_col(),
                     );
                     ptext(&p, Pos2::new(at(t) + 4.0, inn.min.y + 5.0), Align::Min, lab, 1.0, crate::skin::loop_col());
@@ -358,12 +398,12 @@ impl App {
             }
             fill_rect(
                 &p,
-                Rect::from_min_max(Pos2::new(at(shown) - 1.0, bar.min.y + 2.0), Pos2::new(at(shown) + 1.0, bar.max.y - 2.0)),
+                Rect::from_min_max(Pos2::new(at(shown) - 1.0, top + 2.0), Pos2::new(at(shown) + 1.0, bar.max.y - 2.0)),
                 pal().ink,
             );
             ptext(
                 &p,
-                Pos2::new(bar.max.x - 8.0, bar.min.y + 8.0),
+                Pos2::new(bar.max.x - 8.0, top + 8.0),
                 Align::Max,
                 &format!("{} / {}", fmt_t(shown), fmt_t(dur)),
                 1.0,
@@ -379,22 +419,22 @@ impl App {
             let readout = bar.max.x - 8.0 - crate::font::text_w(&format!("{} / {}", fmt_t(shown), fmt_t(dur)), 1.0) - 40.0;
             while t <= start + span + 1e-3 {
                 let x = at(t);
-                fill_rect(&p, Rect::from_min_max(Pos2::new(x, bar.min.y + 2.0), Pos2::new(x + 1.0, bar.min.y + 7.0)), pal().ink);
+                fill_rect(&p, Rect::from_min_max(Pos2::new(x, top + 2.0), Pos2::new(x + 1.0, top + 7.0)), pal().ink);
                 if x < readout {
                     let (m, s) = ((t / 60.0).floor() as u32, t % 60.0);
                     let lab = if step < 1.0 { format!("{}:{:04.1}", m, s) } else { format!("{}:{:02}", m, s.round() as u32) };
                     let lw = crate::font::text_w(&lab, 0.7);
                     p.rect_filled(
-                        Rect::from_min_size(Pos2::new(x + 1.5, bar.min.y + 2.0), Vec2::new(lw + 4.0, 10.0)),
+                        Rect::from_min_size(Pos2::new(x + 1.5, top + 2.0), Vec2::new(lw + 4.0, 10.0)),
                         1.0,
                         egui::Color32::from_black_alpha(190),
                     );
-                    ptext(&p, Pos2::new(x + 3.0, bar.min.y + 7.0), Align::Min, &lab, 0.7, egui::Color32::from_gray(235));
+                    ptext(&p, Pos2::new(x + 3.0, top + 7.0), Align::Min, &lab, 0.7, egui::Color32::from_gray(235));
                 }
                 t += step;
             }
             // zoomed: a scrollbar along the bottom to move through the song (drag it, or click where to look)
-            if self.wv_zoom > 1.0 {
+            if self.wv_zoom > 1.0 && !strip_on {
                 let track = Rect::from_min_max(Pos2::new(inn.min.x, bar.max.y - 7.0), Pos2::new(inn.max.x, bar.max.y - 3.0));
                 let r = ui
                     .interact(track.expand2(Vec2::new(0.0, 4.0)), ui.id().with("wv_scroll"), Sense::click_and_drag())
@@ -460,7 +500,7 @@ impl App {
                     let x = at(m.t);
                     fill_rect(
                         &p,
-                        Rect::from_min_max(Pos2::new(x - 1.0, bar.min.y + 12.0), Pos2::new(x + 1.0, bar.max.y - 2.0)),
+                        Rect::from_min_max(Pos2::new(x - 1.0, top + 12.0), Pos2::new(x + 1.0, bar.max.y - 2.0)),
                         col,
                     );
                     // a short flag (the number, or the name cut to fit, never past the next bookmark); the whole

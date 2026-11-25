@@ -1,6 +1,6 @@
 //! Now Playing: the cover big (or the visuals filling the window), the song under it, a side panel (Lyrics, Up
 //! Next, About, Loops), the controls at the foot fading when the mouse is still; a practice screen while practising;
-//! each style's own backdrop (and Hardware's meters and analyzer).
+//! each style's own backdrop (Hardware's is an amp, in hw_amp.rs).
 
 use super::*;
 
@@ -53,7 +53,8 @@ impl App {
         // ---- layout
         let bar_h = 96.0;
         let area = Rect::from_min_max(full.min + Vec2::new(28.0, 58.0), Pos2::new(full.max.x - 28.0, full.max.y - bar_h - 12.0));
-        let panel_on = self.show_lyrics && area.width() > 640.0 && !prac;
+        // (Hardware's amp has its own Up Next and lyrics)
+        let panel_on = self.show_lyrics && area.width() > 640.0 && !prac && st != STYLE_HARDWARE;
         // Streaming's lyrics take the whole page (a small cover and the song at the top left)
         let st_lyrics = st == STYLE_STREAMING && panel_on && self.np_tab == 0;
         let art_zone = if panel_on && !st_lyrics {
@@ -115,11 +116,12 @@ impl App {
             }
         }
 
-        // ---- what's in the middle: practising, the practice screen; Hardware, its analyzer and meters; else the cover
-        if prac {
+        // ---- what's in the middle: Hardware, its amp (holding the practice tools while practising); practising, the
+        // practice screen; else the cover
+        if st == STYLE_HARDWARE && !vis {
+            self.np_amp(ui, area, tex, dt, acts);
+        } else if prac {
             self.np_practice(ui, Rect::from_min_max(full.min + Vec2::new(28.0, 20.0), Pos2::new(full.max.x - 28.0, full.max.y - bar_h - 8.0)), tex, acts);
-        } else if st == STYLE_HARDWARE && !vis && !st_lyrics {
-            self.np_hardware(ui, art_zone, tex, dt, acts);
         } else if !vis && !st_lyrics {
             self.np_cover(ui, &p, center, a, hover, dt, tex, prev, fade, &url, active, acts);
             // the song under the cover: no plate, a soft spot under the words so they read over anything
@@ -184,7 +186,7 @@ impl App {
         }
 
         // ---- the switches at the top right: Lyrics, Up Next, Visuals
-        if show > 0.0 && !prac {
+        if show > 0.0 && !prac && st != STYLE_HARDWARE {
             let items = [("Visuals", self.vis_np), ("Up Next", panel_on && self.np_tab == 1), ("Lyrics", panel_on && self.np_tab == 0)];
             let mut x = full.max.x - 28.0;
             let y = full.min.y + 14.0;
@@ -908,6 +910,23 @@ impl App {
     /// what's shown of the song, its text size, full screen.
     fn np_more_items(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let mark = |on: bool| if on { "> " } else { "   " };
+        // (Hardware's amp has no cover to dress: what's under its panel, the visuals, full screen)
+        if crate::skin::style() == crate::skin::STYLE_HARDWARE {
+            for (i, name) in ["Meters", "Visuals", "Lyrics"].iter().enumerate() {
+                if menu_item(ui, &format!("{}Under the Panel: {}", mark(self.hw_show as usize == i), name)) {
+                    self.hw_show = i as u8;
+                    self.dirty = true;
+                    ui.close_menu();
+                }
+            }
+            crate::sub_menu(ui, "   Pick the Visuals", |ui| self.vis_menu(ui));
+            ui.separator();
+            if menu_item(ui, &format!("   {}", if self.fullscreen { "Exit Full Screen  (F)" } else { "Full Screen  (F)" })) {
+                acts.push(Action::ToggleFullscreen);
+                ui.close_menu();
+            }
+            return;
+        }
         if menu_item(ui, &format!("{}Visualizer Behind the Cover", mark(self.show_spec))) {
             acts.push(Action::ToggleSpec);
             ui.close_menu();
@@ -948,167 +967,6 @@ impl App {
             ui.close_menu();
         }
     }
-
-    /// Hardware's Now Playing: the cover in a tray window with the time on a screen under it at the left; two VU
-    /// meters (left and right, calibrated: 0 VU at -18 dBFS, needles with a VU's ballistics) over a segmented spectrum
-    /// analyzer with peak dots at the right.
-    fn np_hardware(&mut self, ui: &mut egui::Ui, r: Rect, tex: Option<egui::TextureId>, dt: f32, acts: &mut Vec<Action>) {
-        let p = ui.painter().clone();
-        let _ = acts;
-        let left_w = (r.width() * 0.3).clamp(200.0, 320.0);
-        // the tray: the cover in a dark window
-        let tray = Rect::from_min_size(r.min, Vec2::new(left_w, left_w));
-        p.rect_filled(tray, 8.0, Color32::from_rgb(13, 13, 14));
-        p.rect_stroke(tray, 8.0, Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
-        let cr = tray.shrink(14.0);
-        match tex {
-            Some(id) => {
-                egui::Image::new(egui::load::SizedTexture::new(id, cr.size())).rounding(Rounding::same(4.0)).paint_at(ui, cr);
-            }
-            None => paint_record(&p, cr, None),
-        }
-        // the time and the song on a screen under it
-        let scr = Rect::from_min_size(Pos2::new(r.min.x, tray.max.y + 14.0), Vec2::new(left_w, 92.0));
-        crate::styles::lcd(&p, scr);
-        let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-        crate::styles::lcd_text(&p, Pos2::new(scr.min.x + 14.0, scr.min.y + 36.0), Align::Min, &fmt_time(pos), 3.6, left_w - 28.0);
-        if let Some(tr) = self.cur_track() {
-            crate::styles::lcd_text(&p, Pos2::new(scr.min.x + 14.0, scr.max.y - 18.0), Align::Min, &format!("{} - {}", tr.title, tr.artists_text()), 1.1, left_w - 28.0);
-        }
-        // the meters and the analyzer at the right
-        let right = Rect::from_min_max(Pos2::new(r.min.x + left_w + 22.0, r.min.y), r.max);
-        if right.width() < 220.0 {
-            return;
-        }
-        // VU: the RMS of the last 50 ms of each channel, 0 VU at -18 dBFS, eased as a VU's needle is (about 300 ms)
-        let playing = self.cur.is_some() && !self.stopped && !self.paused;
-        let lv = if playing {
-            let v = self.player.viz.lock().ok();
-            let rms = |b: &[f32]| -> f32 {
-                let n = b.len().min(2205);
-                if n == 0 {
-                    return 0.0;
-                }
-                (b[b.len() - n..].iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt()
-            };
-            v.map(|v| [rms(&v.first), rms(&v.samples)]).unwrap_or([0.0, 0.0])
-        } else {
-            [0.0, 0.0]
-        };
-        let refa = 10f32.powf(-18.0 / 20.0);
-        let k = 1.0 - (-dt / 0.065).exp();
-        for c in 0..2 {
-            let tgt = lv[c] / refa;
-            self.vu[c] += (tgt - self.vu[c]) * k;
-        }
-        if playing || self.vu.iter().any(|v| *v > 0.002) {
-            ui.ctx().request_repaint();
-        }
-        let mh = (right.height() * 0.34).clamp(110.0, 190.0);
-        let mw = (right.width() - 16.0) / 2.0;
-        for (c, name) in ["LEFT", "RIGHT"].iter().enumerate() {
-            let mr = Rect::from_min_size(Pos2::new(right.min.x + c as f32 * (mw + 16.0), right.min.y), Vec2::new(mw, mh));
-            vu_meter(&p, mr, self.vu[c], name);
-        }
-        // the screen under the meters: the analyzer, or the visuals (two keys over it pick)
-        let keys = Rect::from_min_size(Pos2::new(right.min.x, right.min.y + mh + 14.0), Vec2::new(right.width(), 28.0));
-        for (k, name) in ["Analyzer", "Visuals"].iter().enumerate() {
-            let kr = Rect::from_min_size(Pos2::new(keys.min.x + k as f32 * 112.0, keys.min.y), Vec2::new(104.0, 26.0));
-            let h = ui.interact(kr, ui.id().with(("hw_screen_key", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-            let on = (k == 1) == self.vis_np;
-            crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
-            p.text(kr.center() + Vec2::new(6.0, 0.0), egui::Align2::CENTER_CENTER, name, egui::FontId::proportional(13.0), if on { crate::styles::amber() } else { Color32::from_gray(205) });
-            crate::led(&p, Pos2::new(kr.min.x + 10.0, kr.center().y));
-            if !on {
-                p.circle_filled(Pos2::new(kr.min.x + 10.0, kr.center().y), 3.0, Color32::from_rgb(58, 52, 42));
-            }
-            if h.clicked() {
-                self.vis_np = k == 1;
-                self.dirty = true;
-            }
-            if k == 1 {
-                h.context_menu(|ui| self.vis_menu(ui));
-            }
-        }
-        let an = Rect::from_min_max(Pos2::new(right.min.x, keys.max.y + 8.0), right.max);
-        crate::styles::lcd(&p, an);
-        if self.vis_np {
-            // the visuals inside the screen (right-click Visuals to pick them)
-            self.vis_paint(ui, an.shrink(6.0), 1);
-            return;
-        }
-        let inner = an.shrink(12.0);
-        let bands = crate::viz::resample(&self.bands, 32, 1.0);
-        let peaks = crate::viz::resample(&self.peaks, 32, 1.0);
-        let n = bands.len().max(1);
-        let gap = 4.0;
-        let bw = (inner.width() - gap * (n - 1) as f32) / n as f32;
-        let seg = 6.0;
-        let rows = ((inner.height() + 2.0) / (seg + 2.0)).floor().max(4.0) as usize;
-        let amber = crate::styles::amber();
-        for (i, v) in bands.iter().enumerate() {
-            let x = inner.min.x + i as f32 * (bw + gap);
-            let lit = (v.clamp(0.0, 1.0) * rows as f32).round() as usize;
-            let pk = (peaks.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0) * rows as f32).round() as usize;
-            for s in 0..rows {
-                let y = inner.max.y - (s as f32 + 1.0) * (seg + 2.0) + 2.0;
-                let rr = Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, seg));
-                let col = if s < lit {
-                    amber
-                } else if s + 1 == pk.max(lit + 1) && pk > lit {
-                    amber.lerp_to_gamma(Color32::WHITE, 0.45)
-                } else {
-                    amber.gamma_multiply(0.1)
-                };
-                p.rect_filled(rr, 1.0, col);
-            }
-        }
-    }
-}
-
-/// A VU meter, crisp: a cream face, its scale (-20 to +3 VU, the red from 0 up) placed by voltage as a real VU's is,
-/// the ticks and figures, the needle from its pivot under the face; `amp` is the level as a share of 0 VU's.
-fn vu_meter(p: &egui::Painter, r: Rect, amp: f32, name: &str) {
-    let face = Color32::from_rgb(239, 228, 196);
-    let ink = Color32::from_rgb(52, 44, 30);
-    let red = Color32::from_rgb(190, 40, 30);
-    p.rect_filled(r, 6.0, Color32::from_rgb(16, 16, 17));
-    let f = r.shrink(6.0);
-    p.rect_filled(f, 4.0, face);
-    // the pivot under the face, the scale an arc round it
-    let pivot = Pos2::new(f.center().x, f.max.y + f.height() * 0.55);
-    let rad = f.height() * 1.18;
-    let a0 = -48f32.to_radians();
-    let a1 = 48f32.to_radians();
-    let full = 10f32.powf(3.0 / 20.0);
-    let ang = |amp: f32| a0 + (a1 - a0) * (amp / full).clamp(0.0, 1.06);
-    let pt = |a: f32, rr: f32| Pos2::new(pivot.x + a.sin() * rr, pivot.y - a.cos() * rr);
-    let clip = p.with_clip_rect(f);
-    // the arc: dark up to 0 VU, red above
-    let zero = ang(1.0);
-    let arc = |from: f32, to: f32, rr: f32| -> Vec<Pos2> { (0..=40).map(|i| pt(from + (to - from) * i as f32 / 40.0, rr)).collect() };
-    clip.add(egui::Shape::line(arc(a0, zero, rad), Stroke::new(1.5_f32, ink)));
-    clip.add(egui::Shape::line(arc(zero, a1, rad), Stroke::new(4.0_f32, red)));
-    // the ticks and their figures
-    for (vu, label) in [(-20.0f32, "20"), (-10.0, "10"), (-7.0, "7"), (-5.0, "5"), (-3.0, "3"), (-2.0, ""), (-1.0, ""), (0.0, "0"), (1.0, ""), (2.0, ""), (3.0, "+3")] {
-        let a = ang(10f32.powf(vu / 20.0));
-        let col = if vu > 0.0 { red } else { ink };
-        let long = !label.is_empty();
-        clip.line_segment([pt(a, rad), pt(a, rad + if long { 10.0 } else { 6.0 })], Stroke::new(1.3_f32, col));
-        if long {
-            let at = pt(a, rad + 20.0);
-            // (the figures in the smooth face, sized to the dial: the pixel one squashed them)
-            clip.text(at, egui::Align2::CENTER_CENTER, label, egui::FontId::proportional((f.height() * 0.085).clamp(10.0, 15.0)), col);
-        }
-    }
-    clip.text(Pos2::new(f.center().x, f.max.y - 18.0), egui::Align2::CENTER_CENTER, "VU", egui::FontId::proportional((f.height() * 0.13).clamp(13.0, 22.0)), ink);
-    clip.text(Pos2::new(f.min.x + 9.0, f.min.y + 10.0), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(10.5), ink.gamma_multiply(0.7));
-    // the needle: thin and dark, from the pivot up through the scale
-    let a = ang(amp);
-    clip.line_segment([pt(a, rad * 0.62), pt(a, rad + 14.0)], Stroke::new(1.6_f32, Color32::from_rgb(20, 18, 16)));
-    // a peak light, lit over +3
-    let lit = amp > full;
-    p.circle_filled(Pos2::new(f.max.x - 12.0, f.min.y + 11.0), 4.0, if lit { red } else { Color32::from_rgb(90, 40, 34) });
 }
 
 /// The one colour of what's drawn straight over the picture (the bare symbols and the times): near-white on a soft

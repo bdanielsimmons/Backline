@@ -83,6 +83,8 @@ mod winamp_draw;
 pub(crate) use widgets::*;
 #[path = "ui/album_view.rs"]
 mod album_view;
+#[path = "ui/hw_amp.rs"]
+mod hw_amp;
 #[path = "ui/app_look.rs"]
 mod app_look;
 #[path = "ui/arpeggios.rs"]
@@ -1061,6 +1063,16 @@ struct App {
     np_blur: Option<egui::TextureHandle>,
     np_blur_for: String,
     vu: [f32; 2],
+    /// Hardware's Now Playing (an amp): what shows under its panel (0 meters, 1 visuals, 2 lyrics), what the visuals
+    /// are there (0 the analyzer as light, 1 the visuals), the stereo correlation and K-weighted loudness its meters
+    /// read (eased), its three small meters' needles, until when each peak light stays lit, its tolex and cloth
+    hw_show: u8,
+    hw_vis: u8,
+    hw_corr: f32,
+    hw_ms: f32,
+    hw_need: [f32; 3],
+    hw_peak: [f64; 2],
+    hw_tex: Option<[egui::TextureHandle; 2]>,
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
     fs_by_art: bool,
@@ -2192,6 +2204,13 @@ impl App {
             np_blur: None,
             np_blur_for: String::new(),
             vu: [0.0; 2],
+            hw_show: 0,
+            hw_vis: 0,
+            hw_corr: 1.0,
+            hw_ms: 0.0,
+            hw_need: [-70.0, -1.2, -40.0],
+            hw_peak: [0.0; 2],
+            hw_tex: None,
             fullscreen: false,
             fs_by_art: false,
             art_tilt: Vec2::ZERO,
@@ -4023,8 +4042,9 @@ impl eframe::App for App {
                 acts.push(Action::Forward);
             }
 
-            // lyrics are fetched on demand, only while the viewer is open
-            if self.art_view && self.show_lyrics {
+            // lyrics are fetched on demand, only while the viewer is open (Hardware's amp lights LYRICS only for a
+            // song that has them, so it always asks)
+            if self.art_view && (self.show_lyrics || crate::skin::style() == crate::skin::STYLE_HARDWARE) {
                 if let Some(t) = self.cur_track() {
                     if self.lyrics.as_ref().map(|l| l.id) != Some(t.id) {
                         self.fetch_lyrics(t.id);
