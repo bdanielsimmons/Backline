@@ -541,6 +541,12 @@ impl App {
             if !fam.video.is_empty() && crate::line_icon_btn(ui, "video", "The video lesson for this family, on YouTube").clicked() {
                 crate::views::open_link(&format!("https://www.youtube.com/watch?v={}", fam.video));
             }
+            // in a window of its own (to keep it beside the chart and the song), or back
+            let tip = if self.cb_in_window { "Put the Chord Book back in the main window" } else { "Pop out: the Chord Book in a window of its own" };
+            if crate::line_icon_btn(ui, "mini", tip).clicked() {
+                self.cb_pop = !self.cb_in_window;
+                self.dirty = true;
+            }
             // how the walk works: hear each voicing, hide the names
             if self.cb_view == 1 || self.cb_view == 3 {
                 ui.add_space(8.0);
@@ -650,6 +656,64 @@ impl App {
             Some((k, CardAsk::Star)) => self.cb_star_flip(&f.cards[k].key),
             None => {}
         }
+    }
+
+    /// THE CHORD BOOK's page while it's in its own window: a line saying so, and the way to bring it back.
+    pub(crate) fn cb_popped_note(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(12.0);
+        para(ui, "The Chord Book is open in a window of its own.", pal().ink2);
+        ui.add_space(6.0);
+        if retro_btn(ui, "Bring It Back", false).tip("Put the Chord Book back here and close its window").clicked() {
+            self.cb_pop = false;
+            self.dirty = true;
+        }
+    }
+
+    /// THE CHORD BOOK popped out: a window of its own (where it was last, or a good size), the whole page in it, the
+    /// look's colours; closing it puts the book back in the main window.
+    pub(crate) fn chord_book_window(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        if !self.cb_pop {
+            return;
+        }
+        let id = egui::ViewportId::from_hash_of("chord_book_window");
+        let mut vb = egui::ViewportBuilder::default().with_title("Chord Book").with_min_inner_size([520.0, 420.0]);
+        vb = match self.cb_pop_rect {
+            Some([x, y, w, h]) => vb.with_position([x, y]).with_inner_size([w, h]),
+            None => vb.with_inner_size([980.0, 820.0]),
+        };
+        ctx.show_viewport_immediate(id, vb, |ctx, class| {
+            let page = |me: &mut Self, ui: &mut egui::Ui, acts: &mut Vec<Action>| {
+                me.cb_in_window = true;
+                me.chord_book(ui, acts);
+                me.cb_in_window = false;
+            };
+            if class == egui::ViewportClass::Embedded {
+                // (no second window here: a window inside the main one instead)
+                let mut open = true;
+                egui::Window::new("Chord Book").open(&mut open).default_size([900.0, 700.0]).show(ctx, |ui| page(self, ui, acts));
+                if !open {
+                    self.cb_pop = false;
+                    self.dirty = true;
+                }
+                return;
+            }
+            egui::CentralPanel::default()
+                .frame(egui::Frame::none().fill(pal().display).inner_margin(egui::Margin::same(16.0)))
+                .show(ctx, |ui| page(self, ui, acts));
+            let (close, outer, inner) = ctx.input(|i| (i.viewport().close_requested(), i.viewport().outer_rect, i.viewport().inner_rect));
+            if close {
+                self.cb_pop = false;
+                self.dirty = true;
+            }
+            // (where it is, to open there next time)
+            if let (Some(o), Some(n)) = (outer, inner) {
+                let r = [o.min.x, o.min.y, n.width(), n.height()];
+                if self.cb_pop_rect.is_none_or(|p| p.iter().zip(r.iter()).any(|(a, b)| (a - b).abs() > 1.0)) {
+                    self.cb_pop_rect = Some(r);
+                    self.dirty = true;
+                }
+            }
+        });
     }
 
     /// One voicing's card: the shared voicing card (chord box, staff and tab, HEAR / SAVE) with his name, the notes
@@ -1296,7 +1360,8 @@ impl App {
 
     /// The WALK is the page on screen (so its arrow keys are its own, and Esc takes back a chord being tried).
     pub(crate) fn cb_walk_here(&self) -> bool {
-        self.mode() == 0 && self.sec == Sec::Chords && self.chords_tab == 10 && self.cb_view == 1 && self.cb_book.is_some()
+        let shown = if self.cb_pop { self.cb_in_window } else { self.mode() == 0 && self.sec == Sec::Chords && self.chords_tab == 10 };
+        shown && self.cb_view == 1 && self.cb_book.is_some()
     }
 
     /// A player command the walk keeps its key from: one on an arrow key (or S, the star), while the walk is on screen.

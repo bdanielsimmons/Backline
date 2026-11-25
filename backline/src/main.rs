@@ -383,6 +383,8 @@ enum Msg {
     WaList(Result<Vec<winamp::WaSkin>, String>, bool),
     /// a Winamp skin fetched and turned into colours
     WaSkin(Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
+    /// a playlist's original read again: (its place, its link, quiet, what's new there)
+    PlaylistUpdated(usize, String, bool, Result<playlist_link::Imported, String>),
     /// Ambient Color worked out from a cover (its address): the colours and the look made in them
     Ambient(String, skin::CustomLook, [Color32; 4], Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
     /// a free playlist font fetched
@@ -537,6 +539,8 @@ enum Action {
     Look(usize),
     /// your Custom look: its editor (two colours), worn as you pick
     EditLook,
+    /// look for songs added to a playlist's original (Apple Music / Spotify) since it was last read; quietly or not
+    PlaylistUpdate(usize, bool),
     /// wear Ambient Color (the playing album's colours)
     Ambient,
     /// wear the Streaming (false) or Hardware (true) style
@@ -919,6 +923,8 @@ struct App {
     search_focus: bool,
     /// the search box shown at the top of the page (Search in the side list; owner, 2026-11-24: not in the path's row)
     search_bar: bool,
+    /// the playlist being checked against its original link
+    pl_updating: Option<usize>,
     status: String,
     status_err: bool,
 
@@ -1394,6 +1400,11 @@ struct App {
     /// the CHORDS tab: which side (find / name), the chord typed, the notes clicked on the neck and the piano,
     /// and guitar shapes already worked out
     chords_tab: u8,
+    /// THE CHORD BOOK in a window of its own (popped out), where that window is (x, y, width, height, in points), and
+    /// whether it's being drawn there this frame
+    cb_pop: bool,
+    cb_pop_rect: Option<[f32; 4]>,
+    cb_in_window: bool,
     /// this frame, the page's path ("Chords › Shapes › Chord Book") is shown over the page: CHORDS and LINES leave out
     /// their own rows of tabs (the path does their work)
     path_on: bool,
@@ -2081,6 +2092,7 @@ impl App {
             search: String::new(),
             search_focus: false,
             search_bar: false,
+            pl_updating: None,
             status: String::new(),
             status_err: false,
             queue: Arc::new(Vec::new()),
@@ -2410,6 +2422,9 @@ impl App {
             chart_edit: false,
             bar_edit: None,
             chords_tab: 0,
+            cb_pop: false,
+            cb_pop_rect: None,
+            cb_in_window: false,
             path_on: false,
             nav_off: 0.0,
             path_title: String::new(),
@@ -4041,6 +4056,8 @@ impl eframe::App for App {
             ptext(&p, r.center(), Align::Center, "DROP AUDIO FILES OR FOLDERS TO ADD THEM", 3.0, pal().bar_txt);
         }
         self.floating_tools(ctx, &mut acts);
+        // THE CHORD BOOK popped out: its own window
+        self.chord_book_window(ctx, &mut acts);
         // (its own size kept, for a drag out of full screen)
         if !self.mini {
             crate::chrome::keep_windowed_size(ctx);

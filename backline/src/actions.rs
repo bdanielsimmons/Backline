@@ -1332,6 +1332,26 @@ impl App {
             Action::PlaylistNewFrom(name, tracks, tidal) => {
                 self.open_new_playlist(crate::new_playlist::NewPl { name, tracks, tidal, ..Default::default() });
             }
+            Action::PlaylistUpdate(pi, quiet) => {
+                let Some(pl) = self.store.playlists.get_mut(pi) else { return };
+                if pl.link.is_empty() || self.pl_updating.is_some() {
+                    return;
+                }
+                pl.checked = crate::unix_now() as i64;
+                self.store_dirty = true;
+                self.pl_updating = Some(pi);
+                let (url, seen) = (pl.link.clone(), pl.seen.clone());
+                let have: Vec<(String, String)> = pl.items.iter().map(|v| (v.title.clone(), v.artist.clone())).collect();
+                if !quiet {
+                    self.toast("Checking for new songs...");
+                }
+                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+                std::thread::spawn(move || {
+                    let r = crate::playlist_link::update(&api, &url, &seen, &have, |_| {});
+                    let _ = tx.send(Msg::PlaylistUpdated(pi, url, quiet, r));
+                    ctx.request_repaint();
+                });
+            }
             Action::PlaylistImport(url) => {
                 if self.pl_importing {
                     return;
@@ -1434,7 +1454,16 @@ impl App {
                         v.loop_ab = Some((a, b));
                         v.loop_name = lname;
                     }
-                    self.store.playlists.push(store::Playlist { name: name.clone(), items, art, desc: d.desc.trim().to_string(), link: d.link.clone() });
+                    let checked = if d.link.is_empty() { 0 } else { crate::unix_now() as i64 };
+                    self.store.playlists.push(store::Playlist {
+                        name: name.clone(),
+                        items,
+                        art,
+                        desc: d.desc.trim().to_string(),
+                        link: d.link.clone(),
+                        seen: d.seen.clone(),
+                        checked,
+                    });
                     // made from the LISTS page: open it there; from anywhere else, stay where you are
                     if self.sec == Sec::Lists {
                         self.pl_open = Some(self.store.playlists.len() - 1);

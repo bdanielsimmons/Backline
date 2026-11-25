@@ -33,6 +33,8 @@ pub(crate) struct NewPl {
     /// from a playlist link: its songs that weren't found ("Title - Artist"), and the link
     pub missing: Vec<String>,
     pub link: String,
+    /// every song the link listed (what a later update counts as seen)
+    pub seen: Vec<String>,
 }
 
 /// ADD TO PLAYLIST, while it's open: the song, and which of your playlists are shown.

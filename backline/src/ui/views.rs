@@ -1825,6 +1825,21 @@ impl App {
             if retro_btn(ui, "RENAME / EDIT", false).tip("Its name, description and cover").clicked() {
                 acts.push(Action::PlaylistEdit(pi));
             }
+            // brought in from a link: songs added there since come in (checked by itself once a day when it's opened)
+            if !self.store.playlists[pi].link.is_empty() {
+                let busy = self.pl_updating == Some(pi);
+                if retro_btn(ui, if busy { "CHECKING..." } else { "CHECK FOR NEW SONGS" }, false)
+                    .tip("Add the songs added to the original playlist since it was brought in")
+                    .clicked()
+                    && !busy
+                {
+                    acts.push(Action::PlaylistUpdate(pi, false));
+                }
+                let day = 24 * 3600;
+                if (crate::unix_now() as i64) - self.store.playlists[pi].checked > day && self.pl_updating.is_none() && !self.offline {
+                    acts.push(Action::PlaylistUpdate(pi, true));
+                }
+            }
             // all Tidal songs: the same playlist on your Tidal account
             let items = &self.store.playlists[pi].items;
             if !items.is_empty()

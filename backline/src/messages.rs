@@ -456,6 +456,40 @@ impl App {
                 }
             },
             Msg::PlaylistImportStep(s) => self.toast(&s),
+            Msg::PlaylistUpdated(pi, url, quiet, r) => {
+                self.pl_updating = None;
+                // (still the same playlist at that place)
+                if self.store.playlists.get(pi).is_none_or(|p| p.link != url) {
+                    return;
+                }
+                match r {
+                    Ok(im) => {
+                        for e in &im.clips {
+                            self.srcmap.insert(e.id, crate::sources::Src::Yt(e.src.clone()));
+                        }
+                        let items: Vec<store::Version> = im.tracks.iter().map(|t| self.version_of(t)).collect();
+                        let n = items.len();
+                        let pl = &mut self.store.playlists[pi];
+                        pl.items.extend(items);
+                        pl.seen = im.seen;
+                        let name = pl.name.clone();
+                        self.store_dirty = true;
+                        self.serial += 1;
+                        let lost = if im.missing.is_empty() { String::new() } else { format!(" ({} not found)", im.missing.len()) };
+                        if n > 0 {
+                            self.toast(&format!("Added {} new song{} to {} from {}{}", n, if n == 1 { "" } else { "s" }, name, im.from, lost));
+                        } else if !quiet {
+                            self.toast(&format!("{} is up to date with {}{}", name, im.from, lost));
+                        }
+                    }
+                    Err(e) => {
+                        if !quiet {
+                            self.toast = None;
+                            self.set_err(format!("PLAYLIST UPDATE: {}", e));
+                        }
+                    }
+                }
+            }
             Msg::PlaylistImported(r) => {
                 self.pl_importing = false;
                 match r {
@@ -477,6 +511,7 @@ impl App {
                             desc: format!("From {}", im.from),
                             missing: im.missing,
                             link,
+                            seen: im.seen,
                             ..Default::default()
                         };
                         self.open_new_playlist(d);

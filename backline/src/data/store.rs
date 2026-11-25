@@ -235,6 +235,10 @@ pub struct Playlist {
     pub desc: String,
     /// the playlist it was brought in from (an Apple Music or Spotify link; empty: made here)
     pub link: String,
+    /// that playlist's songs as last read ("Title - Artist"): an update adds only the ones not among them
+    pub seen: Vec<String>,
+    /// when it was last checked for new songs (unix seconds)
+    pub checked: i64,
 }
 
 /// A playlist link kept for later: SoundCloud or YouTube (`kind` = "sc" | "yt").

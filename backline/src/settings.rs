@@ -245,6 +245,13 @@ impl App {
         }
         app.look_custom = st["look_custom"].as_bool().unwrap_or(false);
         app.mini_viz = st["mini_viz"].as_bool().unwrap_or(true);
+        app.cb_pop = st["cb_pop"].as_bool().unwrap_or(false);
+        if let Some(a) = st["cb_pop_rect"].as_array().filter(|a| a.len() == 4) {
+            let v: Vec<f32> = a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
+            if v.len() == 4 && v[2] > 200.0 && v[3] > 200.0 {
+                app.cb_pop_rect = Some([v[0], v[1], v[2], v[3]]);
+            }
+        }
         if let (Some(a), Some(b)) = (st["classic_worn"][0].as_str(), st["classic_worn"][1].as_str()) {
             app.classic_worn = Some((a.to_string(), b.to_string()));
         }
@@ -459,6 +466,8 @@ impl App {
             "look_custom": self.look_custom,
             "classic_worn": self.classic_worn,
             "mini_viz": self.mini_viz,
+            "cb_pop": self.cb_pop,
+            "cb_pop_rect": self.cb_pop_rect,
             "style_colors": [
                 crate::skin::STREAM_ACC.load(Ordering::Relaxed),
                 crate::skin::HW_SCREEN.load(Ordering::Relaxed),

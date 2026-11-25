@@ -40,6 +40,19 @@ pub struct Imported {
     pub clips: Vec<Ext>,
     pub missing: Vec<String>,
     pub total: usize,
+    /// every song read from the playlist ("Title - Artist"), found or not: what a later update counts as seen
+    pub seen: Vec<String>,
+}
+
+/// Whether a song from the other app is one a playlist already has (its core title the same, sharing an artist):
+/// for playlists brought in before they kept what they'd seen.
+pub fn already_in(song: &Song, have: &[(String, String)]) -> bool {
+    let t = core(&song.title);
+    let names: Vec<String> = song.artists.iter().map(|a| a.to_lowercase()).collect();
+    have.iter().any(|(title, artist)| {
+        let a = artist.to_lowercase();
+        core(title) == t && (names.is_empty() || names.iter().any(|n| a.contains(n.as_str()) || n.contains(a.as_str())))
+    })
 }
 
 /// Which app a link is from (None: not a playlist link this reads).
@@ -294,11 +307,11 @@ fn on_youtube(song: &Song) -> Option<Ext> {
 }
 
 /// Read a playlist link and find its songs (`step` hears how far it's got).
-pub fn import(api: &Api, url: &str, step: impl Fn(String)) -> Result<Imported, String> {
+/// The songs on a playlist's page: (its app, its name, the songs, how many it has in all).
+fn read(api: &Api, url: &str, step: &impl Fn(String)) -> Result<(&'static str, String, Vec<Song>, usize), String> {
     let from = source(url).ok_or("Paste a playlist link from Apple Music or Spotify.")?;
     crate::api::guard()?;
-    let tidal = api.has_token();
-    if !tidal && crate::sources::ytdlp_path().is_none() {
+    if !api.has_token() && crate::sources::ytdlp_path().is_none() {
         return Err("To find the songs, log in to Tidal, or press GET YT-DLP on the YouTube page.".to_string());
     }
     step(format!("Reading the {} playlist...", from));
@@ -312,7 +325,27 @@ pub fn import(api: &Api, url: &str, step: impl Fn(String)) -> Result<Imported, S
     if songs.is_empty() {
         return Err(format!("No songs on that {} page (is the playlist public?).", from));
     }
-    let mut out = Imported { name, from, total, ..Default::default() };
+    Ok((from, name, songs, total))
+}
+
+/// What a playlist brought in from a link has gained there since it was last read: the new songs found (in its
+/// order), the YouTube clips among them, the new ones not found, and every song it lists now (to keep as seen).
+/// Only the new songs are looked for, so a check is quick.
+pub fn update(api: &Api, url: &str, seen: &[String], have: &[(String, String)], step: impl Fn(String)) -> Result<Imported, String> {
+    let (from, name, songs, total) = read(api, url, &step)?;
+    let new: Vec<Song> = songs.iter().filter(|s| !seen.contains(&s.label()) && (!seen.is_empty() || !already_in(s, have))).cloned().collect();
+    let mut out = find(api, &new, &step);
+    out.name = name;
+    out.from = from;
+    out.total = total;
+    out.seen = songs.iter().map(|s| s.label()).collect();
+    Ok(out)
+}
+
+/// Each song looked for on Tidal (or, without it, YouTube).
+fn find(api: &Api, songs: &[Song], step: &impl Fn(String)) -> Imported {
+    let tidal = api.has_token();
+    let mut out = Imported::default();
     for (i, s) in songs.iter().enumerate() {
         step(format!("Finding the songs on {}: {} of {}", if tidal { "Tidal" } else { "YouTube" }, i + 1, songs.len()));
         if tidal {
@@ -330,6 +363,17 @@ pub fn import(api: &Api, url: &str, step: impl Fn(String)) -> Result<Imported, S
             }
         }
     }
+    out
+}
+
+pub fn import(api: &Api, url: &str, step: impl Fn(String)) -> Result<Imported, String> {
+    let (from, name, songs, total) = read(api, url, &step)?;
+    let tidal = api.has_token();
+    let mut out = find(api, &songs, &step);
+    out.name = name;
+    out.from = from;
+    out.total = total;
+    out.seen = songs.iter().map(|s| s.label()).collect();
     crate::api::log(&format!(
         "playlist link: {} songs read from {}, {} found on {}, not found: {:?}",
         songs.len(),

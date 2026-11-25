@@ -60,6 +60,7 @@ impl App {
             6 => self.scale_harmony(ui, acts),
             8 => self.progressions_page(ui, acts),
             9 => self.lab(ui, acts),
+            10 if self.cb_pop => self.cb_popped_note(ui),
             10 => self.chord_book(ui, acts),
             _ => self.moves(ui, acts),
         }
