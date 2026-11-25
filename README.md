@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Styles: pick Streaming, Ambient Color or Hardware on the Skins page, each with its own colors
 - NOTES ON THE NECK in Ear Training: learn the note names on the fretboard, one string's landmarks at a time
 - Paste an Apple Music or Spotify playlist link and it becomes a Backline playlist, found on Tidal or YouTube
 - Progression Lab: grip a chord move, tap its timing with a count-off, and see it written out
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Backline's looks give every window one unbroken border
 - All Loops sorted into Recent, then each month, with how many songs under each
 - Fourteen Backline looks and a Custom look made from two colors
-- Pitch tab tuning in Hz: find or type the record's A (A = 452), set yours, and match them in one click
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
