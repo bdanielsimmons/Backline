@@ -805,9 +805,10 @@ impl App {
                     }
                 }
             }
-            Msg::WaveFine(id, f) => {
+            Msg::WaveFine(id, f, tone) => {
                 if self.wave_fine.0 == id {
                     self.wave_fine.1 = Some(f);
+                    self.wave_tone = tone;
                 }
             }
             Msg::Exported(r) => {

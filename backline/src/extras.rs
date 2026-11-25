@@ -1467,6 +1467,7 @@ impl App {
         }
         self.wave = (id, None);
         self.wave_fine = (id, None);
+        self.wave_tone.clear();
         // the envelope is kept on disk; the fine outline (for zooming in) is worked out again each time
         let mut cached = false;
         if let Ok(b) = std::fs::read(wave_path(id)) {
@@ -1490,8 +1491,8 @@ impl App {
                 }
                 let _ = tx.send(Msg::Wave(id, w));
             }
-            if let Some((_, f)) = d {
-                let _ = tx.send(Msg::WaveFine(id, f));
+            if let Some((_, f, tone)) = d {
+                let _ = tx.send(Msg::WaveFine(id, f, tone));
             }
             ctx.request_repaint();
         });

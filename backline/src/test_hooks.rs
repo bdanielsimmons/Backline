@@ -593,6 +593,34 @@ Second line: comp lighter here.", m.1.note);
     }
 }
 
+/// BACKLINE_PRAC_DEMO=1: once the song is playing, a loop set around where it is, three saved loops (two overlapping)
+/// and two named bookmarks, and the waveform zoomed to 24 s: for pictures of the practice waveform.
+pub(crate) fn practice_demo(app: &mut App) {
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if std::env::var_os("BACKLINE_PRAC_DEMO").is_none() || DONE.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(id) = app.cur_track().map(|t| t.id) else { return };
+    let pos = app.pos();
+    if pos < 0.5 || app.track_len() < 60.0 {
+        return;
+    }
+    DONE.store(true, Ordering::Relaxed);
+    let t = pos + 4.0;
+    app.loop_a = Some(t - 2.0);
+    app.loop_b = Some(t + 6.5);
+    app.loop_on = true;
+    let sec = |name: &str, a: f32, b: f32| crate::store::Section { name: name.into(), a, b, ..Default::default() };
+    app.store.sections.insert(id, vec![sec("Head", (t - 14.0).max(0.0), t - 4.0), sec("Chorus lick", t - 2.0, t + 6.5), sec("Turnaround", t + 3.0, t + 12.0)]);
+    let mark = |name: &str, t: f32, col: [u8; 3]| crate::store::Bookmark { t, col, name: name.into(), ..Default::default() };
+    app.store.marks.insert(id, vec![mark("Chorus", t - 6.0, [242, 193, 78]), mark("Lick", t + 9.0, [95, 180, 255])]);
+    app.wv_zoom = (app.track_len() / 24.0).max(1.0);
+    app.wv_start = (pos - 6.0).max(0.0);
+    if let Ok(d) = std::env::var("BACKLINE_PRAC_DRAW") {
+        app.wv_draw = d.parse().unwrap_or(0);
+    }
+}
+
 /// A test copy kept out of sight (a test profile without BACKLINE_SHOW): it never goes full screen or takes focus.
 pub(crate) fn hidden_test_copy() -> bool {
     std::env::var_os("BACKLINE_HOME").is_some() && std::env::var_os("BACKLINE_SHOW").is_none()

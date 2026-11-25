@@ -68,6 +68,8 @@ impl App {
         if let Some(v) = st["wv_h"].as_f64() {
             app.wv_h = v as f32;
         }
+        app.wv_follow = st["wv_follow"].as_bool().unwrap_or(true);
+        app.wv_draw = st["wv_draw"].as_u64().unwrap_or(0).min(2) as u8;
         app.seen_build = st["seen_build"].as_u64().unwrap_or(0);
         app.tr_whole = st["tr_whole"].as_bool().unwrap_or(true);
         app.mark_col = serde_json::from_value(st["mark_col"].clone()).unwrap_or(None);
@@ -535,6 +537,8 @@ impl App {
             "tr_whole": self.tr_whole,
             "mark_col": self.mark_col,
             "wv_h": self.wv_h,
+            "wv_follow": self.wv_follow,
+            "wv_draw": self.wv_draw,
             "export_pick": self.export_pick,
             "export_dir": self.export_dir.as_ref().map(|d| d.display().to_string()).unwrap_or_default(),
             "wv_notes": self.wv_notes,

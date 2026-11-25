@@ -22,6 +22,9 @@ pub(crate) fn stem_btn(ui: &mut egui::Ui, i: usize, on: bool) -> egui::Response 
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// The whole song's strip along the top of every practice waveform.
+pub(crate) const STRIP_H: f32 = 20.0;
+
 impl App {
     // ------------------------------------------------------------- PRACTICE
     /// Transcribing tools: waveform, A-B loop, saved sections, slow-down and the extras behind MORE.
@@ -205,7 +208,7 @@ impl App {
         // the note view wants room for five octaves
         // (about half the panel, so a bigger panel gives fatter rows)
         let wave_h = if self.wv_notes { wave_h.max(190.0).max(ui.clip_rect().height() * 0.5) } else { wave_h };
-        self.practice_wave(ui, acts, wave_h, false);
+        self.practice_wave(ui, acts, wave_h, false, false);
         let dur = self.track_len();
         let pos = self.pos();
         let tid = self.cur_track().map(|t| t.id);
@@ -215,11 +218,34 @@ impl App {
         self.practice_tools_rows(ui, acts, pos, tid, active, both);
     }
 
-    /// The practice waveform, `wave_h` tall: the song's shape (or its notes), the loop, bookmarks, zoom, and every
-    /// mouse move the practice panel has. `amp`: Hardware's amp shows it, in its screen's colour on dark glass, the
-    /// whole song in a strip along the top, no note view and no resize handle.
-    pub(crate) fn practice_wave(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32, amp: bool) {
-        let notes_on = self.wv_notes && !amp;
+    /// Practising in Now Playing, every style the same: the waveform as tall as the room allows (the whole song in a
+    /// strip above it), then the practice tabs and their tools in what's left. Only the tools scroll, never the page.
+    /// `amp`: Hardware's or Studio's screen colours.
+    pub(crate) fn practice_stack(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>, amp: bool) {
+        let dur = self.track_len();
+        let pos = self.pos();
+        let tid = self.cur_track().map(|t| t.id);
+        let active = self.cur.is_some() && !self.stopped && dur > 0.0;
+        let both = self.loop_a.is_some() && self.loop_b.is_some();
+        let tools_h = (r.height() * 0.44).clamp(190.0, 300.0).min((r.height() - 140.0).max(80.0));
+        let wave = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.max.y - tools_h - 10.0));
+        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(wave).layout(egui::Layout::top_down(Align::Min)));
+        c.set_clip_rect(wave.expand(2.0).intersect(ui.clip_rect()));
+        let strip = if active && !self.wv_notes { STRIP_H } else { 0.0 };
+        self.practice_wave(&mut c, acts, (wave.height() - strip).max(40.0), amp, true);
+        let tools = Rect::from_min_max(Pos2::new(r.min.x, wave.max.y + 10.0), r.max);
+        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(tools).layout(egui::Layout::top_down(Align::Min)));
+        c.set_clip_rect(tools.intersect(ui.clip_rect()));
+        egui::ScrollArea::vertical().id_salt("prac_stack_tools").auto_shrink([false, false]).show(&mut c, |ui| {
+            self.practice_tools_rows(ui, acts, pos, tid, active, both);
+        });
+    }
+
+    /// The practice waveform, `wave_h` tall (the whole song's strip above it adds `STRIP_H`): the song's shape (or its
+    /// notes), the loop, bookmarks, saved loops, zoom, and every mouse move the practice panel has. `amp`: Hardware's
+    /// or Studio's screen colours. `fill`: sized by what holds it (Now Playing), so no resize handle.
+    pub(crate) fn practice_wave(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32, amp: bool, fill: bool) {
+        let notes_on = self.wv_notes;
         let dur = self.track_len();
         let pos = self.pos();
         let tid = self.cur_track().map(|t| t.id);
@@ -239,10 +265,12 @@ impl App {
         };
         let label_ink = if amp { amber } else { egui::Color32::from_gray(235) };
 
-        // ---- waveform timeline
-        let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), wave_h), Sense::click_and_drag());
+        // ---- waveform timeline, the whole song in a strip along its top (every style, the owner's pick)
+        let strip_on = active && !notes_on;
+        let strip_h = if strip_on { STRIP_H } else { 0.0 };
+        let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), wave_h + strip_h), Sense::click_and_drag());
         // a handle along its bottom edge: drag it down for a taller waveform, up for a shorter one; double-click resets
-        if !amp {
+        if !fill {
             let grip = Rect::from_min_max(Pos2::new(bar.min.x, bar.max.y - 2.0), Pos2::new(bar.max.x, bar.max.y + 5.0));
             let g = ui
                 .interact(grip, ui.id().with("wv_height"), Sense::click_and_drag())
@@ -279,10 +307,6 @@ impl App {
             inset(ui.painter(), bar, pal().display);
         }
         let mut inn = bar.shrink2(Vec2::new(5.0, 5.0));
-        // Hardware, zoomed in: a thin strip along the top shows the whole song and the part in view (its scrollbar)
-        // (Studio's Now Playing has no strip: the owner's pick)
-        let strip_on = ((amp && !studio) || crate::skin::style() == crate::skin::STYLE_HARDWARE) && self.wv_zoom > 1.0 && active && !notes_on;
-        let strip_h = if strip_on { 20.0 } else { 0.0 };
         inn.min.y += strip_h;
         let top = bar.min.y + strip_h;
         // (the note view's keyboard down the left)
@@ -319,8 +343,23 @@ impl App {
         if resp.clicked() || resp.drag_started() || wheel != 0.0 {
             self.wv_free = false;
         }
-        if zoom > 1.0 && !dragging && !self.wv_free && (shown < start || shown > start + span) {
-            start = shown - span * 0.05;
+        if zoom > 1.0 && !dragging && !self.wv_free {
+            match (self.loop_a, self.loop_b) {
+                // looping a part that fits: the whole loop stays in view
+                (Some(a), Some(b)) if self.loop_on && b - a <= span * 0.95 => {
+                    if a < start || b > start + span {
+                        start = a - (span - (b - a)) / 2.0;
+                    }
+                }
+                // FOLLOW: the song slides under the playhead, a third of the way across (always a little of what's coming)
+                _ if self.wv_follow => start = shown - span / 3.0,
+                // or a page at a time
+                _ if shown < start || shown > start + span => start = shown - span * 0.05,
+                _ => {}
+            }
+        }
+        if zoom > 1.0 && self.wv_follow && active && !self.paused {
+            ui.ctx().request_repaint();
         }
         let start = start.within(0.0, (dur1 - span).max(0.0));
         self.wv_zoom = zoom;
@@ -331,50 +370,104 @@ impl App {
             let p = ui.painter().clone();
             // waveform
             // zoomed in to under ~40 ms a pixel: the fine outline, every pick attack its own spike; the part already
-            // played a little brighter
-            let played = |x: f32| if x < at(shown) { col_heard } else { col_ahead };
-            let fine = match (tid, &self.wave_fine) {
-                _ if notes_on => None,
-                (Some(id), (fid, Some(f))) if *fid == id && f.len() > 2 && span / inn.width().max(1.0) < 0.04 => Some(f),
-                _ => None,
+            // played a little brighter. Coloured by sound: warm where it's low, cool where it's bright (`wave_tone`)
+            let draw = self.wv_draw;
+            let tone_pal: [egui::Color32; 3] = if amp && studio {
+                [egui::Color32::from_rgb(154, 50, 22), crate::studio::ink(), egui::Color32::from_rgb(42, 86, 184)]
+            } else if amp {
+                [amber, egui::Color32::from_rgb(125, 255, 154), egui::Color32::from_rgb(127, 216, 255)]
+            } else {
+                [egui::Color32::from_rgb(255, 107, 61), egui::Color32::from_rgb(255, 211, 90), egui::Color32::from_rgb(95, 180, 255)]
+            };
+            let tone_col = move |v: u8| {
+                let u = v as f32 / 255.0;
+                if u < 0.5 {
+                    tone_pal[0].lerp_to_gamma(tone_pal[1], u * 2.0)
+                } else {
+                    tone_pal[1].lerp_to_gamma(tone_pal[2], (u - 0.5) * 2.0)
+                }
             };
             if let (true, Some(id)) = (notes_on, tid) {
                 self.notes_strip(ui, &p, keys, inn, start, span, shown, id);
-            } else if let Some(f) = fine {
-                let cols = inn.width().max(1.0) as usize;
+            } else {
+                let fine = match (tid, &self.wave_fine) {
+                    (Some(id), (fid, Some(f))) if *fid == id && f.len() > 2 && span / inn.width().max(1.0) < 0.04 => Some(f),
+                    _ => None,
+                };
+                let coarse = match (tid, &self.wave) {
+                    (Some(id), (wid, Some(w))) if *wid == id && w.len() > 2 => Some(w),
+                    _ => None,
+                };
+                let tone = &self.wave_tone;
+                let colour = |x: f32, t: f32| -> egui::Color32 {
+                    let heard = x < at(shown);
+                    match tone.get((t.max(0.0) * 50.0) as usize) {
+                        Some(v) if draw == 1 => {
+                            let c = tone_col(*v);
+                            if heard {
+                                c
+                            } else {
+                                c.gamma_multiply(0.42)
+                            }
+                        }
+                        _ if heard => col_heard,
+                        _ => col_ahead,
+                    }
+                };
+                // each column's low and high (-1 to 1): from the fine outline, or the envelope (the same up and down)
+                let pitch = if draw == 2 { 3.0 } else if fine.is_some() { 1.0 } else { 2.0 };
+                let cols = (inn.width() / pitch).max(1.0) as usize;
                 let (mid, half) = (inn.center().y, inn.height() * 0.5);
-                let n = f.len();
                 for c in 0..cols {
-                    let a = (((start + span * c as f32 / cols as f32) * 1000.0) as usize).min(n - 1);
-                    let b = (((start + span * (c + 1) as f32 / cols as f32) * 1000.0) as usize).within(a + 1, n);
-                    let (lo, hi) = f[a..b].iter().fold((0i8, 0i8), |(l, h), p| (l.min(p[0]), h.max(p[1])));
-                    let x = inn.min.x + c as f32;
-                    let (y0, y1) = (mid - hi as f32 / 127.0 * half, mid - lo as f32 / 127.0 * half);
-                    fill_rect(&p, Rect::from_min_max(Pos2::new(x, y0.min(mid - 0.5)), Pos2::new(x + 1.0, y1.max(mid + 0.5))), played(x));
+                    let (t0, t1) = (start + span * c as f32 / cols as f32, start + span * (c + 1) as f32 / cols as f32);
+                    let (lo, hi) = match (fine, coarse) {
+                        (Some(f), _) => {
+                            let n = f.len();
+                            let a = ((t0 * 1000.0) as usize).min(n - 1);
+                            let b = ((t1 * 1000.0) as usize).within(a + 1, n);
+                            let (l, h) = f[a..b].iter().fold((0i8, 0i8), |(l, h), p| (l.min(p[0]), h.max(p[1])));
+                            (l as f32 / 127.0, h as f32 / 127.0)
+                        }
+                        (_, Some(w)) => {
+                            let n = w.len() as f32;
+                            let a = (t0 / dur1 * n) as usize;
+                            let b = ((t1 / dur1 * n) as usize).max(a + 1).min(w.len());
+                            let m = w[a.min(w.len() - 1)..b].iter().copied().max().unwrap_or(0) as f32 / 255.0;
+                            (-m, m)
+                        }
+                        _ => (0.0, 0.0),
+                    };
+                    let x = inn.min.x + c as f32 * pitch;
+                    let col = colour(x, t0);
+                    if draw == 2 {
+                        // blocks: lit three-pixel steps out from the middle (the gaps cut through after)
+                        let h = (lo.abs().max(hi.abs()) * half / 3.0).round() * 3.0;
+                        fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h), Pos2::new(x + 2.0, mid + h)), col);
+                    } else {
+                        let (y0, y1) = (mid - hi * half, mid - lo * half);
+                        let w = if pitch == 1.0 { 1.0 } else { 1.5 };
+                        fill_rect(&p, Rect::from_min_max(Pos2::new(x, y0.min(mid - 0.5)), Pos2::new(x + w, y1.max(mid + 0.5))), col);
+                    }
                 }
-            } else if let (Some(id), (wid, Some(w))) = (tid, &self.wave) {
-                if *wid == id && w.len() > 2 {
-                    let cols = (inn.width() / 2.0).max(1.0) as usize;
-                    let mid = inn.center().y;
-                    // the part of the song in view
-                    let n = w.len() as f32;
-                    let (v0, v1) = (start / dur1 * n, (start + span) / dur1 * n);
-                    for c in 0..cols {
-                        let a = (v0 + (v1 - v0) * c as f32 / cols as f32) as usize;
-                        let b = ((v0 + (v1 - v0) * (c + 1) as f32 / cols as f32) as usize).max(a + 1).min(w.len());
-                        let m = w[a.min(w.len() - 1)..b].iter().copied().max().unwrap_or(0);
-                        let h = (m as f32 / 255.0) * (inn.height() * 0.5);
-                        let x = inn.min.x + c as f32 * 2.0;
-                        fill_rect(
-                            &p,
-                            Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + if amp { 2.0 } else { 1.5 }, mid + h + 0.5)),
-                            played(x),
-                        );
+                if draw == 2 {
+                    // (the rows between the blocks, in the screen's own colour)
+                    let gap = if amp && studio {
+                        crate::studio::key_col()
+                    } else if amp {
+                        egui::Color32::from_rgb(9, 8, 7)
+                    } else {
+                        pal().display
+                    };
+                    let mut y = mid + 1.5;
+                    while y < inn.max.y {
+                        fill_rect(&p, Rect::from_min_max(Pos2::new(inn.min.x, y - 0.5), Pos2::new(inn.max.x, y + 0.5)), gap);
+                        fill_rect(&p, Rect::from_min_max(Pos2::new(inn.min.x, 2.0 * mid - y - 0.5), Pos2::new(inn.max.x, 2.0 * mid - y + 0.5)), gap);
+                        y += 3.0;
                     }
                 }
             }
-            // the whole song along the top (Hardware, zoomed in): the part played brighter, the loop shaded, the part
-            // in view framed; click or drag it to look somewhere else
+            // the whole song along the top: the part played brighter, the loop shaded, the part in view framed; click or
+            // drag it to look somewhere else
             if strip_on {
                 let sr = Rect::from_min_max(Pos2::new(inn.min.x, bar.min.y + 5.0), Pos2::new(inn.max.x, top - 2.0));
                 if let (Some(id), (wid, Some(w))) = (tid, &self.wave) {
@@ -386,8 +479,21 @@ impl App {
                             let b = ((c + 1) * n / cols).max(a + 1).min(n);
                             let h = (w[a..b].iter().copied().max().unwrap_or(0) as f32 / 255.0) * (sr.height() * 0.5 - 1.0);
                             let x = sr.min.x + c as f32 * 2.0;
-                            let heard = (dur1 * c as f32 / cols as f32) < shown;
-                            fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), if heard { col_heard.gamma_multiply(0.9) } else { col_ahead });
+                            let t = dur1 * c as f32 / cols as f32;
+                            let heard = t < shown;
+                            let col = match self.wave_tone.get((t * 50.0) as usize) {
+                                Some(v) if draw == 1 => {
+                                    let k = tone_col(*v);
+                                    if heard {
+                                        k
+                                    } else {
+                                        k.gamma_multiply(0.42)
+                                    }
+                                }
+                                _ if heard => col_heard.gamma_multiply(0.9),
+                                _ => col_ahead,
+                            };
+                            fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), col);
                         }
                     }
                 }
@@ -408,47 +514,99 @@ impl App {
                     self.wv_free = true;
                 }
             }
-            // saved sections as faint bands along the bottom
-            if let Some(list) = tid.filter(|id| !self.is_demo(*id)).and_then(|id| self.store.sections.get(&id)) {
-                for s in list {
-                    fill_rect(
-                        &p,
-                        Rect::from_min_max(Pos2::new(at(s.a), inn.max.y - 3.0), Pos2::new(at(s.b).max(at(s.a) + 1.0), inn.max.y)),
-                        pal().ink.gamma_multiply(0.6),
-                    );
-                }
-            }
+            // (room for names on the waveform: bookmark flags along the top, saved loops in lanes along the foot)
+            let roomy = inn.height() >= 120.0;
+            let glass = if amp && studio {
+                crate::studio::key_col()
+            } else if amp {
+                egui::Color32::from_rgb(9, 8, 7)
+            } else {
+                pal().display
+            };
+            let lc = if amp && studio { crate::studio::ink() } else { crate::skin::loop_col() };
+            let lc_fg = if amp && studio { crate::studio::scr() } else { egui::Color32::from_gray(14) };
+            // the loop in the spotlight: everything outside it dimmed (more while it loops), a faint wash inside
             if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
-                let col = if self.loop_on { crate::skin::loop_col().gamma_multiply(0.35) } else { pal().ink.gamma_multiply(0.2) };
-                fill_rect(&p, Rect::from_min_max(Pos2::new(at(a), inn.min.y), Pos2::new(at(b), inn.max.y)), col);
-            }
-            for (v, lab) in [(self.loop_a, "A"), (self.loop_b, "B")] {
-                if let Some(t) = v {
-                    fill_rect(
-                        &p,
-                        Rect::from_min_max(Pos2::new(at(t) - 1.0, top + 2.0), Pos2::new(at(t) + 1.0, bar.max.y - 2.0)),
-                        crate::skin::loop_col(),
-                    );
-                    ptext(&p, Pos2::new(at(t) + 4.0, inn.min.y + 5.0), Align::Min, lab, 1.0, crate::skin::loop_col());
+                let k = if self.loop_on { 0.62 } else { 0.36 };
+                let (xa, xb) = (at(a), at(b));
+                if xa > inn.min.x {
+                    fill_rect(&p, Rect::from_min_max(Pos2::new(inn.min.x, inn.min.y), Pos2::new(xa, inn.max.y)), glass.gamma_multiply(k));
+                }
+                if xb < inn.max.x {
+                    fill_rect(&p, Rect::from_min_max(Pos2::new(xb, inn.min.y), Pos2::new(inn.max.x, inn.max.y)), glass.gamma_multiply(k));
+                }
+                if self.loop_on {
+                    fill_rect(&p, Rect::from_min_max(Pos2::new(xa, inn.min.y), Pos2::new(xb, inn.max.y)), lc.gamma_multiply(0.08));
                 }
             }
-            if amp {
-                // (the line where you are, glowing a little)
+            for t in [self.loop_a, self.loop_b].into_iter().flatten() {
+                if t >= start && t <= start + span {
+                    fill_rect(&p, Rect::from_min_max(Pos2::new(at(t) - 1.0, top + 2.0), Pos2::new(at(t) + 1.0, bar.max.y - 2.0)), lc);
+                }
+            }
+            // saved loops: named bands along the foot, above the zoom keys; ones that overlap stack in lanes (three at
+            // most, then the lane that ends first takes it); click one to loop it. Short of room, a thin line each
+            let mut bands: Vec<(Rect, usize, String)> = Vec::new();
+            let foot = bar.max.y - 27.0;
+            let mut lanes_used = 0usize;
+            if let Some(list) = tid.filter(|id| !self.is_demo(*id)).and_then(|id| self.store.sections.get(&id)) {
+                let mut order: Vec<usize> = (0..list.len()).collect();
+                order.sort_by(|x, y| list[*x].a.total_cmp(&list[*y].a));
+                let mut ends: Vec<f32> = Vec::new();
+                for i in order {
+                    let sc = &list[i];
+                    let lane = match ends.iter().position(|e| *e <= sc.a + 0.01) {
+                        Some(l) => l,
+                        None if ends.len() < 3 => {
+                            ends.push(0.0);
+                            ends.len() - 1
+                        }
+                        None => ends.iter().enumerate().min_by(|x, y| x.1.total_cmp(y.1)).map_or(0, |x| x.0),
+                    };
+                    ends[lane] = ends[lane].max(sc.b);
+                    if sc.b < start || sc.a > start + span {
+                        continue;
+                    }
+                    let (x0, x1) = (at(sc.a), at(sc.b).max(at(sc.a) + 2.0));
+                    if !roomy {
+                        fill_rect(&p, Rect::from_min_max(Pos2::new(x0, inn.max.y - 3.0), Pos2::new(x1, inn.max.y)), ink.gamma_multiply(0.6));
+                        continue;
+                    }
+                    lanes_used = lanes_used.max(lane + 1);
+                    let y1 = foot - lane as f32 * 14.0;
+                    let r = Rect::from_min_max(Pos2::new(x0, y1 - 12.0), Pos2::new(x1, y1));
+                    fill_rect(&p, r, glass.gamma_multiply(0.7));
+                    fill_rect(&p, r, ink.gamma_multiply(0.2));
+                    fill_rect(&p, Rect::from_min_max(r.min, Pos2::new(r.min.x + 2.0, r.max.y)), ink.gamma_multiply(0.85));
+                    let name = if sc.name.is_empty() { "Loop".to_string() } else { sc.name.clone() };
+                    if r.width() > 26.0 {
+                        let lab = crate::font::fit(&name, 0.8, r.width() - 9.0);
+                        ptext(&p.with_clip_rect(r), Pos2::new(r.min.x + 5.0, r.center().y), Align::Min, &lab, 0.8, ink);
+                    }
+                    bands.push((r, i, format!("{}  {} - {}. Click to loop it.", name, fmt_t(sc.a), fmt_t(sc.b))));
+                }
+            }
+            for (r, i, tip) in bands {
+                let h = ui.interact(r, ui.id().with(("wv_band", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+                if h.hovered() {
+                    p.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, ink));
+                }
+                if h.clicked() {
+                    acts.push(Action::GoSection(i));
+                }
+            }
+            // the line where you are, with a dark edge so it shows over the song (glowing a little on Hardware's amp)
+            if amp && !studio {
                 p.rect_filled(Rect::from_min_max(Pos2::new(at(shown) - 3.0, top + 2.0), Pos2::new(at(shown) + 3.0, bar.max.y - 2.0)), 2.0, egui::Color32::from_rgba_premultiplied(60, 46, 26, 0));
             }
+            fill_rect(&p, Rect::from_min_max(Pos2::new(at(shown) - 2.5, top + 2.0), Pos2::new(at(shown) + 2.5, bar.max.y - 2.0)), glass.gamma_multiply(0.85));
             fill_rect(
                 &p,
                 Rect::from_min_max(Pos2::new(at(shown) - 1.0, top + 2.0), Pos2::new(at(shown) + 1.0, bar.max.y - 2.0)),
                 ink,
             );
-            ptext(
-                &p,
-                Pos2::new(bar.max.x - 8.0, top + 8.0),
-                Align::Max,
-                &format!("{} / {}", fmt_t(shown), fmt_t(dur)),
-                1.0,
-                if amp { label_ink } else { pal().ink },
-            );
+            let readout_txt = format!("{} / {}", fmt_t(shown), fmt_time(dur));
+            ptext(&p, Pos2::new(bar.max.x - 8.0, top + 8.0), Align::Max, &readout_txt, 1.0, if amp { label_ink } else { pal().ink });
             // time marks along the top, as close as the zoom allows (a second, a tenth of one...)
             let step = [0.1f32, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0]
                 .into_iter()
@@ -456,7 +614,7 @@ impl App {
                 .unwrap_or(600.0);
             let mut t = (start / step).ceil() * step;
             // (no labels under the time readout in the corner)
-            let readout = bar.max.x - 8.0 - crate::font::text_w(&format!("{} / {}", fmt_t(shown), fmt_t(dur)), 1.0) - 40.0;
+            let readout = bar.max.x - 8.0 - crate::font::text_w(&readout_txt, 1.0) - 40.0;
             while t <= start + span + 1e-3 {
                 let x = at(t);
                 fill_rect(&p, Rect::from_min_max(Pos2::new(x, top + 2.0), Pos2::new(x + 1.0, top + 7.0)), if amp { label_ink.gamma_multiply(0.7) } else { pal().ink });
@@ -472,6 +630,32 @@ impl App {
                     ptext(&p, Pos2::new(x + 3.0, top + 7.0), Align::Min, &lab, 0.7, label_ink);
                 }
                 t += step;
+            }
+            for (v, lab) in [(self.loop_a, "A"), (self.loop_b, "B")] {
+                if let Some(t) = v.filter(|t| *t >= start && *t <= start + span) {
+                    // (a short waveform: just the letter, clear of the zoom keys along its foot)
+                    if inn.height() < 70.0 {
+                        ptext(&p, Pos2::new(at(t) + 4.0, inn.min.y + 5.0), Align::Min, lab, 1.0, lc);
+                        continue;
+                    }
+                    let txt = format!("{} {}", lab, fmt_t(t));
+                    let w = crate::font::text_w(&txt, 0.8) + 10.0;
+                    let x = if lab == "A" { at(t) - 1.0 } else { at(t) - w + 1.0 };
+                    let r = Rect::from_min_size(Pos2::new(x, top + 2.0), Vec2::new(w, 13.0));
+                    p.rect_filled(r, 1.0, lc);
+                    ptext(&p, r.center(), Align::Center, &txt, 0.8, lc_fg);
+                }
+            }
+            if let (Some(a), Some(b), true) = (self.loop_a, self.loop_b, roomy) {
+                let (xa, xb) = (at(a), at(b));
+                let txt = format!("{:.1} s", b - a);
+                let w = crate::font::text_w(&txt, 0.9) + 12.0;
+                if xb - xa > w + 8.0 {
+                    let y = foot - lanes_used as f32 * 14.0 - 10.0;
+                    let r = Rect::from_center_size(Pos2::new((xa + xb) / 2.0, y), Vec2::new(w, 15.0));
+                    p.rect_filled(r, 2.0, glass.gamma_multiply(0.85));
+                    ptext(&p, r.center(), Align::Center, &txt, 0.9, ink);
+                }
             }
             // zoomed: a scrollbar along the bottom to move through the song (drag it, or click where to look)
             if self.wv_zoom > 1.0 && !strip_on {
@@ -550,7 +734,7 @@ impl App {
                     let full = if m.name.is_empty() { (k + 1).to_string() } else { m.name.clone() };
                     let lab = crate::font::fit(&full, 1.0, room - 8.0);
                     let fw = (crate::font::text_w(&lab, 1.0) + 8.0).min(room);
-                    let flag = Rect::from_min_size(Pos2::new(x, bar.max.y - 40.0), Vec2::new(fw, 13.0));
+                    let flag = Rect::from_min_size(Pos2::new(x, if roomy { top + 18.0 } else { bar.max.y - 40.0 }), Vec2::new(fw, 13.0));
                     p.rect_filled(flag, 1.0, col);
                     ptext(&p, flag.center(), Align::Center, &lab, 1.0, egui::Color32::from_gray(12));
                     let fr = ui
@@ -607,20 +791,37 @@ impl App {
             }
             // the note view, on or off
             let nx = w1 + w2 + w3 + 12.0 + chip_w("+ MARK");
-            if !amp
-                && crate::chip(ui, chip_at(nx, chip_w("NOTES")), "NOTES", self.wv_notes, "wv_notes")
+            if crate::chip(ui, chip_at(nx, chip_w("NOTES")), "NOTES", self.wv_notes, "wv_notes")
                 .tip("Shows the song by pitch instead of loudness: brighter means louder at that note. The lowest bright bar is usually the note; fainter copies above it are its overtones. On a split song it uses only the stems you have on, so a solo or bass line stands out. Hover over it to see the note's name.")
                 .clicked()
             {
                 self.wv_notes = !self.wv_notes;
                 self.dirty = true;
             }
-            if self.wv_zoom > 1.0
-                && crate::chip(ui, chip_at(w1 + w2 + 6.0, w3), "FIT", false, "wv_fit").tip("Show the whole song again.").clicked()
+            if crate::chip(ui, chip_at(nx + chip_w("NOTES") + 3.0, chip_w("FOLLOW")), "FOLLOW", self.wv_follow, "wv_follow")
+                .tip("Zoomed in, the song slides along under the playhead so you always see what's coming. Off: a page at a time.")
+                .clicked()
             {
-                self.wv_zoom = 1.0;
-                self.wv_start = 0.0;
+                self.wv_follow = !self.wv_follow;
                 self.wv_free = false;
+                self.dirty = true;
+            }
+            // FIT: the loop with a little either side; again (or with no loop) the whole song
+            let fit_tip = if both { "Fit the loop. Again: the whole song." } else { "Show the whole song again." };
+            if (self.wv_zoom > 1.0 || both) && crate::chip(ui, chip_at(w1 + w2 + 6.0, w3), "FIT", false, "wv_fit").tip(fit_tip).clicked() {
+                match (self.loop_a, self.loop_b) {
+                    (Some(a), Some(b)) if !(span <= (b - a) * 1.3 && a >= start && b <= start + span) => {
+                        let sp = ((b - a) * 1.2).max(0.5);
+                        self.wv_zoom = (dur1 / sp).clamp(1.0, 400.0);
+                        self.wv_start = a - (b - a) * 0.1;
+                        self.wv_free = true;
+                    }
+                    _ => {
+                        self.wv_zoom = 1.0;
+                        self.wv_start = 0.0;
+                        self.wv_free = false;
+                    }
+                }
             }
 
             // shift + drag (or a drag with the right button) selects a loop; plain click / drag seeks
@@ -744,13 +945,26 @@ impl App {
             }
             let (mt, lo, pr) = (self.menu_t, self.loop_on, self.practice);
             let mut mark_here = false;
+            let mut draw_pick = None;
             resp.context_menu(|ui| {
                 crate::loop_menu(ui, acts, mt, both, lo, pr);
                 if menu_item(ui, &format!("Bookmark Here  {}", fmt_t(mt))) {
                     mark_here = true;
                     ui.close_menu();
                 }
+                crate::sub_menu(ui, "Draw the Song", |ui| {
+                    for (i, name) in ["Bars", "Colored by Sound", "Blocks"].iter().enumerate() {
+                        if menu_item(ui, &format!("{}{}", if draw as usize == i { "> " } else { "   " }, name)) {
+                            draw_pick = Some(i as u8);
+                            ui.close_menu();
+                        }
+                    }
+                });
             });
+            if let Some(d) = draw_pick {
+                self.wv_draw = d;
+                self.dirty = true;
+            }
             if let Some(id) = tid.filter(|id| mark_here && !self.is_demo(*id)) {
                 self.add_mark(id, mt);
             }
@@ -763,8 +977,20 @@ impl App {
     pub(crate) fn practice_tools_rows(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, pos: f32, tid: Option<i64>, active: bool, both: bool) {
         // ---- the panel's tabs: the loop and speed tools first, then the bigger tools (TRAINER, PITCH & EAR, STEMS)
         let cur = if self.more { self.mtab as usize + 1 } else { 0 };
-        // (short names, so the six fit on one row)
-        if let Some(i) = tab_row(ui, &["LOOP", "TRAINER", "PITCH", "STEMS", "BOOKMARKS", "RECORD"], cur) {
+        // (short names, so the six fit on one row; centred over the tools under them, which are centred too)
+        const TABS: [&str; 6] = ["LOOP", "TRAINER", "PITCH", "STEMS", "BOOKMARKS", "RECORD"];
+        let tw = TABS.iter().map(|n| text_w(n, 2.0) + 22.0).sum::<f32>() + 8.0;
+        let room = ui.available_width();
+        let picked = if crate::winamp_ui::chrome_on() && tw < room {
+            ui.horizontal(|ui| {
+                ui.add_space(((room - tw) / 2.0).floor());
+                ui.allocate_ui(Vec2::new(tw, 40.0), |ui| tab_row(ui, &TABS, cur)).inner
+            })
+            .inner
+        } else {
+            tab_row(ui, &TABS, cur)
+        };
+        if let Some(i) = picked {
             self.more = i > 0;
             if i > 0 {
                 self.mtab = (i - 1) as u8;

@@ -725,10 +725,24 @@ impl App {
             egui::Image::new(egui::load::SizedTexture::new(id, cs.size())).rounding(Rounding::same(6.0)).paint_at(ui, cs);
         }
         if let Some(tr) = self.cur_track() {
+            // the time at the right, big (no tenths); a click shows what's left
+            let dur = tr.duration.max(self.track_len());
+            let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
+            let now_t = if self.time_left { format!("-{}", fmt_time((dur - pos).max(0.0))) } else { fmt_time(pos) };
+            let total = format!("/ {}", fmt_time(dur));
+            let (w1, w2) = (text_w(&now_t, 3.4), text_w(&total, 1.4));
+            ptext(&p, Pos2::new(r.max.x, cs.min.y + 26.0), Align::Max, &total, 1.4, OVER.gamma_multiply(0.7));
+            ptext(&p, Pos2::new(r.max.x - w2 - 8.0, cs.min.y + 22.0), Align::Max, &now_t, 3.4, OVER);
+            let tr_r = Rect::from_min_max(Pos2::new(r.max.x - w2 - w1 - 12.0, cs.min.y), Pos2::new(r.max.x, cs.min.y + 44.0));
+            if ui.interact(tr_r, ui.id().with("np_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+                self.time_left = !self.time_left;
+                self.dirty = true;
+            }
             let tx = cs.max.x + 16.0;
-            ptext_fit(&p, Pos2::new(tx, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, r.width() - 140.0, OVER);
-            ptext_fit(&p, Pos2::new(tx + 0.6, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, r.width() - 140.0, OVER);
-            ptext_fit(&p, Pos2::new(tx, cs.min.y + 42.0), Align::Min, &tr.artists_text(), 1.7, r.width() - 140.0, OVER.gamma_multiply(0.7));
+            let name_w = (r.width() - 140.0 - w1 - w2 - 30.0).max(80.0);
+            ptext_fit(&p, Pos2::new(tx, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, name_w, OVER);
+            ptext_fit(&p, Pos2::new(tx + 0.6, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, name_w, OVER);
+            ptext_fit(&p, Pos2::new(tx, cs.min.y + 42.0), Align::Min, &tr.artists_text(), 1.7, name_w, OVER.gamma_multiply(0.7));
             // what's known of it, as tags
             let info = crate::meta::get(tr.id).unwrap_or_default();
             let mut tags: Vec<String> = Vec::new();
@@ -758,10 +772,7 @@ impl App {
         let body = Rect::from_min_max(Pos2::new(r.min.x, cs.max.y + 14.0), r.max);
         // (the tour points at the practice tools)
         tour::mark("ARTPRACTICE", body);
-        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(Align::Min)));
-        c.set_clip_rect(body.intersect(ui.clip_rect()));
-        let wave_h = (body.height() * 0.48).clamp(120.0, 420.0);
-        egui::ScrollArea::vertical().id_salt("np_practice").auto_shrink([false, false]).show(&mut c, |ui| self.practice_body(ui, acts, wave_h));
+        self.practice_stack(ui, body, acts, false);
     }
 
     /// The foot: how far in (the loops on it when practising), the main controls in the middle, the volume at the

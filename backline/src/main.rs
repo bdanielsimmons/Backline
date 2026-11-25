@@ -365,7 +365,7 @@ enum Msg {
     ScMeta(store::Ext),
     Wave(i64, Option<Vec<u8>>),
     /// The waveform's fine outline (`sources::wave_data`), for zooming in.
-    WaveFine(i64, Vec<[i8; 2]>),
+    WaveFine(i64, Vec<[i8; 2]>, Vec<u8>),
     /// The note view's map for a song and the stems it was made from (0: the whole song).
     Notes(i64, u8, Option<notes::NoteMap>),
     Exported(Result<String, String>),
@@ -963,6 +963,10 @@ struct App {
     wv_free: bool,
     /// the practice waveform's height (1 = normal; you drag it), kept with your settings
     wv_h: f32,
+    /// zoomed in, the view slides along with the song (the playhead a third of the way across); FOLLOW turns it off
+    wv_follow: bool,
+    /// how the song is drawn: 0 bars, 1 coloured by sound (warm lows, cool highs), 2 LCD blocks
+    wv_draw: u8,
     /// The waveform shows the song by pitch (the note view) instead of loudness.
     wv_notes: bool,
     /// The note view's map: the song, the stems it was made from (0: the whole song), the map once made.
@@ -1325,6 +1329,8 @@ struct App {
     wave: (i64, Option<Vec<u8>>),
     /// The playing song's fine outline (a low and high per millisecond), held only while it plays.
     wave_fine: (i64, Option<Vec<[i8; 2]>>),
+    /// how bright the song sounds, 50 times a second (`sources::wave_data`), for the waveform's coloured drawing
+    wave_tone: Vec<u8>,
     /// the library hidden: just the player's column (with a skin, the window narrowed to it)
     lib_hidden: bool,
     /// the window's width (and whether it filled the screen) before the library was hidden, to come back to
@@ -2152,6 +2158,8 @@ impl App {
             wv_start: 0.0,
             wv_free: false,
             wv_h: 1.0,
+            wv_follow: true,
+            wv_draw: 0,
             wv_notes: false,
             notes: (0, 0, None),
             notes_busy: false,
@@ -2398,6 +2406,7 @@ impl App {
             show_form: false,
             wave: (0, None),
             wave_fine: (0, None),
+            wave_tone: Vec::new(),
             lib_hidden: false,
             lib_shown_w: None,
             more: false,
@@ -3767,6 +3776,7 @@ impl eframe::App for App {
         // a test copy can picture itself (BACKLINE_SHOT=file.png, after BACKLINE_SHOT_AT seconds): for checking layouts
         // when no one is at the screen
         test_shot(ctx);
+        crate::test_hooks::practice_demo(self);
         // can anyone see the window? (minimized or covered: the visuals and the redraws while playing stop)
         onscreen::check(ctx, frame);
         // Ambient Color follows the cover playing; Now Playing's blurred cover too

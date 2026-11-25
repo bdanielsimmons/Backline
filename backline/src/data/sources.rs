@@ -874,7 +874,13 @@ pub fn yt_fetch(src: &str) -> Result<Vec<u8>, String> {
 // --------------------------------------------------------------- analysis
 /// The loudness envelope, 50 values per second (0..255), for drawing the waveform, and a fine outline for zooming in: the lowest and highest sample of each
 /// millisecond, scaled so the loudest moment reaches the edge.
-pub fn wave_data(bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<[i8; 2]>)> {
+/// The loudness envelope, the fine outline and the brightness (see `wave_data`).
+pub type WaveData = (Vec<u8>, Vec<[i8; 2]>, Vec<u8>);
+
+/// The song's shape: its loudness 50 times a second, the low and high of every millisecond, and how bright it sounds
+/// 50 times a second (0 all bass, 255 all treble, stretched over the song's own range: the waveform's "coloured by
+/// sound" drawing).
+pub fn wave_data(bytes: Vec<u8>) -> Option<WaveData> {
     let src = SymSource::new(bytes).ok()?;
     let ch = src.channels().max(1) as usize;
     let per = (src.sample_rate() / 50).max(1) as usize;
@@ -884,15 +890,29 @@ pub fn wave_data(bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<[i8; 2]>)> {
     let (mut peak, mut n, mut c) = (0i32, 0usize, 0usize);
     // (milliseconds counted from the frame number, so a 44.1 kHz song doesn't drift)
     let (mut lo, mut hi, mut frame) = (0i16, 0i16, 0u64);
+    // the lows (under ~250 Hz), the middle and the highs (over ~2.5 kHz), from two one-pole low-passes on the mono mix
+    let k = |hz: f32| 1.0 - (-2.0 * std::f32::consts::PI * hz / rate as f32).exp();
+    let (k1, k2) = (k(250.0), k(2500.0));
+    let (mut lp1, mut lp2, mut sum) = (0.0f32, 0.0f32, 0.0f32);
+    let (mut el, mut em, mut eh) = (0.0f32, 0.0f32, 0.0f32);
+    let mut tone_raw: Vec<f32> = Vec::new();
     for s in src {
         peak = peak.max((s as i32).abs());
         lo = lo.min(s);
         hi = hi.max(s);
+        sum += s as f32;
         c += 1;
         if c == ch {
             c = 0;
             n += 1;
             frame += 1;
+            let x = sum / ch as f32 / 32768.0;
+            sum = 0.0;
+            lp1 += k1 * (x - lp1);
+            lp2 += k2 * (x - lp2);
+            el += lp1 * lp1;
+            em += (lp2 - lp1) * (lp2 - lp1);
+            eh += (x - lp2) * (x - lp2);
             if frame * 1000 / rate > fine.len() as u64 {
                 fine.push([lo, hi]);
                 lo = 0;
@@ -901,6 +921,9 @@ pub fn wave_data(bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<[i8; 2]>)> {
             if n == per {
                 let v = (peak as f32 / 32768.0).clamp(0.0, 1.0).powf(0.6);
                 out.push((v * 255.0) as u8);
+                let (l, m, h) = (el.sqrt(), em.sqrt(), eh.sqrt());
+                tone_raw.push(if l + m + h > 1e-4 { (0.5 * m + h) / (l + m + h) } else { -1.0 });
+                (el, em, eh) = (0.0, 0.0, 0.0);
                 peak = 0;
                 n = 0;
             }
@@ -909,12 +932,18 @@ pub fn wave_data(bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<[i8; 2]>)> {
     if out.is_empty() {
         return None;
     }
+    // (stretched from the song's 5th to 95th percentile, so every song uses the whole range; silence sits in the middle)
+    let mut known: Vec<f32> = tone_raw.iter().copied().filter(|v| *v >= 0.0).collect();
+    known.sort_by(|a, b| a.total_cmp(b));
+    let at = |q: f32| known.get(((known.len() as f32 - 1.0) * q) as usize).copied().unwrap_or(0.0);
+    let (t0, t1) = (at(0.05), at(0.95).max(at(0.05) + 1e-3));
+    let tone: Vec<u8> = tone_raw.iter().map(|v| if *v < 0.0 { 128 } else { (((v - t0) / (t1 - t0)).clamp(0.0, 1.0) * 255.0) as u8 }).collect();
     let top = fine.iter().map(|p| (p[0] as i32).abs().max((p[1] as i32).abs())).max().unwrap_or(1).max(1) as f32;
     let scale = |v: i16| {
         let f = v as f32 / top;
         (f.signum() * f.abs().powf(0.8) * 127.0) as i8
     };
-    Some((out, fine.into_iter().map(|p| [scale(p[0]), scale(p[1])]).collect()))
+    Some((out, fine.into_iter().map(|p| [scale(p[0]), scale(p[1])]).collect(), tone))
 }
 
 /// Samples from `a` to `b` seconds of an encoded song (all of it with `b` at 0), with its channels and rate.
@@ -1432,8 +1461,9 @@ mod tests {
         wav.extend_from_slice(b"data");
         wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
         wav.extend_from_slice(&data);
-        let (coarse, fine) = wave_data(wav).expect("a wave");
+        let (coarse, fine, tone) = wave_data(wav).expect("a wave");
         assert_eq!(coarse.len(), 50);
+        assert_eq!(tone.len(), 50);
         assert_eq!(fine.len(), 1000);
         // silent before, full height during the note, silent again after
         assert_eq!(fine[400], [0, 0]);

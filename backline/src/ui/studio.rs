@@ -813,8 +813,8 @@ impl App {
         }
     }
 
-    /// Practising in Now Playing: the song's shape big (zoom, A and B, the loop, times along its foot), its keys in
-    /// one row, the practice tabs under it.
+    /// Practising in Now Playing: the cover, the song in dot type and the time in digits, then the practice layout every
+    /// style shares (`practice_stack`).
     fn studio_practice(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let s = sc();
@@ -839,106 +839,16 @@ impl App {
             px(&p, Pos2::new(mq.min.x, head.max.y - 10.0 * s), egui::Align2::LEFT_CENTER, &parts.join("  ·  "), 8.0, dim());
             let time = self.deck_time();
             let shown = if time.starts_with('-') { time } else { format!(" {}", time) };
-            digits(&p, Pos2::new(head.max.x - 150.0 * s, head.center().y), 40.0 * s, &shown, ink(), ghost());
-        }
-        // the waveform, then the keys, then the practice tabs (in what room is left)
-        let keys_h = 26.0 * s;
-        let tools_h = (r.height() * 0.3).clamp(120.0, 260.0);
-        let wave = Rect::from_min_max(Pos2::new(r.min.x, head.max.y + 12.0), Pos2::new(r.max.x, r.max.y - tools_h - keys_h - 20.0));
-        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(wave).layout(egui::Layout::top_down(Align::Min)));
-        c.set_clip_rect(wave.expand(2.0).intersect(ui.clip_rect()));
-        self.practice_wave(&mut c, acts, wave.height(), true);
-        let kr = Rect::from_min_size(Pos2::new(r.min.x, wave.max.y + 8.0), Vec2::new(r.width(), keys_h));
-        self.studio_practice_keys(ui, &p, kr, acts);
-        let tools = Rect::from_min_max(Pos2::new(r.min.x, kr.max.y + 10.0), r.max);
-        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(tools).layout(egui::Layout::top_down(Align::Min)));
-        c.set_clip_rect(tools.intersect(ui.clip_rect()));
-        egui::ScrollArea::vertical().id_salt("studio_prac_tools").auto_shrink([false, false]).show(&mut c, |ui| {
-            let dur = self.track_len();
-            let pos = self.pos();
-            let tid = self.cur_track().map(|t| t.id);
-            let active = self.cur.is_some() && !self.stopped && dur > 0.0;
-            let both = self.loop_a.is_some() && self.loop_b.is_some();
-            self.practice_tools_rows(ui, acts, pos, tid, active, both);
-        });
-    }
-
-    /// The practice keys in one row: LOOP (its light on while looping), A, B, CLEAR, the zoom, a bookmark, and the
-    /// speed in LCD digits with its - and +.
-    fn studio_practice_keys(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, acts: &mut Vec<Action>) {
-        let s = sc();
-        let pos = self.pos();
-        let both = self.loop_a.is_some() && self.loop_b.is_some();
-        let mono = egui::FontId::new(10.0 * s, egui::FontFamily::Name("studio_mono".into()));
-        let dur = self.track_len().max(0.001);
-        let keys: [(&str, bool, &str); 8] = [
-            ("LOOP", self.loop_on && both, "Loop between A and B  (L)"),
-            ("A", self.loop_a.is_some(), "Set A where the song is"),
-            ("B", self.loop_b.is_some(), "Set B where the song is"),
-            ("CLEAR", false, "Clear the loop"),
-            ("- ZOOM", false, "Zoom out"),
-            ("+ ZOOM", false, "Zoom in where the song is"),
-            ("FIT", false, "Show the whole song"),
-            ("+ MARK", false, "A bookmark where the song is  (K)"),
-        ];
-        let mut x = r.min.x;
-        for (k, (name, on, tip)) in keys.iter().enumerate() {
-            let w = p.ctx().fonts(|f| f.layout_no_wrap(name.to_string(), mono.clone(), Color32::WHITE).size().x) + if k == 0 { 24.0 } else { 14.0 };
-            let kr = Rect::from_min_size(Pos2::new(x, r.min.y), Vec2::new(w, r.height()));
-            x = kr.max.x + 4.0;
-            let h = ui.interact(kr, ui.id().with(("studio_pk", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(*tip);
-            let lit_key = *on && k != 0;
-            key(p, kr, lit_key, h.is_pointer_button_down_on(), h.hovered());
-            if k == 0 {
-                light(p, Pos2::new(kr.min.x + 8.0, kr.center().y), *on, ink());
-                p.text(Pos2::new(kr.min.x + 15.0, kr.center().y), egui::Align2::LEFT_CENTER, *name, mono.clone(), ink());
-            } else {
-                p.text(kr.center(), egui::Align2::CENTER_CENTER, *name, mono.clone(), key_fg(lit_key));
-            }
-            if h.clicked() {
-                let zoom_by = |me: &mut Self, by: f32| {
-                    let span = dur / me.wv_zoom.max(1.0);
-                    let frac = ((pos - me.wv_start) / span).clamp(0.0, 1.0);
-                    me.wv_zoom = (me.wv_zoom * by).clamp(1.0, 400.0);
-                    me.wv_start = pos - frac * dur / me.wv_zoom;
-                    me.wv_free = false;
-                };
-                match k {
-                    0 => acts.push(Action::LoopToggle),
-                    1 => acts.push(Action::SetAAt(pos)),
-                    2 => acts.push(Action::SetBAt(pos)),
-                    3 => acts.push(Action::LoopClear),
-                    4 => zoom_by(self, 0.5),
-                    5 => zoom_by(self, 2.0),
-                    6 => {
-                        self.wv_zoom = 1.0;
-                        self.wv_start = 0.0;
-                        self.wv_free = false;
-                    }
-                    _ => {
-                        if let Some(id) = self.cur_track().map(|t| t.id) {
-                            self.add_mark(id, pos);
-                        }
-                    }
-                }
+            let tw = digits(&p, Pos2::new(head.max.x - 150.0 * s, head.center().y), 40.0 * s, &shown, ink(), ghost());
+            let tr_r = Rect::from_min_size(Pos2::new(head.max.x - 150.0 * s, head.min.y), Vec2::new(tw + 6.0, head.height()));
+            if ui.interact(tr_r, ui.id().with("studio_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+                self.time_left = !self.time_left;
+                self.dirty = true;
             }
         }
-        // the speed at the right: - , the digits, +
-        let plus = Rect::from_min_size(Pos2::new(r.max.x - 24.0 * s, r.min.y), Vec2::new(24.0 * s, r.height()));
-        let dw = 3.0 * 15.5 * (r.height() / 25.0) + 12.0 * s;
-        let digits_x = plus.min.x - 6.0 - dw;
-        let minus = Rect::from_min_size(Pos2::new(digits_x - 30.0 * s, r.min.y), Vec2::new(24.0 * s, r.height()));
-        px(p, Pos2::new(minus.min.x - 6.0, r.center().y), egui::Align2::RIGHT_CENTER, "SPEED", 7.0, dim());
-        for (k, (kr, t, d)) in [(minus, "-", -5i32), (plus, "+", 5)].into_iter().enumerate() {
-            let h = ui.interact(kr, ui.id().with(("studio_spd", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(if d < 0 { "Slower" } else { "Faster" });
-            key(p, kr, false, h.is_pointer_button_down_on(), h.hovered());
-            p.text(kr.center(), egui::Align2::CENTER_CENTER, t, mono.clone(), ink());
-            if h.clicked() {
-                acts.push(Action::Speed((self.speed as i32 + d).clamp(25, 250) as u32));
-            }
-        }
-        let w = digits(p, Pos2::new(digits_x, r.center().y), r.height(), &format!("{:03}", self.speed.min(999)), ink(), ghost());
-        px(p, Pos2::new(digits_x + w + 2.0, r.max.y - 5.0), egui::Align2::LEFT_CENTER, "%", 8.0, ink());
+        // the waveform (the whole song above it), then the practice tabs and their tools: the same in every style
+        let body = Rect::from_min_max(Pos2::new(r.min.x, head.max.y + 12.0), r.max);
+        self.practice_stack(ui, body, acts, true);
     }
 }
 

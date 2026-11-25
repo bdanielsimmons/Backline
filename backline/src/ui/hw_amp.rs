@@ -116,6 +116,16 @@ impl App {
         // ---- the amp's cabinet: black tolex
         cabinet(&p, m, m.r(300.0, 34.0, 636.0, 504.0), self.hw_tex.as_ref().map(|t| t[0].id()));
 
+        // ---- practising: one tall black panel with the practice layout every style shares (tabs and all)
+        if practice_tools() && self.practice {
+            let pan = m.r(314.0, 48.0, 608.0, 478.0);
+            black_panel(&p, m, pan);
+            let body = pan.shrink(m.v(14.0));
+            tour::mark("ARTPRACTICE", body);
+            self.practice_stack(ui, body, acts, true);
+            return;
+        }
+
         // ---- the panel
         let pan = m.r(314.0, 48.0, 608.0, 230.0);
         black_panel(&p, m, pan);
@@ -244,19 +254,6 @@ impl App {
         let low = m.r(314.0, 290.0, 608.0, 236.0);
         black_panel(&p, m, low);
         let inner = Rect::from_min_max(low.min + Vec2::splat(m.v(3.0)), low.max - Vec2::splat(m.v(3.0)));
-        if prac {
-            // practising: the song's shape fills the panel (zoom, the whole song along the top, A and B, the loop),
-            // with the loop's keys along its foot
-            let body = inner.shrink(m.v(10.0));
-            tour::mark("ARTPRACTICE", body);
-            let keys_h = m.v(26.0);
-            let wave = Rect::from_min_max(body.min, Pos2::new(body.max.x, body.max.y - keys_h - m.v(6.0)));
-            let mut c = ui.new_child(egui::UiBuilder::new().max_rect(wave).layout(egui::Layout::top_down(Align::Min)));
-            c.set_clip_rect(wave.expand(2.0).intersect(ui.clip_rect()));
-            self.practice_wave(&mut c, acts, wave.height(), true);
-            self.hw_loop_keys(ui, &p, m, Rect::from_min_max(Pos2::new(body.min.x, body.max.y - keys_h), body.max), acts);
-            return;
-        }
         match showing {
             1 => {
                 let g = inner.shrink(m.v(10.0));
@@ -294,44 +291,6 @@ impl App {
                 led_bars(&p, m, lcd_r, &bands, &peaks);
             }
         }
-    }
-
-    /// Practising: the loop's keys along the foot of the amp's lower panel, push buttons as DISPLAY's: LOOP (its lamp
-    /// lit while looping), A and B (set where the song is), CLEAR, and the loop's times.
-    fn hw_loop_keys(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, r: Rect, acts: &mut Vec<Action>) {
-        let pos = self.pos();
-        let both = self.loop_a.is_some() && self.loop_b.is_some();
-        let keys: [(&str, bool, &str); 4] = [
-            ("LOOP", self.loop_on && both, "Loop between A and B  (L)"),
-            ("A", self.loop_a.is_some(), "Set A where the song is"),
-            ("B", self.loop_b.is_some(), "Set B where the song is"),
-            ("CLEAR", false, "Clear the loop"),
-        ];
-        let mut x = r.min.x + m.v(4.0);
-        for (k, (name, on, tip)) in keys.iter().enumerate() {
-            let br = Rect::from_center_size(Pos2::new(x + m.v(7.0), r.center().y), Vec2::splat(m.v(13.0)));
-            let w = m.v(13.0) + m.v(6.0) + text_w(name, 1.0) + m.v(18.0);
-            let row = Rect::from_min_max(Pos2::new(x, r.min.y), Pos2::new(x + w, r.max.y));
-            let h = ui.interact(row, ui.id().with(("hw_loop", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(*tip);
-            push_button(p, br, *on, h.is_pointer_button_down_on());
-            let col = if *on { INK } else { INK.gamma_multiply(if h.hovered() { 0.85 } else { 0.55 }) };
-            caps(p, Pos2::new(br.max.x + m.v(5.0), r.center().y), egui::Align2::LEFT_CENTER, name, m.v(8.0), m.v(1.2), col, true);
-            if h.clicked() {
-                match k {
-                    0 => acts.push(Action::LoopToggle),
-                    1 => acts.push(Action::SetAAt(pos)),
-                    2 => acts.push(Action::SetBAt(pos)),
-                    _ => acts.push(Action::LoopClear),
-                }
-            }
-            x = row.max.x + m.v(10.0);
-        }
-        // the loop's times, and how to make one, at the right
-        let note = match (self.loop_a, self.loop_b) {
-            (Some(a), Some(b)) => format!("{}  -  {}", fmt_time(a), fmt_time(b)),
-            _ => "Drag across the song with the right button to make a loop".to_string(),
-        };
-        caps(p, Pos2::new(r.max.x - m.v(4.0), r.center().y), egui::Align2::RIGHT_CENTER, &note, m.v(8.0), m.v(0.6), INK.gamma_multiply(0.6), false);
     }
 
     /// Bass or treble: the equalizer's three lowest (or highest) bands turned together, like an amp's tone knob.
