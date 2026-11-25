@@ -967,6 +967,13 @@ impl App {
                 }
             }
             Msg::WaSkin(r) => self.wear_skin(r, true),
+            Msg::StudioDither(key, img) => {
+                if key == self.studio_dith_busy {
+                    let tex = self.ctx.load_texture("studio_dither", img, egui::TextureOptions::NEAREST);
+                    self.studio_dith = (key, Some(tex));
+                    self.studio_dith_busy.clear();
+                }
+            }
             Msg::NpBlur(url, img) => {
                 if url == self.np_blur_for {
                     self.np_blur = Some(self.ctx.load_texture("np_blur", img, egui::TextureOptions::LINEAR));

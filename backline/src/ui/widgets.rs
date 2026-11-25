@@ -207,11 +207,16 @@ pub(crate) fn quiet_h(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
 /// Whether the Hardware style is worn: buttons are rubber keys, what's on has a light, the page's name sits on a lit
 /// screen and the pickers have their names printed above them.
 pub(crate) fn hardware() -> bool {
-    crate::skin::style() == crate::skin::STYLE_HARDWARE
+    // (Studio is Hardware's relative: everything Hardware has, it has, drawn its own way)
+    matches!(crate::skin::style(), crate::skin::STYLE_HARDWARE | crate::skin::STYLE_STUDIO)
 }
 
 /// A rubber key (the Hardware style): raised on a shadow, a light edge along its top; pressed, it sinks.
 pub(crate) fn key_face(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
+    if crate::studio::on() {
+        crate::studio::key(p, r, false, down, hover);
+        return;
+    }
     let rad = corner();
     let lift = if down { 0.0 } else { 2.0 };
     p.rect_filled(r.translate(Vec2::new(0.0, 2.0)), rad, Color32::from_black_alpha(170));
@@ -232,6 +237,10 @@ pub(crate) fn key_face(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
 
 /// A small light that's on (the Hardware style), with a soft glow round it.
 pub(crate) fn led(p: &egui::Painter, c: Pos2) {
+    if crate::studio::on() {
+        crate::studio::light(p, c, true, crate::studio::ink());
+        return;
+    }
     let a = pal().accent;
     p.circle_filled(c, 5.0, a.gamma_multiply(0.18));
     p.circle_filled(c, 2.4, a);
@@ -240,7 +249,7 @@ pub(crate) fn led(p: &egui::Painter, c: Pos2) {
 /// The mark under what's on (the tab you're on, a choice that's picked): a short line under its words, `w` wide,
 /// along the foot of `r`. The Hardware style: a light under it instead.
 pub(crate) fn on_line(p: &egui::Painter, r: Rect, w: f32) {
-    if hardware() {
+    if hardware() && !crate::studio::on() {
         led(p, Pos2::new(r.center().x, r.max.y - 1.0));
         return;
     }
@@ -591,6 +600,21 @@ pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips:
             _ => resp,
         };
         let on = *i == cur;
+        if crate::studio::on() {
+            // (Studio: the one you're on inverted, the pointer's shaded)
+            let k = r.shrink2(Vec2::new(1.0, 2.0));
+            if on {
+                p.rect_filled(k, 0.0, crate::studio::ink());
+            } else if resp.hovered() {
+                p.rect_filled(k, 0.0, crate::studio::key_col());
+            }
+            let col = if on { crate::studio::scr() } else { pal().ink };
+            winamp_ui::as_title(|| ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col));
+            if resp.clicked() {
+                hit = Some(*i);
+            }
+            continue;
+        }
         let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
         let tw = winamp_ui::as_title(|| {
             ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col);
@@ -626,7 +650,14 @@ pub(crate) fn icon_switch(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: &
             _ => resp,
         };
         let on = i == cur;
-        if hardware() {
+        let studio = crate::studio::on();
+        if studio {
+            if on {
+                p.rect_filled(r, 0.0, crate::studio::ink());
+            } else if resp.hovered() {
+                p.rect_filled(r, 0.0, crate::studio::key_col());
+            }
+        } else if hardware() {
             if on {
                 led(&p, Pos2::new(r.center().x, r.min.y - 2.0));
             }
@@ -635,7 +666,13 @@ pub(crate) fn icon_switch(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: &
         } else if resp.hovered() {
             p.rect_filled(r.shrink(2.0), rad * 0.75, pal().ink.gamma_multiply(0.07));
         }
-        let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
+        let col = if studio && on {
+            crate::studio::scr()
+        } else if on || resp.hovered() {
+            pal().ink
+        } else {
+            pal().ink2
+        };
         match it.strip_prefix('=') {
             Some(t) => {
                 font::keep_caps(|| ptext(&p, r.center(), Align::Center, t, 1.75, col));
@@ -646,7 +683,9 @@ pub(crate) fn icon_switch(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: &
             hit = Some(i);
         }
     }
-    if !hardware() {
+    if crate::studio::on() {
+        p.rect_stroke(row, 0.0, Stroke::new(1.0_f32, crate::studio::ink()));
+    } else if !hardware() {
         p.rect_stroke(row, rad, Stroke::new(1.0_f32, pal().ink2.gamma_multiply(0.35)));
     }
     hit
@@ -768,6 +807,13 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
     if winamp_ui::chrome_on() {
         // plain words: brighter under the pointer, underlined while it's the one picked (Hardware: a rubber key, a
         // light on it while it's the one picked)
+        if crate::studio::on() {
+            // (Studio: a key in a fine outline, inverted while it's the one picked)
+            crate::studio::key(ui.painter(), rect.shrink2(Vec2::new(1.0, 2.0)), active, resp.is_pointer_button_down_on(), resp.hovered());
+            let col = crate::studio::key_fg(active);
+            winamp_ui::as_title(|| ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, col));
+            return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        }
         if hardware() {
             key_face(ui.painter(), rect.shrink2(Vec2::new(1.0, 2.0)), resp.is_pointer_button_down_on(), resp.hovered());
             let dy = if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 };
@@ -1534,6 +1580,15 @@ pub(crate) fn setup_style(ctx: &egui::Context) {
     ] {
         w.fg_stroke = Stroke::new(1.0_f32, pal().ink);
         w.rounding = Rounding::same(rad * 0.7);
+    }
+    if crate::studio::on() {
+        // (Studio: menus and tips are little screens, a line of ink round them and a hard shadow under)
+        v.window_stroke = Stroke::new(1.0_f32, pal().ink);
+        let hard = egui::epaint::Shadow { offset: Vec2::new(3.0, 3.0), blur: 0.0, spread: 0.0, color: Color32::from_black_alpha(110) };
+        v.popup_shadow = hard;
+        v.window_shadow = hard;
+        v.selection.bg_fill = pal().ink;
+        v.selection.stroke = Stroke::new(1.0_f32, pal().display);
     }
     ctx.set_visuals(v);
 

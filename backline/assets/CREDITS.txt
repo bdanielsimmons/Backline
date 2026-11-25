@@ -2,3 +2,7 @@ tour.mp3
 "Local Forecast - Elevator" Kevin MacLeod (incompetech.com)
 Licensed under Creative Commons: By Attribution 4.0 License
 http://creativecommons.org/licenses/by/4.0/
+
+Silkscreen-Regular.ttf, Doto.ttf, IBMPlexMono-Regular.ttf (the Studio style's pixel, dot and typewriter faces)
+Silkscreen: Copyright 2001 The Silkscreen Project Authors. Doto: Copyright 2024 The Doto Project Authors.
+IBM Plex Mono: Copyright 2017 IBM Corp. All licensed under the SIL Open Font License 1.1 (see their -OFL.txt files).

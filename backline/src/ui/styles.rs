@@ -5,7 +5,7 @@
 //! album's colours, Hardware's matte body). The pages inside are the same as everywhere.
 
 use super::*;
-use crate::skin::{style, STYLE_AMBIENT, STYLE_HARDWARE, STYLE_STREAMING};
+use crate::skin::{style, STYLE_AMBIENT, STYLE_HARDWARE, STYLE_STREAMING, STYLE_STUDIO};
 
 /// Hardware's body, its panels, its screens and their amber.
 pub(crate) const HW_BODY: Color32 = Color32::from_rgb(20, 21, 22);
@@ -29,6 +29,9 @@ fn white(a: u8) -> Color32 {
 
 /// The style's writing and its quieter writing: white on the dark styles, the palette's own on Ambient's Light feel.
 fn fg() -> Color32 {
+    if style() == STYLE_STUDIO {
+        return crate::studio::ink();
+    }
     if style() == STYLE_AMBIENT && crate::skin::amb_light() {
         pal().ink
     } else {
@@ -36,6 +39,9 @@ fn fg() -> Color32 {
     }
 }
 fn fg2() -> Color32 {
+    if style() == STYLE_STUDIO {
+        return crate::studio::dim();
+    }
     if style() == STYLE_AMBIENT && crate::skin::amb_light() {
         pal().ink2
     } else {
@@ -44,6 +50,9 @@ fn fg2() -> Color32 {
 }
 /// What's drawn on `fg()` (the play button's symbol).
 fn on_fg() -> Color32 {
+    if style() == STYLE_STUDIO {
+        return crate::studio::scr();
+    }
     if style() == STYLE_AMBIENT && crate::skin::amb_light() {
         Color32::WHITE
     } else {
@@ -52,6 +61,9 @@ fn on_fg() -> Color32 {
 }
 /// A light wash over the glass (a row lit, a track's empty part): dark on the Light feel.
 fn wash(a: u8) -> Color32 {
+    if style() == STYLE_STUDIO {
+        return crate::studio::ink().gamma_multiply(a as f32 / 510.0);
+    }
     if style() == STYLE_AMBIENT && crate::skin::amb_light() {
         Color32::from_black_alpha(a)
     } else {
@@ -61,13 +73,24 @@ fn wash(a: u8) -> Color32 {
 
 /// Whether a Style lays the window out (Streaming, Ambient Color, Hardware).
 pub(crate) fn styled() -> bool {
-    matches!(style(), STYLE_AMBIENT | STYLE_STREAMING | STYLE_HARDWARE)
+    matches!(style(), STYLE_AMBIENT | STYLE_STREAMING | STYLE_HARDWARE | STYLE_STUDIO)
+}
+
+/// A surface of the style worn with its name: Studio writes it in brackets on the screen's frame ("─[ PLAYLIST ]─");
+/// the other styles' panels have no name on them.
+pub(crate) fn panel_named(p: &egui::Painter, r: Rect, name: &str) {
+    if style() == STYLE_STUDIO {
+        crate::studio::frame(p, r.shrink(3.0), name);
+    } else {
+        panel(p, r);
+    }
 }
 
 /// A surface of the style worn (the side list, the page, the player, the queue): Streaming's dark rounded panel on
 /// black, Ambient's see-through one, Hardware's matte panel with a fine edge.
 pub(crate) fn panel(p: &egui::Painter, r: Rect) {
     match style() {
+        STYLE_STUDIO => crate::studio::frame(p, r.shrink(3.0), ""),
         STYLE_STREAMING => {
             p.rect_filled(r, 8.0, Color32::from_rgb(18, 18, 18));
         }
@@ -111,6 +134,12 @@ pub(crate) fn wash_rounded(p: &egui::Painter, r: Rect, top: Color32, rad: f32) {
 
 /// An amber screen (Hardware): dark, sunk in, its edge catching the light.
 pub(crate) fn lcd(p: &egui::Painter, r: Rect) {
+    if style() == STYLE_STUDIO {
+        // (Studio: a screen within the screen, a shade darker, a fine line of ink round it)
+        p.rect_filled(r, 0.0, crate::studio::key_col());
+        p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, crate::studio::ink()));
+        return;
+    }
     p.rect_filled(r, 4.0, lcd_bg());
     p.rect_stroke(r, 4.0, Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
     p.line_segment([r.left_bottom() + Vec2::new(4.0, 1.0), r.right_bottom() + Vec2::new(-4.0, 1.0)], Stroke::new(1.0_f32, white(12)));
@@ -128,6 +157,11 @@ pub(crate) fn lcd_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px
             }
             up = c.iter().collect::<String>().trim_end().to_string() + "...";
         }
+        if style() == STYLE_STUDIO {
+            // (Studio: plain ink, no glow)
+            ptext_fit(p, at, align, &up, px, max_w, amber());
+            return;
+        }
         // (a mild glow round the writing, as a lit screen's: a faint halo, then the words)
         let halo = amber().gamma_multiply(0.09);
         for d in [Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0), Vec2::new(-0.7, -0.7), Vec2::new(0.7, 0.7), Vec2::new(-0.7, 0.7), Vec2::new(0.7, -0.7)] {
@@ -140,6 +174,10 @@ pub(crate) fn lcd_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px
 
 /// A label printed on the panel (Hardware): small spaced capitals.
 fn printed(p: &egui::Painter, at: Pos2, text: &str) {
+    if style() == STYLE_STUDIO {
+        crate::studio::px(p, at, egui::Align2::LEFT_CENTER, &text.to_uppercase(), 7.0, crate::studio::dim());
+        return;
+    }
     font::keep_caps(|| ptext(p, at, Align::Min, &text.to_uppercase(), 1.0, Color32::from_gray(128)));
 }
 
@@ -156,14 +194,14 @@ impl App {
         // (the room the windows keep round their pages, as the other looks' frames do: the bars and the gaps)
         // (one even gap round and between every panel)
         let margins = egui::Margin { left: GAP, right: GAP, top: crate::FRAME_TOP, bottom: GAP };
-        let bar_h = if st == STYLE_HARDWARE { 96.0 } else { 88.0 };
+        let bar_h = if crate::hardware() { 96.0 } else { 88.0 };
         egui::TopBottomPanel::bottom("st_player").exact_height(bar_h).resizable(false).show_separator_line(false).frame(none).show(ctx, |ui| {
             let r = ui.max_rect();
             if st == STYLE_STREAMING {
                 self.player_bar(ui, r, acts);
             } else {
                 let pr = Rect::from_min_max(r.min + Vec2::new(GAP, 0.0), r.max - Vec2::splat(GAP));
-                panel(ui.painter(), pr);
+                panel_named(ui.painter(), pr, "Player");
                 self.player_bar(ui, pr, acts);
             }
         });
@@ -186,8 +224,12 @@ impl App {
                 // the practice panel goes under it
                 {
                     let dr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 266.0));
-                    panel(ui.painter(), dr);
-                    self.style_deck(ui, dr.shrink(14.0), acts);
+                    panel_named(ui.painter(), dr, "Now Playing");
+                    if st == STYLE_STUDIO {
+                        self.studio_deck(ui, dr.shrink(16.0), acts);
+                    } else {
+                        self.style_deck(ui, dr.shrink(14.0), acts);
+                    }
                     y = dr.max.y + pad;
                 }
                 // the equalizer
@@ -205,7 +247,7 @@ impl App {
                     // (the panel most of the room, the playlist keeping a few songs above it)
                     let h = if list_on { (room * 0.68).max(430.0).min(room) } else { room };
                     let outer = Rect::from_min_max(Pos2::new(x0, foot - h), Pos2::new(x1, foot));
-                    panel(ui.painter(), outer);
+                    panel_named(ui.painter(), outer, "Practice");
                     // (the panel's own page inside the room a frame keeps, so its title strip and controls sit as ever)
                     let inner = Rect::from_min_max(outer.min + Vec2::new(crate::FRAME_SIDE, crate::FRAME_TOP), outer.max - Vec2::splat(crate::FRAME_SIDE));
                     let mut c = ui.new_child(egui::UiBuilder::new().max_rect(inner));
@@ -224,7 +266,7 @@ impl App {
                 // the playlist (the deck's PL switch hides it)
                 if st != STYLE_STREAMING && !self.queue_hidden && foot - y > 80.0 {
                     let qr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, foot));
-                    panel(ui.painter(), qr);
+                    panel_named(ui.painter(), qr, "Playlist");
                     self.style_queue(ui, qr.shrink(14.0), acts);
                 }
                 ui.allocate_rect(r, Sense::hover());
@@ -282,6 +324,9 @@ impl App {
             }
             STYLE_HARDWARE => {
                 p.rect_filled(screen, 0.0, HW_BODY);
+            }
+            STYLE_STUDIO => {
+                p.rect_filled(screen, 0.0, crate::studio::BODY);
             }
             _ => {
                 let feel = crate::skin::AMB_FEEL.load(std::sync::atomic::Ordering::Relaxed);
@@ -379,10 +424,26 @@ impl App {
         let dur = self.cur_track().map_or(0.0, |t| t.duration);
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
         let tw = 44.0;
+        let studio = style() == STYLE_STUDIO;
+        let tcol = if studio { crate::studio::dim() } else { fg2() };
         crate::font::keep_caps(|| {
-            ptext(&p, Pos2::new(r.min.x + tw - 6.0, r.center().y), Align::Max, &fmt_time(pos), 1.4, fg2());
-            ptext(&p, Pos2::new(r.max.x - tw + 6.0, r.center().y), Align::Min, &fmt_time(dur), 1.4, fg2());
+            ptext(&p, Pos2::new(r.min.x + tw - 6.0, r.center().y), Align::Max, &fmt_time(pos), 1.4, tcol);
+            ptext(&p, Pos2::new(r.max.x - tw + 6.0, r.center().y), Align::Min, &fmt_time(dur), 1.4, tcol);
         });
+        if studio {
+            let line = Rect::from_min_max(Pos2::new(r.min.x + tw, r.center().y - 5.0), Pos2::new(r.max.x - tw, r.center().y + 5.0));
+            let h = ui.interact(line.expand2(Vec2::new(0.0, 4.0)), ui.id().with("st_seek"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if h.clicked() || h.dragged() {
+                if let (Some(pp), true) = (h.interact_pointer_pos(), dur > 0.0) {
+                    acts.push(Action::Seek(((pp.x - line.min.x) / line.width()).clamp(0.0, 1.0) * dur));
+                }
+            }
+            crate::studio::blocks(&p, line, if dur > 0.0 { pos / dur } else { 0.0 });
+            if self.cur.is_some() && !self.stopped && !self.paused {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+            }
+            return;
+        }
         let line = Rect::from_min_max(Pos2::new(r.min.x + tw, r.center().y - 2.0), Pos2::new(r.max.x - tw, r.center().y + 2.0));
         let h = ui.interact(line.expand2(Vec2::new(0.0, 6.0)), ui.id().with("st_seek"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
         if h.clicked() || h.dragged() {
@@ -404,6 +465,18 @@ impl App {
     /// The volume as a short line to click or drag along, a speaker before it.
     fn volume_line(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
+        if style() == STYLE_STUDIO {
+            crate::vicon::named(&p, Rect::from_center_size(Pos2::new(r.min.x + 9.0, r.center().y), Vec2::splat(16.0)), "headphones", crate::studio::ink());
+            let line = Rect::from_min_max(Pos2::new(r.min.x + 26.0, r.center().y - 5.0), Pos2::new(r.max.x, r.center().y + 5.0));
+            let h = ui.interact(line.expand2(Vec2::new(0.0, 5.0)), ui.id().with("st_vol"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Volume");
+            if h.clicked() || h.dragged() {
+                if let Some(pp) = h.interact_pointer_pos() {
+                    acts.push(Action::Volume(((pp.x - line.min.x) / line.width()).clamp(0.0, 1.0)));
+                }
+            }
+            crate::studio::blocks(&p, line, self.volume);
+            return;
+        }
         crate::vicon::named(&p, Rect::from_center_size(Pos2::new(r.min.x + 9.0, r.center().y), Vec2::splat(16.0)), "headphones", fg2());
         let line = Rect::from_min_max(Pos2::new(r.min.x + 26.0, r.center().y - 2.0), Pos2::new(r.max.x, r.center().y + 2.0));
         let h = ui.interact(line.expand2(Vec2::new(0.0, 6.0)), ui.id().with("st_vol"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Volume");
@@ -428,7 +501,7 @@ impl App {
         let mut right = r.max.x;
         // at the right: the volume, the queue (Streaming), the equalizer
         let vol = Rect::from_min_max(Pos2::new(right - 130.0, r.center().y - 8.0), Pos2::new(right, r.center().y + 8.0));
-        if st == STYLE_HARDWARE {
+        if crate::hardware() {
             printed(&p, Pos2::new(vol.min.x - 6.0, vol.min.y - 10.0), "Vol");
         }
         self.volume_line(ui, vol, acts);
@@ -452,7 +525,8 @@ impl App {
             self.dirty = true;
         }
         let e = vz;
-        if st == STYLE_HARDWARE {
+        if crate::hardware() {
+            let studio = st == STYLE_STUDIO;
             // the cover, then the screen: the time big, the song beside it
             let cover = Rect::from_min_size(r.min, Vec2::splat(r.height()));
             match self.cur_track().map(|t| t.cover) {
@@ -463,7 +537,13 @@ impl App {
             let scr = Rect::from_min_max(Pos2::new(cover.max.x + 10.0, r.min.y), Pos2::new(cover.max.x + 10.0 + (r.width() * 0.28).clamp(200.0, 340.0), r.max.y));
             lcd(&p, scr);
             let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-            lcd_text(&p, Pos2::new(scr.min.x + 12.0, scr.center().y), Align::Min, &fmt_time(pos), 3.6, 120.0);
+            if studio {
+                let t = self.deck_time();
+                let shown = if t.starts_with('-') { t } else { format!(" {}", t) };
+                crate::studio::digits(&p, Pos2::new(scr.min.x + 8.0, scr.center().y), 30.0, &shown, crate::studio::ink(), crate::studio::ghost());
+            } else {
+                lcd_text(&p, Pos2::new(scr.min.x + 12.0, scr.center().y), Align::Min, &fmt_time(pos), 3.6, 120.0);
+            }
             if let Some(tr) = self.cur_track() {
                 let w = scr.width() - 130.0;
                 lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w);
@@ -480,14 +560,20 @@ impl App {
             for (n, (icon, a, tip, lit)) in keys.into_iter().enumerate() {
                 let kr = Rect::from_min_size(Pos2::new(mid - 2.5 * (kw + 6.0) + n as f32 * (kw + 6.0), r.min.y + 4.0), Vec2::new(kw, 28.0));
                 let h = ui.interact(kr, id.with(("key", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
-                crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
-                if n == 1 {
-                    let k = kr.translate(Vec2::new(0.0, if h.is_pointer_button_down_on() { 2.0 } else { 0.0 }));
-                    p.rect_filled(k, crate::corner(), amber().gamma_multiply(if lit { 0.55 } else { 0.32 }));
-                }
-                crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(13.0)), icon, Color32::from_gray(214));
-                if lit && n != 1 {
-                    crate::led(&p, Pos2::new(kr.min.x + 7.0, kr.min.y + 7.0));
+                if studio {
+                    // (Studio: a key with a fine outline, filled with the ink while it's on)
+                    crate::studio::key(&p, kr, lit, h.is_pointer_button_down_on(), h.hovered());
+                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(13.0)), icon, crate::studio::key_fg(lit));
+                } else {
+                    crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
+                    if n == 1 {
+                        let k = kr.translate(Vec2::new(0.0, if h.is_pointer_button_down_on() { 2.0 } else { 0.0 }));
+                        p.rect_filled(k, crate::corner(), amber().gamma_multiply(if lit { 0.55 } else { 0.32 }));
+                    }
+                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(13.0)), icon, Color32::from_gray(214));
+                    if lit && n != 1 {
+                        crate::led(&p, Pos2::new(kr.min.x + 7.0, kr.min.y + 7.0));
+                    }
                 }
                 if h.clicked() {
                     acts.push(a);
@@ -532,7 +618,7 @@ impl App {
         let p = ui.painter().clone();
         let h = ui.interact(r, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
         let col = if on {
-            if style() == STYLE_HARDWARE { amber() } else { pal().accent }
+            if crate::hardware() { amber() } else { pal().accent }
         } else if h.hovered() {
             fg()
         } else {
@@ -556,9 +642,11 @@ impl App {
     /// AUTO, presets, the sliders).
     fn style_eq(&mut self, ui: &mut egui::Ui, r: Rect) {
         let p = ui.painter().clone();
-        panel(&p, r);
+        panel_named(&p, r, "Equalizer");
         let inner = r.shrink(14.0);
-        if style() == STYLE_HARDWARE {
+        if style() == STYLE_STUDIO {
+            // (its name is on its frame)
+        } else if style() == STYLE_HARDWARE {
             printed(&p, Pos2::new(inner.min.x, inner.min.y + 6.0), "Equalizer");
         } else {
             ptext(&p, Pos2::new(inner.min.x, inner.min.y + 8.0), Align::Min, "Equalizer", 1.9, fg());
@@ -579,12 +667,15 @@ impl App {
     /// the songs, each with its cover (the ones played greyed, the one playing lit); a click plays one, a drag (held
     /// left button or the middle one) moves it. Hardware's on an amber screen, numbered, in capitals.
     pub(crate) fn style_queue(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
+        let studio = style() == STYLE_STUDIO;
         let hw = style() == STYLE_HARDWARE;
         let p = ui.painter().clone();
         let queue = self.queue.clone();
         let cur = self.cur;
         let head = Rect::from_min_size(r.min, Vec2::new(r.width(), 24.0));
-        if hw {
+        if studio {
+            // (its name is on its frame)
+        } else if hw {
             printed(&p, Pos2::new(head.min.x, head.center().y), "Playlist");
         } else {
             ptext(&p, Pos2::new(head.min.x + 2.0, head.center().y), Align::Min, "Playlist", 2.1, fg());
@@ -605,11 +696,14 @@ impl App {
         };
         // (no room beside the heading: on a line of its own under it)
         let px = if hw { 1.0 } else { 1.4 };
-        let head_w = if hw { 70.0 } else { text_w("Playlist", 2.1) + 16.0 };
-        let below = head_w + text_w(&info, px) + 8.0 > r.width();
+        let head_w = if hw || studio { 70.0 } else { text_w("Playlist", 2.1) + 16.0 };
+        let below = !studio && head_w + text_w(&info, px) + 8.0 > r.width();
         let at = if below { Pos2::new(head.min.x + 2.0, head.max.y + 6.0) } else { Pos2::new(head.max.x - 4.0, head.center().y) };
         let align = if below { Align::Min } else { Align::Max };
-        if hw {
+        if studio {
+            crate::studio::px(&p, Pos2::new(head.min.x, head.center().y), egui::Align2::LEFT_CENTER, &info.to_uppercase(), 8.0, crate::studio::dim());
+            p.line_segment([Pos2::new(head.min.x, head.max.y), Pos2::new(head.max.x, head.max.y)], Stroke::new(1.0_f32, crate::studio::ink()));
+        } else if hw {
             font::keep_caps(|| ptext_fit(&p, at, align, &info.to_uppercase(), px, r.width() - 4.0, Color32::from_gray(128)));
         } else {
             ptext_fit(&p, at, align, &info, px, r.width() - 4.0, fg2());
@@ -623,7 +717,7 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let w0 = ui.available_width();
             // (roomier rows: bigger covers, more space between, the song over its artist)
-            let rh = if hw { 34.0 } else { 50.0 };
+            let rh = if hw { 34.0 } else if studio { 40.0 } else { 50.0 };
             let mut rects: Vec<(usize, Rect)> = Vec::new();
             for (i, tr) in queue.iter().enumerate() {
                 let (row0, h) = ui.allocate_exact_size(Vec2::new(w0, rh), Sense::click_and_drag());
@@ -649,7 +743,21 @@ impl App {
                 let row = Rect::from_min_max(Pos2::new(cr.max.x + 2.0, row0.min.y), row0.max);
                 let w = row.width();
                 let p = ui.painter();
-                if hw {
+                if studio {
+                    // (Studio: the song playing inverted, the ones played faded, the pointer's row shaded)
+                    let (ink, glass) = (crate::studio::ink(), crate::studio::scr());
+                    if now {
+                        p.rect_filled(row, 0.0, ink);
+                    } else if h.hovered() {
+                        p.rect_filled(row, 0.0, crate::studio::key_col());
+                    }
+                    let col = if now { glass } else { ink.gamma_multiply(dim) };
+                    let col2 = if now { glass.gamma_multiply(0.75) } else { crate::studio::dim().gamma_multiply(dim) };
+                    let dw = ptext(p, Pos2::new(row.max.x - 6.0, row.center().y), Align::Max, &dur, 1.5, col2);
+                    let room = w - dw - 24.0;
+                    crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y - 8.0), Align::Min, &tr.title, room, col);
+                    crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y + 9.0), Align::Min, &tr.artists_text(), room, col2);
+                } else if hw {
                     if now || h.hovered() {
                         p.rect_filled(row, 2.0, amber().gamma_multiply(if now { 0.14 } else { 0.06 }));
                     }
@@ -707,16 +815,9 @@ impl App {
     }
 }
 
-/// A style as a whole window in little, for the Skins page's first step: Classic (0, the deck and the playlist beside
-/// the library), Streaming, Ambient Color, Hardware; its name under it, a ring round the one worn. Returns the click.
-pub(crate) fn style_card(ui: &mut egui::Ui, kind: u8, name: &str, w: f32, on: bool) -> bool {
-    let h = w * 0.6;
-    let name_h = 26.0 * font::ui_scale();
-    let (cell, resp) = ui.allocate_exact_size(Vec2::new(w, h + name_h), Sense::click());
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-    let p = ui.painter();
-    let r = Rect::from_min_size(cell.min, Vec2::new(w, h));
-    let k = w / 200.0;
+/// A style in little (its picture on the Skins page's card, and in Settings while it's worn), filling `r`.
+pub(crate) fn style_picture(p: &egui::Painter, r: Rect, kind: u8) {
+    let k = r.width() / 200.0;
     let bx = |x: f32, y: f32, ww: f32, hh: f32| Rect::from_min_size(r.min + Vec2::new(x * k, y * k), Vec2::new(ww * k, hh * k));
     let rgb = Color32::from_rgb;
     match kind {
@@ -760,6 +861,21 @@ pub(crate) fn style_card(ui: &mut egui::Ui, kind: u8, name: &str, w: f32, on: bo
                 p.circle_filled(bx(8.0, 14.0 + i as f32 * 10.0, 4.0, 4.0).center(), 1.5 * k, if i == 3 { fg } else { rgb(60, 52, 40) });
             }
         }
+        STYLE_STUDIO => {
+            // (Studio: its screens in the glass's colour, set in the black body, a dark rim round each)
+            let (_, glass, keys, ink, _) = crate::skin::studio_screen();
+            p.rect_filled(r, 6.0, crate::studio::BODY);
+            for b in [bx(5.0, 7.0, 34.0, 109.0), bx(44.0, 7.0, 107.0, 109.0), bx(156.0, 7.0, 39.0, 44.0), bx(156.0, 56.0, 39.0, 60.0)] {
+                p.rect_filled(b.expand(1.5), 0.0, Color32::from_rgb(59, 61, 49));
+                p.rect_filled(b, 0.0, glass);
+            }
+            p.rect_filled(bx(48.0, 12.0, 40.0, 7.0), 0.0, ink);
+            for i in 0..6 {
+                p.rect_filled(bx(48.0, 24.0 + i as f32 * 9.0, 99.0, 5.0), 0.0, if i == 0 { ink } else { keys });
+            }
+            p.rect_filled(bx(160.0, 12.0, 14.0, 14.0), 0.0, keys);
+            p.rect_filled(bx(177.0, 12.0, 14.0, 8.0), 0.0, ink);
+        }
         _ => {
             p.rect_filled(r, 6.0, rgb(43, 43, 44));
             p.rect_filled(bx(4.0, 4.0, 140.0, 112.0), 3.0, rgb(13, 13, 13));
@@ -769,6 +885,18 @@ pub(crate) fn style_card(ui: &mut egui::Ui, kind: u8, name: &str, w: f32, on: bo
             p.rect_filled(bx(148.0, 38.0, 48.0, 78.0), 3.0, rgb(13, 13, 13));
         }
     }
+}
+
+/// A style as a whole window in little, for the Skins page's first step: Classic (0, the deck and the playlist beside
+/// the library), Streaming, Ambient Color, Hardware; its name under it, a ring round the one worn. Returns the click.
+pub(crate) fn style_card(ui: &mut egui::Ui, kind: u8, name: &str, w: f32, on: bool) -> bool {
+    let h = w * 0.6;
+    let name_h = 26.0 * font::ui_scale();
+    let (cell, resp) = ui.allocate_exact_size(Vec2::new(w, h + name_h), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let p = ui.painter();
+    let r = Rect::from_min_size(cell.min, Vec2::new(w, h));
+    style_picture(p, r, kind);
     if on {
         p.rect_stroke(r.expand(3.0), 8.0, Stroke::new(2.0_f32, pal().ink));
     } else if resp.hovered() {
@@ -845,7 +973,7 @@ impl App {
     /// open under it (the window grows, as the classic stack does).
     pub(crate) fn style_mini(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let st = style();
-        let hw = st == STYLE_HARDWARE;
+        let hw = crate::hardware();
         let full = ui.max_rect();
         let p = ui.painter().clone();
         let ctx = ui.ctx().clone();
@@ -886,7 +1014,22 @@ impl App {
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
         let (bands, _, _) = self.viz_data(0);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
-        if hw {
+        if crate::studio::on() {
+            // one screen: the time in segments, the song in dot type at its top right, the bars under it
+            use crate::studio as sd;
+            lcd(&p, row_a);
+            let dh = (row_a.height() * 0.5).clamp(18.0, 52.0);
+            sd::digits(&p, Pos2::new(row_a.min.x + 12.0, row_a.center().y), dh, &fmt_time(pos), sd::ink(), sd::ghost());
+            let tx = row_a.min.x + row_a.width() * 0.42;
+            if let Some(tr) = self.cur_track() {
+                let mq = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 4.0), Pos2::new(row_a.max.x - 8.0, row_a.min.y + 24.0));
+                sd::marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 14.0, sd::ink());
+            }
+            if self.mini_viz {
+                let vr = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 30.0), row_a.max - Vec2::new(8.0, 6.0));
+                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), 2.0, 2.0);
+            }
+        } else if hw {
             // all on the screen: the time big, the song small at its top right, the meter under it
             lcd(&p, row_a);
             let big = (row_a.height() / 16.0).clamp(1.8, 4.2);
@@ -934,11 +1077,17 @@ impl App {
             for (n, (icon, a)) in keys.into_iter().enumerate() {
                 let kr = Rect::from_min_size(Pos2::new(inner.center().x - 2.5 * (kw + 5.0) + n as f32 * (kw + 5.0), cy - kh / 2.0), Vec2::new(kw, kh));
                 let h = ui.interact(kr, ui.id().with(("st_mini_key", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-                crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
-                if n == 1 {
-                    p.rect_filled(kr, crate::corner(), amber().gamma_multiply(if playing { 0.55 } else { 0.32 }));
+                if crate::studio::on() {
+                    let lit = n == 1 && playing;
+                    crate::studio::key(&p, kr, lit, h.is_pointer_button_down_on(), h.hovered());
+                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(12.0)), icon, crate::studio::key_fg(lit));
+                } else {
+                    crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
+                    if n == 1 {
+                        p.rect_filled(kr, crate::corner(), amber().gamma_multiply(if playing { 0.55 } else { 0.32 }));
+                    }
+                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(12.0)), icon, Color32::from_gray(214));
                 }
-                crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(12.0)), icon, Color32::from_gray(214));
                 if h.clicked() {
                     acts.push(a);
                 }
@@ -970,7 +1119,7 @@ impl App {
 
 impl App {
     /// The time as the deck shows it: elapsed, or (clicked) what's left with a minus.
-    fn deck_time(&self) -> String {
+    pub(crate) fn deck_time(&self) -> String {
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
         if self.time_left {
             let dur = self.cur_track().map_or(0.0, |t| t.duration);
@@ -981,7 +1130,7 @@ impl App {
     }
 
     /// What the deck says about the stream: its bitrate, sample rate and channels ("1411 kbps · 44 kHz · Stereo").
-    fn deck_info(&self) -> String {
+    pub(crate) fn deck_info(&self) -> String {
         let active = self.cur.is_some() && !self.stopped;
         if !active {
             return String::new();

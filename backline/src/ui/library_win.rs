@@ -328,7 +328,9 @@ impl App {
             .collect();
         // (a low card: just its name)
         if gr.height() >= 6.0 {
-            ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, pal().red)));
+            // (Studio's screen has one ink)
+            let col = if crate::studio::on() { pal().ink } else { pal().red };
+            ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, col)));
         }
         r
     }
@@ -418,8 +420,12 @@ impl App {
         ui.add_space(8.0);
         // Winamp-style: the response curve on a little screen, then the sliders, each filled green to red
         // from the middle line to its knob
-        let heat = |g: f32| -> Color32 {
-            // -12 dB green, 0 yellow-green, +12 red
+        let studio_ink = crate::studio::on().then(crate::studio::ink);
+        let heat = move |g: f32| -> Color32 {
+            // -12 dB green, 0 yellow-green, +12 red (Studio: all in its ink)
+            if let Some(c) = studio_ink {
+                return c;
+            }
             let f = ((g + 12.0) / 24.0).clamp(0.0, 1.0);
             let (r, gr) = if f < 0.5 { (f * 2.0 * 230.0, 210.0) } else { (230.0, 210.0 - (f - 0.5) * 2.0 * 170.0) };
             Color32::from_rgb(r as u8, gr as u8, 40)
@@ -458,7 +464,7 @@ impl App {
         ui.add_space(8.0);
 
         let area = ui.available_rect_before_wrap();
-        let h = (area.height() - 30.0).clamp(80.0, 220.0);
+        let h = (area.height() - 34.0).clamp(80.0, 220.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(area.width(), h), Sense::hover());
         let bands = Rect::from_min_max(Pos2::new(rect.min.x + scale_w, rect.min.y), rect.max);
         let col_w = bands.width() / 10.0;
@@ -474,7 +480,7 @@ impl App {
         for i in 0..10 {
             let cx = bands.min.x + col_w * (i as f32 + 0.5);
             let col = Rect::from_min_max(Pos2::new(cx - col_w / 2.0, rect.min.y), Pos2::new(cx + col_w / 2.0, rect.max.y));
-            let r = ui.interact(col, ui.id().with(("eq_band", i)), Sense::click_and_drag());
+            let r = ui.interact(col, ui.id().with(("eq_band", i)), Sense::click_and_drag()).tip("Drag to set, double-click to reset (+/- 12 dB)");
             if r.dragged() || r.clicked() {
                 if let Some(pp) = r.interact_pointer_pos() {
                     let f = ((pp.y - top) / (bot - top)).clamp(0.0, 1.0);
@@ -510,7 +516,10 @@ impl App {
             ptext(&p, Pos2::new(cx, rect.max.y - 8.0), Align::Center, LABELS[i], 1.0, pal().ink2);
         }
         ui.add_space(4.0);
-        para(ui, "Drag a slider, or double-click it to reset. The range is +/- 12 dB.", pal().dim);
+        // (only where a whole line fits: a docked one too short shows it on the sliders' tips)
+        if ui.available_height().min(ui.clip_rect().max.y - ui.cursor().min.y) >= 44.0 * crate::font::ui_scale() {
+            para(ui, "Drag a slider, or double-click it to reset. The range is +/- 12 dB.", pal().dim);
+        }
         if changed {
             self.apply_eq();
             self.eq_remember();
@@ -524,16 +533,33 @@ impl App {
         let sc = crate::font::ui_scale();
         let worn = self.wa_worn.clone();
         let custom = crate::custom_worn(worn.as_ref());
+        // (one of the styles: its own name, not the look it's built on)
+        let style_kind = worn.as_ref().and_then(|w| match w.0.as_str() {
+            crate::looks::AMBIENT_MD5 => Some(crate::skin::STYLE_AMBIENT),
+            crate::looks::STREAMING_MD5 => Some(crate::skin::STYLE_STREAMING),
+            crate::looks::HARDWARE_MD5 => Some(crate::skin::STYLE_HARDWARE),
+            crate::looks::STUDIO_MD5 => Some(crate::skin::STYLE_STUDIO),
+            _ => None,
+        });
+        let style = style_kind.is_some();
         let ours = crate::backline_look(worn.as_ref()) || worn.is_none();
         let cur = SKIN.load(Ordering::Relaxed) % LOOKS.len();
-        let name = if custom {
+        let name = if style {
+            worn.as_ref().map(|w| crate::winamp_ui::display_case(&w.1).to_string()).unwrap_or_default()
+        } else if custom {
             "Custom".to_string()
         } else if ours {
             crate::winamp_ui::display_case(SKIN_NAMES[cur]).to_string()
         } else {
             worn.as_ref().map(|w| w.1.clone()).unwrap_or_default()
         };
-        let kind = if ours { "Backline look" } else { "Winamp skin" };
+        let kind = if style {
+            "Style"
+        } else if ours {
+            "Backline look"
+        } else {
+            "Winamp skin"
+        };
         egui::Frame::none()
             .fill(pal().row_alt)
             .stroke(Stroke::new(1.0_f32, pal().groove))
@@ -544,7 +570,9 @@ impl App {
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(14.0, 6.0);
                     // the deck as worn: Backline's looks drawn here, a Winamp skin's from the museum
-                    let tex = if custom {
+                    let tex = if style {
+                        None
+                    } else if custom {
                         crate::looks::custom_deck(ui.ctx(), &self.custom)
                     } else if ours {
                         crate::looks::look_deck(ui.ctx(), cur)
@@ -552,12 +580,19 @@ impl App {
                         worn.as_ref().and_then(|w| self.images.get(&crate::winamp::shot_url(&w.0)))
                     };
                     let th = (80.0 * sc).min(ui.available_width() * 0.5 * 116.0 / 275.0).max(30.0);
-                    let size = if ours { Vec2::new(th * 275.0 / 116.0, th) } else { Vec2::new(th * 275.0 / 348.0, th) };
+                    let size = if style {
+                        Vec2::new(th / 0.6, th)
+                    } else if ours {
+                        Vec2::new(th * 275.0 / 116.0, th)
+                    } else {
+                        Vec2::new(th * 275.0 / 348.0, th)
+                    };
                     let (r, _) = ui.allocate_exact_size(size, Sense::hover());
                     match tex {
                         Some(id) => {
                             egui::Image::new(egui::load::SizedTexture::new(id, r.size())).paint_at(ui, r);
                         }
+                        None if style => crate::styles::style_picture(ui.painter(), r, style_kind.unwrap_or_default()),
                         None => {
                             ui.painter().rect_filled(r, 3.0, pal().display);
                         }
@@ -668,7 +703,7 @@ impl App {
         title_line(ui, "SKINS", 3.0, pal().ink);
         ui.add_space(4.0);
         // (the owner's pick, 2026-11-24: first the style, each a whole window in little; then that style's colours)
-        use crate::skin::{STYLE_AMBIENT, STYLE_HARDWARE, STYLE_STREAMING};
+        use crate::skin::{STYLE_AMBIENT, STYLE_HARDWARE, STYLE_STREAMING, STYLE_STUDIO};
         let st = crate::skin::style();
         let step = |ui: &mut egui::Ui, n: &str, text: &str| {
             let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
@@ -678,17 +713,18 @@ impl App {
         step(ui, "1", "Style");
         let sc = crate::font::ui_scale();
         let gap = 16.0 * sc;
-        let w = ((ui.available_width() - 3.0 * gap - 8.0) / 4.0).clamp(110.0, 230.0 * sc);
+        let w = ((ui.available_width() - 4.0 * gap - 8.0) / 5.0).clamp(110.0, 230.0 * sc);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             ui.add_space(3.0);
-            for (k, name) in [(0, "Classic"), (STYLE_STREAMING, "Streaming"), (STYLE_AMBIENT, "Ambient Color"), (STYLE_HARDWARE, "Hardware")] {
+            for (k, name) in [(0, "Classic"), (STYLE_STREAMING, "Streaming"), (STYLE_AMBIENT, "Ambient Color"), (STYLE_HARDWARE, "Hardware"), (STYLE_STUDIO, "Studio")] {
                 let on = st == k;
                 if crate::styles::style_card(ui, k, name, w, on) && !on {
                     acts.push(match k {
                         0 => Action::Classic,
                         STYLE_AMBIENT => Action::Ambient,
                         STYLE_STREAMING => Action::Style(false),
+                        STYLE_STUDIO => Action::Studio,
                         _ => Action::Style(true),
                     });
                 }
@@ -699,6 +735,7 @@ impl App {
             STYLE_STREAMING => "Streaming's colors",
             STYLE_AMBIENT => "Ambient Color's colors",
             STYLE_HARDWARE => "Hardware's colors",
+            STYLE_STUDIO => "Studio's screens",
             _ => "Classic's colors",
         };
         step(ui, "2", name);
@@ -714,6 +751,19 @@ impl App {
                 let items: Vec<(&str, Color32, Color32)> = crate::skin::HW_SCREENS.iter().map(|(n, f, b)| (*n, *f, *b)).collect();
                 if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::HW_SCREEN.load(Ordering::Relaxed) as usize, true) {
                     acts.push(Action::StyleColor(1, i as u8));
+                }
+            }
+            STYLE_STUDIO => {
+                let items: Vec<(&str, Color32, Color32)> = crate::skin::STUDIO_SCREENS.iter().map(|(n, glass, _, ink, _)| (*n, *ink, *glass)).collect();
+                if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::STUDIO_SCREEN.load(Ordering::Relaxed) as usize, false) {
+                    acts.push(Action::StyleColor(4, i as u8));
+                }
+                ui.add_space(6.0);
+                crate::views::label(ui, "NOW PLAYING'S COVER", 220.0);
+                let cov = crate::skin::STUDIO_COVER.load(Ordering::Relaxed) as usize;
+                let tips = ["The cover in its own colors".to_string(), "The cover printed in the screen's ink, in dots like an old LCD".to_string()];
+                if let Some(k) = crate::widgets::segments_tips(ui, &crate::skin::STUDIO_COVERS, cov, &tips) {
+                    acts.push(Action::StyleColor(5, k as u8));
                 }
             }
             STYLE_AMBIENT => {
@@ -1371,9 +1421,9 @@ impl App {
                 None => {}
             }
             if styled {
-                crate::styles::panel(&p, side);
+                crate::styles::panel_named(&p, side, "Backline");
                 let page = Rect::from_min_max(Pos2::new(side.max.x + 10.0, all.min.y), all.max);
-                crate::styles::panel(&p, page);
+                crate::styles::panel_named(&p, page, "Library");
                 // (Ambient's and Streaming's wash in the album's colour, over the whole page, corners and all)
                 let wash = match crate::skin::style() {
                     crate::skin::STYLE_AMBIENT => Some(self.ambient.accent.gamma_multiply(0.14)),
@@ -1504,7 +1554,15 @@ impl App {
             }
             let resp =
                 ui.interact(rr, ui.id().with(("side_nav", key)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-            if crate::hardware() && !mini {
+            let studio = crate::studio::on();
+            if studio {
+                // (Studio: the place you're on inverted, the pointer's shaded)
+                if on {
+                    lp.rect_filled(rr, 0.0, crate::studio::ink());
+                } else if resp.hovered() {
+                    lp.rect_filled(rr, 0.0, crate::studio::key_col());
+                }
+            } else if crate::hardware() && !mini {
                 // (Hardware: a light by each place, lit for the one you're on)
                 let c = Pos2::new(rr.min.x + 2.0, rr.center().y);
                 if on {
@@ -1518,7 +1576,13 @@ impl App {
             } else if resp.hovered() {
                 lp.rect_filled(rr, 5.0, Color32::from_rgba_premultiplied(10, 10, 10, 10));
             }
-            let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
+            let col = if studio && on {
+                crate::studio::scr()
+            } else if on || resp.hovered() {
+                pal().ink
+            } else {
+                pal().ink2
+            };
             let size = Vec2::splat((16.0 * sc).min(rh - 8.0));
             if mini {
                 crate::vicon::named(&lp, Rect::from_center_size(rr.center(), size), icon, col);
@@ -1638,12 +1702,21 @@ impl App {
                 } else {
                     "Practice: loop, slow down, the band and your tools.  (P)"
                 });
-            if on {
+            let studio = crate::studio::on();
+            if studio {
+                crate::studio::key(&p, cell.expand(2.0), on, resp.is_pointer_button_down_on(), resp.hovered());
+            } else if on {
                 p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), pal().ink.gamma_multiply(0.16));
             } else if resp.hovered() {
                 p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), pal().ink.gamma_multiply(0.07));
             }
-            let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
+            let col = if studio {
+                crate::studio::key_fg(on)
+            } else if on || resp.hovered() {
+                pal().ink
+            } else {
+                pal().ink2
+            };
             let tw = text_w(word, 1.4);
             let x0 = cell.center().x - (tw + 18.0) / 2.0;
             crate::vicon::named(&p, Rect::from_center_size(Pos2::new(x0 + 7.0, cell.center().y), Vec2::splat(12.0)), icon, col);
@@ -1774,6 +1847,28 @@ impl App {
     fn window_icons(&mut self, ui: &mut egui::Ui, r: Rect, y: f32, acts: &mut Vec<Action>) -> f32 {
         let p = ui.painter().clone();
         let items = self.window_items();
+        if crate::studio::on() {
+            // (Studio: small tabs on the side list's frame, as Tidalite had them; the skin guide is Classic's)
+            let named: Vec<(String, bool, String, u8)> = items
+                .iter()
+                .filter(|it| it.3 != 6)
+                .map(|(_, on, tip, key)| {
+                    let name = match key {
+                        1 if self.go_offline || self.net_down => "Offline",
+                        1 => "Online",
+                        2 => "Focus",
+                        4 => "Mini",
+                        _ => "Pin",
+                    };
+                    (name.to_string(), *on, tip.clone(), *key)
+                })
+                .collect();
+            let tabs: Vec<(&str, bool, &str)> = named.iter().map(|(n, on, t, _)| (n.as_str(), *on, t.as_str())).collect();
+            if let Some(i) = crate::studio::frame_tabs(ui, r.shrink(3.0), &tabs, "studio_win") {
+                self.window_icon_clicked(named[i].3, acts);
+            }
+            return 0.0;
+        }
         let d = 26.0 * font::ui_scale();
         let names = self.icon_names;
         // the icons spread evenly across the list's width (with names: a word under each)

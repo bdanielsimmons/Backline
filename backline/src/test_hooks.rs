@@ -202,7 +202,9 @@ Second line: comp lighter here.", m.1.note);
             }
             // Now Playing with the tour song (BACKLINE_VIS=<preset>: with visuals in place of the cover)
             Ok("nowplaying") => {
-                if let Some(p) = tour_song::ready() {
+                // (BACKLINE_NP_KEEP=1: the profile's own queue, not the tour song)
+                let keep = std::env::var_os("BACKLINE_NP_KEEP").is_some();
+                if let Some(p) = tour_song::ready().filter(|_| !keep) {
                     let t = sources::ext_for_file(&p).to_track();
                     app.srcmap.insert(t.id, Src::File(p));
                     app.queue = Arc::new(vec![t]);

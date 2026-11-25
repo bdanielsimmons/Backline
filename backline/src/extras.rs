@@ -344,9 +344,12 @@ impl App {
                     crate::looks::AMBIENT_MD5 => crate::skin::STYLE_AMBIENT,
                     crate::looks::STREAMING_MD5 => crate::skin::STYLE_STREAMING,
                     crate::looks::HARDWARE_MD5 => crate::skin::STYLE_HARDWARE,
+                    crate::looks::STUDIO_MD5 => crate::skin::STYLE_STUDIO,
                     _ => 0,
                 };
                 crate::skin::STYLE.store(st, std::sync::atomic::Ordering::Relaxed);
+                // (Studio reads in its typewriter face; the others in theirs)
+                crate::studio::fonts_for_style(&self.ctx);
                 // (the Classic look or skin, to come back to from a style)
                 if st == 0 {
                     self.classic_worn = Some((s.md5.clone(), s.name.clone()));

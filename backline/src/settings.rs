@@ -248,6 +248,8 @@ impl App {
         app.np_tab = st["np_tab"].as_u64().unwrap_or(0).min(3) as u8;
         app.hw_show = st["hw_show"].as_u64().unwrap_or(0).min(2) as u8;
         app.hw_vis = st["hw_vis"].as_u64().unwrap_or(0).min(1) as u8;
+        app.studio_np = st["studio_np"].as_u64().unwrap_or(0).min(5) as u8;
+        app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(2) as u8;
         app.time_left = st["time_left"].as_bool().unwrap_or(false);
         app.cb_pop = st["cb_pop"].as_bool().unwrap_or(false);
         if let Some(a) = st["cb_pop_rect"].as_array().filter(|a| a.len() == 4) {
@@ -259,7 +261,10 @@ impl App {
         if let (Some(a), Some(b)) = (st["classic_worn"][0].as_str(), st["classic_worn"][1].as_str()) {
             app.classic_worn = Some((a.to_string(), b.to_string()));
         }
-        for (i, at) in [&crate::skin::STREAM_ACC, &crate::skin::HW_SCREEN, &crate::skin::AMB_FEEL, &crate::skin::AMB_FADE].into_iter().enumerate() {
+        for (i, at) in [&crate::skin::STREAM_ACC, &crate::skin::HW_SCREEN, &crate::skin::AMB_FEEL, &crate::skin::AMB_FADE, &crate::skin::STUDIO_SCREEN, &crate::skin::STUDIO_COVER]
+            .into_iter()
+            .enumerate()
+        {
             if let Some(v) = st["style_colors"][i].as_u64() {
                 at.store(v as u8, Ordering::Relaxed);
             }
@@ -278,6 +283,7 @@ impl App {
             }
             (Some(looks::STREAMING_MD5), _) => app.wear_skin(looks::style_skin(false), false),
             (Some(looks::HARDWARE_MD5), _) => app.wear_skin(looks::style_skin(true), false),
+            (Some(looks::STUDIO_MD5), _) => app.wear_skin(looks::studio_skin(), false),
             (Some(md5), Some(name)) if !md5.starts_with("gen:") => {
                 let s = winamp::WaSkin { md5: md5.to_string(), name: name.to_string(), shot: String::new(), download: String::new() };
                 match winamp::load_saved(&s.md5) {
@@ -473,6 +479,8 @@ impl App {
             "np_tab": self.np_tab,
             "hw_show": self.hw_show,
             "hw_vis": self.hw_vis,
+            "studio_np": self.studio_np,
+            "studio_vis": self.studio_vis,
             "time_left": self.time_left,
             "cb_pop": self.cb_pop,
             "cb_pop_rect": self.cb_pop_rect,
@@ -480,7 +488,9 @@ impl App {
                 crate::skin::STREAM_ACC.load(Ordering::Relaxed),
                 crate::skin::HW_SCREEN.load(Ordering::Relaxed),
                 crate::skin::AMB_FEEL.load(Ordering::Relaxed),
-                crate::skin::AMB_FADE.load(Ordering::Relaxed)
+                crate::skin::AMB_FADE.load(Ordering::Relaxed),
+                crate::skin::STUDIO_SCREEN.load(Ordering::Relaxed),
+                crate::skin::STUDIO_COVER.load(Ordering::Relaxed)
             ],
             "ambient_look": [
                 [self.ambient.background.r(), self.ambient.background.g(), self.ambient.background.b()],

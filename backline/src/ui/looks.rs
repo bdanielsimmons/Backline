@@ -546,6 +546,40 @@ impl App {
 /// The skins' own ids for the Streaming and Hardware styles (the owner's picks of 2026-11-24, on the Skins page).
 pub(crate) const STREAMING_MD5: &str = "gen:streaming";
 pub(crate) const HARDWARE_MD5: &str = "gen:hardware";
+pub(crate) const STUDIO_MD5: &str = "gen:studio";
+
+/// Studio's palette: everything on its screens (the glass the pages' and lists' colour, the ink their writing, the
+/// keys a shade darker), the body black round them.
+pub(crate) fn studio_pal() -> Pal {
+    let (_, glass, keys, ink, _) = crate::skin::studio_screen();
+    let mut p = crate::skin::look_pal(glass, glass, ink);
+    p.app_bg = crate::studio::BODY;
+    p.panel = glass;
+    p.panel_lt = glass.lerp_to_gamma(ink, 0.06);
+    p.panel_dk = keys;
+    p.panel_hover = keys;
+    p.display = glass;
+    p.display_ghost = glass.lerp_to_gamma(ink, 0.08);
+    p.groove = keys;
+    p.sel = glass.lerp_to_gamma(ink, 0.16);
+    p.ink = ink;
+    p.ink2 = ink.lerp_to_gamma(glass, 0.22);
+    p.dim = ink.lerp_to_gamma(glass, 0.45);
+    p.btn_face = keys;
+    p.btn_hi = keys.lerp_to_gamma(glass, 0.5);
+    p.row_alt = glass.lerp_to_gamma(ink, 0.045);
+    p.row_sel = glass.lerp_to_gamma(ink, 0.16);
+    p.bar_txt = ink;
+    p.accent = ink;
+    p.edge = Color32::from_rgb(10, 11, 8);
+    p
+}
+
+/// Studio as a skin.
+pub(crate) fn studio_skin() -> Result<(winamp::WaSkin, Pal, winamp::Art), String> {
+    let s = winamp::WaSkin { md5: STUDIO_MD5.into(), name: "STUDIO".into(), shot: String::new(), download: String::new() };
+    genskin::wear(&studio_pal()).map(|(_, art)| (s, studio_pal(), art))
+}
 
 /// A style's colours: Streaming's panels on black with an amber accent; Hardware's gunmetal with an amber screen.
 fn style_colors(hardware: bool) -> (Color32, Color32, Color32) {
@@ -567,6 +601,15 @@ pub(crate) fn style_skin(hardware: bool) -> Result<(winamp::WaSkin, Pal, winamp:
 
 
 impl App {
+    /// Wear Studio.
+    pub(crate) fn wear_studio(&mut self) {
+        crate::skin::set_mono(None);
+        self.look_custom = false;
+        self.dirty = true;
+        let _ = self.tx.send(Msg::WaSkin(studio_skin()));
+        self.ctx.request_repaint();
+    }
+
     /// Wear Streaming (false) or Hardware (true).
     pub(crate) fn wear_style(&mut self, hardware: bool) {
         crate::skin::set_mono(None);
@@ -603,6 +646,8 @@ impl App {
             0 => &crate::skin::STREAM_ACC,
             1 => &crate::skin::HW_SCREEN,
             2 => &crate::skin::AMB_FEEL,
+            4 => &crate::skin::STUDIO_SCREEN,
+            5 => &crate::skin::STUDIO_COVER,
             _ => &crate::skin::AMB_FADE,
         };
         at.store(i, Ordering::Relaxed);
@@ -610,6 +655,7 @@ impl App {
         match what {
             0 if crate::skin::style() == crate::skin::STYLE_STREAMING => self.wear_style(false),
             1 if crate::skin::style() == crate::skin::STYLE_HARDWARE => self.wear_style(true),
+            4 if crate::skin::style() == crate::skin::STYLE_STUDIO => self.wear_studio(),
             2 => self.amb_for.clear(),
             _ => {}
         }

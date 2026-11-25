@@ -16,7 +16,7 @@ impl App {
     /// blurred cover behind (Classic, Ambient on glass), the album's colour and huge bold lyrics (Streaming), a lit
     /// analyzer and VU meters (Hardware).
     pub(crate) fn art_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        use crate::skin::{style, STYLE_HARDWARE, STYLE_STREAMING};
+        use crate::skin::{style, STYLE_STREAMING};
         let whole = ui.max_rect();
         let own_bar = crate::app_bar() && self.art_view && !self.mini && !self.fullscreen;
         let full = Rect::from_min_max(whole.min + Vec2::new(0.0, if own_bar { crate::NP_BAR_H - 8.0 } else { 0.0 }), whole.max);
@@ -54,7 +54,7 @@ impl App {
         let bar_h = 96.0;
         let area = Rect::from_min_max(full.min + Vec2::new(28.0, 58.0), Pos2::new(full.max.x - 28.0, full.max.y - bar_h - 12.0));
         // (Hardware's amp has its own Up Next and lyrics)
-        let panel_on = self.show_lyrics && area.width() > 640.0 && !prac && st != STYLE_HARDWARE;
+        let panel_on = self.show_lyrics && area.width() > 640.0 && !prac && !crate::hardware();
         // Streaming's lyrics take the whole page (a small cover and the song at the top left)
         let st_lyrics = st == STYLE_STREAMING && panel_on && self.np_tab == 0;
         let art_zone = if panel_on && !st_lyrics {
@@ -79,7 +79,7 @@ impl App {
 
         // ---- visuals filling the window, under everything
         // (Hardware shows the visuals inside its screen, not over the whole window)
-        let vis = self.vis_in_np() && !prac && st != STYLE_HARDWARE;
+        let vis = self.vis_in_np() && !prac && !crate::hardware();
         if vis {
             self.vis_paint(ui, whole, 1);
             let name = self.vis_name();
@@ -97,7 +97,7 @@ impl App {
         }
 
         // ---- the soft visualizer behind the cover (not with the visuals, not practising)
-        if self.show_spec && !vis && !prac && st != STYLE_HARDWARE {
+        if self.show_spec && !vis && !prac && !crate::hardware() {
             let zone = if panel_on && self.spec_lyr == 0 { Rect::from_min_max(full.min, Pos2::new(art_zone.max.x + 14.0, full.max.y)) } else { full };
             let half = (zone.width() * self.spec_w / 2.0).max(40.0);
             let mid = zone.center().x;
@@ -118,7 +118,9 @@ impl App {
 
         // ---- what's in the middle: Hardware, its amp (holding the practice tools while practising); practising, the
         // practice screen; else the cover
-        if st == STYLE_HARDWARE && !vis {
+        if crate::studio::on() {
+            self.np_studio(ui, area, dt, acts);
+        } else if crate::hardware() && !vis {
             self.np_amp(ui, area, tex, dt, acts);
         } else if prac {
             self.np_practice(ui, Rect::from_min_max(full.min + Vec2::new(28.0, 20.0), Pos2::new(full.max.x - 28.0, full.max.y - bar_h - 8.0)), tex, acts);
@@ -186,7 +188,7 @@ impl App {
         }
 
         // ---- the switches at the top right: Lyrics, Up Next, Visuals
-        if show > 0.0 && !prac && st != STYLE_HARDWARE {
+        if show > 0.0 && !prac && !crate::hardware() {
             let items = [("Visuals", self.vis_np), ("Up Next", panel_on && self.np_tab == 1), ("Lyrics", panel_on && self.np_tab == 0)];
             let mut x = full.max.x - 28.0;
             let y = full.min.y + 14.0;
@@ -254,6 +256,10 @@ impl App {
             }
             STYLE_HARDWARE => {
                 crate::hw_amp::room(p, whole);
+                return;
+            }
+            crate::skin::STYLE_STUDIO => {
+                p.rect_filled(whole, 0.0, crate::studio::BODY);
                 return;
             }
             _ => {}
@@ -534,8 +540,8 @@ impl App {
                 self.np_lyrics(ui, p, lr, st_lyrics, hover, dt, pos, acts);
             }
             1 => self.style_queue(ui, body, acts),
-            2 => self.np_about(ui, p, body),
-            _ => self.np_loops(ui, p, body, acts),
+            2 => self.np_about(ui, p, body, OVER),
+            _ => self.np_loops(ui, p, body, acts, OVER),
         }
     }
 
@@ -630,7 +636,7 @@ impl App {
     }
 
     /// About the song: its name, who plays, the album, how long, and what Backline knows of it (key, tempo, tuning).
-    fn np_about(&mut self, _ui: &mut egui::Ui, p: &egui::Painter, r: Rect) {
+    pub(crate) fn np_about(&mut self, _ui: &mut egui::Ui, p: &egui::Painter, r: Rect, ink: Color32) {
         let Some(tr) = self.cur_track() else { return };
         let info = crate::meta::get(tr.id).unwrap_or_default();
         let mut rows: Vec<(&str, String)> = vec![("Song", tr.title.clone()), ("Artist", tr.artists_text())];
@@ -656,8 +662,8 @@ impl App {
         rows.push(("From", src.to_string()));
         let mut y = r.min.y + 16.0;
         for (k, v) in rows {
-            ptext(p, Pos2::new(r.min.x + 4.0, y), Align::Min, k, 1.5, OVER.gamma_multiply(0.55));
-            ptext_fit(p, Pos2::new(r.min.x + 110.0, y), Align::Min, &v, 1.9, r.width() - 120.0, OVER);
+            ptext(p, Pos2::new(r.min.x + 4.0, y), Align::Min, k, 1.5, ink.gamma_multiply(0.55));
+            ptext_fit(p, Pos2::new(r.min.x + 110.0, y), Align::Min, &v, 1.9, r.width() - 120.0, ink);
             y += 36.0;
             if y > r.max.y - 10.0 {
                 break;
@@ -666,12 +672,12 @@ impl App {
     }
 
     /// The song's saved loops and bookmarks: a click on a loop plays it (looping), on a bookmark plays from there.
-    fn np_loops(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, acts: &mut Vec<Action>) {
+    pub(crate) fn np_loops(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, acts: &mut Vec<Action>, ink: Color32) {
         let Some(tr) = self.cur_track() else { return };
         let loops = self.store.sections.get(&tr.id).cloned().unwrap_or_default();
         let marks = self.store.marks.get(&tr.id).cloned().unwrap_or_default();
         if loops.is_empty() && marks.is_empty() {
-            ptext_fit(p, Pos2::new(r.min.x + 4.0, r.min.y + 18.0), Align::Min, "No loops or bookmarks of this song yet. Practice mode makes them.", 1.6, r.width() - 8.0, OVER.gamma_multiply(0.6));
+            ptext_fit(p, Pos2::new(r.min.x + 4.0, r.min.y + 18.0), Align::Min, "No loops or bookmarks of this song yet. Practice mode makes them.", 1.6, r.width() - 8.0, ink.gamma_multiply(0.6));
             return;
         }
         let mut y = r.min.y + 4.0;
@@ -681,8 +687,8 @@ impl App {
             if h.hovered() {
                 p.rect_filled(rr, 6.0, Color32::from_rgba_premultiplied(16, 16, 16, 16));
             }
-            ptext_fit(p, Pos2::new(rr.min.x + 10.0, rr.center().y), Align::Min, name, 1.9, rr.width() - 140.0, OVER);
-            ptext(p, Pos2::new(rr.max.x - 10.0, rr.center().y), Align::Max, when, 1.5, OVER.gamma_multiply(0.6));
+            ptext_fit(p, Pos2::new(rr.min.x + 10.0, rr.center().y), Align::Min, name, 1.9, rr.width() - 140.0, ink);
+            ptext(p, Pos2::new(rr.max.x - 10.0, rr.center().y), Align::Max, when, 1.5, ink.gamma_multiply(0.6));
             h.clicked()
         };
         for (i, s) in loops.iter().enumerate() {
@@ -694,7 +700,7 @@ impl App {
         }
         if !marks.is_empty() {
             y += 8.0;
-            ptext(p, Pos2::new(r.min.x + 10.0, y + 8.0), Align::Min, "Bookmarks", 1.4, OVER.gamma_multiply(0.55));
+            ptext(p, Pos2::new(r.min.x + 10.0, y + 8.0), Align::Min, "Bookmarks", 1.4, ink.gamma_multiply(0.55));
             y += 24.0;
         }
         let v = self.version_of(&tr);
@@ -763,6 +769,9 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     fn np_foot(&mut self, ui: &mut egui::Ui, full: Rect, bar_h: f32, active: bool, pos: f32, dur: f32, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
+        // (Studio: the foot on its black body in the screen's label colour, the big button a key of glass)
+        let studio = crate::studio::on();
+        let over = if studio { crate::studio::label() } else { OVER };
         // ---- how far in
         let sb = Rect::from_min_size(Pos2::new(full.min.x + 28.0, full.max.y - bar_h), Vec2::new(full.width() - 56.0, 10.0));
         let sr = ui.interact(sb.expand2(Vec2::new(0.0, 4.0)), ui.id().with("art_seek"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -774,9 +783,9 @@ impl App {
         let line = Rect::from_center_size(sb.center(), Vec2::new(sb.width(), 4.0));
         p.rect_filled(line, 2.0, Color32::from_rgba_premultiplied(60, 60, 60, 60));
         let frac = if active && dur > 0.0 { (pos / dur).clamp(0.0, 1.0) } else { 0.0 };
-        p.rect_filled(Rect::from_min_size(line.min, Vec2::new(line.width() * frac, line.height())), 2.0, OVER);
+        p.rect_filled(Rect::from_min_size(line.min, Vec2::new(line.width() * frac, line.height())), 2.0, over);
         if sr.hovered() {
-            p.circle_filled(Pos2::new(line.min.x + line.width() * frac, line.center().y), 6.0, OVER);
+            p.circle_filled(Pos2::new(line.min.x + line.width() * frac, line.center().y), 6.0, over);
         }
         if practice_tools() && self.practice && active && dur > 0.0 {
             let x_at = |t: f32| line.min.x + line.width() * (t / dur).clamp(0.0, 1.0);
@@ -792,7 +801,7 @@ impl App {
             let w = text_w(&t, 1.7);
             let x0 = if align == Align::Min { at.x } else { at.x - w };
             soft_spot(&p, Rect::from_min_max(Pos2::new(x0 + 2.0, at.y - 5.0), Pos2::new(x0 + w - 2.0, at.y + 5.0)), 11.0, 0.42);
-            ptext(&p, at, align, &t, 1.7, OVER);
+            ptext(&p, at, align, &t, 1.7, over);
             if align == Align::Max {
                 let tr = Rect::from_min_max(Pos2::new(x0 - 4.0, at.y - 10.0), Pos2::new(at.x + 4.0, at.y + 10.0));
                 if ui.interact(tr, ui.id().with("np_time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
@@ -815,14 +824,19 @@ impl App {
             let r = Rect::from_center_size(Pos2::new(x, cy), Vec2::splat(d));
             let resp = ui.interact(r, ui.id().with(("np_ctl", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             let p = ui.painter();
-            if big {
+            if big && studio {
+                let k = Rect::from_center_size(r.center(), Vec2::splat(d - 6.0));
+                p.rect_filled(k, 0.0, if resp.hovered() { crate::studio::key_col() } else { crate::studio::scr() });
+                p.rect_stroke(k, 0.0, Stroke::new(1.0_f32, crate::studio::ink()));
+                crate::vicon::named(p, Rect::from_center_size(k.center(), Vec2::splat(d * 0.38)), icon, crate::studio::ink());
+            } else if big {
                 let rad = d / 2.0 + if resp.hovered() { 1.0 } else { 0.0 };
                 soft_spot(p, Rect::from_center_size(r.center(), Vec2::splat(2.0 * rad)), 9.0, 0.36);
-                p.circle_filled(r.center(), rad, OVER);
+                p.circle_filled(r.center(), rad, over);
                 let off = if icon == "play" { 1.5 } else { 0.0 };
                 crate::vicon::named(p, Rect::from_center_size(r.center() + Vec2::new(off, 0.0), Vec2::splat(d * 0.42)), icon, Color32::from_rgb(20, 20, 22));
             } else {
-                let col = if resp.hovered() { Color32::WHITE } else { OVER };
+                let col = if resp.hovered() { Color32::WHITE } else { over };
                 soft_spot(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.5)), 10.0, 0.42);
                 crate::vicon::named(p, Rect::from_center_size(r.center(), Vec2::splat(d * 0.62)), icon, col);
                 if on {
@@ -860,7 +874,7 @@ impl App {
         let vol = Rect::from_min_max(Pos2::new(full.min.x + 56.0, cy - 7.0), Pos2::new(full.min.x + 170.0, cy + 7.0));
         let spk = Rect::from_center_size(Pos2::new(full.min.x + 38.0, cy), Vec2::splat(24.0));
         let sh = ui.interact(spk, ui.id().with("np_mute"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(if self.volume <= 0.0 { "Unmute" } else { "Mute" });
-        crate::vicon::named(&p, spk.shrink(4.0), "headphones", if sh.hovered() { Color32::WHITE } else { OVER.gamma_multiply(if self.volume <= 0.0 { 0.45 } else { 0.9 }) });
+        crate::vicon::named(&p, spk.shrink(4.0), "headphones", if sh.hovered() { Color32::WHITE } else { over.gamma_multiply(if self.volume <= 0.0 { 0.45 } else { 0.9 }) });
         if sh.clicked() {
             if self.volume > 0.0 {
                 self.vol_before = self.volume;
@@ -881,7 +895,7 @@ impl App {
         }
         let vl = Rect::from_center_size(vol.center(), Vec2::new(vol.width(), 4.0));
         p.rect_filled(vl, 2.0, Color32::from_rgba_premultiplied(60, 60, 60, 60));
-        p.rect_filled(Rect::from_min_size(vl.min, Vec2::new(vl.width() * self.volume.clamp(0.0, 1.0), 4.0)), 2.0, OVER);
+        p.rect_filled(Rect::from_min_size(vl.min, Vec2::new(vl.width() * self.volume.clamp(0.0, 1.0), 4.0)), 2.0, over);
         // ---- at the right: speed, practice, the output, "...", Close
         let row = Rect::from_min_max(Pos2::new(x0 + 3.5 * gap, cy - bh() / 2.0), Pos2::new(full.max.x - 28.0, cy + bh() / 2.0));
         // (the tour points at the controls along the foot)
@@ -920,6 +934,21 @@ impl App {
     fn np_more_items(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let mark = |on: bool| if on { "> " } else { "   " };
         // (Hardware's amp has no cover to dress: what's under its panel, the visuals, full screen)
+        if crate::studio::on() {
+            for (i, name) in crate::skin::STUDIO_COVERS.iter().enumerate() {
+                let on = crate::skin::STUDIO_COVER.load(std::sync::atomic::Ordering::Relaxed) as usize == i;
+                if menu_item(ui, &format!("{}Cover: {}", mark(on), name)) {
+                    acts.push(Action::StyleColor(5, i as u8));
+                    ui.close_menu();
+                }
+            }
+            ui.separator();
+            if menu_item(ui, &format!("   {}", if self.fullscreen { "Exit Full Screen  (F)" } else { "Full Screen  (F)" })) {
+                acts.push(Action::ToggleFullscreen);
+                ui.close_menu();
+            }
+            return;
+        }
         if crate::skin::style() == crate::skin::STYLE_HARDWARE {
             for (i, name) in ["Meters", "Visuals", "Lyrics"].iter().enumerate() {
                 if menu_item(ui, &format!("{}Under the Panel: {}", mark(self.hw_show as usize == i), name)) {

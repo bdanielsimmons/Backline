@@ -88,5 +88,6 @@ pub(crate) fn smooth_fonts(main: Option<&'static [u8]>) -> egui::FontDefinitions
         skin_fam.push(name.clone());
     }
     fonts.families.insert(egui::FontFamily::Name("skin".into()), skin_fam);
+    crate::studio::add_fonts(&mut fonts);
     fonts
 }

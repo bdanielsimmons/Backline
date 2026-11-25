@@ -135,6 +135,8 @@ pub(crate) static STYLE: std::sync::atomic::AtomicU8 = std::sync::atomic::Atomic
 pub(crate) const STYLE_AMBIENT: u8 = 1;
 pub(crate) const STYLE_STREAMING: u8 = 2;
 pub(crate) const STYLE_HARDWARE: u8 = 3;
+/// Studio: Tidalite's look, Hardware's relative (`hardware()` is true for it too), drawn its own way (`ui/studio.rs`).
+pub(crate) const STYLE_STUDIO: u8 = 4;
 
 /// The style worn now (`STYLE`).
 pub(crate) fn style() -> u8 {
@@ -163,10 +165,31 @@ pub(crate) const HW_SCREENS: [(&str, Color32, Color32); 5] = [
     ("White", c(242, 242, 242), c(22, 22, 22)),
 ];
 pub(crate) const AMB_FEELS: [&str; 3] = ["Dark", "Deep", "Light"];
+/// Studio's screens (the Skins page): their name, glass, keys, ink, and the names on their frames; whether its covers
+/// are printed in the screen's ink (1) or in their own colours (0).
+pub(crate) static STUDIO_SCREEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) static STUDIO_COVER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) const STUDIO_SCREENS: [(&str, Color32, Color32, Color32, Color32); 4] = [
+    ("Cream", c(213, 211, 173), c(199, 197, 158), c(28, 32, 16), c(213, 211, 173)),
+    ("Gray", c(185, 189, 177), c(170, 174, 161), c(27, 31, 26), c(201, 204, 194)),
+    ("Blue", c(42, 86, 184), c(35, 74, 163), c(234, 241, 255), c(169, 192, 242)),
+    ("Amber", c(37, 24, 10), c(48, 32, 16), c(255, 181, 71), c(255, 181, 71)),
+];
+pub(crate) const STUDIO_COVERS: [&str; 2] = ["In Color", "In the Screen's Ink"];
+
+/// Studio's screen now.
+pub(crate) fn studio_screen() -> (&'static str, Color32, Color32, Color32, Color32) {
+    STUDIO_SCREENS[STUDIO_SCREEN.load(Ordering::Relaxed) as usize % STUDIO_SCREENS.len()]
+}
 pub(crate) const AMB_FADES: [(&str, f32); 3] = [("Quick", 0.6), ("Medium", 1.5), ("Slow", 3.0)];
 
 /// Hardware's screen now: (its writing, its glass).
 pub(crate) fn hw_screen() -> (Color32, Color32) {
+    // (Studio: its ink on its glass, so Hardware's screens and lit writing come out in Studio's colours)
+    if style() == STYLE_STUDIO {
+        let s = studio_screen();
+        return (s.3, s.1);
+    }
     let s = HW_SCREENS[HW_SCREEN.load(Ordering::Relaxed) as usize % HW_SCREENS.len()];
     (s.1, s.2)
 }

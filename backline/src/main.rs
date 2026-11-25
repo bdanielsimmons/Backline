@@ -85,6 +85,8 @@ pub(crate) use widgets::*;
 mod album_view;
 #[path = "ui/hw_amp.rs"]
 mod hw_amp;
+#[path = "ui/studio.rs"]
+mod studio;
 #[path = "ui/app_look.rs"]
 mod app_look;
 #[path = "ui/arpeggios.rs"]
@@ -387,6 +389,8 @@ enum Msg {
     WaSkin(Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
     /// Now Playing's blurred cover made (the cover's address, the picture)
     NpBlur(String, egui::ColorImage),
+    /// Studio's cover printed in ink (which cover and screen, the picture)
+    StudioDither(String, egui::ColorImage),
     /// a playlist's original read again: (its place, its link, quiet, what's new there)
     PlaylistUpdated(usize, String, bool, Result<playlist_link::Imported, String>),
     /// Ambient Color worked out from a cover (its address): the colours and the look made in them
@@ -549,6 +553,8 @@ enum Action {
     Ambient,
     /// wear the Streaming (false) or Hardware (true) style
     Style(bool),
+    /// wear Studio
+    Studio,
     /// back to the Classic style, in the look or skin worn in it last
     Classic,
     /// a style's own colour (what, which): 0 Streaming's accent, 1 Hardware's screen, 2 Ambient's feel, 3 its fade
@@ -1075,6 +1081,15 @@ struct App {
     /// (the song's level so far, for 0 VU: its id, the sum of its loud moments' mean squares, how many)
     hw_ref: (i64, f64, u32),
     hw_tex: Option<[egui::TextureHandle; 2]>,
+    /// Studio's Now Playing: what's on its screen (0 the cover and song, 1 lyrics, 2 up next, 3 about, 4 loops, 5
+    /// visuals), which visuals (0 bars, 1 scope, 2 terrain), its cover printed in ink (the cover it's of, the picture,
+    /// the one being made), the terrain's rows (newest first) and when the last was taken
+    studio_np: u8,
+    studio_vis: u8,
+    studio_dith: (String, Option<egui::TextureHandle>),
+    studio_dith_busy: String,
+    studio_terr: Vec<Vec<f32>>,
+    studio_terr_at: f64,
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
     fs_by_art: bool,
@@ -2214,6 +2229,12 @@ impl App {
             hw_ref: (0, 0.0, 0),
             hw_peak: [0.0; 2],
             hw_tex: None,
+            studio_np: 0,
+            studio_vis: 0,
+            studio_dith: (String::new(), None),
+            studio_dith_busy: String::new(),
+            studio_terr: Vec::new(),
+            studio_terr_at: 0.0,
             fullscreen: false,
             fs_by_art: false,
             art_tilt: Vec2::ZERO,
@@ -4047,7 +4068,7 @@ impl eframe::App for App {
 
             // lyrics are fetched on demand, only while the viewer is open (Hardware's amp lights LYRICS only for a
             // song that has them, so it always asks)
-            if self.art_view && (self.show_lyrics || crate::skin::style() == crate::skin::STYLE_HARDWARE) {
+            if self.art_view && (self.show_lyrics || crate::hardware()) {
                 if let Some(t) = self.cur_track() {
                     if self.lyrics.as_ref().map(|l| l.id) != Some(t.id) {
                         self.fetch_lyrics(t.id);

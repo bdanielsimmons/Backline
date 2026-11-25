@@ -229,7 +229,10 @@ impl App {
         let shift = ui.input(|i| i.modifiers.shift);
         // its colours: the panel's, or the amp's screen colour (the part heard bright, the rest dim)
         let amber = crate::styles::amber();
-        let (col_heard, col_ahead, ink) = if amp {
+        let studio = crate::studio::on();
+        let (col_heard, col_ahead, ink) = if amp && studio {
+            (crate::studio::ink(), crate::studio::ink().gamma_multiply(0.32), crate::studio::ink())
+        } else if amp {
             (amber, amber.gamma_multiply(0.3), egui::Color32::from_rgb(255, 236, 204))
         } else {
             (pal().ink2.gamma_multiply(0.85), pal().ink2.gamma_multiply(0.55), pal().ink)
@@ -264,7 +267,11 @@ impl App {
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
-        if amp {
+        if amp && studio {
+            // (Studio: a screen within the screen, a fine line of ink round it)
+            ui.painter().rect_filled(bar, 0.0, crate::studio::key_col());
+            ui.painter().rect_stroke(bar, 0.0, egui::Stroke::new(1.0_f32, crate::studio::ink()));
+        } else if amp {
             // dark glass
             ui.painter().rect_filled(bar, 3.0, egui::Color32::from_rgb(9, 8, 7));
             ui.painter().rect_stroke(bar, 3.0, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(14)));
@@ -273,7 +280,8 @@ impl App {
         }
         let mut inn = bar.shrink2(Vec2::new(5.0, 5.0));
         // Hardware, zoomed in: a thin strip along the top shows the whole song and the part in view (its scrollbar)
-        let strip_on = (amp || crate::skin::style() == crate::skin::STYLE_HARDWARE) && self.wv_zoom > 1.0 && active && !notes_on;
+        // (Studio's Now Playing has no strip: the owner's pick)
+        let strip_on = ((amp && !studio) || crate::skin::style() == crate::skin::STYLE_HARDWARE) && self.wv_zoom > 1.0 && active && !notes_on;
         let strip_h = if strip_on { 20.0 } else { 0.0 };
         inn.min.y += strip_h;
         let top = bar.min.y + strip_h;
@@ -459,7 +467,7 @@ impl App {
                     p.rect_filled(
                         Rect::from_min_size(Pos2::new(x + 1.5, top + 2.0), Vec2::new(lw + 4.0, 10.0)),
                         1.0,
-                        egui::Color32::from_black_alpha(190),
+                        if amp && studio { crate::studio::scr() } else { egui::Color32::from_black_alpha(190) },
                     );
                     ptext(&p, Pos2::new(x + 3.0, top + 7.0), Align::Min, &lab, 0.7, label_ink);
                 }
@@ -752,7 +760,7 @@ impl App {
     }
 
     /// The practice panel under its waveform: the tabs, the loop and speed tools (or the bigger tools), saved loops.
-    fn practice_tools_rows(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, pos: f32, tid: Option<i64>, active: bool, both: bool) {
+    pub(crate) fn practice_tools_rows(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, pos: f32, tid: Option<i64>, active: bool, both: bool) {
         // ---- the panel's tabs: the loop and speed tools first, then the bigger tools (TRAINER, PITCH & EAR, STEMS)
         let cur = if self.more { self.mtab as usize + 1 } else { 0 };
         // (short names, so the six fit on one row)

@@ -247,6 +247,7 @@ impl App {
             Action::EditLook => self.edit_look(),
             Action::Ambient => self.wear_ambient(),
             Action::Style(hw) => self.wear_style(hw),
+            Action::Studio => self.wear_studio(),
             Action::Classic => self.wear_classic(),
             Action::StyleColor(what, i) => self.style_color(what, i),
             Action::Balance(b) => {
