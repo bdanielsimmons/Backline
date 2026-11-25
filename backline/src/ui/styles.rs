@@ -196,30 +196,34 @@ impl App {
                     self.style_eq(ui, er);
                     y = er.max.y + pad;
                 }
-                // the practice panel
+                // the practice panel along the column's foot, as the classic stack has it (the owner); the playlist
+                // (or Streaming's Next Up) between it and the deck
+                let mut foot = r.max.y - pad;
                 if self.practice {
-                    let queue = st != STYLE_STREAMING;
-                    let bottom = if queue { (y + (r.max.y - y) * 0.68).max(y + 360.0).min(r.max.y - pad) } else { r.max.y - pad };
-                    let outer = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, bottom));
+                    let room = foot - y;
+                    let list_on = if st == STYLE_STREAMING { true } else { !self.queue_hidden };
+                    // (the panel most of the room, the playlist keeping a few songs above it)
+                    let h = if list_on { (room * 0.68).max(430.0).min(room) } else { room };
+                    let outer = Rect::from_min_max(Pos2::new(x0, foot - h), Pos2::new(x1, foot));
                     panel(ui.painter(), outer);
                     // (the panel's own page inside the room a frame keeps, so its title strip and controls sit as ever)
                     let inner = Rect::from_min_max(outer.min + Vec2::new(crate::FRAME_SIDE, crate::FRAME_TOP), outer.max - Vec2::splat(crate::FRAME_SIDE));
                     let mut c = ui.new_child(egui::UiBuilder::new().max_rect(inner));
                     self.practice_ui(&mut c, acts);
-                    y = outer.max.y + pad;
+                    foot = outer.min.y - pad;
                 }
                 // Streaming: what's next, a few songs, the whole queue sliding in from there
-                if st == STYLE_STREAMING && !self.practice && r.max.y - pad - y > 120.0 {
+                if st == STYLE_STREAMING && foot - y > 100.0 {
                     // (a small card: the next five songs at most, sized to them; the whole queue slides in from it)
                     let left = self.queue.len().saturating_sub(self.cur.map_or(0, |c| c + 1)).clamp(1, 5) as f32;
                     let want = 14.0 + 30.0 + left * 54.0 + 14.0;
-                    let nr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, (y + want).min(r.max.y - pad)));
+                    let nr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, if self.practice { foot } else { (y + want).min(foot) }));
                     panel(ui.painter(), nr);
                     self.next_up(ui, nr.shrink(14.0), acts);
                 }
                 // the playlist (the deck's PL switch hides it)
-                if st != STYLE_STREAMING && !self.queue_hidden && r.max.y - pad - y > 80.0 {
-                    let qr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, r.max.y - pad));
+                if st != STYLE_STREAMING && !self.queue_hidden && foot - y > 80.0 {
+                    let qr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, foot));
                     panel(ui.painter(), qr);
                     self.style_queue(ui, qr.shrink(14.0), acts);
                 }
@@ -257,7 +261,10 @@ impl App {
                     self.style_queue(ui, qr.shrink(14.0), acts);
                     ui.allocate_rect(qr, Sense::hover());
                 });
-                let outside = ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !qr.contains(p) && p.y < screen.max.y - bar_h));
+                // (a click on the page puts it away; not one on the column or the bar, where the buttons that open it
+                // are, or the same click that opened it would close it again)
+                let page = Rect::from_min_max(screen.min, Pos2::new(screen.max.x - col_w, screen.max.y - bar_h));
+                let outside = ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !qr.contains(p) && page.contains(p)));
                 if self.stream_queue && outside && !area.response.hovered() && self.q_drag.is_none() {
                     self.stream_queue = false;
                 }
@@ -584,16 +591,17 @@ impl App {
         }
         // where you are: the song's place out of them all, the time left out of the whole list's (the owner's words)
         let total: f32 = queue.iter().map(|t| t.duration).sum();
-        let left: f32 = match cur {
-            Some(c) => (queue.get(c).map_or(0.0, |t| t.duration) - self.pos()).max(0.0) + queue.iter().skip(c + 1).map(|t| t.duration).sum::<f32>(),
-            None => total,
+        // (how far into the whole queue, counting up: the songs before this one and this one so far)
+        let done: f32 = match cur {
+            Some(c) => queue.iter().take(c).map(|t| t.duration).sum::<f32>() + self.pos(),
+            None => 0.0,
         };
         let info = if queue.is_empty() {
             String::new()
         } else {
-            // (compact, the owner's way: "Song 4/4926 · 354:01:43/354:14:59", time left out of the whole)
+            // (compact, the owner's way: "Song 4/4926 · 0:13:07/354:14:59", how far in out of the whole)
             let at = cur.map_or(String::new(), |c| format!("Song {}/{} · ", c + 1, queue.len()));
-            format!("{}{}/{}", at, crate::fmt_long(left), crate::fmt_long(total))
+            format!("{}{}/{}", at, crate::fmt_long(done), crate::fmt_long(total))
         };
         // (no room beside the heading: on a line of its own under it)
         let px = if hw { 1.0 } else { 1.4 };
@@ -1188,12 +1196,18 @@ impl App {
         // (a row partly in view is drawn, cut at the panel's foot, so none pops in as the window grows)
         let clip = Rect::from_min_max(Pos2::new(r.min.x, r.min.y + 26.0), r.max);
         let p = p.with_clip_rect(clip);
+        let mut rects: Vec<(usize, Rect)> = Vec::new();
         for (i, tr) in queue.iter().enumerate().skip(from).take(5) {
             if y >= r.max.y {
                 break;
             }
             let row = Rect::from_min_size(Pos2::new(r.min.x, y), Vec2::new(r.width(), rh - 4.0));
-            let hr = ui.interact(row.intersect(clip), ui.id().with(("next_up", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            rects.push((i, row));
+            let hr = ui.interact(row.intersect(clip), ui.id().with(("next_up", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            // (a held left button or the middle one moves it, as in the playlist)
+            if hr.drag_started_by(egui::PointerButton::Primary) || hr.drag_started_by(egui::PointerButton::Middle) {
+                self.q_drag = Some(i);
+            }
             if hr.hovered() {
                 p.rect_filled(row, 6.0, wash(16));
             }
@@ -1214,6 +1228,27 @@ impl App {
                 acts.push(Action::PlayIndex(i));
             }
             y += rh;
+        }
+        // a song being moved: a line where it will land, moved on release
+        if let Some(from) = self.q_drag.filter(|f| rects.iter().any(|(i, _)| i == f)) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let released = ui.input(|i| i.pointer.any_released());
+            if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
+                let ins = rects
+                    .iter()
+                    .find(|(_, rc)| pp.y < rc.center().y)
+                    .map(|(i, rc)| (*i, rc.min.y))
+                    .or_else(|| rects.last().map(|(i, rc)| (*i + 1, rc.max.y)));
+                if let Some((ins_i, ly)) = ins {
+                    p.rect_filled(Rect::from_min_size(Pos2::new(r.min.x, ly - 1.0), Vec2::new(r.width(), 2.0)), 1.0, pal().accent);
+                    if released {
+                        acts.push(Action::MoveQueue(from, ins_i));
+                    }
+                }
+            }
+            if released || !ui.input(|i| i.pointer.any_down()) {
+                self.q_drag = None;
+            }
         }
     }
 }

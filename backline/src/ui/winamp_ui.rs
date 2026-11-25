@@ -1445,8 +1445,10 @@ impl App {
                 );
             }
         };
-        if self.cur.is_some() {
-            text_at(7.0, 10.0, &format!("{}/{}", fmt_time(pos), fmt_long(total)));
+        if let Some(c) = self.cur {
+            // (how far into the whole queue: the songs before this one and this one so far, out of them all)
+            let done: f32 = queue.iter().take(c).map(|t| t.duration).sum::<f32>() + pos;
+            text_at(7.0, 10.0, &format!("{}/{}", fmt_long(done), fmt_long(total)));
             text_at(66.0, 23.0, &format!("{:>5}", fmt_time(pos)));
         }
         // the mini transport
