@@ -240,12 +240,16 @@ impl App {
         black_panel(&p, m, low);
         let inner = Rect::from_min_max(low.min + Vec2::splat(m.v(3.0)), low.max - Vec2::splat(m.v(3.0)));
         if prac {
+            // practising: the song's shape fills the panel (zoom, the whole song along the top, A and B, the loop),
+            // with the loop's keys along its foot
             let body = inner.shrink(m.v(10.0));
             tour::mark("ARTPRACTICE", body);
-            let mut c = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(Align::Min)));
-            c.set_clip_rect(body.intersect(ui.clip_rect()));
-            let wave_h = (body.height() * 0.62).clamp(110.0, 420.0);
-            egui::ScrollArea::vertical().id_salt("hw_practice").auto_shrink([false, false]).show(&mut c, |ui| self.practice_body(ui, acts, wave_h));
+            let keys_h = m.v(26.0);
+            let wave = Rect::from_min_max(body.min, Pos2::new(body.max.x, body.max.y - keys_h - m.v(6.0)));
+            let mut c = ui.new_child(egui::UiBuilder::new().max_rect(wave).layout(egui::Layout::top_down(Align::Min)));
+            c.set_clip_rect(wave.expand(2.0).intersect(ui.clip_rect()));
+            self.practice_wave(&mut c, acts, wave.height(), true);
+            self.hw_loop_keys(ui, &p, m, Rect::from_min_max(Pos2::new(body.min.x, body.max.y - keys_h), body.max), acts);
             return;
         }
         match showing {
@@ -255,7 +259,7 @@ impl App {
                 if self.hw_vis == 1 {
                     self.vis_paint(ui, g.shrink(m.v(2.0)), 1);
                 } else {
-                    let bands = crate::viz::resample(&self.bands, 16, 1.0);
+                    let bands = crate::viz::resample(&self.bands, 64, 1.0);
                     light_columns(&p.with_clip_rect(g.shrink(1.0)), g.shrink(m.v(4.0)), &bands);
                 }
                 glare(&p, m, g);
@@ -289,6 +293,44 @@ impl App {
                 led_bars(&p, m, lcd_r, &bands, &peaks);
             }
         }
+    }
+
+    /// Practising: the loop's keys along the foot of the amp's lower panel, push buttons as DISPLAY's: LOOP (its lamp
+    /// lit while looping), A and B (set where the song is), CLEAR, and the loop's times.
+    fn hw_loop_keys(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, r: Rect, acts: &mut Vec<Action>) {
+        let pos = self.pos();
+        let both = self.loop_a.is_some() && self.loop_b.is_some();
+        let keys: [(&str, bool, &str); 4] = [
+            ("LOOP", self.loop_on && both, "Loop between A and B  (L)"),
+            ("A", self.loop_a.is_some(), "Set A where the song is"),
+            ("B", self.loop_b.is_some(), "Set B where the song is"),
+            ("CLEAR", false, "Clear the loop"),
+        ];
+        let mut x = r.min.x + m.v(4.0);
+        for (k, (name, on, tip)) in keys.iter().enumerate() {
+            let br = Rect::from_center_size(Pos2::new(x + m.v(7.0), r.center().y), Vec2::splat(m.v(13.0)));
+            let w = m.v(13.0) + m.v(6.0) + text_w(name, 1.0) + m.v(18.0);
+            let row = Rect::from_min_max(Pos2::new(x, r.min.y), Pos2::new(x + w, r.max.y));
+            let h = ui.interact(row, ui.id().with(("hw_loop", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(*tip);
+            push_button(p, br, *on, h.is_pointer_button_down_on());
+            let col = if *on { INK } else { INK.gamma_multiply(if h.hovered() { 0.85 } else { 0.55 }) };
+            caps(p, Pos2::new(br.max.x + m.v(5.0), r.center().y), egui::Align2::LEFT_CENTER, name, m.v(8.0), m.v(1.2), col, true);
+            if h.clicked() {
+                match k {
+                    0 => acts.push(Action::LoopToggle),
+                    1 => acts.push(Action::SetAAt(pos)),
+                    2 => acts.push(Action::SetBAt(pos)),
+                    _ => acts.push(Action::LoopClear),
+                }
+            }
+            x = row.max.x + m.v(10.0);
+        }
+        // the loop's times, and how to make one, at the right
+        let note = match (self.loop_a, self.loop_b) {
+            (Some(a), Some(b)) => format!("{}  -  {}", fmt_time(a), fmt_time(b)),
+            _ => "Drag across the song with the right button to make a loop".to_string(),
+        };
+        caps(p, Pos2::new(r.max.x - m.v(4.0), r.center().y), egui::Align2::RIGHT_CENTER, &note, m.v(8.0), m.v(0.6), INK.gamma_multiply(0.6), false);
     }
 
     /// Bass or treble: the equalizer's three lowest (or highest) bands turned together, like an amp's tone knob.
@@ -1013,7 +1055,7 @@ fn glare(p: &egui::Painter, m: Mu, r: Rect) {
 /// foot as high as its band is loud.
 fn light_columns(p: &egui::Painter, r: Rect, bands: &[f32]) {
     let n = bands.len().max(1);
-    let gap = r.width() * 0.012;
+    let gap = r.width() * 0.006;
     let w = (r.width() - gap * (n - 1) as f32) / n as f32;
     let col = |a: f32, c: (u8, u8, u8)| add(Color32::from_rgb(c.0, c.1, c.2), a);
     for (i, v) in bands.iter().enumerate() {
@@ -1023,7 +1065,7 @@ fn light_columns(p: &egui::Painter, r: Rect, bands: &[f32]) {
         }
         let x = r.min.x + i as f32 * (w + gap);
         // the glow, wide and faint, then the column's body, then its bright core
-        for (grow, a) in [(w * 0.5, 0.18f32), (w * 0.22, 0.35), (0.0, 0.8)] {
+        for (grow, a) in [(w * 1.1, 0.1f32), (w * 0.4, 0.28), (0.0, 0.85)] {
             let rr = Rect::from_min_max(Pos2::new(x - grow, r.max.y - h - grow * 0.6), Pos2::new(x + w + grow, r.max.y));
             let mut mesh = egui::Mesh::default();
             mesh.colored_vertex(rr.left_top(), Color32::TRANSPARENT);

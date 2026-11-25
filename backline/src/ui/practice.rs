@@ -203,9 +203,23 @@ impl App {
 
     pub(crate) fn practice_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32) {
         // the note view wants room for five octaves
-        let notes_on = self.wv_notes;
         // (about half the panel, so a bigger panel gives fatter rows)
-        let wave_h = if notes_on { wave_h.max(190.0).max(ui.clip_rect().height() * 0.5) } else { wave_h };
+        let wave_h = if self.wv_notes { wave_h.max(190.0).max(ui.clip_rect().height() * 0.5) } else { wave_h };
+        self.practice_wave(ui, acts, wave_h, false);
+        let dur = self.track_len();
+        let pos = self.pos();
+        let tid = self.cur_track().map(|t| t.id);
+        let active = self.cur.is_some() && !self.stopped && dur > 0.0;
+        let both = self.loop_a.is_some() && self.loop_b.is_some();
+        ui.add_space(6.0);
+        self.practice_tools_rows(ui, acts, pos, tid, active, both);
+    }
+
+    /// The practice waveform, `wave_h` tall: the song's shape (or its notes), the loop, bookmarks, zoom, and every
+    /// mouse move the practice panel has. `amp`: Hardware's amp shows it, in its screen's colour on dark glass, the
+    /// whole song in a strip along the top, no note view and no resize handle.
+    pub(crate) fn practice_wave(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, wave_h: f32, amp: bool) {
+        let notes_on = self.wv_notes && !amp;
         let dur = self.track_len();
         let pos = self.pos();
         let tid = self.cur_track().map(|t| t.id);
@@ -213,11 +227,19 @@ impl App {
         let shown = self.seek_drag.unwrap_or(pos);
         let both = self.loop_a.is_some() && self.loop_b.is_some();
         let shift = ui.input(|i| i.modifiers.shift);
+        // its colours: the panel's, or the amp's screen colour (the part heard bright, the rest dim)
+        let amber = crate::styles::amber();
+        let (col_heard, col_ahead, ink) = if amp {
+            (amber, amber.gamma_multiply(0.3), egui::Color32::from_rgb(255, 236, 204))
+        } else {
+            (pal().ink2.gamma_multiply(0.85), pal().ink2.gamma_multiply(0.55), pal().ink)
+        };
+        let label_ink = if amp { amber } else { egui::Color32::from_gray(235) };
 
         // ---- waveform timeline
         let (bar, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), wave_h), Sense::click_and_drag());
         // a handle along its bottom edge: drag it down for a taller waveform, up for a shorter one; double-click resets
-        {
+        if !amp {
             let grip = Rect::from_min_max(Pos2::new(bar.min.x, bar.max.y - 2.0), Pos2::new(bar.max.x, bar.max.y + 5.0));
             let g = ui
                 .interact(grip, ui.id().with("wv_height"), Sense::click_and_drag())
@@ -242,10 +264,16 @@ impl App {
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
-        inset(ui.painter(), bar, pal().display);
+        if amp {
+            // dark glass
+            ui.painter().rect_filled(bar, 3.0, egui::Color32::from_rgb(9, 8, 7));
+            ui.painter().rect_stroke(bar, 3.0, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(14)));
+        } else {
+            inset(ui.painter(), bar, pal().display);
+        }
         let mut inn = bar.shrink2(Vec2::new(5.0, 5.0));
         // Hardware, zoomed in: a thin strip along the top shows the whole song and the part in view (its scrollbar)
-        let strip_on = crate::skin::style() == crate::skin::STYLE_HARDWARE && self.wv_zoom > 1.0 && active && !notes_on;
+        let strip_on = (amp || crate::skin::style() == crate::skin::STYLE_HARDWARE) && self.wv_zoom > 1.0 && active && !notes_on;
         let strip_h = if strip_on { 20.0 } else { 0.0 };
         inn.min.y += strip_h;
         let top = bar.min.y + strip_h;
@@ -296,7 +324,7 @@ impl App {
             // waveform
             // zoomed in to under ~40 ms a pixel: the fine outline, every pick attack its own spike; the part already
             // played a little brighter
-            let played = |x: f32| if x < at(shown) { pal().ink2.gamma_multiply(0.85) } else { pal().ink2.gamma_multiply(0.55) };
+            let played = |x: f32| if x < at(shown) { col_heard } else { col_ahead };
             let fine = match (tid, &self.wave_fine) {
                 _ if notes_on => None,
                 (Some(id), (fid, Some(f))) if *fid == id && f.len() > 2 && span / inn.width().max(1.0) < 0.04 => Some(f),
@@ -331,7 +359,7 @@ impl App {
                         let x = inn.min.x + c as f32 * 2.0;
                         fill_rect(
                             &p,
-                            Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)),
+                            Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + if amp { 2.0 } else { 1.5 }, mid + h + 0.5)),
                             played(x),
                         );
                     }
@@ -351,7 +379,7 @@ impl App {
                             let h = (w[a..b].iter().copied().max().unwrap_or(0) as f32 / 255.0) * (sr.height() * 0.5 - 1.0);
                             let x = sr.min.x + c as f32 * 2.0;
                             let heard = (dur1 * c as f32 / cols as f32) < shown;
-                            fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), pal().ink2.gamma_multiply(if heard { 0.8 } else { 0.35 }));
+                            fill_rect(&p, Rect::from_min_max(Pos2::new(x, mid - h - 0.5), Pos2::new(x + 1.5, mid + h + 0.5)), if heard { col_heard.gamma_multiply(0.9) } else { col_ahead });
                         }
                     }
                 }
@@ -360,8 +388,8 @@ impl App {
                     fill_rect(&p, Rect::from_min_max(Pos2::new(sx(a), sr.min.y), Pos2::new(sx(b).max(sx(a) + 1.0), sr.max.y)), crate::skin::loop_col().gamma_multiply(0.3));
                 }
                 let view = Rect::from_min_max(Pos2::new(sx(start), sr.min.y - 1.0), Pos2::new(sx(start + span).max(sx(start) + 3.0), sr.max.y + 1.0));
-                p.rect_stroke(view, 1.0, egui::Stroke::new(1.0_f32, pal().ink));
-                fill_rect(&p, Rect::from_min_max(Pos2::new(sx(shown) - 0.5, sr.min.y), Pos2::new(sx(shown) + 0.5, sr.max.y)), pal().ink);
+                p.rect_stroke(view, 1.0, egui::Stroke::new(1.0_f32, ink));
+                fill_rect(&p, Rect::from_min_max(Pos2::new(sx(shown) - 0.5, sr.min.y), Pos2::new(sx(shown) + 0.5, sr.max.y)), ink);
                 let r = ui
                     .interact(sr.expand2(Vec2::new(0.0, 2.0)), ui.id().with("wv_strip"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
@@ -396,10 +424,14 @@ impl App {
                     ptext(&p, Pos2::new(at(t) + 4.0, inn.min.y + 5.0), Align::Min, lab, 1.0, crate::skin::loop_col());
                 }
             }
+            if amp {
+                // (the line where you are, glowing a little)
+                p.rect_filled(Rect::from_min_max(Pos2::new(at(shown) - 3.0, top + 2.0), Pos2::new(at(shown) + 3.0, bar.max.y - 2.0)), 2.0, egui::Color32::from_rgba_premultiplied(60, 46, 26, 0));
+            }
             fill_rect(
                 &p,
                 Rect::from_min_max(Pos2::new(at(shown) - 1.0, top + 2.0), Pos2::new(at(shown) + 1.0, bar.max.y - 2.0)),
-                pal().ink,
+                ink,
             );
             ptext(
                 &p,
@@ -407,7 +439,7 @@ impl App {
                 Align::Max,
                 &format!("{} / {}", fmt_t(shown), fmt_t(dur)),
                 1.0,
-                pal().ink,
+                if amp { label_ink } else { pal().ink },
             );
             // time marks along the top, as close as the zoom allows (a second, a tenth of one...)
             let step = [0.1f32, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0]
@@ -419,7 +451,7 @@ impl App {
             let readout = bar.max.x - 8.0 - crate::font::text_w(&format!("{} / {}", fmt_t(shown), fmt_t(dur)), 1.0) - 40.0;
             while t <= start + span + 1e-3 {
                 let x = at(t);
-                fill_rect(&p, Rect::from_min_max(Pos2::new(x, top + 2.0), Pos2::new(x + 1.0, top + 7.0)), pal().ink);
+                fill_rect(&p, Rect::from_min_max(Pos2::new(x, top + 2.0), Pos2::new(x + 1.0, top + 7.0)), if amp { label_ink.gamma_multiply(0.7) } else { pal().ink });
                 if x < readout {
                     let (m, s) = ((t / 60.0).floor() as u32, t % 60.0);
                     let lab = if step < 1.0 { format!("{}:{:04.1}", m, s) } else { format!("{}:{:02}", m, s.round() as u32) };
@@ -429,7 +461,7 @@ impl App {
                         1.0,
                         egui::Color32::from_black_alpha(190),
                     );
-                    ptext(&p, Pos2::new(x + 3.0, top + 7.0), Align::Min, &lab, 0.7, egui::Color32::from_gray(235));
+                    ptext(&p, Pos2::new(x + 3.0, top + 7.0), Align::Min, &lab, 0.7, label_ink);
                 }
                 t += step;
             }
@@ -567,7 +599,8 @@ impl App {
             }
             // the note view, on or off
             let nx = w1 + w2 + w3 + 12.0 + chip_w("+ MARK");
-            if crate::chip(ui, chip_at(nx, chip_w("NOTES")), "NOTES", self.wv_notes, "wv_notes")
+            if !amp
+                && crate::chip(ui, chip_at(nx, chip_w("NOTES")), "NOTES", self.wv_notes, "wv_notes")
                 .tip("Shows the song by pitch instead of loudness: brighter means louder at that note. The lowest bright bar is usually the note; fainter copies above it are its overtones. On a split song it uses only the stems you have on, so a solo or bass line stands out. Hover over it to see the note's name.")
                 .clicked()
             {
@@ -714,10 +747,12 @@ impl App {
                 self.add_mark(id, mt);
             }
         } else {
-            ptext(ui.painter(), bar.center(), Align::Center, "PLAY A TRACK TO START", 2.0, pal().dim);
+            ptext(ui.painter(), bar.center(), Align::Center, "PLAY A TRACK TO START", 2.0, if amp { amber } else { pal().dim });
         }
-        ui.add_space(6.0);
+    }
 
+    /// The practice panel under its waveform: the tabs, the loop and speed tools (or the bigger tools), saved loops.
+    fn practice_tools_rows(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, pos: f32, tid: Option<i64>, active: bool, both: bool) {
         // ---- the panel's tabs: the loop and speed tools first, then the bigger tools (TRAINER, PITCH & EAR, STEMS)
         let cur = if self.more { self.mtab as usize + 1 } else { 0 };
         // (short names, so the six fit on one row)
