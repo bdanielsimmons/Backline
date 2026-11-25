@@ -673,9 +673,9 @@ fn vgrad(p: &egui::Painter, r: Rect, top: Color32, bot: Color32) {
 }
 
 /// A circle shaded like a ball or a lamp: `stops` (place 0..1 from the bright spot out, colour) round a spot at
-/// `hi` (a share of the radius, from the centre).
+/// `hi` (a share of the radius, from the centre). Its rim fades out over one pixel, so the edge is smooth.
 fn ball(p: &egui::Painter, c: Pos2, r: f32, hi: Vec2, stops: &[(f32, Color32)]) {
-    const SEG: usize = 40;
+    const SEG: usize = 72;
     const RINGS: usize = 10;
     let col_at = |f: f32| -> Color32 {
         let f = f.clamp(0.0, 1.0);
@@ -690,21 +690,26 @@ fn ball(p: &egui::Painter, c: Pos2, r: f32, hi: Vec2, stops: &[(f32, Color32)]) 
     let spot = c + hi * r;
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(spot, col_at(0.0));
+    // the rings from the bright spot out to the rim (half a pixel in, where the feather starts)
+    let rim = (r - 0.5).max(0.5);
     for ring in 1..=RINGS {
         let t = ring as f32 / RINGS as f32;
         for k in 0..SEG {
             let a = k as f32 / SEG as f32 * std::f32::consts::TAU;
-            let edge = c + Vec2::new(a.cos(), a.sin()) * r;
-            let q = spot + (edge - spot) * t;
-            // how far out: from the spot to the rim along this ray
-            mesh.colored_vertex(q, col_at(t));
+            let edge = c + Vec2::new(a.cos(), a.sin()) * rim;
+            mesh.colored_vertex(spot + (edge - spot) * t, col_at(t));
         }
+    }
+    // the feather: the rim's colour fading to nothing a pixel further out
+    for k in 0..SEG {
+        let a = k as f32 / SEG as f32 * std::f32::consts::TAU;
+        mesh.colored_vertex(c + Vec2::new(a.cos(), a.sin()) * (r + 0.5), Color32::TRANSPARENT);
     }
     for k in 0..SEG {
         let (a, b) = (1 + k, 1 + (k + 1) % SEG);
         mesh.add_triangle(0, a as u32, b as u32);
     }
-    for ring in 1..RINGS {
+    for ring in 1..=RINGS {
         for k in 0..SEG {
             let a0 = (1 + (ring - 1) * SEG + k) as u32;
             let a1 = (1 + (ring - 1) * SEG + (k + 1) % SEG) as u32;
