@@ -238,6 +238,15 @@ Second line: comp lighter here.", m.1.note);
                 }
                 app.vis_set_full(true, false);
             }
+            // the tour song playing, on the library (for pictures of the decks)
+            Ok("playing") => {
+                if let Some(p) = tour_song::ready() {
+                    let t = sources::ext_for_file(&p).to_track();
+                    app.srcmap.insert(t.id, Src::File(p));
+                    app.queue = Arc::new(vec![t]);
+                    app.play_index(0);
+                }
+            }
             // the New Playlist panel for the tour song (BACKLINE_ART=<picture file>: with that picture picked)
             Ok("newplaylist") => {
                 let tracks = tour_song::ready().map(|p| sources::ext_for_file(&p).to_track()).into_iter().collect();

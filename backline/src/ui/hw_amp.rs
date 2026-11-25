@@ -79,7 +79,12 @@ impl App {
         crate::styles::lcd(&p, scr);
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
         let lw = scr.width() - m.v(24.0);
-        crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), Align::Min, &fmt_time(pos), 3.9 * s, lw);
+        let time = if self.time_left { format!("-{}", fmt_time((self.cur_track().map_or(0.0, |t| t.duration) - pos).max(0.0))) } else { fmt_time(pos) };
+        crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), Align::Min, &time, 3.9 * s, lw);
+        if ui.interact(scr, ui.id().with("hw_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+            self.time_left = !self.time_left;
+            self.dirty = true;
+        }
         if let Some(tr) = self.cur_track() {
             crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.max.y - m.v(11.0)), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15 * s, lw);
         }
@@ -272,12 +277,8 @@ impl App {
             _ => {
                 let o = inner.min;
                 let at = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(o + Vec2::new(m.v(x), m.v(y)), Vec2::new(m.v(w), m.v(h)));
-                let tips = [
-                    "Balance: which side of the record is louder, in dB (old stereo jazz records often put a whole instrument on one side)",
-                    "Stereo: how alike the two sides are (+1 the same, as mono; 0 unrelated; below 0 the sides work against each other)",
-                    "Loudness, in LUFS as streaming services measure it (momentary: the last moment, about 400 ms)",
-                ];
-                for (k, sub) in ["WHICH SIDE IS LOUDER · dB", "CORRELATION", "LUFS"].iter().enumerate() {
+                let tips = ["Which side is louder", "How alike the two sides are", "How loud, in LUFS"];
+                for (k, sub) in ["dB", "CORRELATION", "LUFS"].iter().enumerate() {
                     let b = at(14.0 + 202.0 * k as f32, 9.0, 170.0, 96.0);
                     bezel(&p, m, b, 4.0, false);
                     let win = b.shrink(m.v(6.0));
@@ -737,7 +738,6 @@ fn cabinet(p: &egui::Painter, m: Mu, r: Rect, grain: Option<egui::TextureId>) {
         tiled(p, r.shrink(m.v(3.0)), id, m.v(64.0), Color32::from_white_alpha(255));
     }
     p.rect_stroke(r, m.v(12.0), Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
-    p.line_segment([r.left_top() + Vec2::new(m.v(12.0), 1.5), r.right_top() + Vec2::new(-m.v(12.0), 1.5)], Stroke::new(1.0_f32, Color32::from_white_alpha(16)));
 }
 
 /// A soft shadow on the floor: an oval `rx` by `ry` round `c`, darkest in the middle, fading to nothing.
@@ -773,8 +773,6 @@ fn black_panel(p: &egui::Painter, m: Mu, r: Rect) {
     p.rect_filled(r.translate(Vec2::new(0.0, 1.0)), m.v(4.0), Color32::from_black_alpha(160));
     p.rect_filled(r, m.v(4.0), Color32::from_rgb(28, 26, 24));
     vgrad(p, r.shrink(m.v(2.0)), Color32::from_rgb(37, 35, 33), Color32::from_rgb(21, 20, 19));
-    vgrad(p, Rect::from_min_size(r.min + Vec2::splat(m.v(2.0)), Vec2::new(r.width() - m.v(4.0), r.height() * 0.3)), Color32::from_rgba_premultiplied(9, 9, 9, 9), Color32::TRANSPARENT);
-    p.line_segment([r.left_top() + Vec2::new(m.v(4.0), 0.5), r.right_top() + Vec2::new(-m.v(4.0), 0.5)], Stroke::new(1.0_f32, Color32::from_white_alpha(22)));
     p.rect_stroke(r.shrink(m.v(5.0)), m.v(2.0), Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(239, 226, 194, 60)));
 }
 
@@ -783,7 +781,6 @@ fn bezel(p: &egui::Painter, m: Mu, r: Rect, rad: f32, screws: bool) {
     p.rect_filled(r.translate(Vec2::new(0.0, m.v(2.0))), m.v(rad), Color32::from_black_alpha(140));
     p.rect_filled(r, m.v(rad), Color32::from_rgb(30, 28, 26));
     vgrad(p, r.shrink(m.v(1.5)), Color32::from_rgb(48, 45, 42), Color32::from_rgb(18, 17, 16));
-    p.line_segment([r.left_top() + Vec2::new(m.v(rad), 0.5), r.right_top() + Vec2::new(-m.v(rad), 0.5)], Stroke::new(1.0_f32, Color32::from_white_alpha(40)));
     if screws {
         for (k, q) in [r.left_top(), r.right_top(), r.left_bottom(), r.right_bottom()].into_iter().enumerate() {
             let c = Pos2::new(q.x + if k % 2 == 0 { m.v(5.5) } else { -m.v(5.5) }, q.y + if k < 2 { m.v(4.5) } else { -m.v(4.5) });
@@ -857,7 +854,6 @@ fn vu_face(p: &egui::Painter, win: Rect, amp: f32, name: &str, peak: bool) {
     cp.line_segment([n0, n1], Stroke::new(t(1.3).max(1.0), Color32::from_rgb(21, 18, 14)));
     // the pivot's cap, and the glass
     cap(&cp, f(120.0, 140.0), t(16.0));
-    glint(&cp, &f, 240.0, 22.0, 58.0, 0.32);
 }
 
 /// A meter face's cream, brightest low in the middle (where its light sits).
@@ -902,27 +898,6 @@ fn cap(p: &egui::Painter, c: Pos2, r: f32) {
     p.add(egui::Shape::convex_polygon(pts.clone(), Color32::from_rgb(28, 24, 19), Stroke::NONE));
     let inner: Vec<Pos2> = pts.iter().map(|q| c + (*q - c) * 0.81 + Vec2::new(0.0, -0.5)).collect();
     p.add(egui::Shape::line(inner, Stroke::new(0.8_f32, Color32::from_rgb(92, 76, 56))));
-}
-
-/// The glass's glare across a face's top: white fading down, its lower edge a gentle curve (`f` places face units).
-fn glint(p: &egui::Painter, f: &impl Fn(f32, f32) -> Pos2, w: f32, right: f32, left: f32, a: f32) {
-    const N: usize = 16;
-    let mut mesh = egui::Mesh::default();
-    let top = Color32::from_rgba_premultiplied((150.0 * a) as u8, (150.0 * a) as u8, (150.0 * a) as u8, (150.0 * a) as u8);
-    for i in 0..=N {
-        let x = w * i as f32 / N as f32;
-        // the lower edge: from `left` at x = 0 to `right` at the far side, bowing down a little
-        let u = x / w;
-        let y = left + (right - left) * u + 10.0 * (u * (1.0 - u)) * 2.0;
-        mesh.colored_vertex(f(x, 0.0), top);
-        mesh.colored_vertex(f(x, y), Color32::TRANSPARENT);
-    }
-    for i in 0..N {
-        let a0 = (2 * i) as u32;
-        mesh.add_triangle(a0, a0 + 2, a0 + 3);
-        mesh.add_triangle(a0, a0 + 3, a0 + 1);
-    }
-    p.add(mesh);
 }
 
 /// One of the three small meters under the panel (0 tuning, 1 stereo, 2 loudness): the same cream face, its scale,
@@ -992,7 +967,6 @@ fn small_meter(p: &egui::Painter, win: Rect, which: usize, v: f32, sub: &str) {
     cp.line_segment([n0 + sh, n1 + sh], Stroke::new(t(2.0), Color32::from_black_alpha(45)));
     cp.line_segment([n0, n1], Stroke::new(t(1.3).max(1.0), Color32::from_rgb(21, 18, 14)));
     cap(&cp, f(100.0, 120.0), t(13.0));
-    glint(&cp, &f, 200.0, 18.0, 48.0, 0.3);
 }
 
 /// The analyzer: 32 bands of amber lights, ten high, with each band's peak held as a thin bright line, and the bands'
@@ -1036,18 +1010,8 @@ fn glass(p: &egui::Painter, m: Mu, r: Rect) {
     vgrad(p, r.shrink(1.0), Color32::from_rgb(10, 9, 8), Color32::from_rgb(20, 16, 12));
 }
 
-/// The glass's glare and its edge, over what's behind it.
+/// The glass's edge, over what's behind it.
 fn glare(p: &egui::Painter, m: Mu, r: Rect) {
-    let mut mesh = egui::Mesh::default();
-    let w = Color32::from_rgba_premultiplied(18, 18, 18, 18);
-    mesh.colored_vertex(r.left_top(), w);
-    mesh.colored_vertex(r.right_top(), Color32::from_rgba_premultiplied(6, 6, 6, 6));
-    mesh.colored_vertex(Pos2::new(r.max.x, r.min.y + r.height() * 0.2), Color32::TRANSPARENT);
-    mesh.colored_vertex(Pos2::new(r.min.x, r.min.y + r.height() * 0.42), Color32::TRANSPARENT);
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    p.add(mesh);
-    p.rect_stroke(r, m.v(3.0), Stroke::new(1.0_f32, Color32::from_white_alpha(14)));
     p.rect_stroke(r.shrink(1.0), m.v(3.0), Stroke::new(2.0_f32, Color32::from_black_alpha(120)));
 }
 
@@ -1176,9 +1140,6 @@ fn push_button(p: &egui::Painter, r: Rect, on: bool, down: bool) {
     p.rect_filled(r.expand(0.5), 2.0, Color32::BLACK);
     let (t, b) = if on || down { (Color32::from_rgb(42, 40, 38), Color32::from_rgb(21, 20, 19)) } else { (Color32::from_rgb(59, 57, 54), Color32::from_rgb(27, 26, 25)) };
     vgrad(p, r, t, b);
-    if !(on || down) {
-        p.line_segment([r.left_top() + Vec2::new(1.0, 0.5), r.right_top() + Vec2::new(-1.0, 0.5)], Stroke::new(1.0_f32, Color32::from_white_alpha(30)));
-    }
     let c = r.center();
     let lr = r.width() * 0.24;
     if on {

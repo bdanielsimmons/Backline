@@ -785,12 +785,21 @@ impl App {
                 p.rect_filled(r, 2.0, crate::skin::loop_col().gamma_multiply(if self.loop_on { 0.8 } else { 0.45 }));
             }
         }
-        for (x, align, t) in [(sb.min.x, Align::Min, fmt_time(if active { pos } else { 0.0 })), (sb.max.x, Align::Max, fmt_time(dur))] {
+        // (the length at the right: a click shows what's left instead, as the decks' time does)
+        let right = if self.time_left && active { format!("-{}", fmt_time((dur - pos).max(0.0))) } else { fmt_time(dur) };
+        for (x, align, t) in [(sb.min.x, Align::Min, fmt_time(if active { pos } else { 0.0 })), (sb.max.x, Align::Max, right)] {
             let at = Pos2::new(x, sb.max.y + 12.0);
             let w = text_w(&t, 1.7);
             let x0 = if align == Align::Min { at.x } else { at.x - w };
             soft_spot(&p, Rect::from_min_max(Pos2::new(x0 + 2.0, at.y - 5.0), Pos2::new(x0 + w - 2.0, at.y + 5.0)), 11.0, 0.42);
             ptext(&p, at, align, &t, 1.7, OVER);
+            if align == Align::Max {
+                let tr = Rect::from_min_max(Pos2::new(x0 - 4.0, at.y - 10.0), Pos2::new(at.x + 4.0, at.y + 10.0));
+                if ui.interact(tr, ui.id().with("np_time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+                    self.time_left = !self.time_left;
+                    self.dirty = true;
+                }
+            }
         }
         // ---- the main controls, in the middle
         let cy = (sb.max.y + full.max.y) / 2.0 + 6.0;

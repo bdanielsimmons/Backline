@@ -248,6 +248,7 @@ impl App {
         app.np_tab = st["np_tab"].as_u64().unwrap_or(0).min(3) as u8;
         app.hw_show = st["hw_show"].as_u64().unwrap_or(0).min(2) as u8;
         app.hw_vis = st["hw_vis"].as_u64().unwrap_or(0).min(1) as u8;
+        app.time_left = st["time_left"].as_bool().unwrap_or(false);
         app.cb_pop = st["cb_pop"].as_bool().unwrap_or(false);
         if let Some(a) = st["cb_pop_rect"].as_array().filter(|a| a.len() == 4) {
             let v: Vec<f32> = a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
@@ -472,6 +473,7 @@ impl App {
             "np_tab": self.np_tab,
             "hw_show": self.hw_show,
             "hw_vis": self.hw_vis,
+            "time_left": self.time_left,
             "cb_pop": self.cb_pop,
             "cb_pop_rect": self.cb_pop_rect,
             "style_colors": [

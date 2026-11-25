@@ -375,14 +375,28 @@ impl App {
             18.0
         };
         t.spr(&p, "playpaus", (st, 0.0, 9.0, 9.0), pl.r(26.0, 28.0, 9.0, 9.0));
-        // the time, in the skin's big digits
+        // the time, in the skin's big digits: elapsed, or (clicked) what's left with a minus before it, as Winamp does
         let digits = if t.size("nums_ex").is_some() { "nums_ex" } else { "numbers" };
-        let secs = pos.max(0.0) as u32;
+        let left = self.time_left;
+        let shown = if left { (track.as_ref().map_or(0.0, |t| t.duration) - pos).max(0.0) } else { pos.max(0.0) };
+        let secs = shown as u32;
         let (m, s) = ((secs / 60) % 100, secs % 60);
         if active {
             for (x, d) in [(48.0, m / 10), (60.0, m % 10), (78.0, s / 10), (90.0, s % 10)] {
                 t.spr(&p, digits, (d as f32 * 9.0, 0.0, 9.0, 13.0), pl.r(x, 26.0, 9.0, 13.0));
             }
+            if left {
+                // (the minus: nums_ex has its own; plain numbers lend the middle bar of their 2)
+                if t.size(digits).is_some_and(|sz| sz.x >= 108.0) {
+                    t.spr(&p, digits, (99.0, 0.0, 9.0, 13.0), pl.r(36.0, 26.0, 9.0, 13.0));
+                } else {
+                    t.spr(&p, digits, (20.0, 6.0, 5.0, 1.0), pl.r(38.0, 32.0, 5.0, 1.0));
+                }
+            }
+        }
+        if ui.interact(pl.r(36.0, 26.0, 63.0, 13.0), id.with("time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+            self.time_left = !self.time_left;
+            self.dirty = true;
         }
         // the scrolling title; while a slider is hovered or dragged it says where that slider is, as Winamp does
         let hint_id = id.with("hint");
