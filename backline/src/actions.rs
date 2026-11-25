@@ -245,6 +245,10 @@ impl App {
                 self.wear_look(n);
             }
             Action::EditLook => self.edit_look(),
+            Action::Ambient => self.wear_ambient(),
+            Action::Style(hw) => self.wear_style(hw),
+            Action::Classic => self.wear_classic(),
+            Action::StyleColor(what, i) => self.style_color(what, i),
             Action::Balance(b) => {
                 self.balance = b.clamp(-100, 100);
                 self.player.ctl.set_balance(self.balance);
@@ -1430,7 +1434,7 @@ impl App {
                         v.loop_ab = Some((a, b));
                         v.loop_name = lname;
                     }
-                    self.store.playlists.push(store::Playlist { name: name.clone(), items, art, desc: d.desc.trim().to_string() });
+                    self.store.playlists.push(store::Playlist { name: name.clone(), items, art, desc: d.desc.trim().to_string(), link: d.link.clone() });
                     // made from the LISTS page: open it there; from anywhere else, stay where you are
                     if self.sec == Sec::Lists {
                         self.pl_open = Some(self.store.playlists.len() - 1);

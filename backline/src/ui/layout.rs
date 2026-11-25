@@ -7,6 +7,10 @@ use super::*;
 impl App {
     /// The library and the player's column (not in the mini player, Now Playing or the full-window visuals).
     pub(crate) fn main_layout(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        // a Style (Streaming, Ambient Color, Hardware) lays the window out itself, with no deck
+        if crate::styles::styled() && self.wa_art.is_some() {
+            return self.styled_layout(ctx, acts);
+        }
         let screen = ctx.screen_rect();
         // library width is a share of the window, so it scales with it
         // a worn skin: the stack (player, equalizer, playlist) the way Winamp drew it - every skin pixel a whole

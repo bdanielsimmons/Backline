@@ -30,8 +30,9 @@ pub(crate) struct NewPl {
     pub edit: Option<usize>,
     /// one of your Tidal playlists being renamed (its id)
     pub tidal_edit: Option<String>,
-    /// from a playlist link: its songs that weren't found ("Title - Artist")
+    /// from a playlist link: its songs that weren't found ("Title - Artist"), and the link
     pub missing: Vec<String>,
+    pub link: String,
 }
 
 /// ADD TO PLAYLIST, while it's open: the song, and which of your playlists are shown.

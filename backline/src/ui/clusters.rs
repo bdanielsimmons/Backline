@@ -15,6 +15,25 @@ pub(crate) enum CardAct {
     None,
     Edit,
     Remove,
+    /// its star (THE CHORD BOOK)
+    Star,
+    /// WALK FROM HERE (THE CHORD BOOK)
+    Walk,
+}
+
+/// A test copy with BACKLINE_CARDS_HOT set draws every card as if the pointer were on it (for pictures).
+fn cards_hot() -> bool {
+    static HOT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *HOT.get_or_init(|| std::env::var_os("BACKLINE_CARDS_HOT").is_some())
+}
+
+/// What a card carries beyond the voicing (THE CHORD BOOK's): more words under the tab, a star by its name (starred
+/// or not), and WALK FROM HERE among its buttons.
+#[derive(Default)]
+pub(crate) struct CardMore<'a> {
+    pub(crate) text: Option<&'a dyn Fn(&mut egui::Ui, f32)>,
+    pub(crate) star: Option<bool>,
+    pub(crate) walk: bool,
 }
 
 /// How a card colours a note (by pitch class): a cluster note red or blue, the rest plain.
@@ -54,7 +73,8 @@ pub(crate) fn chord_staff(
     tint: &dyn Fn(i32) -> Option<Color32>,
     sharps: bool,
 ) {
-    let paper = pal().panel_lt;
+    // (soft paper: a shade off the page, so the staff reads without a box shouting round it)
+    let paper = pal().display.lerp_to_gamma(pal().panel_lt, 0.4);
     p.rect_filled(rect, 3.0, paper);
     let g = 6.0_f32;
     let line = Stroke::new(1.0_f32, pal().ink2);
@@ -285,10 +305,12 @@ impl App {
         edit: bool,
         remove: bool,
     ) -> CardAct {
-        self.voicing_card_with(ui, acts, grip, bass, name, tint, edit, remove, None)
+        self.voicing_card_with(ui, acts, grip, bass, name, tint, edit, remove, CardMore::default())
     }
 
-    /// The same card with more under the tab (THE CHORD BOOK's other names and note), above the buttons.
+    /// The same card with more (THE CHORD BOOK's: its other names and note under the tab, a star, WALK FROM HERE).
+    /// The calm look (the owner's pick, 2026-11-24): the name and its star always; the buttons only while the pointer
+    /// is on the card (their room kept, so nothing moves), HEAR as a round play button over the chord box.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn voicing_card_with(
         &mut self,
@@ -300,7 +322,7 @@ impl App {
         tint: Tint,
         edit: bool,
         remove: bool,
-        extra: Option<&dyn Fn(&mut egui::Ui, f32)>,
+        more: CardMore,
     ) -> CardAct {
         let notes = grip_notes(grip);
         let pcs: Vec<i32> = notes.iter().map(|m| m.rem_euclid(12)).collect();
@@ -308,15 +330,39 @@ impl App {
         let saved = self.store.my_chords.iter().position(|c| c.grip == *grip);
         let cw = 180.0 * font::ui_scale();
         let mut out = CardAct::None;
+        // (whether the pointer was on the card last frame: its buttons show)
+        let id = ui.id().with(("vcard", *grip, name));
+        let hot = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false) || cards_hot();
+        // (Hardware: the keys under each card always there, HEAR one of them)
+        let hw = crate::hardware();
+        let hot = hot || hw;
         let bg = ui.painter().add(egui::Shape::Noop);
+        let mut box_at = Rect::NOTHING;
         let resp = ui.allocate_ui_with_layout(Vec2::new(cw, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.set_width(cw);
             ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-            let (nr, _) = ui.allocate_exact_size(Vec2::new(cw, 24.0), Sense::hover());
+            // the name, and its star at the right
+            let (nr, _) = ui.allocate_exact_size(Vec2::new(cw, 28.0), Sense::hover());
+            let star_w = if more.star.is_some() { 30.0 } else { 0.0 };
             // (a long name gets smaller before it is cut short)
-            ptext_fit(ui.painter(), nr.center(), Align::Center, name, 2.0, cw - 12.0, pal().ink);
+            ptext_fit(ui.painter(), Pos2::new(nr.min.x + 8.0, nr.center().y), Align::Min, name, 2.25, cw - 16.0 - star_w, pal().ink);
+            if let Some(on) = more.star {
+                let sr = Rect::from_min_size(Pos2::new(nr.max.x - 30.0, nr.min.y + 1.0), Vec2::new(28.0, nr.height() - 2.0));
+                let tip = if on {
+                    "Starred: it's at the top of CARDS. Click to take the star off"
+                } else {
+                    "Star it: a chord you keep, shown at the top of CARDS"
+                };
+                let r = ui.interact(sr, id.with("star"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+                crate::quiet_h(ui.painter(), sr, r.is_pointer_button_down_on(), r.hovered());
+                crate::views::star(ui.painter(), sr.center(), 7.0, on, if on { crate::views::GOLD } else { pal().ink2 });
+                if r.clicked() {
+                    out = CardAct::Star;
+                }
+            }
             let (br, b) = ui.allocate_exact_size(Vec2::new(cw, 144.0), Sense::click());
             let box_r = Rect::from_center_size(br.center(), Vec2::new(122.0_f32.min(cw - 16.0), 140.0));
+            box_at = box_r;
             chord_box_coloured(ui.painter(), box_r, grip, &|m| {
                 let pc = m.rem_euclid(12);
                 let col = tint(pc).unwrap_or(if pc == bass { CL_BASS } else { Color32::from_gray(245) });
@@ -327,21 +373,25 @@ impl App {
             if b.union(s).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear it").clicked() {
                 acts.push(Action::PlayNotes(notes.clone()));
             }
-            if let Some(f) = extra {
+            if let Some(f) = more.text {
                 f(ui, cw);
             }
-            ui.horizontal(|ui| {
-                ui.add_space(4.0);
-                // in MY CHORDS a card has X instead of SAVE
-                let n = 1 + edit as usize + 1;
-                let bw = ((cw - 8.0 - 4.0 * n as f32) / n as f32).max(36.0);
-                if retro_btn_w(ui, "HEAR", bw, false).clicked() {
+            // the buttons, while the pointer is on the card (HEAR is the round button over the chord box)
+            // (held to the card's width, so it never grows under the pointer)
+            ui.allocate_ui_with_layout(Vec2::new(cw, bh()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_max_width(cw);
+                if !hot {
+                    ui.allocate_exact_size(Vec2::new(cw - 8.0, bh()), Sense::hover());
+                    return;
+                }
+                if hw && retro_btn(ui, "HEAR", false).tip("Hear it").clicked() {
                     acts.push(Action::PlayNotes(notes.clone()));
                 }
+                if more.walk && retro_btn(ui, "WALK", false).tip("Walk from here: open it in WALK and see the voices move").clicked() {
+                    out = CardAct::Walk;
+                }
                 let tip = if saved.is_some() { "Saved to MY CHORDS. Click to remove." } else { "Save to MY CHORDS" };
-                if !remove
-                    && retro_btn_w(ui, if saved.is_some() { "SAVED" } else { "SAVE" }, bw, saved.is_some()).tip(tip).clicked()
-                {
+                if !remove && retro_btn(ui, if saved.is_some() { "SAVED" } else { "SAVE" }, saved.is_some()).tip(tip).clicked() {
                     match saved {
                         Some(i) => {
                             self.store.my_chords.remove(i);
@@ -354,17 +404,49 @@ impl App {
                     }
                     self.store_dirty = true;
                 }
-                if edit && retro_btn_w(ui, "EDIT", bw, false).tip("Edit it on the neck in BUILD").clicked() {
+                if edit && retro_btn(ui, "EDIT", false).tip("Edit it on the neck in BUILD").clicked() {
                     out = CardAct::Edit;
                 }
-                if remove && retro_btn_w(ui, "X", bw, false).tip("Remove from MY CHORDS").clicked() {
+                if remove && retro_btn(ui, "REMOVE", false).tip("Remove from MY CHORDS").clicked() {
                     out = CardAct::Remove;
                 }
             });
             ui.add_space(4.0);
         });
         let r = resp.response.rect.expand(4.0);
-        ui.painter().set(bg, egui::Shape::rect_stroke(r, 4.0, Stroke::new(1.0_f32, pal().edge)));
+        let now = ui.rect_contains_pointer(r);
+        if now != hot {
+            ui.ctx().data_mut(|d| d.insert_temp(id, now));
+            ui.ctx().request_repaint();
+        }
+        // the card: a faint face of its own, lighter with a fine edge while the pointer is on it
+        let rad = 2.0 * crate::corner();
+        ui.painter().set(
+            bg,
+            if hot {
+                egui::Shape::Vec(vec![
+                    egui::Shape::rect_filled(r, rad, pal().ink.gamma_multiply(0.06)),
+                    egui::Shape::rect_stroke(r, rad, Stroke::new(1.0_f32, pal().edge)),
+                ])
+            } else {
+                egui::Shape::rect_filled(r, rad, pal().ink.gamma_multiply(0.025))
+            },
+        );
+        // a round play button over the chord box's corner, while the pointer is on the card
+        if hot && !hw && box_at.is_positive() {
+            let c = Pos2::new(box_at.max.x - 4.0, box_at.max.y - 14.0);
+            let pr = ui
+                .interact(Rect::from_center_size(c, Vec2::splat(34.0)), id.with("play"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .tip("Hear it");
+            let rad = if pr.hovered() { 17.5 } else { 16.0 };
+            ui.painter().circle_filled(c + Vec2::new(0.0, 1.5), rad, Color32::from_black_alpha(90));
+            ui.painter().circle_filled(c, rad, pal().ink);
+            crate::vicon::named(ui.painter(), Rect::from_center_size(c + Vec2::new(1.5, 0.0), Vec2::splat(15.0)), "play", pal().display);
+            if pr.clicked() {
+                acts.push(Action::PlayNotes(notes.clone()));
+            }
+        }
         out
     }
 
@@ -1043,7 +1125,7 @@ impl App {
                 match self.voicing_card(ui, acts, &c.grip, bass, &c.name, &tint, true, true) {
                     CardAct::Edit => edit = Some(i),
                     CardAct::Remove => remove = Some(i),
-                    CardAct::None => {}
+                    _ => {}
                 }
             }
         });

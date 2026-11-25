@@ -58,7 +58,11 @@ pub(crate) fn icon_btn_w(ui: &mut egui::Ui, icon: &[&str], on: bool, col: Color3
     let sc = font::ui_scale();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w * sc, bh()), Sense::click());
     let down = resp.is_pointer_button_down_on() || on;
-    raised_h(ui.painter(), rect, down, resp.hovered());
+    if winamp_ui::chrome_on() {
+        quiet_h(ui.painter(), rect, down, resp.hovered());
+    } else {
+        raised_h(ui.painter(), rect, down, resp.hovered());
+    }
     let px = 2.0 * sc;
     let (iw, ih) = (icon[0].len() as f32 * px, icon.len() as f32 * px);
     let dy = if down { 1.0 } else { 0.0 };
@@ -78,7 +82,11 @@ pub(crate) fn ibtn(ui: &mut egui::Ui, icon: &[&str], text: &str, on: bool) -> eg
     let w = (10.0 + 8.0 + 10.0) * sc + icon[0].len() as f32 * ip + text_w(text, 2.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let down = resp.is_pointer_button_down_on() || on;
-    raised_h(ui.painter(), rect, down, resp.hovered());
+    if winamp_ui::chrome_on() {
+        quiet_h(ui.painter(), rect, down, resp.hovered());
+    } else {
+        raised_h(ui.painter(), rect, down, resp.hovered());
+    }
     let dy = if down { 1.0 } else { 0.0 };
     let o = Pos2::new((rect.min.x + 10.0 * sc).round(), (rect.center().y - icon.len() as f32 * ip / 2.0 + dy).round());
     pixmap(ui.painter(), o, ip, icon, pal().ink);
@@ -185,6 +193,70 @@ pub(crate) fn raised_h(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
 
 pub(crate) fn raised(p: &egui::Painter, r: Rect, down: bool) {
     raised_h(p, r, down, false);
+}
+
+/// A button's face in the calm look (the owner's pick, 2026-11-24: plain words, no boxes): nothing at rest, a soft
+/// shade under the pointer, a little deeper while held or switched on. Slider knobs and the like keep `raised`.
+pub(crate) fn quiet_h(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
+    let a = if down {
+        0.13
+    } else if hover {
+        0.07
+    } else {
+        return;
+    };
+    p.rect_filled(r, corner(), pal().ink.gamma_multiply(a));
+}
+
+/// Whether the Hardware style is worn: buttons are rubber keys, what's on has a light, the page's name sits on a lit
+/// screen and the pickers have their names printed above them.
+pub(crate) fn hardware() -> bool {
+    crate::skin::style() == crate::skin::STYLE_HARDWARE
+}
+
+/// A rubber key (the Hardware style): raised on a shadow, a light edge along its top; pressed, it sinks.
+pub(crate) fn key_face(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
+    let rad = corner();
+    let lift = if down { 0.0 } else { 2.0 };
+    p.rect_filled(r.translate(Vec2::new(0.0, 2.0)), rad, Color32::from_black_alpha(170));
+    let k = r.translate(Vec2::new(0.0, 2.0 - lift));
+    let face = if down {
+        pal().panel.lerp_to_gamma(Color32::BLACK, 0.15)
+    } else if hover {
+        pal().panel.lerp_to_gamma(Color32::WHITE, 0.16)
+    } else {
+        pal().panel.lerp_to_gamma(Color32::WHITE, 0.09)
+    };
+    p.rect_filled(k, rad, face);
+    p.line_segment(
+        [Pos2::new(k.min.x + rad, k.min.y + 0.5), Pos2::new(k.max.x - rad, k.min.y + 0.5)],
+        Stroke::new(1.0_f32, Color32::from_white_alpha(if down { 8 } else { 26 })),
+    );
+}
+
+/// A small light that's on (the Hardware style), with a soft glow round it.
+pub(crate) fn led(p: &egui::Painter, c: Pos2) {
+    let a = pal().accent;
+    p.circle_filled(c, 5.0, a.gamma_multiply(0.18));
+    p.circle_filled(c, 2.4, a);
+}
+
+/// The mark under what's on (the tab you're on, a choice that's picked): a short line under its words, `w` wide,
+/// along the foot of `r`. The Hardware style: a light under it instead.
+pub(crate) fn on_line(p: &egui::Painter, r: Rect, w: f32) {
+    if hardware() {
+        led(p, Pos2::new(r.center().x, r.max.y - 1.0));
+        return;
+    }
+    let w = w.min(r.width() - 4.0).max(8.0);
+    let x = (r.center().x - w / 2.0).round();
+    p.rect_filled(Rect::from_min_max(Pos2::new(x, r.max.y - 3.0), Pos2::new(x + w, r.max.y - 1.0)), 1.0, pal().ink);
+}
+
+/// A small chevron pointing down (a dropdown's mark), centred on `c`.
+pub(crate) fn chevron(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
+    let pts = vec![c + Vec2::new(-s, -s * 0.5), c + Vec2::new(0.0, s * 0.5), c + Vec2::new(s, -s * 0.5)];
+    p.add(egui::Shape::line(pts, Stroke::new(1.5_f32, col)));
 }
 
 /// Rectangle with its four corners cut off by `n` (a pixel-art "rounded" box).
@@ -502,15 +574,20 @@ pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips:
         }
         runs.push((run_start, x, y));
     }
-    let row = area;
-    let _ = row;
-    for (a, b, y) in &runs {
-        if b > a {
-            let strip = Rect::from_min_max(Pos2::new(*a, *y), Pos2::new(*b, *y + h));
-            rgrad(&p, strip, 3.0, pal().display.lerp_to_gamma(pal().panel, 0.4), pal().display.lerp_to_gamma(pal().panel, 0.15));
+    // plain words (the owner's calm look, 2026-11-24): the one you're on bright and underlined, the rest quieter;
+    // a short upright line between groups
+    for w in runs.windows(2) {
+        let ((_, b, y0), (a, _, y1)) = (w[0], w[1]);
+        if y0 == y1 && a > b {
+            let x = ((a + b) / 2.0).round();
+            p.rect_filled(
+                Rect::from_min_max(Pos2::new(x, y0 + h * 0.25), Pos2::new(x + 1.0, y0 + h * 0.75)),
+                0.0,
+                pal().ink2.gamma_multiply(0.45),
+            );
         }
     }
-    for (n, (i, r)) in cells.iter().enumerate() {
+    for (i, r) in cells.iter() {
         let resp =
             ui.interact(*r, ui.id().with(("seg", *i, items[*i])), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let resp = match tips.get(*i) {
@@ -518,51 +595,76 @@ pub(crate) fn segments_tips(ui: &mut egui::Ui, items: &[&str], cur: usize, tips:
             _ => resp,
         };
         let on = *i == cur;
+        let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
+        let tw = winamp_ui::as_title(|| {
+            ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col);
+            text_w(items[*i], 2.0)
+        });
         if on {
-            p.rect_filled(r.shrink(1.0), 2.0, pal().display);
-            // lit: an accent line along its foot
-            p.rect_filled(
-                Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.max.y - 3.0), Pos2::new(r.max.x - 4.0, r.max.y - 1.0)),
-                1.0,
-                pal().bar_txt,
-            );
-            // pressed in: a shadow along its top
-            p.rect_filled(
-                Rect::from_min_size(r.min + Vec2::new(1.0, 1.0), Vec2::new(r.width() - 2.0, 2.0)),
-                0.0,
-                Color32::from_black_alpha(160),
-            );
-        } else if resp.hovered() {
-            p.rect_filled(r.shrink(1.0), 2.0, Color32::from_white_alpha(14));
+            on_line(&p, *r, tw);
         }
-        // a dividing line before it, unless it starts a strip
-        let starts = n == 0 || cells[n - 1].1.max.x < r.min.x - 0.5 || cells[n - 1].1.min.y != r.min.y;
-        if !starts {
-            p.line_segment(
-                [Pos2::new(r.min.x, r.min.y + 1.0), Pos2::new(r.min.x, r.max.y - 1.0)],
-                Stroke::new(1.0_f32, pal().edge),
-            );
-        }
-        // (the strip is in the panel colour: the words take the colour made to read on it)
-        let col = if on {
-            pal().bar_txt
-        } else if resp.hovered() {
-            pal().ink
-        } else {
-            crate::winamp::readable(pal().ink2, pal().display.lerp_to_gamma(pal().panel, 0.3), 4.5)
-        };
-        winamp_ui::as_title(|| ui_text(&p, r.center(), Align::Center, items[*i], 2.0, r.width() - 6.0, col));
         if resp.clicked() {
             hit = Some(*i);
         }
     }
-    for (a, b, y) in &runs {
-        if b > a {
-            let strip = Rect::from_min_max(Pos2::new(*a, *y), Pos2::new(*b, *y + h));
-            rline(&p, strip, 3.0, 1.0, pal().edge);
+    hit
+}
+
+/// A small switch of views, side by side in one fine outline: each a line icon by name (`vicon::named`), or its
+/// words when the name starts with "=" ("=2-5-1"); the one showing filled in. Each says its name on hover (`tips`).
+/// Returns the one clicked.
+pub(crate) fn icon_switch(ui: &mut egui::Ui, items: &[&str], cur: usize, tips: &[&str]) -> Option<usize> {
+    let h = bh() - 2.0;
+    let ws: Vec<f32> = items.iter().map(|it| it.strip_prefix('=').map_or(h + 2.0, |t| text_w(t, 1.75) + 14.0)).collect();
+    let (row, _) = ui.allocate_exact_size(Vec2::new(ws.iter().sum::<f32>(), h), Sense::hover());
+    let p = ui.painter().clone();
+    let rad = corner();
+    let mut x = row.min.x;
+    let mut hit = None;
+    for (i, it) in items.iter().enumerate() {
+        let r = Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(ws[i], h));
+        x += ws[i];
+        let resp = ui.interact(r, ui.id().with(("iswitch", items.join("|"), i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = match tips.get(i) {
+            Some(t) if !t.is_empty() => resp.tip(t),
+            _ => resp,
+        };
+        let on = i == cur;
+        if hardware() {
+            if on {
+                led(&p, Pos2::new(r.center().x, r.min.y - 2.0));
+            }
+        } else if on {
+            p.rect_filled(r.shrink(2.0), rad * 0.75, pal().ink.gamma_multiply(0.16));
+        } else if resp.hovered() {
+            p.rect_filled(r.shrink(2.0), rad * 0.75, pal().ink.gamma_multiply(0.07));
+        }
+        let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
+        match it.strip_prefix('=') {
+            Some(t) => {
+                font::keep_caps(|| ptext(&p, r.center(), Align::Center, t, 1.75, col));
+            }
+            None => crate::vicon::named(&p, Rect::from_center_size(r.center(), Vec2::splat(h * 0.56)), it, col),
+        }
+        if resp.clicked() {
+            hit = Some(i);
         }
     }
+    if !hardware() {
+        p.rect_stroke(row, rad, Stroke::new(1.0_f32, pal().ink2.gamma_multiply(0.35)));
+    }
     hit
+}
+
+/// A bare line icon (`vicon::named`) as a button: no box, a soft shade under the pointer; its name on hover.
+pub(crate) fn line_icon_btn(ui: &mut egui::Ui, icon: &str, tip: &str) -> egui::Response {
+    let h = bh();
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(h + 2.0, h), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+    quiet_h(ui.painter(), r, resp.is_pointer_button_down_on(), resp.hovered());
+    let col = if resp.hovered() { pal().ink } else { pal().ink2 };
+    crate::vicon::named(ui.painter(), Rect::from_center_size(r.center(), Vec2::splat(h * 0.58)), icon, col);
+    resp
 }
 
 pub(crate) fn tab_row(ui: &mut egui::Ui, items: &[&str], cur: usize) -> Option<usize> {
@@ -667,10 +769,29 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
     let w = (w * font::ui_scale()).max(text_w(text, 2.0) + 16.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let down = resp.is_pointer_button_down_on() || active;
-    if winamp_ui::chrome_on() && active {
-        let rad = corner();
-        ui.painter().rect_filled(rect, rad, pal().ink);
-        winamp_ui::as_title(|| ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, pal().display));
+    if winamp_ui::chrome_on() {
+        // plain words: brighter under the pointer, underlined while it's the one picked (Hardware: a rubber key, a
+        // light on it while it's the one picked)
+        if hardware() {
+            key_face(ui.painter(), rect.shrink2(Vec2::new(1.0, 2.0)), resp.is_pointer_button_down_on(), resp.hovered());
+            let dy = if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 };
+            winamp_ui::as_title(|| {
+                ui_text(ui.painter(), rect.center() + Vec2::new(0.0, dy), Align::Center, text, 2.0, rect.width() - 8.0, pal().ink)
+            });
+            if active {
+                led(ui.painter(), Pos2::new(rect.min.x + 7.0, rect.min.y + 7.0));
+            }
+            return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        }
+        quiet_h(ui.painter(), rect, resp.is_pointer_button_down_on(), resp.hovered());
+        let col = if active || resp.hovered() { pal().ink } else { pal().ink2 };
+        let tw = winamp_ui::as_title(|| {
+            ui_text(ui.painter(), rect.center(), Align::Center, text, 2.0, rect.width() - 8.0, col);
+            text_w(text, 2.0)
+        });
+        if active {
+            on_line(ui.painter(), rect, tw);
+        }
         return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     }
     raised_h(ui.painter(), rect, down, resp.hovered());
@@ -873,6 +994,65 @@ pub(crate) fn dropdown_grouped(
     dropdown_list(ui, id, title, items, sel, 0.0, false, heads, dots, None)
 }
 
+/// One step of a page's path ("Theory", "Chords", "Chord Book"): plain words, all one size; the last one (`last`,
+/// the page you're on) brighter and a little heavier. With `items`, a small chevron after it, and a click lists them
+/// (in headed groups, `heads`) to go to one. Returns the one picked this frame.
+pub(crate) fn crumb(
+    ui: &mut egui::Ui,
+    id: &str,
+    face: &str,
+    items: &[&str],
+    sel: usize,
+    heads: &[(usize, &str)],
+    last: bool,
+) -> Option<usize> {
+    let menu = !items.is_empty();
+    // (Hardware writes the path in capitals)
+    let tw = if hardware() { font::keep_caps(|| text_w(&face.to_uppercase(), 2.0)) } else { text_w(face, 2.0) };
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(tw + if menu { 26.0 } else { 12.0 }, bh()), Sense::click());
+    let key = egui::Id::new(("dd", id));
+    let open = menu && ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+    let hot = menu && resp.hovered();
+    let resp = if menu { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
+    quiet_h(ui.painter(), rect, open || (menu && resp.is_pointer_button_down_on()), hot);
+    let col = if last || open || hot { pal().ink } else { pal().ink2 };
+    let at = Pos2::new(rect.min.x + 6.0, rect.center().y);
+    if hardware() {
+        // (the Hardware style: the whole path on one lit screen, `page_path` lays it under; the page brightest)
+        let (amber, _) = crate::skin::hw_screen();
+        let a = if last || open || hot { amber } else { amber.gamma_multiply(0.62) };
+        font::keep_caps(|| {
+            let up = face.to_uppercase();
+            ptext(ui.painter(), at, Align::Min, &up, 2.0, a.gamma_multiply(0.3));
+            ptext(ui.painter(), at + Vec2::new(0.4, 0.0), Align::Min, &up, 2.0, a);
+        });
+        if menu {
+            chevron(ui.painter(), Pos2::new(at.x + text_w(&face.to_uppercase(), 2.0) + 9.0, rect.center().y + 1.0), 3.0, amber.gamma_multiply(0.6));
+            return dd_popup(ui, key, rect, &resp, 0.0, items, sel, heads, &[]);
+        }
+        return None;
+    }
+    ptext(ui.painter(), at, Align::Min, face, 2.0, col);
+    if last {
+        // (the page you're on: the same words again a hair over, a little weight)
+        ptext(ui.painter(), at + Vec2::new(0.5, 0.0), Align::Min, face, 2.0, col);
+    }
+    if !menu {
+        return None;
+    }
+    chevron(ui.painter(), Pos2::new(at.x + tw + 9.0, rect.center().y + 1.0), 3.0, pal().ink2.gamma_multiply(0.8));
+    dd_popup(ui, key, rect, &resp, 0.0, items, sel, heads, &[])
+}
+
+/// The mark between two steps of a page's path: a small chevron pointing on.
+pub(crate) fn crumb_sep(ui: &mut egui::Ui) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(10.0, bh()), Sense::hover());
+    let (c, s) = (r.center(), 3.5);
+    let pts = vec![c + Vec2::new(-s * 0.5, -s), c + Vec2::new(s * 0.5, 0.0), c + Vec2::new(-s * 0.5, s)];
+    let col = if hardware() { crate::skin::hw_screen().0.gamma_multiply(0.5) } else { pal().ink2.gamma_multiply(0.7) };
+    ui.painter().add(egui::Shape::line(pts, Stroke::new(1.5_f32, col)));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn dropdown_list(
     ui: &mut egui::Ui,
@@ -896,31 +1076,83 @@ fn dropdown_list(
         (title.to_string(), cur.to_string())
     };
     let text = if title.is_empty() { cur.clone() } else { format!("{}: {}", title, cur) };
-    let w = if fixed { min_w } else { (text_w(&text, 2.0) + 38.0).max(min_w) };
+    // (as wide as its words: with no box round it, more would only read as a gap)
+    let natural = if winamp_ui::chrome_on() {
+        let t = if title.is_empty() { 0.0 } else { text_w(&title, 2.0) + text_w(" ", 2.0) + 2.0 };
+        t + text_w(&cur, 2.0) + 30.0
+    } else {
+        text_w(&text, 2.0) + 38.0
+    };
+    let w = if fixed { min_w } else { natural.max(min_w) };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let key = egui::Id::new(("dd", id));
     let open = ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
     let down = resp.is_pointer_button_down_on() || open;
-    raised_h(ui.painter(), rect, down, resp.hovered());
-    let dy = if down { 1.0 } else { 0.0 };
-    // (too long for the box: cut short with ..., never shrunk to unreadable)
-    let shown = if text_w(&text, 2.0) > w - 38.0 {
+    // (too long for its room: cut short with ..., never shrunk to unreadable)
+    let cut = |text: &str, room: f32| -> String {
+        if text_w(text, 2.0) <= room {
+            return text.to_string();
+        }
         let mut c: Vec<char> = text.chars().collect();
-        while !c.is_empty() && text_w(&(c.iter().collect::<String>() + "..."), 2.0) > w - 38.0 {
+        while !c.is_empty() && text_w(&(c.iter().collect::<String>() + "..."), 2.0) > room {
             c.pop();
         }
         c.iter().collect::<String>().trim_end().to_string() + "..."
-    } else {
-        text.clone()
     };
-    ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + dy), Align::Min, &shown, 2.0, pal().ink);
-    pixmap(
-        ui.painter(),
-        Pos2::new(rect.max.x - 20.0, rect.center().y - 3.0 + dy),
-        2.0,
-        &["#######", ".#####.", "..###..", "...#..."],
-        pal().ink,
-    );
+    if winamp_ui::chrome_on() {
+        // a choice read as part of a sentence: its name quiet, what's picked bright, a small chevron after it; no box
+        quiet_h(ui.painter(), rect, down, resp.hovered());
+        let x0 = rect.min.x + 8.0;
+        let end = rect.max.x - 22.0;
+        let mut x = x0;
+        if hardware() && !title.is_empty() {
+            // (the Hardware style: its name printed small above it, the choice under)
+            font::keep_caps(|| {
+                ptext(ui.painter(), Pos2::new(x0, rect.min.y + 4.0), Align::Min, &title.to_uppercase(), 1.0, pal().dim)
+            });
+            let v = cut(&cur, (end - x0).max(10.0));
+            let vw = ptext(ui.painter(), Pos2::new(x0, rect.center().y + 5.0), Align::Min, &v, 1.75, pal().ink);
+            chevron(ui.painter(), Pos2::new((x0 + vw + 10.0).min(rect.max.x - 10.0), rect.center().y + 5.0), 3.0, pal().ink2);
+            return dd_popup(ui, key, rect, &resp, w, items, sel, heads, dots);
+        }
+        if !title.is_empty() {
+            let t = cut(&title, (end - x).max(10.0));
+            x += ptext(ui.painter(), Pos2::new(x, rect.center().y), Align::Min, &t, 2.0, pal().ink2) + text_w(" ", 2.0) + 2.0;
+        }
+        let v = cut(&cur, (end - x).max(10.0));
+        let vw = ptext(ui.painter(), Pos2::new(x, rect.center().y), Align::Min, &v, 2.0, pal().ink);
+        chevron(ui.painter(), Pos2::new((x + vw + 11.0).min(rect.max.x - 10.0), rect.center().y + 1.0), 3.5, pal().ink2);
+    } else {
+        raised_h(ui.painter(), rect, down, resp.hovered());
+        let dy = if down { 1.0 } else { 0.0 };
+        let shown = cut(&text, w - 38.0);
+        ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y + dy), Align::Min, &shown, 2.0, pal().ink);
+        pixmap(
+            ui.painter(),
+            Pos2::new(rect.max.x - 20.0, rect.center().y - 3.0 + dy),
+            2.0,
+            &["#######", ".#####.", "..###..", "...#..."],
+            pal().ink,
+        );
+    }
+    dd_popup(ui, key, rect, &resp, w, items, sel, heads, dots)
+}
+
+/// The list a dropdown opens (under `rect`, or above it when there's more room there), toggled by a click on `resp`;
+/// `w` the least width. Returns the item picked this frame.
+#[allow(clippy::too_many_arguments)]
+fn dd_popup(
+    ui: &mut egui::Ui,
+    key: egui::Id,
+    rect: Rect,
+    resp: &egui::Response,
+    w: f32,
+    items: &[&str],
+    sel: usize,
+    heads: &[(usize, &str)],
+    dots: &[Color32],
+) -> Option<usize> {
+    let open = ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
     // the first frame the list shows, it scrolls to the item chosen now
     let fresh = key.with("fresh");
     if resp.clicked() {
@@ -947,7 +1179,12 @@ fn dropdown_list(
         let iw =
             items.iter().map(|it| text_w(it, 2.0) + 28.0 + indent).fold(w - 4.0, f32::max) + if full > room { 12.0 } else { 0.0 };
         let area = egui::Area::new(key.with("area")).order(egui::Order::Foreground).fixed_pos(at).show(ui.ctx(), |ui| {
-            egui::Frame::none().fill(pal().panel_lt).stroke(egui::Stroke::new(2.0_f32, pal().edge)).show(ui, |ui| {
+            egui::Frame::none()
+                .fill(pal().panel_lt)
+                .stroke(egui::Stroke::new(1.0_f32, pal().edge))
+                .rounding(corner())
+                .inner_margin(egui::Margin::same(3.0))
+                .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 egui::ScrollArea::vertical().max_height(h - 4.0).auto_shrink([true, true]).show(ui, |ui| {
                     for (i, it) in items.iter().enumerate() {
@@ -960,7 +1197,7 @@ fn dropdown_list(
                         }
                         let (r, rr) = ui.allocate_exact_size(Vec2::new(iw, 24.0), Sense::click());
                         if i == sel || rr.hovered() {
-                            fill_rect(ui.painter(), r, pal().sel);
+                            ui.painter().rect_filled(r, corner() * 0.75, pal().sel);
                         }
                         if let Some(c) = dots.get(i) {
                             ui.painter().circle_filled(Pos2::new(r.min.x + 16.0, r.center().y), 4.0, *c);
@@ -1030,7 +1267,11 @@ impl Tip for egui::Response {
 /// Small raised chip button (used on window title lines).
 pub(crate) fn chip(ui: &egui::Ui, rect: Rect, text: &str, active: bool, id: &str) -> egui::Response {
     let r = ui.interact(rect, ui.id().with(id), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    raised_h(ui.painter(), rect, active || r.is_pointer_button_down_on(), r.hovered() && !active);
+    if winamp_ui::chrome_on() {
+        quiet_h(ui.painter(), rect, active || r.is_pointer_button_down_on(), r.hovered() && !active);
+    } else {
+        raised_h(ui.painter(), rect, active || r.is_pointer_button_down_on(), r.hovered() && !active);
+    }
     ui_text(ui.painter(), rect.center(), Align::Center, text, 1.0, rect.width() - 6.0, pal().ink);
     r
 }
@@ -1303,7 +1544,13 @@ pub(crate) fn setup_style(ctx: &egui::Context) {
     let mut s = (*ctx.style()).clone();
     s.spacing.item_spacing = Vec2::new(6.0, 4.0);
     s.spacing.button_padding = Vec2::new(8.0, 3.0);
-    s.spacing.scroll = egui::style::ScrollStyle::solid();
-    s.spacing.scroll.bar_width = 12.0;
+    // (a Style: thin bars floating over the page, no track, so no dark strip down its edge)
+    if crate::skin::style() != 0 {
+        s.spacing.scroll = egui::style::ScrollStyle::floating();
+        s.spacing.scroll.bar_width = 8.0;
+    } else {
+        s.spacing.scroll = egui::style::ScrollStyle::solid();
+        s.spacing.scroll.bar_width = 12.0;
+    }
     ctx.set_style(s);
 }

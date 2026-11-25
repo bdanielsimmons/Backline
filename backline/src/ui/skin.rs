@@ -129,6 +129,53 @@ pub(crate) fn mono() -> bool {
     MONO.load(Ordering::Relaxed)
 }
 
+/// The style worn (set as a skin goes on, from its id): the calm default, or one of the Styles on the Skins page,
+/// which draw more than colours: Ambient Color, Streaming (panels on black, no deck), Hardware (rubber keys, lights).
+pub(crate) static STYLE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) const STYLE_AMBIENT: u8 = 1;
+pub(crate) const STYLE_STREAMING: u8 = 2;
+pub(crate) const STYLE_HARDWARE: u8 = 3;
+
+/// The style worn now (`STYLE`).
+pub(crate) fn style() -> u8 {
+    STYLE.load(Ordering::Relaxed)
+}
+
+/// Each style's own colour choices (the Skins page's second step): Streaming's accent, Hardware's screen, Ambient
+/// Color's feel (dark, deep, light) and how fast its colours fade from one album to the next.
+pub(crate) static STREAM_ACC: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) static HW_SCREEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) static AMB_FEEL: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) static AMB_FADE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
+pub(crate) const STREAM_ACCENTS: [(&str, Color32); 5] = [
+    ("Amber", c(242, 168, 59)),
+    ("White", c(236, 236, 236)),
+    ("Blue", c(92, 162, 255)),
+    ("Green", c(70, 204, 128)),
+    ("Pink", c(240, 104, 172)),
+];
+/// Hardware's screens: their name, writing and glass.
+pub(crate) const HW_SCREENS: [(&str, Color32, Color32); 5] = [
+    ("Amber", c(255, 181, 71), c(43, 27, 8)),
+    ("Green", c(125, 255, 154), c(12, 36, 20)),
+    ("Ice Blue", c(127, 216, 255), c(8, 28, 43)),
+    ("Red", c(255, 106, 90), c(43, 12, 10)),
+    ("White", c(242, 242, 242), c(22, 22, 22)),
+];
+pub(crate) const AMB_FEELS: [&str; 3] = ["Dark", "Deep", "Light"];
+pub(crate) const AMB_FADES: [(&str, f32); 3] = [("Quick", 0.6), ("Medium", 1.5), ("Slow", 3.0)];
+
+/// Hardware's screen now: (its writing, its glass).
+pub(crate) fn hw_screen() -> (Color32, Color32) {
+    let s = HW_SCREENS[HW_SCREEN.load(Ordering::Relaxed) as usize % HW_SCREENS.len()];
+    (s.1, s.2)
+}
+
+/// Ambient Color worn light (dark writing on pale colours).
+pub(crate) fn amb_light() -> bool {
+    AMB_FEEL.load(Ordering::Relaxed) == 2
+}
+
 /// Set as a look goes on: whether it's the calm grey one.
 pub(crate) fn set_mono(look: Option<usize>) {
     MONO.store(look.is_some_and(|n| LOOKS.get(n).is_some_and(|l| l.name == "GREYSCALE")), Ordering::Relaxed);
@@ -333,27 +380,6 @@ pub(crate) fn set_custom(p: Option<Pal>) {
 /// Rounded fill (modern skins).
 pub(crate) fn rfill(p: &egui::Painter, r: Rect, rad: f32, c: Color32) {
     p.rect_filled(r, Rounding::same(rad), c);
-}
-
-pub(crate) fn rline(p: &egui::Painter, r: Rect, rad: f32, w: f32, c: Color32) {
-    p.rect_stroke(r, Rounding::same(rad), Stroke::new(w, c));
-}
-
-/// Vertical gradient inside a rounded rectangle, drawn as thin horizontal slices clipped by the corner radius.
-pub(crate) fn rgrad(p: &egui::Painter, r: Rect, rad: f32, top: Color32, bot: Color32) {
-    let n = (r.height() / 2.0).ceil().max(1.0) as usize;
-    let lerp = |a: u8, b: u8, t: f32| (a as f32 + (b as f32 - a as f32) * t) as u8;
-    for i in 0..n {
-        let t = i as f32 / (n.max(2) - 1) as f32;
-        let y0 = r.min.y + r.height() * i as f32 / n as f32;
-        let y1 = r.min.y + r.height() * (i + 1) as f32 / n as f32;
-        let col = Color32::from_rgb(lerp(top.r(), bot.r(), t), lerp(top.g(), bot.g(), t), lerp(top.b(), bot.b(), t));
-        // inset each slice near the corners so the gradient keeps the rounded outline
-        let dy = (y0 + y1) * 0.5 - r.min.y;
-        let from_edge = dy.min(r.height() - dy);
-        let k = if from_edge < rad { rad - (rad * rad - (rad - from_edge) * (rad - from_edge)).max(0.0).sqrt() } else { 0.0 };
-        p.rect_filled(Rect::from_min_max(Pos2::new(r.min.x + k, y0), Pos2::new(r.max.x - k, y1 + 0.5)), Rounding::ZERO, col);
-    }
 }
 
 pub(crate) fn rgb_to_hsv(c: Color32) -> (f32, f32, f32) {

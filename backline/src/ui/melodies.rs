@@ -888,7 +888,10 @@ impl App {
     /// CHORD MELODIES: SONGS and MOVES.
     pub(crate) fn melodies_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
-        title_line(ui, "CHORD MELODIES", 3.0, pal().ink);
+        // (the page's path over it names the page)
+        if !self.path_on {
+            title_line(ui, "CHORD MELODIES", 3.0, pal().ink);
+        }
         if let Some(t) = tab_row(ui, &["SONGS", "MOVES"], self.cm_tab as usize) {
             self.cm_tab = t as u8;
         }

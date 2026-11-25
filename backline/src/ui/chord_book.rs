@@ -521,19 +521,24 @@ impl App {
                     pick = Some((self.cb_set, fams[k]));
                 }
             }
-            ui.add_space(8.0);
-            ui.allocate_ui_with_layout(Vec2::new(430.0, bh()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                // (the tabs' order on screen; cb_view keeps its old numbers: 0 cards, 1 walk, 2 how, 3 2-5-1, 4 map)
-                const SHOWN: [u8; 5] = [4, 0, 1, 3, 2];
-                let cur = SHOWN.iter().position(|v| *v == self.cb_view.min(4)).unwrap_or(1);
-                if let Some(v) = segments(ui, &["MAP", "CARDS", "WALK", "2-5-1", "HOW IT WORKS"], cur) {
-                    self.cb_view = SHOWN[v];
-                    self.cb_auto = None;
-                    self.dirty = true;
-                }
-            });
-            ui.add_space(8.0);
-            if !fam.video.is_empty() && retro_btn(ui, "VIDEO", false).tip("The video lesson for this family, on YouTube").clicked() {
+            ui.add_space(10.0);
+            // the views as a small switch of icons, each named on hover (the owner's pick over a row of words)
+            // (the switch's order on screen; cb_view keeps its old numbers: 0 cards, 1 walk, 2 how, 3 2-5-1, 4 map)
+            const SHOWN: [u8; 5] = [4, 0, 1, 3, 2];
+            let cur = SHOWN.iter().position(|v| *v == self.cb_view.min(4)).unwrap_or(1);
+            let tips = [
+                "Map: every string set and family at a glance",
+                "Cards: every voicing as a card",
+                "Walk: step from voicing to voicing and see the voices move",
+                "2-5-1: the voicings through a 2-5-1",
+                "How It Works: how the voicings are made",
+            ];
+            if let Some(v) = crate::icon_switch(ui, &["map", "cards", "walk", "=2-5-1", "book"], cur, &tips) {
+                self.cb_view = SHOWN[v];
+                self.cb_auto = None;
+                self.dirty = true;
+            }
+            if !fam.video.is_empty() && crate::line_icon_btn(ui, "video", "The video lesson for this family, on YouTube").clicked() {
                 crate::views::open_link(&format!("https://www.youtube.com/watch?v={}", fam.video));
             }
             // how the walk works: hear each voicing, hide the names
@@ -613,13 +618,6 @@ impl App {
                 }
             }
         }
-        if mine.is_empty() {
-            dim_line(
-                ui,
-                "Star the chords you keep: they show at the top here.",
-                "Star a chord with the star on its card, or with the S key in WALK, and it shows at the top of CARDS under STARRED.",
-            );
-        }
         let mut ask: Option<(usize, CardAsk)> = None;
         egui::ScrollArea::vertical().id_salt("cb_scroll").auto_shrink([false, false]).show(ui, |ui| {
             let mut parts: Vec<(String, Vec<usize>)> = Vec::new();
@@ -676,16 +674,6 @@ impl App {
             if !c.outside.is_empty() {
                 card_text(ui, w, &format!("Not in the scale: {}", c.outside), crate::chords::CL_SEMI);
             }
-            ui.horizontal(|ui| {
-                ui.add_space(4.0);
-                let tip = if starred { "Starred: it's at the top of CARDS. Click to take the star off" } else { "Star it: a chord you keep, shown at the top of CARDS" };
-                if crate::views::star_btn(ui, starred).tip(tip).clicked() {
-                    clicked.set(Some(CardAsk::Star));
-                }
-                if retro_btn_w(ui, "WALK FROM HERE", (w - 42.0).max(60.0), false).tip("Open it in WALK: see the voices move from here").clicked() {
-                    clicked.set(Some(CardAsk::Walk));
-                }
-            });
         };
         match &c.grip {
             Some(g) => {
@@ -695,7 +683,12 @@ impl App {
                 // (the staff spelled the family's way: sharps in G, flats in Db)
                 let keep = self.chord_sp.sharps;
                 self.chord_sp.sharps = sharps;
-                self.voicing_card_with(ui, acts, g, root, &c.symbol, &tint, false, false, Some(&extra));
+                let more = crate::clusters::CardMore { text: Some(&extra), star: Some(starred), walk: true };
+                match self.voicing_card_with(ui, acts, g, root, &c.symbol, &tint, false, false, more) {
+                    crate::clusters::CardAct::Star => clicked.set(Some(CardAsk::Star)),
+                    crate::clusters::CardAct::Walk => clicked.set(Some(CardAsk::Walk)),
+                    _ => {}
+                }
                 self.chord_sp.sharps = keep;
             }
             None => {
@@ -707,6 +700,16 @@ impl App {
                     ptext_fit(ui.painter(), nr.center(), Align::Center, &c.symbol, 2.0, w - 12.0, pal().ink);
                     extra(ui, w);
                     card_text(ui, w, "These notes don't fit the strings in this order.", crate::chords::CL_SEMI);
+                    ui.horizontal(|ui| {
+                        ui.add_space(4.0);
+                        let tip = if starred { "Starred: it's at the top of CARDS. Click to take the star off" } else { "Star it: a chord you keep, shown at the top of CARDS" };
+                        if crate::views::star_btn(ui, starred).tip(tip).clicked() {
+                            clicked.set(Some(CardAsk::Star));
+                        }
+                        if retro_btn(ui, "WALK FROM HERE", false).tip("Open it in WALK: see the voices move from here").clicked() {
+                            clicked.set(Some(CardAsk::Walk));
+                        }
+                    });
                 });
                 ui.painter().rect_stroke(resp.response.rect.expand(4.0), 4.0, Stroke::new(1.0_f32, pal().edge));
             }

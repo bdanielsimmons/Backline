@@ -410,7 +410,10 @@ impl App {
             // two panes, each scrolling on its own: the songs on the left (under the filter, which stays), the one
             // picked on the right (its waveform stays in sight as the list moves)
             ui.add_space(6.0);
-            title_line(ui, "LOOPS", 3.0, pal().ink);
+            // (the page's path over it names the page)
+            if !self.path_on {
+                title_line(ui, "LOOPS", 3.0, pal().ink);
+            }
             let full = ui.available_rect_before_wrap();
             let lw = 250.0;
             let left = Rect::from_min_max(full.min, Pos2::new(full.min.x + lw, full.max.y));
@@ -453,7 +456,9 @@ impl App {
     /// The Loops page in a narrow window: the songs, or the one opened (the list a click away).
     fn loops_narrow(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, data: &SpotData) {
         ui.add_space(6.0);
-        title_line(ui, "LOOPS", 3.0, pal().ink);
+        if !self.path_on {
+            title_line(ui, "LOOPS", 3.0, pal().ink);
+        }
         let has = |id: i64| data.songs.iter().any(|s| s.id == id);
         if let Some(open) = self.loops_pick.filter(|p| has(*p)) {
             // narrow: one song at a time, the list a click away

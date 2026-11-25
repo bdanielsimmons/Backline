@@ -55,7 +55,7 @@ pub(crate) fn list_row(
         Some(pal().row_sel)
     } else if resp.hovered() {
         Some(pal().sel)
-    } else if idx % 2 == 1 {
+    } else if idx % 2 == 1 && !crate::winamp_ui::chrome_on() {
         Some(pal().row_alt)
     } else {
         None
@@ -810,8 +810,40 @@ thread_local! {
 }
 
 /// Menu entry that shows the link and copies it. Nothing is shown when there is no link (local files).
+/// A playlist's link with nothing else (the owner: no trackers): YouTube keeps only which list it is
+/// (`list=`, or `v=` for a single video), every other site its address without what follows `?` or `#`.
+pub(crate) fn clean_link(url: &str) -> String {
+    let url = url.trim();
+    let (base, rest) = match url.split_once('?') {
+        Some((b, q)) => (b, q),
+        None => (url.split('#').next().unwrap_or(url), ""),
+    };
+    let query = rest.split('#').next().unwrap_or("");
+    let youtube = base.contains("youtube.com") || base.contains("youtu.be");
+    if youtube && !query.is_empty() {
+        // (a list: the playlist's own page; else the one video)
+        if let Some(list) = query.split('&').find(|kv| kv.starts_with("list=")) {
+            return format!("https://www.youtube.com/playlist?{}", list);
+        }
+        if let Some(v) = query.split('&').find(|kv| kv.starts_with("v=")) {
+            return format!("{}?{}", base, v);
+        }
+    }
+    base.to_string()
+}
+
+thread_local! {
+    /// The link of the list a page shows, for its "..." menu (set just before `play_buttons`; taken by it).
+    static LIST_LINK: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Give the next `play_buttons` a link to copy (the playlist it plays).
+pub(crate) fn set_list_link(link: &str) {
+    LIST_LINK.with(|l| *l.borrow_mut() = Some(link.to_string()).filter(|s| !s.is_empty()));
+}
+
 pub(crate) fn link_item(ui: &mut egui::Ui, acts: &mut Vec<Action>, link: Option<String>) {
-    if let Some(l) = link {
+    if let Some(l) = link.map(|l| clean_link(&l)).filter(|l| !l.is_empty()) {
         let short: String =
             if l.chars().count() > 46 { format!("{}...", l.chars().take(44).collect::<String>()) } else { l.clone() };
         if menu_item(ui, &format!("Copy Link   {}", short.trim_start_matches("https://"))) {
@@ -1010,8 +1042,13 @@ pub(crate) fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Act
         if more.clicked() {
             ui.memory_mut(|m| m.toggle_popup(id));
         }
+        let link = LIST_LINK.with(|l| l.borrow_mut().take());
         egui::popup_below_widget(ui, id, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
             ui.set_min_width(170.0 * sc);
+            // (the playlist's own link, nothing else in it)
+            if link.is_some() {
+                link_item(ui, acts, link.clone());
+            }
             if menu_item(ui, "Play All Next") {
                 acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
             }
@@ -1368,4 +1405,19 @@ pub(crate) fn push_tracks(p: &mut Arc<Page>, v: &[Track]) {
     let pg = Arc::make_mut(p);
     let have: HashSet<i64> = pg.tracks.iter().map(|t| t.id).collect();
     pg.tracks.extend(v.iter().filter(|t| !have.contains(&t.id)).cloned());
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::clean_link;
+
+    #[test]
+    fn playlist_links_lose_their_trackers() {
+        assert_eq!(clean_link("https://youtube.com/playlist?list=PLabc&si=XYZ123"), "https://www.youtube.com/playlist?list=PLabc");
+        assert_eq!(clean_link("https://www.youtube.com/watch?v=abc&list=PLx&index=2&pp=iAQB"), "https://www.youtube.com/playlist?list=PLx");
+        assert_eq!(clean_link("https://youtu.be/abc?si=zz"), "https://youtu.be/abc");
+        assert_eq!(clean_link("https://open.spotify.com/playlist/37i9dQZF1?si=a1b2c3"), "https://open.spotify.com/playlist/37i9dQZF1");
+        assert_eq!(clean_link("https://music.apple.com/us/playlist/x/pl.u-123?ls=1&app=music"), "https://music.apple.com/us/playlist/x/pl.u-123");
+        assert_eq!(clean_link("  https://soundcloud.com/a/sets/b#t=1  "), "https://soundcloud.com/a/sets/b");
+    }
 }

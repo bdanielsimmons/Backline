@@ -483,6 +483,44 @@ pub fn named(p: &egui::Painter, r: Rect, name: &str, col: Color32) {
                 (0.56, 0.8),
             ]);
         }
+        // a window's own buttons, and a menu
+        "min" => pen.line(&[(0.2, 0.7), (0.8, 0.7)]),
+        "max" => pen.frame(0.2, 0.22, 0.8, 0.78, 0.04),
+        "menu" => {
+            for y in [0.28, 0.5, 0.72] {
+                pen.line(&[(0.18, y), (0.82, y)]);
+            }
+        }
+        // a neck seen from the side, strings across and two frets, a dot on it
+        "map" => {
+            pen.frame(0.06, 0.2, 0.94, 0.8, 0.06);
+            for y in [0.4, 0.6] {
+                pen.line(&[(0.06, y), (0.94, y)]);
+            }
+            for x in [0.36, 0.64] {
+                pen.line(&[(x, 0.2), (x, 0.8)]);
+            }
+            pen.dot(0.5, 0.5, 0.08);
+        }
+        // four cards in a grid
+        "cards" => {
+            for (x, y) in [(0.08, 0.08), (0.56, 0.08), (0.08, 0.56), (0.56, 0.56)] {
+                pen.frame(x, y, x + 0.36, y + 0.36, 0.06);
+            }
+        }
+        // steps from one place to the next
+        "walk" => {
+            pen.line(&[(0.1, 0.82), (0.36, 0.56), (0.6, 0.66), (0.86, 0.3)]);
+            pen.line(&[(0.62, 0.28), (0.86, 0.3), (0.86, 0.54)]);
+            pen.dot(0.1, 0.82, 0.07);
+            pen.dot(0.36, 0.56, 0.07);
+            pen.dot(0.6, 0.66, 0.07);
+        }
+        // a film camera
+        "video" => {
+            pen.frame(0.06, 0.24, 0.68, 0.76, 0.08);
+            pen.ring(&[(0.68, 0.44), (0.94, 0.28), (0.94, 0.72), (0.68, 0.56)]);
+        }
         _ => pen.circle(0.5, 0.5, 0.3),
     }
 }

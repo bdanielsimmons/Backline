@@ -134,6 +134,8 @@ mod layout;
 mod library_win;
 #[path = "ui/lines.rs"]
 mod lines_ui;
+#[path = "ui/styles.rs"]
+mod styles;
 #[path = "ui/looks.rs"]
 mod looks;
 #[cfg(target_os = "macos")]
@@ -207,7 +209,7 @@ use icons::*;
 use app_look::*;
 use chrome::*;
 use images::*;
-use looks::{backline_look, custom_worn};
+use looks::{ambient_worn, backline_look, custom_worn};
 use settings::*;
 use test_hooks::*;
 use search::*;
@@ -381,6 +383,8 @@ enum Msg {
     WaList(Result<Vec<winamp::WaSkin>, String>, bool),
     /// a Winamp skin fetched and turned into colours
     WaSkin(Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
+    /// Ambient Color worked out from a cover (its address): the colours and the look made in them
+    Ambient(String, skin::CustomLook, [Color32; 4], Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
     /// a free playlist font fetched
     FontReady(Result<Vec<u8>, String>),
     /// the file picked for the opening sound
@@ -533,6 +537,14 @@ enum Action {
     Look(usize),
     /// your Custom look: its editor (two colours), worn as you pick
     EditLook,
+    /// wear Ambient Color (the playing album's colours)
+    Ambient,
+    /// wear the Streaming (false) or Hardware (true) style
+    Style(bool),
+    /// back to the Classic style, in the look or skin worn in it last
+    Classic,
+    /// a style's own colour (what, which): 0 Streaming's accent, 1 Hardware's screen, 2 Ambient's feel, 3 its fade
+    StyleColor(u8, u8),
     /// the opening sound: 0 off, 1 Backline's chime, 2 your file; 3 pick a file; 4 play it now
     Intro(u8),
     /// take a skin off the list of ones worn lately
@@ -905,6 +917,8 @@ struct App {
     loading: bool,
     search: String,
     search_focus: bool,
+    /// the search box shown at the top of the page (Search in the side list; owner, 2026-11-24: not in the path's row)
+    search_bar: bool,
     status: String,
     status_err: bool,
 
@@ -1380,6 +1394,13 @@ struct App {
     /// the CHORDS tab: which side (find / name), the chord typed, the notes clicked on the neck and the piano,
     /// and guitar shapes already worked out
     chords_tab: u8,
+    /// this frame, the page's path ("Chords › Shapes › Chord Book") is shown over the page: CHORDS and LINES leave out
+    /// their own rows of tabs (the path does their work)
+    path_on: bool,
+    /// how far the side list is scrolled (a window too short for all its places)
+    nav_off: f32,
+    /// the page's own name, as its path ends (Streaming writes it big under the path)
+    path_title: String,
     /// the chord stepped to in WALK THE CHANGES
     vc_step: usize,
     /// the chord finder's funnel: the root and the kind of chord picked
@@ -1854,6 +1875,8 @@ struct App {
     band_sig: u64,
     band_chart: String,
     pomo_sound: bool,
+    /// the chime's own volume (0 to 1): the focus timer's and My Plan's
+    chime_vol: f32,
     /// the focus timer's extras (auto-start, long rest, music, diary) and its pills
     tm: tools::TimerMore,
     lib_frac: f32,
@@ -1899,6 +1922,22 @@ struct App {
     wa_outline: bool,
     /// your Custom look's colors, and whether it's the look you wore last
     custom: skin::CustomLook,
+    /// Ambient Color's colours now (from the last cover worked out), and the cover they were asked for
+    ambient: skin::CustomLook,
+    amb_for: String,
+    /// Ambient Color's backdrop: the cover's colours at its four corners
+    amb_tint: [Color32; 4],
+    /// Streaming: the queue (the playlist) shown beside the library; off, the library has the whole window
+    stream_queue: bool,
+    /// the styles' mini players show a small visualizer (its switch at the mini player's top)
+    mini_viz: bool,
+    /// the styles' decks show the time left rather than the time in (a click on the time)
+    time_left: bool,
+    /// the Classic look or Winamp skin worn last (id, name), to go back to from a style
+    classic_worn: Option<(String, String)>,
+    /// Ambient Color's backdrop fading from these colours, and when the fade began
+    amb_from: [Color32; 4],
+    amb_t0: f64,
     look_custom: bool,
     /// the Custom look's editor, while open
     look_edit: Option<looks::LookEdit>,
@@ -2041,6 +2080,7 @@ impl App {
             loading: false,
             search: String::new(),
             search_focus: false,
+            search_bar: false,
             status: String::new(),
             status_err: false,
             queue: Arc::new(Vec::new()),
@@ -2370,6 +2410,9 @@ impl App {
             chart_edit: false,
             bar_edit: None,
             chords_tab: 0,
+            path_on: false,
+            nav_off: 0.0,
+            path_title: String::new(),
             vc_step: 0,
             cf_root: None,
             cf_fam: None,
@@ -2701,6 +2744,7 @@ impl App {
             band_sig: 0,
             band_chart: String::new(),
             pomo_sound: false,
+            chime_vol: 0.7,
             tm: Default::default(),
             lib_frac: 0.34,
             voicing_tab: 0,
@@ -2725,6 +2769,15 @@ impl App {
             wa_guide: false,
             wa_outline: false,
             custom: skin::CustomLook::default(),
+            ambient: skin::CustomLook::default(),
+            amb_for: String::new(),
+            amb_tint: [Color32::from_rgb(60, 40, 30), Color32::from_rgb(70, 30, 50), Color32::from_rgb(40, 30, 40), Color32::from_rgb(60, 20, 50)],
+            stream_queue: false,
+            mini_viz: true,
+            time_left: false,
+            classic_worn: None,
+            amb_from: [Color32::from_rgb(60, 40, 30); 4],
+            amb_t0: 0.0,
             look_custom: false,
             look_edit: None,
             deco_now: None,
@@ -3649,6 +3702,8 @@ impl eframe::App for App {
         test_shot(ctx);
         // can anyone see the window? (minimized or covered: the visuals and the redraws while playing stop)
         onscreen::check(ctx, frame);
+        // Ambient Color follows the cover playing
+        self.ambient_tick();
         // (a test copy says how often its main window draws, every few seconds)
         if hidden_test_copy() {
             static DRAWN: std::sync::Mutex<(u32, f64)> = std::sync::Mutex::new((0, 0.0));
@@ -3959,9 +4014,16 @@ impl eframe::App for App {
                     .show(ctx, |ui| self.vis_full_ui(ui, &mut acts));
             } else if self.mini {
                 self.mini_stack_size(ctx);
-                egui::CentralPanel::default()
-                    .frame(egui::Frame::none().fill(pal().app_bg))
-                    .show(ctx, |ui| self.mini_window(ui, &mut acts));
+                // (a Style: its own mini player)
+                let styled = crate::styles::styled() && self.wa_art.is_some();
+                let fill = if styled { Color32::TRANSPARENT } else { pal().app_bg };
+                egui::CentralPanel::default().frame(egui::Frame::none().fill(fill)).show(ctx, |ui| {
+                    if styled {
+                        self.style_mini(ui, &mut acts)
+                    } else {
+                        self.mini_window(ui, &mut acts)
+                    }
+                });
             } else if self.art_view {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(pal().app_bg))

@@ -2285,7 +2285,10 @@ impl App {
         crate::tour::mark("EARVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
         ui.add_space(6.0);
-        title_line(ui, "EAR TRAINING", 3.0, pal().ink);
+        // (the page's path over it names the page)
+        if !self.path_on {
+            title_line(ui, "EAR TRAINING", 3.0, pal().ink);
+        }
         ui.add_space(4.0);
         let drill = self.ear.drill.min(DRILLS.len() - 1);
         crate::views::centered_row(ui, "ear_0", |ui| {

@@ -369,10 +369,18 @@ fn sprite(p: &egui::Painter, tex: &egui::TextureHandle, size: Vec2, src: (f32, f
     p.image(tex.id(), dst, uv, Color32::WHITE);
 }
 
+/// Whether the windows wear their names (Library, Backline, Playlist, Practice) on their title bars. Off since the
+/// owner's calmer look (2026-11-24: the names on plates read as clutter); the bars stay, for moving the window and for
+/// its buttons.
+const WINDOW_NAMES: bool = false;
+
 /// A window's name on its plate in a title bar (Backline's looks): the look's own font on its display colour, the
 /// size the player writes its name (`title_k`, no taller than `room`), the plate's left edge at `x`, centred on `mid`.
 /// Gives the plate.
 pub(crate) fn name_plate(p: &egui::Painter, x: f32, mid: f32, title: &str, room: f32) -> Rect {
+    if !WINDOW_NAMES {
+        return Rect::NOTHING;
+    }
     CHROME.with(|c| {
         let c = c.borrow();
         let Some((_, Some((ttex, tsize)), Some(bg))) = c.as_ref() else { return Rect::NOTHING };
@@ -452,6 +460,10 @@ fn title_k() -> Option<f32> {
 /// window's lines the same width (`BORDER_LINE`, whole screen pixels), whatever size its skin is drawn at.
 pub(crate) fn border_ring(p: &egui::Painter, outer: Rect, inside: Option<Rect>) {
     let Some(face) = flat_frame() else { return };
+    // (Streaming: panels on black, no lines round them)
+    if crate::skin::style() == crate::skin::STYLE_STREAMING {
+        return;
+    }
     let (edge, hi, lo) = border_cols(face);
     let ppp = p.ctx().pixels_per_point();
     let w = ((BORDER_LINE * ppp).round().max(1.0)) / ppp;
@@ -557,6 +569,12 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
         let tw = 25.0 * k;
         let top = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, inner.min.y));
         let band = title_band_rect(top, inner.min.x - outer.min.x);
+        // a Style (Streaming, Ambient Color, Hardware): its windows draw their own surfaces, nothing round them
+        // (skin.rs's switch, not styles.rs: this file is the phone's too)
+        if crate::skin::style() != 0 {
+            let _ = take_strip_controls(outer);
+            return true;
+        }
         if let Some(face) = flat_frame() {
             // Backline's look: the frame one colour all round; its title bar lit from above, the window's name at its
             // left on the bar's middle line, as the bar's controls are (`title_band`)
@@ -620,6 +638,11 @@ pub(crate) fn draw_frame(p: &egui::Painter, outer: Rect, inner: Rect, title: &st
             x += tw;
         }
         bottom_edge(p, outer, bot.min.y);
+        }
+        if !WINDOW_NAMES {
+            let _ = take_strip_controls(outer);
+            round_corners(p, outer, true);
+            return true;
         }
         // the window's name in the skin's own font on the font's own band, as the deck writes its song title (the
         // pair the skin was drawn for, so it reads); the band keeps the same gaps in the strip as the window's

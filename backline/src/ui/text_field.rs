@@ -382,9 +382,17 @@ pub(crate) fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String
     let (lines, hoff, voff) = offsets(&chars, ed.cur, focused);
     let p = ui.painter();
     if !FIELD_BARE.with(|b| b.get()) {
-        inset(p, rect, pal().display);
-        if focused {
-            outline(p, rect, 1.0, pal().ink2);
+        if crate::winamp_ui::chrome_on() {
+            // (the owner's pick, 2026-11-24: a flat filled box with small corners, no sunken edge)
+            p.rect_filled(rect, crate::corner(), pal().ink.gamma_multiply(0.09));
+            if focused {
+                p.rect_stroke(rect, crate::corner(), Stroke::new(1.0_f32, pal().ink2.gamma_multiply(0.8)));
+            }
+        } else {
+            inset(p, rect, pal().display);
+            if focused {
+                outline(p, rect, 1.0, pal().ink2);
+            }
         }
     }
     let cp = p.with_clip_rect(inner);

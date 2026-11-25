@@ -417,3 +417,202 @@ impl App {
         }
     }
 }
+
+// ------------------------------------------------------------ Ambient Color
+/// The skin's own id for Ambient Color: Backline's look in the colours of the album playing (the owner's pick of
+/// 2026-11-24, as a style on the Skins page).
+pub(crate) const AMBIENT_MD5: &str = "gen:ambient";
+
+/// Whether what's worn is Ambient Color.
+pub(crate) fn ambient_worn(worn: Option<&(String, String)>) -> bool {
+    worn.is_some_and(|w| w.0 == AMBIENT_MD5)
+}
+
+/// The colours a cover gives Ambient Color: its most colourful hue (each pixel counted by how colourful and bright it
+/// is), or for a grey cover its average; the background a deep shade of it, the accent a bright one.
+pub(crate) fn cover_look(img: &egui::ColorImage) -> CustomLook {
+    // (weight, and the red, green and blue it gathered) for 24 hues
+    let mut bins = [(0.0f32, 0.0f32, 0.0f32, 0.0f32); 24];
+    let (mut sum, mut n) = ([0.0f32; 3], 0.0f32);
+    for px in &img.pixels {
+        let rgb = [px.r() as f32, px.g() as f32, px.b() as f32];
+        for k in 0..3 {
+            sum[k] += rgb[k];
+        }
+        n += 1.0;
+        let (h, s, v) = rgb_to_hsv(*px);
+        if v < 0.12 || s < 0.15 {
+            continue;
+        }
+        let w = s * v;
+        let b = &mut bins[((h * 24.0) as usize).min(23)];
+        b.0 += w;
+        b.1 += rgb[0] * w;
+        b.2 += rgb[1] * w;
+        b.3 += rgb[2] * w;
+    }
+    let best = bins.iter().copied().fold((0.0f32, 0.0, 0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a });
+    let base = if n > 0.0 && best.0 > 0.02 * n {
+        Color32::from_rgb((best.1 / best.0) as u8, (best.2 / best.0) as u8, (best.3 / best.0) as u8)
+    } else if n > 0.0 {
+        Color32::from_rgb((sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8)
+    } else {
+        Color32::from_rgb(60, 60, 64)
+    };
+    let (h, s, _) = rgb_to_hsv(base);
+    // (the feel picked: Dark deep and quiet, Deep richer, Light pale with dark writing)
+    let (bg, acc) = match crate::skin::AMB_FEEL.load(Ordering::Relaxed) {
+        1 => (hsv_to_rgb(h, s.clamp(0.25, 0.75), 0.32), hsv_to_rgb(h, s.clamp(0.35, 0.85), 0.98)),
+        2 => (hsv_to_rgb(h, (s * 0.3).min(0.18), 0.93), hsv_to_rgb(h, s.clamp(0.45, 0.9), 0.55)),
+        _ => (hsv_to_rgb(h, (s * 0.8).clamp(0.08, 0.5), 0.2), hsv_to_rgb(h, s.clamp(0.25, 0.7), 0.93)),
+    };
+    CustomLook { background: bg, accent: acc, display: None, text: None }
+}
+
+/// A cover's colours at its four corners (each the average of that quarter, made a little richer), for Ambient
+/// Color's backdrop: top left, top right, bottom left, bottom right.
+pub(crate) fn cover_tint(img: &egui::ColorImage) -> [Color32; 4] {
+    let [w, h] = img.size;
+    let mut out = [Color32::from_rgb(50, 50, 54); 4];
+    if w < 2 || h < 2 {
+        return out;
+    }
+    for (k, (x0, y0)) in [(0, 0), (w / 2, 0), (0, h / 2), (w / 2, h / 2)].into_iter().enumerate() {
+        let (mut s, mut n) = ([0.0f32; 3], 0.0f32);
+        for y in y0..y0 + h / 2 {
+            for x in x0..x0 + w / 2 {
+                let c = img.pixels[y * w + x];
+                s[0] += c.r() as f32;
+                s[1] += c.g() as f32;
+                s[2] += c.b() as f32;
+                n += 1.0;
+            }
+        }
+        let avg = Color32::from_rgb((s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8);
+        let (hh, ss, vv) = rgb_to_hsv(avg);
+        out[k] = hsv_to_rgb(hh, (ss * 1.25).min(0.85), vv.clamp(0.25, 0.75));
+    }
+    out
+}
+
+
+impl App {
+    /// Ambient Color as a skin, in the colours it has now.
+    pub(crate) fn ambient_skin(&self) -> Result<(winamp::WaSkin, Pal, winamp::Art), String> {
+        let s = winamp::WaSkin { md5: AMBIENT_MD5.into(), name: "AMBIENT COLOR".into(), shot: String::new(), download: String::new() };
+        genskin::wear_with(&self.ambient.pal(), None).map(|(p, art)| (s, p, art))
+    }
+
+    /// Wear Ambient Color: in the last album's colours now, then the playing album's as soon as they're worked out.
+    pub(crate) fn wear_ambient(&mut self) {
+        crate::skin::set_mono(None);
+        self.look_custom = false;
+        self.dirty = true;
+        self.amb_for.clear();
+        let _ = self.tx.send(Msg::WaSkin(self.ambient_skin()));
+        self.ctx.request_repaint();
+    }
+
+    /// Once a frame: with Ambient Color worn and a new cover playing, its colours worked out and the look put on in
+    /// them, away from the frame (the cover read as a row's small one, so it's usually on disk already).
+    pub(crate) fn ambient_tick(&mut self) {
+        let st = crate::skin::style();
+        if st != crate::skin::STYLE_AMBIENT && st != crate::skin::STYLE_STREAMING {
+            return;
+        }
+        let cover = self.cur_track().map(|t| t.cover).unwrap_or_default();
+        let url = if cover.is_empty() { String::new() } else { format!("thumb:{}", crate::api::cover_url(&cover, 80)) };
+        if url == self.amb_for {
+            return;
+        }
+        self.amb_for = url.clone();
+        if url.is_empty() {
+            return;
+        }
+        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let Some(img) = crate::picture(&api, &url) else { return };
+            let look = cover_look(&img);
+            let tint = cover_tint(&img);
+            let s = winamp::WaSkin { md5: AMBIENT_MD5.into(), name: "AMBIENT COLOR".into(), shot: String::new(), download: String::new() };
+            let r = genskin::wear_with(&look.pal(), None).map(|(p, art)| (s, p, art));
+            let _ = tx.send(Msg::Ambient(url, look, tint, r));
+            ctx.request_repaint();
+        });
+    }
+}
+
+// ------------------------------------------------------------ Streaming and Hardware
+/// The skins' own ids for the Streaming and Hardware styles (the owner's picks of 2026-11-24, on the Skins page).
+pub(crate) const STREAMING_MD5: &str = "gen:streaming";
+pub(crate) const HARDWARE_MD5: &str = "gen:hardware";
+
+/// A style's colours: Streaming's panels on black with an amber accent; Hardware's gunmetal with an amber screen.
+fn style_colors(hardware: bool) -> (Color32, Color32, Color32) {
+    if hardware {
+        (Color32::from_rgb(34, 35, 38), Color32::from_rgb(20, 21, 22), crate::skin::hw_screen().0)
+    } else {
+        let acc = crate::skin::STREAM_ACCENTS[crate::skin::STREAM_ACC.load(Ordering::Relaxed) as usize % crate::skin::STREAM_ACCENTS.len()].1;
+        (Color32::from_rgb(0, 0, 0), Color32::from_rgb(18, 18, 18), acc)
+    }
+}
+
+/// Streaming (false) or Hardware (true) as a skin.
+pub(crate) fn style_skin(hardware: bool) -> Result<(winamp::WaSkin, Pal, winamp::Art), String> {
+    let (md5, name) = if hardware { (HARDWARE_MD5, "HARDWARE") } else { (STREAMING_MD5, "STREAMING") };
+    let s = winamp::WaSkin { md5: md5.into(), name: name.into(), shot: String::new(), download: String::new() };
+    let (panel, display, accent) = style_colors(hardware);
+    genskin::wear(&crate::skin::look_pal(panel, display, accent)).map(|(p, art)| (s, p, art))
+}
+
+
+impl App {
+    /// Wear Streaming (false) or Hardware (true).
+    pub(crate) fn wear_style(&mut self, hardware: bool) {
+        crate::skin::set_mono(None);
+        self.look_custom = false;
+        self.dirty = true;
+        let _ = self.tx.send(Msg::WaSkin(style_skin(hardware)));
+        self.ctx.request_repaint();
+    }
+}
+
+impl App {
+    /// Back to the Classic style: the look or Winamp skin worn in it last (your Custom one, one of Backline's, or a
+    /// saved Winamp skin; one that's gone, Backline's look).
+    pub(crate) fn wear_classic(&mut self) {
+        match self.classic_worn.clone() {
+            Some((md5, _)) if md5 == CUSTOM_MD5 => self.wear_custom(),
+            Some((md5, name)) if !md5.starts_with("gen:") => match winamp::load_saved(&md5) {
+                Some(b) => {
+                    let s = winamp::WaSkin { md5, name, shot: String::new(), download: String::new() };
+                    crate::skin::set_mono(None);
+                    let _ = self.tx.send(Msg::WaSkin(winamp::load(&b).map(|(p, art)| (s, p, art))));
+                }
+                None => self.wear_look(SKIN.load(Ordering::Relaxed)),
+            },
+            _ => self.wear_look(SKIN.load(Ordering::Relaxed)),
+        }
+        self.dirty = true;
+    }
+
+    /// A style's own colour picked on the Skins page: Streaming's accent and Hardware's screen go on now, Ambient's
+    /// feel is worked out again from the cover playing, its fade is kept for the next song.
+    pub(crate) fn style_color(&mut self, what: u8, i: u8) {
+        let at = match what {
+            0 => &crate::skin::STREAM_ACC,
+            1 => &crate::skin::HW_SCREEN,
+            2 => &crate::skin::AMB_FEEL,
+            _ => &crate::skin::AMB_FADE,
+        };
+        at.store(i, Ordering::Relaxed);
+        self.dirty = true;
+        match what {
+            0 if crate::skin::style() == crate::skin::STYLE_STREAMING => self.wear_style(false),
+            1 if crate::skin::style() == crate::skin::STYLE_HARDWARE => self.wear_style(true),
+            2 => self.amb_for.clear(),
+            _ => {}
+        }
+        self.ctx.request_repaint();
+    }
+}

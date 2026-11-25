@@ -340,6 +340,17 @@ impl App {
         match r {
             Ok((s, p, art)) => {
                 crate::skin::set_custom(Some(p));
+                let st = match s.md5.as_str() {
+                    crate::looks::AMBIENT_MD5 => crate::skin::STYLE_AMBIENT,
+                    crate::looks::STREAMING_MD5 => crate::skin::STYLE_STREAMING,
+                    crate::looks::HARDWARE_MD5 => crate::skin::STYLE_HARDWARE,
+                    _ => 0,
+                };
+                crate::skin::STYLE.store(st, std::sync::atomic::Ordering::Relaxed);
+                // (the Classic look or skin, to come back to from a style)
+                if st == 0 {
+                    self.classic_worn = Some((s.md5.clone(), s.name.clone()));
+                }
                 // Backline's own looks: every window's frame flat, in the playlist side's own colour
                 let flat = s.md5.starts_with("gen:").then(|| art.sheets.iter().find(|x| x.0 == "pledit")).flatten().and_then(|x| {
                     let i = (50 * x.1[0] + 5) * 4;
@@ -1950,7 +1961,7 @@ impl App {
         self.pomo_flash = Some(Instant::now());
         self.dirty = true;
         if self.pomo_sound {
-            self.player.send(Cmd::Chime);
+            self.player.send(Cmd::Chime(self.chime_vol));
         }
         self.ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
         if self.pomo == 1 {

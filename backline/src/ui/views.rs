@@ -169,6 +169,20 @@ pub(crate) fn group_tabs(groups: &[(&'static str, &[(u8, &'static str)])]) -> (V
     (names, tips)
 }
 
+/// The heading a section's pages sit under in the ALL PAGES list (`go_list`).
+fn go_head(sec: Sec) -> &'static str {
+    match sec {
+        Sec::Tunes | Sec::Chart => "TUNES",
+        Sec::Diary => "DIARY",
+        Sec::Loops => "LOOPS",
+        Sec::Reading => "READING",
+        Sec::Chords => "CHORDS",
+        Sec::Ear => "EAR",
+        Sec::Lines => "LINES",
+        _ => "CHORD MELODIES",
+    }
+}
+
 /// The button that lists every PRACTICE page (not "GO TO": the search box's button is GO).
 const PAGES: &str = "ALL PAGES";
 
@@ -195,13 +209,15 @@ enum Go {
 const ANY: u8 = 255;
 
 /// The ALL PAGES list: every PRACTICE page under its tab's name (as headings), a page's own tabs set in under it.
-fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go>) {
+fn go_list(plan: bool, book: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go>) {
     use Go::*;
     let mut diary = vec![("DIARY", Diary(0)), ("ROUTINE", Diary(1)), ("LISTENING", Diary(2))];
     if plan {
         diary.push(("MY PLAN", Diary(3)));
     }
-    let groups: Vec<(&str, Vec<(&str, Go)>)> = vec![
+    // (THE CHORD BOOK only when its file is in Backline's folder)
+    let book: &[(&str, Go)] = if book { &[("CHORD BOOK", Chords(10, ANY))] } else { &[] };
+    let mut groups: Vec<(&str, Vec<(&str, Go)>)> = vec![
         ("TUNES", vec![("YOUR TUNES", Tunes(0)), ("RECOMMENDED", Tunes(1)), ("CHART", Chart)]),
         ("DIARY", diary),
         ("LOOPS", vec![("LOOPS & BOOKMARKS", Loops)]),
@@ -249,6 +265,10 @@ fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go
         ),
         ("CHORD MELODIES", vec![("SONGS", Melodies(0)), ("MOVES", Melodies(1))]),
     ];
+    if let Some(chords) = groups.iter_mut().find(|g| g.0 == "CHORDS") {
+        let at = chords.1.iter().position(|p| p.0 == "SCALE HARMONY").unwrap_or(chords.1.len());
+        chords.1.splice(at..at, book.iter().copied());
+    }
     let (mut items, mut heads, mut gos) = (Vec::new(), Vec::new(), Vec::new());
     for (head, pages) in groups {
         heads.push((items.len(), head));
@@ -261,9 +281,10 @@ fn go_list(plan: bool) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go
 }
 
 impl App {
-    /// ALL PAGES: every PRACTICE page in one list, the one you are on lit; picking one takes you straight there.
-    pub(crate) fn go_to(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let (items, heads, gos) = go_list(crate::plan::have_plan());
+    /// The ALL PAGES list (every PRACTICE page, headed) and where you are in it (usize::MAX: not listed).
+    fn go_now(&mut self) -> (Vec<&'static str>, Vec<(usize, &'static str)>, Vec<Go>, usize) {
+        self.cb_load();
+        let (items, heads, gos) = go_list(crate::plan::have_plan(), self.cb_book.is_some());
         let sub = |t: u8| match t {
             2 => self.tr_page,
             3 => self.vc_page,
@@ -282,7 +303,17 @@ impl App {
             Sec::Chart => Go::Chart,
             _ => Go::Melodies(self.cm_tab),
         };
-        let sel = gos.iter().position(|g| *g == now).unwrap_or(usize::MAX);
+        // (a page whose own tab isn't listed: the page)
+        let sel = gos.iter().position(|g| *g == now).or_else(|| match now {
+            Go::Chords(t, _) => gos.iter().position(|g| *g == Go::Chords(t, ANY)),
+            _ => None,
+        });
+        (items, heads, gos, sel.unwrap_or(usize::MAX))
+    }
+
+    /// ALL PAGES: every PRACTICE page in one list, the one you are on lit; picking one takes you straight there.
+    pub(crate) fn go_to(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let (items, heads, gos, sel) = self.go_now();
         // the button names the page you are on (cut short to fit), so it reads as where you are and the way to
         // the others; a page's own tab with its page ("Triads: Map")
         let face = match items.get(sel) {
@@ -300,8 +331,129 @@ impl App {
         let _ = ui
             .interact(Rect::from_min_size(at, Vec2::new(pages_w(), bh())), ui.id().with("practice_go_tip"), Sense::hover())
             .tip("The page you're on. Click to go to any practice page.");
-        let Some(i) = picked else { return };
-        let g = gos[i];
+        if let Some(i) = picked {
+            self.go_apply(gos[i], acts);
+        }
+    }
+
+    /// Where you are, as one path of plain words, all one size, the page you're on brighter: the side list's group
+    /// (Repertoire, Theory, Daily), the place, and for CHORDS and LINES the page ("Theory › Chords › Chord Book").
+    /// Each step with a small chevron opens a list: the group every place in the side list (so you can go anywhere),
+    /// the place its pages (under their groups), the page the pages beside it. Stands in for the ALL PAGES button and
+    /// for CHORDS' and LINES' rows of tabs (`path_on`).
+    pub(crate) fn page_path(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        self.cb_load();
+        // (Hardware: the whole path on one lit screen, laid under it once its length is known)
+        let screen = ui.painter().add(egui::Shape::Noop);
+        let x0 = ui.cursor().min.x;
+        self.page_path_steps(ui, acts);
+        if crate::hardware() {
+            let (_, glass) = crate::skin::hw_screen();
+            let y = ui.min_rect().center().y;
+            let r = Rect::from_min_max(Pos2::new(x0 - 4.0, y - bh() / 2.0 - 2.0), Pos2::new(ui.cursor().min.x + 6.0, y + bh() / 2.0 + 2.0));
+            ui.painter().set(
+                screen,
+                egui::Shape::Vec(vec![
+                    egui::Shape::rect_filled(r, 4.0, glass),
+                    egui::Shape::rect_stroke(r, 4.0, Stroke::new(1.0_f32, Color32::from_black_alpha(200))),
+                ]),
+            );
+        }
+    }
+
+    /// The path's steps (`page_path`).
+    fn page_path_steps(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let (group, name) = match self.sec {
+            Sec::Tunes => ("Repertoire", "Tunes"),
+            Sec::Chart => ("Repertoire", "Chart"),
+            Sec::Loops => ("Repertoire", "Loops"),
+            Sec::Melodies => ("Repertoire", "Chord Melodies"),
+            Sec::Chords => ("Theory", "Chords"),
+            Sec::Lines => ("Theory", "Lines"),
+            Sec::Ear => ("Theory", "Ear Training"),
+            Sec::Diary => ("Daily", "Diary"),
+            _ => ("Daily", "Reading"),
+        };
+        // 1: every place in the side list, under its headings
+        let mut places: Vec<(&str, u8)> = Vec::new();
+        let mut heads: Vec<(usize, &str)> = vec![(0, "MUSIC")];
+        if !self.offline {
+            places.push(("HOME", 1));
+        }
+        places.extend([("MY TRACKS", 2), ("LISTS", 3), ("TIDAL", 4), ("FILES", 5), ("SOUNDCLOUD", 6), ("YOUTUBE", 7)]);
+        heads.push((places.len(), "REPERTOIRE"));
+        places.extend([("TUNES", 10), ("CHART", 18), ("LOOPS", 12), ("CHORD MELODIES", 16)]);
+        heads.push((places.len(), "THEORY"));
+        places.extend([("CHORDS", 14), ("LINES", 15), ("EAR TRAINING", 17)]);
+        heads.push((places.len(), "DAILY"));
+        places.extend([("DIARY", 11), ("READING", 13)]);
+        heads.push((places.len(), "BACKLINE"));
+        places.extend([("SETTINGS", 20), ("SKINS", 21)]);
+        let here = places.iter().position(|p| p.0.eq_ignore_ascii_case(name)).unwrap_or(usize::MAX);
+        let names: Vec<&str> = places.iter().map(|p| p.0).collect();
+        if let Some(i) = crate::crumb(ui, "path_top", group, &names, here, &heads, false) {
+            if i != here {
+                self.nav_go(places[i].1, acts);
+            }
+        }
+        crate::crumb_sep(ui);
+        // CHORDS and LINES: their pages in groups, and which is open
+        let groups: Option<(Vec<(&str, &[(u8, &str)])>, u8)> = match self.sec {
+            Sec::Chords => Some((crate::chords::chord_groups(self.cb_book.is_some()).to_vec(), self.chords_tab)),
+            Sec::Lines => Some((crate::lines_ui::LINE_GROUPS.to_vec(), self.ln_tab)),
+            _ => None,
+        };
+        let set = |me: &mut Self, t: u8| {
+            if me.sec == Sec::Chords {
+                me.chords_tab = t;
+            } else {
+                me.ln_tab = t;
+            }
+        };
+        let Some((groups, tab)) = groups else {
+            // 2 (the last): the place, listing its own pages from ALL PAGES (Diary: Routine, Listening...)
+            let (items, all_heads, gos, sel) = self.go_now();
+            let mine: Vec<usize> = (0..items.len())
+                .filter(|&i| all_heads.iter().rev().find(|h| h.0 <= i).map(|h| h.1) == Some(go_head(self.sec)))
+                .collect();
+            let list: Vec<&str> = mine.iter().map(|&i| items[i].trim_start()).collect();
+            let cur = mine.iter().position(|&i| i == sel).unwrap_or(usize::MAX);
+            let shown: &[&str] = if list.len() > 1 { &list } else { &[] };
+            self.path_title = name.to_string();
+            if let Some(k) = crate::crumb(ui, "path_place", name, shown, cur, &[], true) {
+                self.go_apply(gos[mine[k]], acts);
+            }
+            return;
+        };
+        // 2: the place, listing all its pages under their groups
+        let mut pages: Vec<&str> = Vec::new();
+        let mut nums: Vec<u8> = Vec::new();
+        let mut pheads: Vec<(usize, &str)> = Vec::new();
+        for (head, list) in &groups {
+            pheads.push((pages.len(), *head));
+            for (n, p) in list.iter() {
+                pages.push(p);
+                nums.push(*n);
+            }
+        }
+        let at = nums.iter().position(|n| *n == tab).unwrap_or(usize::MAX);
+        if let Some(i) = crate::crumb(ui, "path_place", name, &pages, at, &pheads, false) {
+            set(self, nums[i]);
+        }
+        crate::crumb_sep(ui);
+        // 3 (the last): the page, listing the pages beside it in its group
+        let g = groups.iter().position(|g| g.1.iter().any(|p| p.0 == tab)).unwrap_or(0);
+        let p = groups[g].1.iter().position(|p| p.0 == tab).unwrap_or(0);
+        let sibs: Vec<&str> = groups[g].1.iter().map(|p| p.1).collect();
+        let shown: &[&str] = if sibs.len() > 1 { &sibs } else { &[] };
+        self.path_title = crate::winamp_ui::display_case(sibs[p]).into_owned();
+        if let Some(i) = crate::crumb(ui, "path_page", sibs[p], shown, p, &[(0, groups[g].0)], true) {
+            set(self, groups[g].1[i].0);
+        }
+    }
+
+    /// Takes you to `g`, a page from the ALL PAGES list.
+    fn go_apply(&mut self, g: Go, acts: &mut Vec<Action>) {
         let sec = match g {
             Go::Tunes(_) => Sec::Tunes,
             Go::Diary(_) => Sec::Diary,
@@ -827,6 +979,7 @@ impl App {
                     format!("{} song{}{}", n, if n == 1 { "" } else { "s" }, time)
                 }
             };
+            crate::row_art(&l.items.iter().map(|e| e.cover.clone()).find(|c| !c.is_empty()).unwrap_or_default());
             if let Some(r) = list_row(ui, k, Some(k + 1), || l.name.clone(), length, RowState::Normal, false, false) {
                 if r.clicked() {
                     self.open_saved_list(l, acts);
@@ -937,6 +1090,7 @@ impl App {
         );
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
+            crate::set_list_link(&url);
             play_buttons(ui, &tracks, acts, false);
             if retro_btn(ui, "REFRESH", false).tip("Reload the playlist to get newly added songs.").clicked() {
                 self.read_list_again(kind, &url, acts);
@@ -1632,6 +1786,10 @@ impl App {
         for (row, &i) in order.iter().enumerate() {
             let pl = &self.store.playlists[i];
             let n = pl.items.len();
+            // its own picture, else its first song's cover
+            let cover = if pl.art.is_empty() { pl.items.iter().map(|v| v.cover.clone()).find(|c| !c.is_empty()).unwrap_or_default() } else { crate::new_playlist::art_url(&pl.art) };
+            crate::row_art(&cover);
+            let link = pl.link.clone();
             if let Some(r) =
                 list_row(ui, row, Some(i + 1), || pl.name.clone(), || format!("{} tracks", n), RowState::Normal, false, false)
             {
@@ -1639,6 +1797,10 @@ impl App {
                     acts.push(Action::PlaylistOpen(Some(i)));
                 }
                 r.context_menu(|ui| {
+                    // (brought in from a link: that link, to open or copy)
+                    if !link.is_empty() {
+                        crate::link_item(ui, acts, Some(link.clone()));
+                    }
                     // (the panel has its description and cover too)
                     if menu_item(ui, "Rename...") {
                         acts.push(Action::PlaylistEdit(i));
@@ -1706,6 +1868,7 @@ impl App {
             return;
         }
         let tracks: Vec<Track> = items.iter().map(|v| v.to_track()).collect();
+        crate::set_list_link(&self.store.playlists[pi].link);
         play_buttons(ui, &tracks, acts, false);
         ui.add_space(4.0);
         let playing = self.cur_track().map(|t| t.id);
@@ -1920,15 +2083,16 @@ mod summary_tests {
 
     #[test]
     fn all_pages_lists_every_page_once() {
-        let (items, heads, gos) = go_list(true);
+        let (items, heads, gos) = go_list(true, true);
         assert_eq!(items.len(), gos.len());
+        assert!(gos.contains(&Go::Chords(10, ANY)) && !go_list(true, false).2.contains(&Go::Chords(10, ANY)));
         let names: Vec<&str> = heads.iter().map(|h| h.1).collect();
         assert_eq!(names, ["TUNES", "DIARY", "LOOPS", "READING", "CHORDS", "EAR", "LINES", "CHORD MELODIES"]);
         for (i, g) in gos.iter().enumerate() {
             assert!(!gos[..i].contains(g), "{} twice", items[i]);
         }
         assert!(gos.contains(&Go::Lines(3)) && gos.contains(&Go::Diary(3)));
-        assert!(!go_list(false).2.contains(&Go::Diary(3)));
+        assert!(!go_list(false, true).2.contains(&Go::Diary(3)));
         // a page's own tabs only ever sit under it
         for (i, it) in items.iter().enumerate() {
             if it.starts_with("  ") {

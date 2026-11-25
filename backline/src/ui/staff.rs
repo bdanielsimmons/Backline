@@ -62,7 +62,8 @@ pub(crate) fn chord_staff(
     label: &dyn Fn(i32) -> (String, Color32),
 ) {
     let p = ui.painter();
-    p.rect_filled(rect, 3.0, pal().panel_lt);
+    // (soft paper: a shade off the page, so the staff reads without a box shouting round it)
+    p.rect_filled(rect, 3.0, pal().display.lerp_to_gamma(pal().panel_lt, 0.4));
     if notes.is_empty() {
         return;
     }

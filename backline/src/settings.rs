@@ -240,7 +240,19 @@ impl App {
         if let (Some(b), Some(a)) = (rgb(&st["custom_look"][0]), rgb(&st["custom_look"][1])) {
             app.custom = skin::CustomLook { background: b, accent: a, display: rgb(&st["custom_look"][2]), text: rgb(&st["custom_look"][3]) };
         }
-        app.look_custom = st["look_custom"].as_bool().unwrap_or(false);        // the skin worn last time, put on before the first frame so the window opens already wearing it: one of
+        if let (Some(b), Some(a)) = (rgb(&st["ambient_look"][0]), rgb(&st["ambient_look"][1])) {
+            app.ambient = skin::CustomLook { background: b, accent: a, display: None, text: None };
+        }
+        app.look_custom = st["look_custom"].as_bool().unwrap_or(false);
+        app.mini_viz = st["mini_viz"].as_bool().unwrap_or(true);
+        if let (Some(a), Some(b)) = (st["classic_worn"][0].as_str(), st["classic_worn"][1].as_str()) {
+            app.classic_worn = Some((a.to_string(), b.to_string()));
+        }
+        for (i, at) in [&crate::skin::STREAM_ACC, &crate::skin::HW_SCREEN, &crate::skin::AMB_FEEL, &crate::skin::AMB_FADE].into_iter().enumerate() {
+            if let Some(v) = st["style_colors"][i].as_u64() {
+                at.store(v as u8, Ordering::Relaxed);
+            }
+        }        // the skin worn last time, put on before the first frame so the window opens already wearing it: one of
         // Backline's looks, your Custom one, or a Winamp skin (from its saved file; gone, Backline's look instead)
         let worn = (st["winamp"][0].as_str(), st["winamp"][1].as_str());
         let n = SKIN.load(Ordering::Relaxed) % LOOKS.len();
@@ -249,6 +261,12 @@ impl App {
                 let r = app.custom_skin();
                 app.wear_skin(r, false);
             }
+            (Some(looks::AMBIENT_MD5), _) => {
+                let r = app.ambient_skin();
+                app.wear_skin(r, false);
+            }
+            (Some(looks::STREAMING_MD5), _) => app.wear_skin(looks::style_skin(false), false),
+            (Some(looks::HARDWARE_MD5), _) => app.wear_skin(looks::style_skin(true), false),
             (Some(md5), Some(name)) if !md5.starts_with("gen:") => {
                 let s = winamp::WaSkin { md5: md5.to_string(), name: name.to_string(), shot: String::new(), download: String::new() };
                 match winamp::load_saved(&s.md5) {
@@ -400,6 +418,9 @@ impl App {
         if let Ok(t) = serde_json::from_value::<tools::TimerMore>(st["timer_more"].clone()) {
             app.tm = t;
         }
+        if let Some(v) = st["chime_vol"].as_f64() {
+            app.chime_vol = (v as f32).clamp(0.0, 1.0);
+        }
         if let Some(b) = st["pomo_sound"].as_bool() {
             app.pomo_sound = b;
         }
@@ -435,7 +456,19 @@ impl App {
     pub(crate) fn save_settings(&mut self) {
         let v = serde_json::json!({
             "look_name": SKIN_NAMES[SKIN.load(Ordering::Relaxed) % LOOKS.len()],
-            "look_custom": self.look_custom,            "custom_look": [
+            "look_custom": self.look_custom,
+            "classic_worn": self.classic_worn,
+            "mini_viz": self.mini_viz,
+            "style_colors": [
+                crate::skin::STREAM_ACC.load(Ordering::Relaxed),
+                crate::skin::HW_SCREEN.load(Ordering::Relaxed),
+                crate::skin::AMB_FEEL.load(Ordering::Relaxed),
+                crate::skin::AMB_FADE.load(Ordering::Relaxed)
+            ],
+            "ambient_look": [
+                [self.ambient.background.r(), self.ambient.background.g(), self.ambient.background.b()],
+                [self.ambient.accent.r(), self.ambient.accent.g(), self.ambient.accent.b()]
+            ],            "custom_look": [
                 [self.custom.background.r(), self.custom.background.g(), self.custom.background.b()],
                 [self.custom.accent.r(), self.custom.accent.g(), self.custom.accent.b()],
                 self.custom.display.map(|c| vec![c.r(), c.g(), c.b()]),
@@ -541,6 +574,7 @@ impl App {
             "loops_sort": self.loops_sort,
             "loops_show": self.loops_show,
             "pomo_sound": self.pomo_sound,
+            "chime_vol": self.chime_vol,
             "timer_more": serde_json::to_value(&self.tm).unwrap_or_default(),
             "pomo_focus": self.pomo_focus,
             "pomo_break": self.pomo_break,

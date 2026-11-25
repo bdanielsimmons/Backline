@@ -233,6 +233,8 @@ pub struct Playlist {
     pub art: String,
     /// what it is for, in your words
     pub desc: String,
+    /// the playlist it was brought in from (an Apple Music or Spotify link; empty: made here)
+    pub link: String,
 }
 
 /// A playlist link kept for later: SoundCloud or YouTube (`kind` = "sc" | "yt").

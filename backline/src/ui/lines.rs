@@ -258,6 +258,13 @@ pub(crate) fn line_score_marked(
     clicked
 }
 
+/// LINES' pages in three groups (each page keeps its own number).
+pub(crate) const LINE_GROUPS: [(&str, &[(u8, &str)]); 3] = [
+    ("PATTERNS", &[(0, "SLONIMSKY'S DIARY"), (5, "ATONAL")]),
+    ("SCALES", &[(1, "SCALE FINGERINGS"), (4, "ARPEGGIOS"), (2, "PENTATONICS & MORE")]),
+    ("OVER CHORDS", &[(3, "SUPERIMPOSE"), (6, "TRIAD PAIRS")]),
+];
+
 impl App {
     /// Keep a playing sequence moving: redraw while it plays, count each time through a line (in the diary), go
     /// round again when LOOP is on, and forget it once it is over.
@@ -291,28 +298,25 @@ impl App {
     pub(crate) fn lines_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         crate::tour::mark("LINESVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
-        ui.add_space(6.0);
-        // three groups on top, the pages of the open one under them (each page keeps its own number)
-        const GROUPS: [(&str, &[(u8, &str)]); 3] = [
-            ("PATTERNS", &[(0, "SLONIMSKY'S DIARY"), (5, "ATONAL")]),
-            ("SCALES", &[(1, "SCALE FINGERINGS"), (4, "ARPEGGIOS"), (2, "PENTATONICS & MORE")]),
-            ("OVER CHORDS", &[(3, "SUPERIMPOSE"), (6, "TRIAD PAIRS")]),
-        ];
-        let group = GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.ln_tab)).unwrap_or(0);
-        let (names, tips) = crate::views::group_tabs(&GROUPS);
-        if let Some(g) = tab_row_tips(ui, &names, group, &tips) {
-            if g != group {
-                self.ln_tab = GROUPS[g].1[0].0;
-            }
-        }
-        // (a group of one page needs no buttons under it)
-        ui.horizontal_wrapped(|ui| {
-            for (t, name) in GROUPS[group].1.iter().filter(|_| GROUPS[group].1.len() > 1) {
-                if retro_btn(ui, name, *t == self.ln_tab).clicked() {
-                    self.ln_tab = *t;
+        // (the page's path over the page does the work of these two rows when it shows)
+        if !self.path_on {
+            ui.add_space(6.0);
+            let group = LINE_GROUPS.iter().position(|g| g.1.iter().any(|p| p.0 == self.ln_tab)).unwrap_or(0);
+            let (names, tips) = crate::views::group_tabs(&LINE_GROUPS);
+            if let Some(g) = tab_row_tips(ui, &names, group, &tips) {
+                if g != group {
+                    self.ln_tab = LINE_GROUPS[g].1[0].0;
                 }
             }
-        });
+            // (a group of one page needs no buttons under it)
+            ui.horizontal_wrapped(|ui| {
+                for (t, name) in LINE_GROUPS[group].1.iter().filter(|_| LINE_GROUPS[group].1.len() > 1) {
+                    if retro_btn(ui, name, *t == self.ln_tab).clicked() {
+                        self.ln_tab = *t;
+                    }
+                }
+            });
+        }
         ui.add_space(6.0);
         // only the improvising tabs play a line over something
         self.ln_backing = None;

@@ -667,18 +667,88 @@ impl App {
         ui.add_space(6.0);
         title_line(ui, "SKINS", 3.0, pal().ink);
         ui.add_space(4.0);
-        let tips = ["Backline's own looks, and your own colors.".to_string(), "Skins made for Winamp.".to_string()];
-        if let Some(k) = crate::widgets::segments_tips(ui, &["Backline", "Winamp"], self.skins_side as usize, &tips) {
-            self.skins_side = k as u8;
-            if k == 1 && self.wa_list.is_empty() && !self.wa_busy {
-                acts.push(Action::WaSearch);
+        // (the owner's pick, 2026-11-24: first the style, each a whole window in little; then that style's colours)
+        use crate::skin::{STYLE_AMBIENT, STYLE_HARDWARE, STYLE_STREAMING};
+        let st = crate::skin::style();
+        let step = |ui: &mut egui::Ui, n: &str, text: &str| {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
+            ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, n, 2.0, pal().ink2);
+            ptext(ui.painter(), Pos2::new(r.min.x + 20.0, r.center().y), Align::Min, text, 2.0, pal().ink);
+        };
+        step(ui, "1", "Style");
+        let sc = crate::font::ui_scale();
+        let gap = 16.0 * sc;
+        let w = ((ui.available_width() - 3.0 * gap - 8.0) / 4.0).clamp(110.0, 230.0 * sc);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            ui.add_space(3.0);
+            for (k, name) in [(0, "Classic"), (STYLE_STREAMING, "Streaming"), (STYLE_AMBIENT, "Ambient Color"), (STYLE_HARDWARE, "Hardware")] {
+                let on = st == k;
+                if crate::styles::style_card(ui, k, name, w, on) && !on {
+                    acts.push(match k {
+                        0 => Action::Classic,
+                        STYLE_AMBIENT => Action::Ambient,
+                        STYLE_STREAMING => Action::Style(false),
+                        _ => Action::Style(true),
+                    });
+                }
             }
-        }
-        ui.add_space(8.0);
-        if self.skins_side == 1 {
-            self.winamp_view(ui, acts);
-        } else {
-            self.looks_view(ui, acts);
+        });
+        ui.add_space(14.0);
+        let name = match st {
+            STYLE_STREAMING => "Streaming's colors",
+            STYLE_AMBIENT => "Ambient Color's colors",
+            STYLE_HARDWARE => "Hardware's colors",
+            _ => "Classic's colors",
+        };
+        step(ui, "2", name);
+        ui.add_space(4.0);
+        match st {
+            STYLE_STREAMING => {
+                let items: Vec<(&str, Color32, Color32)> = crate::skin::STREAM_ACCENTS.iter().map(|(n, c)| (*n, *c, Color32::from_rgb(18, 18, 18))).collect();
+                if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::STREAM_ACC.load(Ordering::Relaxed) as usize, false) {
+                    acts.push(Action::StyleColor(0, i as u8));
+                }
+            }
+            STYLE_HARDWARE => {
+                let items: Vec<(&str, Color32, Color32)> = crate::skin::HW_SCREENS.iter().map(|(n, f, b)| (*n, *f, *b)).collect();
+                if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::HW_SCREEN.load(Ordering::Relaxed) as usize, true) {
+                    acts.push(Action::StyleColor(1, i as u8));
+                }
+            }
+            STYLE_AMBIENT => {
+                crate::views::label(ui, "FEEL", 80.0);
+                let feel = crate::skin::AMB_FEEL.load(Ordering::Relaxed) as usize;
+                let tips: Vec<String> = ["Dark: the album's colors, deep and quiet", "Deep: the album's colors, richer", "Light: pale colors, dark writing"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                if let Some(k) = crate::widgets::segments_tips(ui, &crate::skin::AMB_FEELS, feel, &tips) {
+                    acts.push(Action::StyleColor(2, k as u8));
+                }
+                ui.add_space(6.0);
+                crate::views::label(ui, "FADE BETWEEN SONGS", 200.0);
+                let fade = crate::skin::AMB_FADE.load(Ordering::Relaxed) as usize;
+                let names: Vec<&str> = crate::skin::AMB_FADES.iter().map(|f| f.0).collect();
+                if let Some(k) = crate::widgets::segments(ui, &names, fade) {
+                    acts.push(Action::StyleColor(3, k as u8));
+                }
+            }
+            _ => {
+                let tips = ["Backline's own looks, and your own colors.".to_string(), "Skins made for Winamp.".to_string()];
+                if let Some(k) = crate::widgets::segments_tips(ui, &["Backline", "Winamp"], self.skins_side as usize, &tips) {
+                    self.skins_side = k as u8;
+                    if k == 1 && self.wa_list.is_empty() && !self.wa_busy {
+                        acts.push(Action::WaSearch);
+                    }
+                }
+                ui.add_space(8.0);
+                if self.skins_side == 1 {
+                    self.winamp_view(ui, acts);
+                } else {
+                    self.looks_view(ui, acts);
+                }
+            }
         }
     }
 
@@ -716,7 +786,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = gap;
                         for &n in row {
-                            let on = ours && !custom && n == cur;
+                            let on = ours && !custom && worn.as_ref().is_some_and(|w| w.0 == crate::looks::LOOK_MD5) && n == cur;
                             let tex = crate::looks::look_deck(ui.ctx(), n);
                             let name = crate::winamp_ui::display_case(SKIN_NAMES[n]);
                             if look_card(ui, tex, LOOKS[n].panel, &name, cw, on, &format!("{}. Click to wear it.", name)) && !on {
@@ -1251,6 +1321,10 @@ impl App {
 
     pub(crate) fn library_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         window_deco(ui, ui.max_rect(), "LIBRARY");
+        // a Style has no deck: the window's own buttons (its menu, minimize, maximize, quit) on the library's bar
+        if crate::styles::styled() && !self.mini {
+            self.stream_buttons(ui, acts);
+        }
         // a skin's deck has no title line: its chips (NOW PLAYING, the guide, online...) sit on the library's
         if self.wa_art.is_some() && !self.mini && !crate::winamp_ui::chrome_on() {
             self.title_chips(ui, ui.max_rect(), acts);
@@ -1262,7 +1336,11 @@ impl App {
             // boxes inside boxes
             let all = crate::frame_body(ui.max_rect());
             let p = ui.painter().clone();
-            p.rect_filled(all, 0.0, pal().display);
+            // (a Style: the places and the page each a panel of its own, a gap between)
+            let styled = crate::styles::styled();
+            if !styled {
+                p.rect_filled(all, 0.0, pal().display);
+            }
             // (the places get the window's whole height; Now Playing is the page's foot; their width is yours to
             // drag, double-click its edge for their own. Never narrower than the Listen / Practice switch needs:
             // dragged past that, or no room for it, they become a slim strip of icons, as Spotify's do)
@@ -1292,18 +1370,39 @@ impl App {
                 }
                 None => {}
             }
-            p.rect_filled(side, 0.0, side_tone());
-            p.line_segment([side.right_top(), side.right_bottom()], Stroke::new(1.0_f32, divider()));
+            if styled {
+                crate::styles::panel(&p, side);
+                let page = Rect::from_min_max(Pos2::new(side.max.x + 10.0, all.min.y), all.max);
+                crate::styles::panel(&p, page);
+                // (Ambient's and Streaming's wash in the album's colour, over the whole page, corners and all)
+                let wash = match crate::skin::style() {
+                    crate::skin::STYLE_AMBIENT => Some(self.ambient.accent.gamma_multiply(0.14)),
+                    crate::skin::STYLE_STREAMING => {
+                        let t = self.amb_shown(ui.ctx().input(|i| i.time));
+                        Some(t[0].lerp_to_gamma(t[1], 0.5).gamma_multiply(0.42))
+                    }
+                    _ => None,
+                };
+                if let Some(col) = wash {
+                    let rad = if crate::skin::style() == crate::skin::STYLE_AMBIENT { 10.0 } else { 8.0 };
+                    crate::styles::wash_rounded(&p, Rect::from_min_max(page.min, Pos2::new(page.max.x, (page.min.y + 300.0).min(page.max.y))), col, rad);
+                }
+            } else {
+                p.rect_filled(side, 0.0, side_tone());
+                p.line_segment([side.right_top(), side.right_bottom()], Stroke::new(1.0_f32, divider()));
+            }
             self.side_nav(ui, side, acts);
             tour::mark("TABS", side);
             tour::mark("APPMENU", side);
-            let mut rest = Rect::from_min_max(Pos2::new(side.max.x, all.min.y), all.max);
-            if let Some(tr) = self.cur_track().filter(|_| all.height() > 300.0) {
+            let mut rest = Rect::from_min_max(Pos2::new(side.max.x + if styled { 10.0 } else { 0.0 }, all.min.y), all.max);
+            // (a Style has its own player)
+            if let Some(tr) = self.cur_track().filter(|_| all.height() > 300.0 && !styled) {
                 let bar = Rect::from_min_max(Pos2::new(rest.min.x, rest.max.y - 64.0 * font::ui_scale()), rest.max);
                 rest.max.y = bar.min.y;
                 self.now_bar(ui, bar, &tr, acts);
             }
-            let main = rest.shrink2(Vec2::new(20.0, 14.0));
+            // (a style: the same padding all round)
+            let main = if styled { rest.shrink(16.0) } else { rest.shrink2(Vec2::new(20.0, 14.0)) };
             let mut body = ui.new_child(egui::UiBuilder::new().max_rect(main).layout(egui::Layout::top_down(Align::Min)));
             self.library_body(&mut body, acts, false);
             ui.allocate_rect(all, Sense::hover());
@@ -1344,7 +1443,8 @@ impl App {
         let there = here(Sec::Files) && self.files_there && !self.files_here && peer.is_some();
         // (icon, name, lit, what it does); no icon: a group's heading
         let mut rows: Vec<(&str, &str, bool, u8)> = vec![
-            ("home", "Home", here(Sec::Tidal) && !on_lib && !self.offline, 1),
+            ("home", "Home", here(Sec::Tidal) && !on_lib && !self.offline && !self.search_bar, 1),
+            ("search", "Search", self.search_bar, 9),
             ("", "Music", false, 0),
             ("heart", "My Tracks", here(Sec::Mine), 2),
             ("list", "Lists", here(Sec::Lists), 3),
@@ -1381,27 +1481,51 @@ impl App {
         let top = head_y + 14.0;
         let heads = rows.iter().filter(|r| r.0.is_empty()).count() as f32;
         let items = (rows.len() + foot.len()) as f32 - heads;
-        let rh = (28.0 * sc).min((r.max.y - top - 12.0) / (items + heads * 0.9 + 0.5)).max(16.0);
-        let mut y = top;
+        // (the rows never shorter than their words: with no room for them all, the list scrolls instead, under the
+        // mouse wheel, clipped to its place)
+        let least = 24.0 * sc;
+        let fit = (r.max.y - top - 12.0) / (items + heads * 0.9 + 0.5);
+        let rh = (28.0 * sc).min(fit).max(least);
+        let need = (items + heads * 0.9 + 0.5) * rh + 12.0;
+        let spare = (need - (r.max.y - top)).max(0.0);
+        if spare > 0.0 && ui.rect_contains_pointer(r) {
+            self.nav_off -= ui.input(|i| i.smooth_scroll_delta.y);
+        }
+        self.nav_off = self.nav_off.within(0.0, spare);
+        let clip = Rect::from_min_max(Pos2::new(r.min.x, top - 4.0), r.max);
+        let lp = p.with_clip_rect(clip.intersect(p.clip_rect()));
+        let mut y = top - self.nav_off;
         let mut hit: Option<u8> = None;
         let row = |y: f32, (icon, name, on, key): (&str, &str, bool, u8), hit: &mut Option<u8>| {
             let rr = Rect::from_min_size(Pos2::new(r.min.x + 6.0, y), Vec2::new(r.width() - 12.0, rh - 2.0));
+            // (scrolled out of its place: not drawn, not clickable)
+            if rr.max.y < clip.min.y || rr.min.y > clip.max.y {
+                return;
+            }
             let resp =
                 ui.interact(rr, ui.id().with(("side_nav", key)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-            if on {
-                p.rect_filled(rr, 5.0, pal().panel.lerp_to_gamma(pal().display, 0.3));
-                p.rect_filled(Rect::from_min_size(rr.min, Vec2::new(3.0, rr.height())), 1.5, pal().bar_txt);
+            if crate::hardware() && !mini {
+                // (Hardware: a light by each place, lit for the one you're on)
+                let c = Pos2::new(rr.min.x + 2.0, rr.center().y);
+                if on {
+                    crate::led(&lp, c);
+                } else {
+                    lp.circle_filled(c, 2.2, Color32::from_rgb(58, 52, 42));
+                }
+            } else if on {
+                lp.rect_filled(rr, 5.0, pal().panel.lerp_to_gamma(pal().display, 0.3));
+                lp.rect_filled(Rect::from_min_size(rr.min, Vec2::new(3.0, rr.height())), 1.5, pal().bar_txt);
             } else if resp.hovered() {
-                p.rect_filled(rr, 5.0, Color32::from_white_alpha(10));
+                lp.rect_filled(rr, 5.0, Color32::from_rgba_premultiplied(10, 10, 10, 10));
             }
             let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
             let size = Vec2::splat((16.0 * sc).min(rh - 8.0));
             if mini {
-                crate::vicon::named(&p, Rect::from_center_size(rr.center(), size), icon, col);
+                crate::vicon::named(&lp, Rect::from_center_size(rr.center(), size), icon, col);
             } else {
-                crate::vicon::named(&p, Rect::from_center_size(Pos2::new(rr.min.x + 18.0 * sc, rr.center().y), size), icon, col);
+                crate::vicon::named(&lp, Rect::from_center_size(Pos2::new(rr.min.x + 18.0 * sc, rr.center().y), size), icon, col);
                 let tx = rr.min.x + 36.0 * sc;
-                ptext_fit(&p, Pos2::new(tx, rr.center().y), Align::Min, name, 1.8, rr.max.x - tx - 4.0, col);
+                ptext_fit(&lp, Pos2::new(tx, rr.center().y), Align::Min, name, 1.8, rr.max.x - tx - 4.0, col);
             }
             let resp = if mini { resp.tip(name) } else { resp };
             if resp.clicked() {
@@ -1414,13 +1538,13 @@ impl App {
                 y += rh * 0.3;
                 if mini {
                     let cy = y + rh * 0.3;
-                    p.line_segment(
+                    lp.line_segment(
                         [Pos2::new(r.center().x - 9.0 * sc, cy), Pos2::new(r.center().x + 9.0 * sc, cy)],
                         Stroke::new(1.0_f32, pal().dim),
                     );
                 } else {
                     font::keep_caps(|| {
-                        ptext(&p, Pos2::new(r.min.x + 14.0, y + rh * 0.3), Align::Min, &it.1.to_uppercase(), 1.25, pal().dim)
+                        ptext(&lp, Pos2::new(r.min.x + 14.0, y + rh * 0.3), Align::Min, &it.1.to_uppercase(), 1.25, pal().dim)
                     });
                 }
                 y += rh * 0.6;
@@ -1430,8 +1554,8 @@ impl App {
             y += rh;
         }
         // Backline's own pages, at the foot
-        let mut y = (r.max.y - 8.0 - foot.len() as f32 * rh).max(y + rh * 0.5);
-        p.line_segment(
+        let mut y = if spare > 0.0 { y + rh * 0.5 } else { (r.max.y - 8.0 - foot.len() as f32 * rh).max(y + rh * 0.5) };
+        lp.line_segment(
             [Pos2::new(r.min.x + 12.0, y - 6.0), Pos2::new(r.max.x - 12.0, y - 6.0)],
             Stroke::new(1.0_f32, pal().panel_dk),
         );
@@ -1439,37 +1563,52 @@ impl App {
             row(y, it, &mut hit);
             y += rh;
         }
-        match hit {
-            Some(1) => acts.push(if self.offline { Action::Section(Sec::Files) } else { Action::Home }),
-            Some(2) => acts.push(Action::Section(Sec::Mine)),
-            Some(3) => acts.push(Action::Section(Sec::Lists)),
-            Some(4) => acts.push(if self.offline { Action::Section(Sec::Tidal) } else { Action::Library }),
-            Some(5) => {
+        if let Some(k) = hit {
+            self.nav_go(k, acts);
+        }
+    }
+
+    /// Goes to the side list's place `key` (its rows' numbers); the page path's first step lists them too.
+    pub(crate) fn nav_go(&mut self, key: u8, acts: &mut Vec<Action>) {
+        // (Search: the box at the top of the page, ready to type in; any other place puts it away)
+        self.search_bar = key == 9;
+        if key == 9 {
+            self.ed.id = crate::tools::F_SEARCH;
+            self.ed.cur = self.search.chars().count();
+            self.ed.anchor = Some(0);
+            return;
+        }
+        match key {
+            1 => acts.push(if self.offline { Action::Section(Sec::Files) } else { Action::Home }),
+            2 => acts.push(Action::Section(Sec::Mine)),
+            3 => acts.push(Action::Section(Sec::Lists)),
+            4 => acts.push(if self.offline { Action::Section(Sec::Tidal) } else { Action::Library }),
+            5 => {
                 self.files_there = false;
                 self.files_here = true;
                 acts.push(Action::Section(Sec::Files));
             }
             // the linked computer: its songs, to copy the ones you want
-            Some(8) => {
+            8 => {
                 self.files_there = true;
                 self.files_here = false;
                 self.peer.list = None;
                 acts.push(Action::Section(Sec::Files));
             }
-            Some(6) => acts.push(Action::Section(Sec::Sc)),
-            Some(7) => acts.push(Action::Section(Sec::Yt)),
-            Some(10) => acts.push(Action::Section(Sec::Tunes)),
-            Some(11) => acts.push(Action::Section(Sec::Diary)),
-            Some(12) => acts.push(Action::Section(Sec::Loops)),
-            Some(13) => acts.push(Action::Section(Sec::Reading)),
-            Some(14) => acts.push(Action::Section(Sec::Chords)),
-            Some(15) => acts.push(Action::Section(Sec::Lines)),
-            Some(16) => acts.push(Action::Section(Sec::Melodies)),
-            Some(17) => acts.push(Action::Section(Sec::Ear)),
-            Some(18) => acts.push(Action::OpenChart),
-            Some(20) => acts.push(Action::BacklinePage),
-            Some(21) => acts.push(Action::WaOpen),
-            Some(22) => acts.push(Action::ShowLog),
+            6 => acts.push(Action::Section(Sec::Sc)),
+            7 => acts.push(Action::Section(Sec::Yt)),
+            10 => acts.push(Action::Section(Sec::Tunes)),
+            11 => acts.push(Action::Section(Sec::Diary)),
+            12 => acts.push(Action::Section(Sec::Loops)),
+            13 => acts.push(Action::Section(Sec::Reading)),
+            14 => acts.push(Action::Section(Sec::Chords)),
+            15 => acts.push(Action::Section(Sec::Lines)),
+            16 => acts.push(Action::Section(Sec::Melodies)),
+            17 => acts.push(Action::Section(Sec::Ear)),
+            18 => acts.push(Action::OpenChart),
+            20 => acts.push(Action::BacklinePage),
+            21 => acts.push(Action::WaOpen),
+            22 => acts.push(Action::ShowLog),
             _ => {}
         }
     }
@@ -1484,8 +1623,8 @@ impl App {
         let h = 30.0 * font::ui_scale();
         let area = Rect::from_min_max(Pos2::new(r.min.x + 10.0, y), Pos2::new(r.max.x - 10.0, y + h));
         let p = ui.painter().clone();
-        p.rect_filled(area, crate::corner(), pal().panel.lerp_to_gamma(pal().display, 0.35));
-        p.rect_stroke(area, crate::corner(), Stroke::new(1.0_f32, pal().panel_hover));
+        // (the calm look's small switch: a fine outline, the mode you're in softly filled)
+        p.rect_stroke(area, crate::corner(), Stroke::new(1.0_f32, pal().ink2.gamma_multiply(0.35)));
         let half = area.width() / 2.0;
         for (k, (icon, word, on)) in
             [("headphones", "LISTEN", !self.practice), ("wave", "PRACTICE", self.practice)].into_iter().enumerate()
@@ -1500,11 +1639,11 @@ impl App {
                     "Practice: loop, slow down, the band and your tools.  (P)"
                 });
             if on {
-                p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), pal().ink);
+                p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), pal().ink.gamma_multiply(0.16));
             } else if resp.hovered() {
-                p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), Color32::from_white_alpha(14));
+                p.rect_filled(cell, (crate::corner() - 1.0).max(2.0), pal().ink.gamma_multiply(0.07));
             }
-            let col = if on { pal().display } else { pal().ink2 };
+            let col = if on || resp.hovered() { pal().ink } else { pal().ink2 };
             let tw = text_w(word, 1.4);
             let x0 = cell.center().x - (tw + 18.0) / 2.0;
             crate::vicon::named(&p, Rect::from_center_size(Pos2::new(x0 + 7.0, cell.center().y), Vec2::splat(12.0)), icon, col);
@@ -1743,26 +1882,54 @@ impl App {
                     }
                 }
             }
-            // on a practice page with the side list (no tab row to hold it): ALL PAGES, at the end of this row
+            // on a practice page with the side list (no tab row to hold it): the page's path ("Chords › Shapes ›
+            // Chord Book"), standing in for ALL PAGES and the page's own rows of tabs
             let pages = crate::practice_tools()
                 && !tabs
                 && !side
                 && self.sec.practice();
-            let pages_w = if pages { crate::views::pages_w() } else { 0.0 };
-            if !self.offline && !side {
+            self.path_on = pages;
+            if pages {
+                self.page_path(ui, acts);
+            }
+            // (no skin: the search box in this row, as ever)
+            if !self.offline && !side && !crate::winamp_ui::chrome_on() {
                 let go_w = 54.0;
-                let w = (ui.available_width() - go_w - pages_w - ui.spacing().item_spacing.x).max(80.0);
+                let w = (ui.available_width() - go_w - ui.spacing().item_spacing.x).max(80.0);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
                 self.search_input(ui, rect, acts);
                 if retro_btn_w(ui, "GO", go_w, false).clicked() {
                     acts.push(Action::Search(self.search.clone()));
                 }
             }
-            if pages {
-                self.go_to(ui, acts);
-            }
         });
+        // a skin worn: the search box on a row of its own at the top of the page, when Search in the side list asked
+        // for it (or the keyboard is in it)
+        if crate::winamp_ui::chrome_on() && !self.offline && !side && (self.search_bar || self.ed.id == crate::tools::F_SEARCH) {
+            self.search_bar = true;
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let go_w = 54.0;
+                let w = (ui.available_width() - go_w - ui.spacing().item_spacing.x).max(80.0);
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh() + 6.0), Sense::hover());
+                self.search_input(ui, rect, acts);
+                if retro_btn_w(ui, "GO", go_w, false).clicked() {
+                    acts.push(Action::Search(self.search.clone()));
+                }
+            });
+            ui.add_space(4.0);
+        }
 
+        // Streaming: the page's own name big and bold under its path
+        // (Ambient Color too: its Clean Glass's big title)
+        let big = matches!(crate::skin::style(), crate::skin::STYLE_STREAMING | crate::skin::STYLE_AMBIENT);
+        if big && self.path_on && !self.path_title.is_empty() {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 52.0), Sense::hover());
+            let at = Pos2::new(r.min.x + 4.0, r.center().y + 2.0);
+            for dx in [0.0, 0.6, 1.2] {
+                ptext(ui.painter(), at + Vec2::new(dx, 0.0), Align::Min, &self.path_title, 4.6, pal().ink);
+            }
+        }
         // library tabs
         let is_lib = self.sec == Sec::Tidal && self.page.as_ref().map(|p| p.library).unwrap_or(false);
         if is_lib && self.side.is_none() {
@@ -1985,5 +2152,64 @@ impl App {
         p.line_segment([c + Vec2::new(-1.5, 3.5) * sc, c + Vec2::new(5.5, -4.0) * sc], s);
         crate::ptext_fit(&p, Pos2::new(r.min.x + 36.0 * sc, r.center().y), Align::Min, &text, px, tw, ink);
         ui.ctx().request_repaint();
+    }
+}
+
+/// A colour fading down to nothing over `r` (Ambient Color's wash under a page's top).
+pub(crate) fn color_wash(p: &egui::Painter, r: Rect, top: Color32) {
+    let mut m = egui::Mesh::default();
+    m.colored_vertex(r.left_top(), top);
+    m.colored_vertex(r.right_top(), top);
+    m.colored_vertex(r.left_bottom(), Color32::TRANSPARENT);
+    m.colored_vertex(r.right_bottom(), Color32::TRANSPARENT);
+    m.add_triangle(0, 1, 2);
+    m.add_triangle(1, 3, 2);
+    p.add(m);
+}
+
+impl App {
+    /// Streaming's window buttons on the library's bar, right to left: quit, maximize, minimize, and the menu (skins,
+    /// preferences, help), as the deck has them in the other looks.
+    fn stream_buttons(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
+        let inner = ui.max_rect();
+        let s = 24.0;
+        let mut right = crate::title_right(inner);
+        let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        let max_tip = if self.fullscreen {
+            "Exit Full Screen"
+        } else if max {
+            "Restore"
+        } else {
+            "Maximize"
+        };
+        let menu_id = ui.id().with("stream_menu");
+        for (k, icon, tip) in [(0, "close", "Quit Backline"), (1, "max", max_tip), (2, "min", "Minimize"), (3, "menu", "Options: skins, preferences and help.")] {
+            let r = crate::title_slot(inner, right, s, s);
+            right = r.min.x - 4.0;
+            let h = ui.interact(r, ui.id().with(("stream_btn", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+            crate::quiet_h(ui.painter(), r, h.is_pointer_button_down_on(), h.hovered());
+            let col = if h.hovered() { pal().ink } else { pal().ink2 };
+            crate::vicon::named(ui.painter(), r.shrink(6.0), icon, col);
+            match k {
+                0 if h.clicked() => acts.push(Action::QuitApp),
+                1 if h.clicked() => crate::chrome::toggle_max(ui.ctx()),
+                2 if h.clicked() => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+                3 => {
+                    if h.clicked() {
+                        ui.memory_mut(|m| m.toggle_popup(menu_id));
+                    }
+                    egui::popup::popup_below_widget(ui, menu_id, &h, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                        ui.set_max_width(320.0 * crate::font::ui_scale());
+                        let room = (ui.ctx().screen_rect().max.y - ui.cursor().min.y - 12.0).max(80.0);
+                        egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
+                            if self.app_menu_items(ui, acts) {
+                                ui.memory_mut(|m| m.close_popup());
+                            }
+                        });
+                    });
+                }
+                _ => {}
+            }
+        }
     }
 }

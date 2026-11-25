@@ -1106,7 +1106,10 @@ impl App {
 
     pub(crate) fn diary_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.add_space(6.0);
-        title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
+        // (the page's path over it names the page)
+        if !self.path_on {
+            title_line(ui, "PRACTICE DIARY", 3.0, pal().ink);
+        }
         // MY PLAN only when there is a plan file of your own
         let mine = crate::plan::have_plan();
         let tabs: &[&str] = if mine { &["DIARY", "ROUTINE", "LISTENING", "MY PLAN"] } else { &["DIARY", "ROUTINE", "LISTENING"] };

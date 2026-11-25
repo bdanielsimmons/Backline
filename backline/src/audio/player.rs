@@ -29,8 +29,8 @@ pub enum Cmd {
     Once(Vec<i16>, f32),
     /// stop every Once sound still playing
     StopOnce,
-    /// short three-note chime (focus timer, only when you switch it on)
-    Chime,
+    /// short three-note chime (focus timer, only when you switch it on; My Plan's blocks), at its own volume (0 to 1)
+    Chime(f32),
     Stop,
     /// play through this output (None = the system's default). What was playing stops; the app plays it again.
     Device(Option<String>),
@@ -1623,9 +1623,10 @@ impl Player {
                             s.stop();
                         }
                     }
-                    Ok(Cmd::Chime) => {
+                    Ok(Cmd::Chime(v)) => {
                         if let Ok(c) = Sink::try_new(&handle) {
-                            c.set_volume(out((vol * 1.5).clamp(0.3, 1.0)));
+                            // (its own volume, whatever the music's)
+                            c.set_volume(out(v.clamp(0.0, 1.0)));
                             c.append(rodio::buffer::SamplesBuffer::new(1, 44100, chime_buf()));
                             c.detach();
                         }

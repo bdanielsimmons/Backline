@@ -7,41 +7,48 @@ pub(crate) use crate::fretboard::*;
 use crate::theory;
 use crate::views::field;
 
+/// CHORDS' pages in three groups (each page keeps its own number); THE CHORD BOOK only when its file is in Backline's
+/// folder (`book`).
+pub(crate) fn chord_groups(book: bool) -> [(&'static str, &'static [(u8, &'static str)]); 3] {
+    const SHAPES: &[(u8, &str)] = &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")];
+    const SHAPES_BOOK: &[(u8, &str)] = &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS"), (10, "CHORD BOOK")];
+    [
+        ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
+        ("SHAPES", if book { SHAPES_BOOK } else { SHAPES }),
+        ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "COMPING MOVES"), (9, "PROGRESSION LAB")]),
+    ]
+}
+
 impl App {
     /// The CHORDS tab.
     pub(crate) fn chords_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         crate::tour::mark("CHORDSVIEW", ui.clip_rect());
         // a sequence playing: keep redrawing so the chord sounding now lights up
         self.seq_tick(ui.ctx());
-        ui.add_space(6.0);
-        // three groups on top, the pages of the open one under them (each page keeps its own number); THE CHORD BOOK
-        // only when its file is in Backline's folder
-        const SHAPES: &[(u8, &str)] = &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS")];
-        const SHAPES_BOOK: &[(u8, &str)] = &[(2, "TRIADS"), (3, "VOICINGS"), (4, "CLUSTERS"), (10, "CHORD BOOK")];
         self.cb_load();
-        let groups: [(&'static str, &[(u8, &'static str)]); 3] = [
-            ("FIND & NAME", &[(0, "FIND A CHORD"), (1, "CHORD ANALYZER")]),
-            ("SHAPES", if self.cb_book.is_some() { SHAPES_BOOK } else { SHAPES }),
-            ("HARMONY", &[(6, "SCALE HARMONY"), (8, "PROGRESSIONS"), (5, "PASSING CHORDS"), (7, "COMPING MOVES"), (9, "PROGRESSION LAB")]),
-        ];
+        let groups = chord_groups(self.cb_book.is_some());
         if self.chords_tab == 10 && self.cb_book.is_none() {
             self.chords_tab = 4;
         }
-        let group = groups.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
-        let (names, tips) = crate::views::group_tabs(&groups);
-        if let Some(g) = tab_row_tips(ui, &names, group, &tips) {
-            if g != group {
-                self.chords_tab = groups[g].1[0].0;
-            }
-        }
-        // (a group of one page needs no buttons under it)
-        ui.horizontal_wrapped(|ui| {
-            for (t, name) in groups[group].1.iter().filter(|_| groups[group].1.len() > 1) {
-                if retro_btn(ui, name, *t == self.chords_tab).clicked() {
-                    self.chords_tab = *t;
+        // (the page's path over the page does the work of these two rows when it shows)
+        if !self.path_on {
+            ui.add_space(6.0);
+            let group = groups.iter().position(|g| g.1.iter().any(|p| p.0 == self.chords_tab)).unwrap_or(0);
+            let (names, tips) = crate::views::group_tabs(&groups);
+            if let Some(g) = tab_row_tips(ui, &names, group, &tips) {
+                if g != group {
+                    self.chords_tab = groups[g].1[0].0;
                 }
             }
-        });
+            // (a group of one page needs no buttons under it)
+            ui.horizontal_wrapped(|ui| {
+                for (t, name) in groups[group].1.iter().filter(|_| groups[group].1.len() > 1) {
+                    if retro_btn(ui, name, *t == self.chords_tab).clicked() {
+                        self.chords_tab = *t;
+                    }
+                }
+            });
+        }
         ui.add_space(6.0);
         match self.chords_tab {
             0 => self.chord_find(ui, acts),

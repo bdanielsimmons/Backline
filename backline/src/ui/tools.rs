@@ -610,6 +610,7 @@ impl App {
             {
                 acts.push(Action::Opt(Opt::PomoSound));
             }
+            self.chime_slider(ui);
             let flags: [(&str, &str, u8); 3] = [
                 ("AUTO-START NEXT BLOCK", "When a break ends, the next focus block starts automatically.", 0),
                 ("PAUSE MUSIC DURING BREAKS", "The music pauses when a block ends and resumes when the next one starts.", 1),
@@ -2092,15 +2093,8 @@ fn panel_title(p: &egui::Painter, r: Rect, text: &str) {
 /// The face of a pill: flat with small corners with a skin worn, a raised button without.
 fn pill_face(p: &egui::Painter, r: Rect, open: bool, hot: bool) {
     if crate::winamp_ui::chrome_on() {
-        let fill = if open {
-            pal().display
-        } else if hot {
-            pal().display.lerp_to_gamma(pal().panel, 0.25)
-        } else {
-            pal().display.lerp_to_gamma(pal().panel, 0.4)
-        };
-        p.rect_filled(r, crate::corner(), fill);
-        p.rect_stroke(r, crate::corner(), egui::Stroke::new(1.0_f32, if open { pal().bar_txt } else { pal().edge }));
+        // (the calm look: no box; a soft shade under the pointer, deeper while its panel is open)
+        crate::quiet_h(p, r, open, hot);
     } else {
         crate::raised_h(p, r, open, hot);
     }
@@ -2156,9 +2150,14 @@ fn icon_pill(ui: &mut egui::Ui, icon: &str, text: &str, w: f32, on: bool) -> egu
     let w = (w * crate::font::ui_scale()).max(text_w(text, 2.0) + h + 22.0);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     let p = ui.painter();
-    let fg = if crate::winamp_ui::chrome_on() && on {
-        p.rect_filled(r, (h / 2.0).min(14.0), pal().ink);
-        pal().display
+    let fg = if crate::winamp_ui::chrome_on() {
+        // (the calm look: no box; softly filled while on)
+        crate::quiet_h(p, r, on || resp.is_pointer_button_down_on(), resp.hovered());
+        if on || resp.hovered() {
+            pal().ink
+        } else {
+            pal().ink2
+        }
     } else {
         crate::raised_h(p, r, on || resp.is_pointer_button_down_on(), resp.hovered());
         pal().ink
@@ -2252,5 +2251,36 @@ mod tests {
         assert_eq!(next_speed(87), 100, "a typed speed goes to the next preset up");
         assert_eq!(next_speed(250), 50);
         assert!(SPEEDS.windows(2).all(|w| w[0] < w[1]) && SPEEDS.contains(&100));
+    }
+}
+
+impl App {
+    /// The chime's volume (the focus timer's and My Plan's), apart from the music's: CHIME, a line to click or drag
+    /// along, how loud in per cent, and HEAR to try it.
+    pub(crate) fn chime_slider(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            crate::views::label(ui, "CHIME", 64.0);
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(150.0, bh()), Sense::click_and_drag());
+            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("How loud the chime is, apart from the music");
+            let line = Rect::from_min_max(Pos2::new(r.min.x + 4.0, r.center().y - 2.0), Pos2::new(r.max.x - 4.0, r.center().y + 2.0));
+            if resp.clicked() || resp.dragged() {
+                if let Some(pp) = resp.interact_pointer_pos() {
+                    self.chime_vol = ((pp.x - line.min.x) / line.width()).clamp(0.0, 1.0);
+                    self.dirty = true;
+                }
+            }
+            // (let go after a drag: hear how loud it is now)
+            if resp.drag_stopped() {
+                self.player.send(crate::player::Cmd::Chime(self.chime_vol));
+            }
+            let p = ui.painter();
+            p.rect_filled(line, 2.0, pal().ink.gamma_multiply(0.18));
+            p.rect_filled(Rect::from_min_size(line.min, Vec2::new(line.width() * self.chime_vol, line.height())), 2.0, pal().ink);
+            p.circle_filled(Pos2::new(line.min.x + line.width() * self.chime_vol, line.center().y), 6.0, pal().ink);
+            label(ui, &format!("{}%", (self.chime_vol * 100.0).round() as u32), 44.0);
+            if retro_btn(ui, "HEAR", false).tip("Play the chime at this volume").clicked() {
+                self.player.send(crate::player::Cmd::Chime(self.chime_vol));
+            }
+        });
     }
 }

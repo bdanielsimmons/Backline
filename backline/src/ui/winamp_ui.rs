@@ -55,7 +55,9 @@ impl App {
         // the deck's width: the one just asked for when the mini player has only now come on
         let w = self.mini_size_at.map_or(ctx.screen_rect().width(), |(_, s)| s.x);
         let k = w / 275.0;
-        let h = 116.0 * k + if want.0 { 116.0 * k } else { 0.0 } + if want.1 { 232.0 * k } else { 0.0 };
+        // (a style's equalizer is Backline's own, taller than the skin's)
+        let eq_h = if crate::styles::styled() { (170.0 * k).max(330.0) } else { 116.0 * k };
+        let h = 116.0 * k + if want.0 { eq_h } else { 0.0 } + if want.1 { 232.0 * k } else { 0.0 };
         let size = Vec2::new(w, h);
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
         if self.mini_size_at.is_some() {
@@ -1135,7 +1137,9 @@ impl App {
         let bar = Rect::from_min_max(outer.min, Pos2::new(outer.max.x, outer.min.y + top));
         let list = Rect::from_min_max(outer.min + Vec2::new(left, top), outer.max - Vec2::new(right, bottom));
         // the list's own background, in the skin's playlist colour
-        p.rect_filled(list, 0.0, pal().display);
+        // (Streaming: a rounded panel on black)
+        let round = if crate::skin::style() == crate::skin::STYLE_STREAMING { 8.0 } else { 0.0 };
+        p.rect_filled(list, round, pal().display);
 
         // ---- the frame
         if flat {
@@ -1175,7 +1179,9 @@ impl App {
         let cur = self.cur;
         // the rows and their text stop growing at double size: a stack dragged wide keeps a readable list
         let tk = k.min(2.0);
-        let row_h = 13.0 * tk;
+        // with covers on (the track lists' switch), each song its cover, its name over its artist (the owner's pick)
+        let arts = crate::row_arts_on();
+        let row_h = if arts { 26.0 * tk } else { 13.0 * tk };
         let rows = ((list.height() - 4.0) / row_h).floor().max(1.0) as usize;
         let max_top = queue.len().saturating_sub(rows) as f32;
         let mut first = self.wa_pl_top.within(0.0, max_top);
@@ -1249,7 +1255,22 @@ impl App {
                 }
                 dw += crate::HEART_W + 4.0;
             }
-            pl_text(&clip, Pos2::new(r.min.x + 3.0 * tk, r.center().y), Align::Min, &label, tk, r.width() - dw - 10.0 * tk, col);
+            if arts {
+                let cs = r.height() - 6.0 * tk;
+                let cr = Rect::from_min_size(Pos2::new(r.min.x + 5.0 * tk, r.min.y + 3.0 * tk), Vec2::splat(cs));
+                let url = if tr.cover.is_empty() { String::new() } else { format!("thumb:{}", crate::api::cover_url(&tr.cover, 80)) };
+                if cr.intersects(list) {
+                    crate::row_cover(&heart_ui, cr, &url);
+                }
+                let tx = cr.max.x + 7.0 * tk;
+                let room = r.max.x - dw - 8.0 * tk - tx;
+                let name = if self.queued(i) { format!("QUEUED  {}", tr.title) } else { tr.title.clone() };
+                pl_text(&clip, Pos2::new(tx, r.center().y - 6.0 * tk), Align::Min, &name, tk, room, col);
+                let by = if now { col.gamma_multiply(0.75) } else { pal().ink2 };
+                pl_text(&clip, Pos2::new(tx, r.center().y + 6.0 * tk), Align::Min, &tr.artists_text(), tk, room, by);
+            } else {
+                pl_text(&clip, Pos2::new(r.min.x + 3.0 * tk, r.center().y), Align::Min, &label, tk, r.width() - dw - 10.0 * tk, col);
+            }
             if h.clicked() {
                 acts.push(Action::PlayIndex(i));
             }

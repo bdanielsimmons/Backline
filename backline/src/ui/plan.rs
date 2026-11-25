@@ -1010,7 +1010,7 @@ impl App {
         if self.plan.mark(k, true) {
             self.plan_credit(&blocks[k]);
         }
-        self.player.send(Cmd::Chime);
+        self.player.send(Cmd::Chime(self.chime_vol));
         self.ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
         if k + 1 < blocks.len() {
             let auto = self.plan.auto;
@@ -1066,6 +1066,8 @@ impl App {
             if retro_btn(ui, "RELOAD", false).tip("Reload the plan file. It also reloads automatically when the file changes.").clicked() {
                 self.plan.seen = None;
             }
+            ui.add_space(12.0);
+            self.chime_slider(ui);
         });
 
         // ---- today

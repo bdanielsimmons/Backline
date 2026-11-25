@@ -470,12 +470,13 @@ impl App {
                             String::new()
                         };
                         self.toast(&format!("Found {} of {} songs{}", im.tracks.len(), im.tracks.len() + im.missing.len(), read));
-                        self.pl_link.clear();
+                        let link = crate::clean_link(&std::mem::take(&mut self.pl_link));
                         let d = crate::new_playlist::NewPl {
                             name: im.name,
                             tracks: im.tracks,
                             desc: format!("From {}", im.from),
                             missing: im.missing,
+                            link,
                             ..Default::default()
                         };
                         self.open_new_playlist(d);
@@ -931,6 +932,24 @@ impl App {
                 }
             }
             Msg::WaSkin(r) => self.wear_skin(r, true),
+            Msg::Ambient(url, look, tint, r) => {
+                // (Streaming: only its wash takes the album's colours)
+                if crate::skin::style() == crate::skin::STYLE_STREAMING && url == self.amb_for {
+                    let now = self.ctx.input(|i| i.time);
+                    self.amb_from = self.amb_shown(now);
+                    self.amb_t0 = now;
+                    self.amb_tint = tint;
+                }
+                // (still worn, and still the cover playing)
+                if crate::ambient_worn(self.wa_worn.as_ref()) && url == self.amb_for {
+                    self.ambient = look;
+                    let now = self.ctx.input(|i| i.time);
+                    self.amb_from = self.amb_shown(now);
+                    self.amb_t0 = now;
+                    self.amb_tint = tint;
+                    self.wear_skin(r, false);
+                }
+            }
             Msg::TagsSaved(r) => match r {
                 Ok(name) => self.set_note(&format!("FILE TAGS UPDATED: {}", name)),
                 Err(e) => self.set_err(format!("RENAMED IN BACKLINE, BUT COULDN'T UPDATE THE FILE: {}", e)),
