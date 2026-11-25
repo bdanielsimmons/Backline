@@ -548,8 +548,28 @@ impl App {
                     self.sel_anchor = Some(time_at(pp.x));
                 }
             }
-            // ctrl + drag near A or B moves that marker
+            // a drag that starts on A or B moves that marker (ctrl + drag near one too); the pointer shows it can
             let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+            let near = |x: f32| -> u8 {
+                [(1u8, self.loop_a), (2u8, self.loop_b)]
+                    .into_iter()
+                    .filter_map(|(k, v)| v.map(|t| (k, (at(t) - x).abs())))
+                    .filter(|c| c.1 < 7.0)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map_or(0, |c| c.0)
+            };
+            if self.marker_drag == 0 && !shift && resp.hovered() {
+                if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
+                    if near(pp.x) != 0 {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                    }
+                }
+            }
+            if resp.drag_started_by(egui::PointerButton::Primary) && !shift && !ctrl {
+                if let Some(pp) = resp.interact_pointer_pos() {
+                    self.marker_drag = near(pp.x);
+                }
+            }
             if resp.drag_started() && ctrl {
                 if let Some(pp) = resp.interact_pointer_pos() {
                     self.marker_drag = [(1u8, self.loop_a), (2u8, self.loop_b)]

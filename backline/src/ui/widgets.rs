@@ -71,10 +71,6 @@ pub(crate) fn icon_btn_w(ui: &mut egui::Ui, icon: &[&str], on: bool, col: Color3
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-pub(crate) fn icon_btn(ui: &mut egui::Ui, icon: &[&str], on: bool, col: Color32) -> egui::Response {
-    icon_btn_w(ui, icon, on, col, 44.0)
-}
-
 /// Icon on the left, a short label on the right.
 pub(crate) fn ibtn(ui: &mut egui::Ui, icon: &[&str], text: &str, on: bool) -> egui::Response {
     let sc = font::ui_scale();

@@ -383,6 +383,8 @@ enum Msg {
     WaList(Result<Vec<winamp::WaSkin>, String>, bool),
     /// a Winamp skin fetched and turned into colours
     WaSkin(Result<(winamp::WaSkin, skin::Pal, winamp::Art), String>),
+    /// Now Playing's blurred cover made (the cover's address, the picture)
+    NpBlur(String, egui::ColorImage),
     /// a playlist's original read again: (its place, its link, quiet, what's new there)
     PlaylistUpdated(usize, String, bool, Result<playlist_link::Imported, String>),
     /// Ambient Color worked out from a cover (its address): the colours and the look made in them
@@ -1032,12 +1034,9 @@ struct App {
     /// art view caption: size (0 small, 1 medium, 2 large) and soft black text on a light plate instead of soft white
     cap_size: u8,
     cap_dark: bool,
-    /// what Now Playing shows of the song: 0 art and info (with visuals in place of the cover, a small cover fades in
-    /// over the words when the mouse moves or a song starts), 1 info only, 2 nothing
+    /// what Now Playing shows of the song: 0 art and info, 1 info only, 2 nothing
     cap_show: u8,
-    /// that small cover: how far in (0..1), when it was last called up, for which song; when the choice was changed
-    cap_art: f32,
-    cap_art_at: f64,
+    /// the song Now Playing's card last showed (a new one brings the card up); when the choice was changed
     cap_song: i64,
     cap_mode_at: f64,
     /// the album view's background colours as shown, easing toward the new cover's
@@ -1055,6 +1054,13 @@ struct App {
     viz: [viz::VizCfg; 2],
     viz_wave: Vec<f32>,
     show_lyrics: bool,
+    /// Now Playing: when the mouse last moved (its controls fade a few seconds after), the side panel's tab (0 lyrics,
+    /// 1 up next, 2 about, 3 loops), the blurred cover behind it (and the cover it was made from), Hardware's VU levels
+    np_move_at: f64,
+    np_tab: u8,
+    np_blur: Option<egui::TextureHandle>,
+    np_blur_for: String,
+    vu: [f32; 2],
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
     fs_by_art: bool,
@@ -2170,8 +2176,6 @@ impl App {
             cap_size: 1,
             cap_dark: false,
             cap_show: 0,
-            cap_art: 0.0,
-            cap_art_at: 0.0,
             cap_song: 0,
             cap_mode_at: -10.0,
             bg_now: None,
@@ -2183,6 +2187,11 @@ impl App {
             viz: [viz::VizCfg::player(), viz::VizCfg::art()],
             viz_wave: vec![0.0; WAVE_N],
             show_lyrics: true,
+            np_move_at: 0.0,
+            np_tab: 0,
+            np_blur: None,
+            np_blur_for: String::new(),
+            vu: [0.0; 2],
             fullscreen: false,
             fs_by_art: false,
             art_tilt: Vec2::ZERO,
@@ -3717,8 +3726,9 @@ impl eframe::App for App {
         test_shot(ctx);
         // can anyone see the window? (minimized or covered: the visuals and the redraws while playing stop)
         onscreen::check(ctx, frame);
-        // Ambient Color follows the cover playing
+        // Ambient Color follows the cover playing; Now Playing's blurred cover too
         self.ambient_tick();
+        self.np_blur_tick();
         // (a test copy says how often its main window draws, every few seconds)
         if hidden_test_copy() {
             static DRAWN: std::sync::Mutex<(u32, f64)> = std::sync::Mutex::new((0, 0.0));

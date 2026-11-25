@@ -424,39 +424,6 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
     }
 }
 
-/// The button that pops the visuals out (beside VISUALS in Now Playing): a small screen in the corner of a big one,
-/// drawn as the other icons are (in the pixel look, in pixels).
-pub(crate) fn button(ui: &mut egui::Ui, col: Color32) -> egui::Response {
-    const PIXELS: [&str; 9] = [
-        "###########",
-        "#.........#",
-        "#.........#",
-        "#.........#",
-        "#....######",
-        "#....######",
-        "#....######",
-        "#....######",
-        "###########",
-    ];
-    let sc = crate::font::ui_scale();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(44.0 * sc, crate::bh()), Sense::click());
-    let down = resp.is_pointer_button_down_on();
-    crate::raised_h(ui.painter(), rect, down, resp.hovered());
-    let c = rect.center() + Vec2::new(0.0, if down { 1.0 } else { 0.0 });
-    let p = ui.painter();
-    if crate::winamp_ui::chrome_on() {
-        let s = 21.0 * sc;
-        let at = |x: f32, y: f32| c + Vec2::new((x - 0.5) * s, (y - 0.5) * s);
-        p.rect_stroke(Rect::from_min_max(at(0.06, 0.16), at(0.94, 0.84)), 0.08 * s, egui::Stroke::new((s * 0.11).max(1.3), col));
-        p.rect_filled(Rect::from_min_max(at(0.5, 0.48), at(0.84, 0.74)), 0.04 * s, col);
-    } else {
-        let px = 2.0 * sc;
-        let size = Vec2::new(PIXELS[0].len() as f32 * px, PIXELS.len() as f32 * px);
-        crate::icons::pixmap(p, (c - size / 2.0).round(), px, &PIXELS, col);
-    }
-    resp.on_hover_cursor(CursorIcon::PointingHand)
-}
-
 /// An arrow head at `c`, pointing left or right, drawn as the vector icons are.
 fn chevron(p: &egui::Painter, c: Pos2, left: bool, col: Color32) {
     let k: f32 = if left { 1.0 } else { -1.0 };

@@ -578,7 +578,7 @@ impl App {
     /// The queue as the style shows it: a heading with how many songs are still to come and how long they run, then
     /// the songs, each with its cover (the ones played greyed, the one playing lit); a click plays one, a drag (held
     /// left button or the middle one) moves it. Hardware's on an amber screen, numbered, in capitals.
-    fn style_queue(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
+    pub(crate) fn style_queue(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
         let hw = style() == STYLE_HARDWARE;
         let p = ui.painter().clone();
         let queue = self.queue.clone();
@@ -1251,4 +1251,78 @@ impl App {
             }
         }
     }
+}
+
+impl App {
+    /// While Now Playing is open: its blurred cover made from the cover playing, away from the frame (the cover's small
+    /// picture squeezed to 24 by 24, then softened twice, drawn stretched with smooth filtering).
+    pub(crate) fn np_blur_tick(&mut self) {
+        if !self.art_view {
+            return;
+        }
+        let cover = self.cur_track().map(|t| t.cover).unwrap_or_default();
+        if cover.is_empty() {
+            return;
+        }
+        let url = format!("thumb:{}", crate::api::cover_url(&cover, 80));
+        if url == self.np_blur_for {
+            return;
+        }
+        self.np_blur_for = url.clone();
+        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let Some(img) = crate::picture(&api, &url) else { return };
+            let _ = tx.send(Msg::NpBlur(url, blur_small(&img)));
+            ctx.request_repaint();
+        });
+    }
+}
+
+/// A picture squeezed to 24 by 24 (each a box average) and softened with two passes of a 3 by 3 blur.
+fn blur_small(img: &egui::ColorImage) -> egui::ColorImage {
+    const N: usize = 24;
+    let [w, h] = img.size;
+    let mut px = vec![[0f32; 3]; N * N];
+    for y in 0..N {
+        for x in 0..N {
+            let (x0, x1) = (x * w / N, ((x + 1) * w / N).max(x * w / N + 1).min(w));
+            let (y0, y1) = (y * h / N, ((y + 1) * h / N).max(y * h / N + 1).min(h));
+            let mut s = [0f32; 3];
+            let mut n = 0f32;
+            for yy in y0..y1 {
+                for xx in x0..x1 {
+                    let c = img.pixels[yy * w + xx];
+                    s[0] += c.r() as f32;
+                    s[1] += c.g() as f32;
+                    s[2] += c.b() as f32;
+                    n += 1.0;
+                }
+            }
+            px[y * N + x] = [s[0] / n.max(1.0), s[1] / n.max(1.0), s[2] / n.max(1.0)];
+        }
+    }
+    for _ in 0..2 {
+        let src = px.clone();
+        for y in 0..N {
+            for x in 0..N {
+                let mut s = [0f32; 3];
+                let mut n = 0f32;
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        let (xx, yy) = (x as i32 + dx, y as i32 + dy);
+                        if xx >= 0 && yy >= 0 && (xx as usize) < N && (yy as usize) < N {
+                            let c = src[yy as usize * N + xx as usize];
+                            for k in 0..3 {
+                                s[k] += c[k];
+                            }
+                            n += 1.0;
+                        }
+                    }
+                }
+                px[y * N + x] = [s[0] / n, s[1] / n, s[2] / n];
+            }
+        }
+    }
+    let rgba: Vec<u8> = px.iter().flat_map(|c| [c[0] as u8, c[1] as u8, c[2] as u8, 255]).collect();
+    egui::ColorImage::from_rgba_unmultiplied([N, N], &rgba)
 }

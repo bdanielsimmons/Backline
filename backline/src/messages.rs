@@ -967,6 +967,11 @@ impl App {
                 }
             }
             Msg::WaSkin(r) => self.wear_skin(r, true),
+            Msg::NpBlur(url, img) => {
+                if url == self.np_blur_for {
+                    self.np_blur = Some(self.ctx.load_texture("np_blur", img, egui::TextureOptions::LINEAR));
+                }
+            }
             Msg::Ambient(url, look, tint, r) => {
                 // (Streaming: only its wash takes the album's colours)
                 if crate::skin::style() == crate::skin::STYLE_STREAMING && url == self.amb_for {
