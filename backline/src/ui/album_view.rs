@@ -77,7 +77,8 @@ impl App {
         self.np_backdrop(&p, whole, dt, &url, now);
 
         // ---- visuals filling the window, under everything
-        let vis = self.vis_in_np() && !prac;
+        // (Hardware shows the visuals inside its screen, not over the whole window)
+        let vis = self.vis_in_np() && !prac && st != STYLE_HARDWARE;
         if vis {
             self.vis_paint(ui, whole, 1);
             let name = self.vis_name();
@@ -184,7 +185,7 @@ impl App {
 
         // ---- the switches at the top right: Lyrics, Up Next, Visuals
         if show > 0.0 && !prac {
-            let items = [("Visuals", vis), ("Up Next", panel_on && self.np_tab == 1), ("Lyrics", panel_on && self.np_tab == 0)];
+            let items = [("Visuals", self.vis_np), ("Up Next", panel_on && self.np_tab == 1), ("Lyrics", panel_on && self.np_tab == 0)];
             let mut x = full.max.x - 28.0;
             let y = full.min.y + 14.0;
             for (n, (name, on)) in items.into_iter().enumerate() {
@@ -1009,9 +1010,33 @@ impl App {
             let mr = Rect::from_min_size(Pos2::new(right.min.x + c as f32 * (mw + 16.0), right.min.y), Vec2::new(mw, mh));
             vu_meter(&p, mr, self.vu[c], name);
         }
-        // the analyzer: 32 bars of lit segments, a peak dot over each
-        let an = Rect::from_min_max(Pos2::new(right.min.x, right.min.y + mh + 16.0), right.max);
+        // the screen under the meters: the analyzer, or the visuals (two keys over it pick)
+        let keys = Rect::from_min_size(Pos2::new(right.min.x, right.min.y + mh + 14.0), Vec2::new(right.width(), 28.0));
+        for (k, name) in ["Analyzer", "Visuals"].iter().enumerate() {
+            let kr = Rect::from_min_size(Pos2::new(keys.min.x + k as f32 * 112.0, keys.min.y), Vec2::new(104.0, 26.0));
+            let h = ui.interact(kr, ui.id().with(("hw_screen_key", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let on = (k == 1) == self.vis_np;
+            crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
+            p.text(kr.center() + Vec2::new(6.0, 0.0), egui::Align2::CENTER_CENTER, name, egui::FontId::proportional(13.0), if on { crate::styles::amber() } else { Color32::from_gray(205) });
+            crate::led(&p, Pos2::new(kr.min.x + 10.0, kr.center().y));
+            if !on {
+                p.circle_filled(Pos2::new(kr.min.x + 10.0, kr.center().y), 3.0, Color32::from_rgb(58, 52, 42));
+            }
+            if h.clicked() {
+                self.vis_np = k == 1;
+                self.dirty = true;
+            }
+            if k == 1 {
+                h.context_menu(|ui| self.vis_menu(ui));
+            }
+        }
+        let an = Rect::from_min_max(Pos2::new(right.min.x, keys.max.y + 8.0), right.max);
         crate::styles::lcd(&p, an);
+        if self.vis_np {
+            // the visuals inside the screen (right-click Visuals to pick them)
+            self.vis_paint(ui, an.shrink(6.0), 1);
+            return;
+        }
         let inner = an.shrink(12.0);
         let bands = crate::viz::resample(&self.bands, 32, 1.0);
         let peaks = crate::viz::resample(&self.peaks, 32, 1.0);
@@ -1072,11 +1097,12 @@ fn vu_meter(p: &egui::Painter, r: Rect, amp: f32, name: &str) {
         clip.line_segment([pt(a, rad), pt(a, rad + if long { 10.0 } else { 6.0 })], Stroke::new(1.3_f32, col));
         if long {
             let at = pt(a, rad + 20.0);
-            font::keep_caps(|| ptext(&clip, at, Align::Center, label, 1.0, col));
+            // (the figures in the smooth face, sized to the dial: the pixel one squashed them)
+            clip.text(at, egui::Align2::CENTER_CENTER, label, egui::FontId::proportional((f.height() * 0.085).clamp(10.0, 15.0)), col);
         }
     }
-    font::keep_caps(|| ptext(&clip, Pos2::new(f.center().x, f.max.y - 18.0), Align::Center, "VU", 1.5, ink));
-    font::keep_caps(|| ptext(&clip, Pos2::new(f.min.x + 8.0, f.min.y + 9.0), Align::Min, name, 0.9, ink.gamma_multiply(0.7)));
+    clip.text(Pos2::new(f.center().x, f.max.y - 18.0), egui::Align2::CENTER_CENTER, "VU", egui::FontId::proportional((f.height() * 0.13).clamp(13.0, 22.0)), ink);
+    clip.text(Pos2::new(f.min.x + 9.0, f.min.y + 10.0), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(10.5), ink.gamma_multiply(0.7));
     // the needle: thin and dark, from the pivot up through the scale
     let a = ang(amp);
     clip.line_segment([pt(a, rad * 0.62), pt(a, rad + 14.0)], Stroke::new(1.6_f32, Color32::from_rgb(20, 18, 16)));
