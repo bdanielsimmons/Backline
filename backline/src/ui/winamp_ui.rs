@@ -455,9 +455,9 @@ impl App {
         // the visualizer, in the skin's own colours (2 = top of the bars ... 17 = bottom, 23 = peaks);
         // click it for bars / wave / both, right-click for all its settings
         let vz = hit(ui, "viz", pl.r(24.0, 43.0, 76.0, 16.0), false)
-            .tip("Visualizer. Click for bars, wave, both or visuals; right-click for settings.");
+            .tip("Visualizer. Click for bars, wave or both; right-click for settings.");
         if vz.clicked() {
-            self.viz[0].mode = (self.viz[0].mode + 1) % 4;
+            self.viz[0].mode = (self.viz[0].mode + 1) % 3;
             self.dirty = true;
         }
         if vz.secondary_clicked() {
@@ -467,10 +467,7 @@ impl App {
         // (the song's length sits in the visualizer's top right corner, under the time: the visualizer keeps out
         // from under it, nothing behind the letters)
         let len_x = track.as_ref().filter(|_| active).map(|tr| 99.0 - format!("/{}", fmt_time(tr.duration)).chars().count() as f32 * 5.0);
-        if active && self.viz[0].mode == 3 {
-            let w = len_x.map_or(76.0, |x| (x - 2.0 - 24.0).max(10.0));
-            self.vis_paint(ui, pl.r(24.0, 43.0, w, 16.0), 2);
-        } else if active {
+        if active {
             let at = pl.o + Vec2::new(24.0, 43.0) * pl.s;
             match len_x {
                 Some(x) => {
@@ -1454,9 +1451,7 @@ impl App {
             piece((205.0, 0.0, 75.0, 38.0), vr);
             let (bands, peaks, wave) = self.viz_data(0);
             let inner = Rect::from_min_size(vr.min + Vec2::new(3.0, 12.0) * k, Vec2::new(72.0, 16.0) * k);
-            if self.cur.is_some() && !self.stopped && self.viz[0].mode == 3 {
-                self.vis_paint(ui, inner, 3);
-            } else if self.cur.is_some() && !self.stopped {
+            if self.cur.is_some() && !self.stopped {
                 // the same style as the player's (bars, wave or both), in the skin's colours
                 skin_viz(&p.with_clip_rect(inner), inner.min, k, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
             }
