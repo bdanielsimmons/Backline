@@ -390,7 +390,7 @@ enum Msg {
     /// Now Playing's blurred cover made (the cover's address, the picture)
     NpBlur(String, egui::ColorImage),
     /// Studio's cover printed in ink (which cover and screen, the picture)
-    StudioDither(String, egui::ColorImage),
+    StudioDither(&'static str, String, egui::ColorImage),
     /// a playlist's original read again: (its place, its link, quiet, what's new there)
     PlaylistUpdated(usize, String, bool, Result<playlist_link::Imported, String>),
     /// Ambient Color worked out from a cover (its address): the colours and the look made in them
@@ -1092,8 +1092,8 @@ struct App {
     /// the one being made), the terrain's rows (newest first) and when the last was taken
     studio_np: u8,
     studio_vis: u8,
-    studio_dith: (String, Option<egui::TextureHandle>),
-    studio_dith_busy: String,
+    studio_dith: HashMap<&'static str, (String, String, egui::TextureHandle)>,
+    studio_dith_busy: HashMap<&'static str, (String, f64)>,
     studio_terr: Vec<Vec<f32>>,
     studio_terr_at: f64,
     fullscreen: bool,
@@ -2242,8 +2242,8 @@ impl App {
             hw_tex: None,
             studio_np: 0,
             studio_vis: 0,
-            studio_dith: (String::new(), None),
-            studio_dith_busy: String::new(),
+            studio_dith: HashMap::new(),
+            studio_dith_busy: HashMap::new(),
             studio_terr: Vec::new(),
             studio_terr_at: 0.0,
             fullscreen: false,

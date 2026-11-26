@@ -968,11 +968,12 @@ impl App {
                 }
             }
             Msg::WaSkin(r) => self.wear_skin(r, true),
-            Msg::StudioDither(key, img) => {
-                if key == self.studio_dith_busy {
-                    let tex = self.ctx.load_texture("studio_dither", img, egui::TextureOptions::NEAREST);
-                    self.studio_dith = (key, Some(tex));
-                    self.studio_dith_busy.clear();
+            Msg::StudioDither(slot, key, img) => {
+                if self.studio_dith_busy.get(slot).is_some_and(|b| b.0 == key) {
+                    self.studio_dith_busy.remove(slot);
+                    let cover = key.rsplit_once('|').map_or(key.as_str(), |(c, _)| c).to_string();
+                    let tex = self.ctx.load_texture(format!("studio_dither_{}", slot), img, egui::TextureOptions::NEAREST);
+                    self.studio_dith.insert(slot, (cover, key, tex));
                 }
             }
             Msg::NpBlur(url, img) => {

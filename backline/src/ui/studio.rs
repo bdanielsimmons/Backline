@@ -106,23 +106,30 @@ pub(crate) fn frame(p: &egui::Painter, r: Rect, name: &str) {
     p.rect_filled(Rect::from_min_size(r.min, Vec2::new(r.width(), 2.0)), 0.0, Color32::from_black_alpha(26));
     if !name.is_empty() {
         let t = format!("─[ {} ]─", name.to_uppercase());
-        let size = 9.0;
+        let size = 10.0;
         let w = p.ctx().fonts(|f| f.layout_no_wrap(t.clone(), egui::FontId::new(size * sc(), egui::FontFamily::Name("studio_px".into())), Color32::WHITE).size().x);
         let at = Pos2::new(r.min.x + 10.0, r.min.y - 1.0);
-        p.rect_filled(Rect::from_min_size(Pos2::new(at.x - 3.0, at.y - 6.5 * sc()), Vec2::new(w + 6.0, 13.0 * sc())), 0.0, BODY);
+        p.rect_filled(Rect::from_min_size(Pos2::new(at.x - 3.0, at.y - 7.0 * sc()), Vec2::new(w + 6.0, 14.0 * sc())), 0.0, BODY);
         px(p, at, egui::Align2::LEFT_CENTER, &t, size, label());
     }
 }
 
-/// Small tabs on a screen's frame, at its top right (the window's switches, Now Playing's views): the one that's on
-/// in the glass's colour. Returns the one clicked.
+/// Tabs on a screen's frame, at its top right (the window's switches, Now Playing's views): the one that's on in the
+/// glass's colour. As big as the frame's width allows (a narrow frame: smaller). Returns the one clicked.
 pub(crate) fn frame_tabs(ui: &mut egui::Ui, r: Rect, items: &[(&str, bool, &str)], salt: &str) -> Option<usize> {
     let p = ui.painter().clone();
-    let size = 8.0;
-    let font = egui::FontId::new(size * sc(), egui::FontFamily::Name("studio_px".into()));
-    let ws: Vec<f32> = items.iter().map(|(t, _, _)| ui.fonts(|f| f.layout_no_wrap(t.to_uppercase(), font.clone(), Color32::WHITE).size().x) + 8.0).collect();
-    let mut x = r.max.x - 4.0 - ws.iter().sum::<f32>() - 3.0 * (items.len().saturating_sub(1)) as f32;
-    let h = 13.0 * sc();
+    let widths = |size: f32| -> Vec<f32> {
+        let font = egui::FontId::new(size * sc(), egui::FontFamily::Name("studio_px".into()));
+        items.iter().map(|(t, _, _)| ui.fonts(|f| f.layout_no_wrap(t.to_uppercase(), font.clone(), Color32::WHITE).size().x) + size * 1.2).collect()
+    };
+    let gaps = 3.0 * (items.len().saturating_sub(1)) as f32;
+    let mut size = 13.0;
+    while size > 8.0 && widths(size).iter().sum::<f32>() + gaps > r.width() - 24.0 {
+        size -= 0.5;
+    }
+    let ws = widths(size);
+    let mut x = r.max.x - 4.0 - ws.iter().sum::<f32>() - gaps;
+    let h = (size + 7.0) * sc();
     let y = r.min.y - 1.0 - h / 2.0;
     let mut hit = None;
     for (i, (t, on, tip)) in items.iter().enumerate() {
@@ -178,6 +185,18 @@ pub(crate) fn light(p: &egui::Painter, c: Pos2, lit: bool, col: Color32) {
         p.rect_filled(r, 0.0, col);
     }
     p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, col));
+}
+
+/// The time big in LCD digits, `h` tall from `at` (left middle), and the song's length after it, small, at the digits'
+/// foot ("/ 6:23"), as Studio shows the time wherever it's big. Returns how wide, the length included.
+pub(crate) fn time_digits(p: &egui::Painter, at: Pos2, h: f32, shown: &str, dur: f32) -> f32 {
+    let tw = digits(p, at, h, shown, ink(), ghost());
+    if dur <= 0.0 {
+        return tw;
+    }
+    let size = (h / sc() * 0.46).clamp(9.0, 18.0);
+    let r = px(p, Pos2::new(at.x + tw + 6.0, at.y + h * 0.44 + 1.0), egui::Align2::LEFT_BOTTOM, &format!("/ {}", fmt_time(dur)), size, ink());
+    tw + 6.0 + r.width()
 }
 
 /// LCD digits, `h` tall, from `at` (left middle): every segment there, the unlit ones faint. ':' and '-' and ' '
@@ -323,7 +342,8 @@ impl App {
         let th = (cs * 0.42).clamp(24.0, 38.0);
         let time = self.deck_time();
         let shown = if time.starts_with('-') { time.clone() } else { format!(" {}", time) };
-        let tw = digits(&p, Pos2::new(tx, r.min.y + th / 2.0 + 2.0), th, &shown, ink(), ghost());
+        let dur_now = tr.as_ref().map_or(0.0, |t| t.duration);
+        let tw = time_digits(&p, Pos2::new(tx, r.min.y + th / 2.0 + 2.0), th, &shown, dur_now);
         let time_r = Rect::from_min_size(Pos2::new(tx, r.min.y), Vec2::new(tw + 6.0, th + 4.0));
         if ui.interact(time_r, id.with("time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
             self.time_left = !self.time_left;
@@ -468,7 +488,9 @@ impl App {
         match tr.as_ref().map(|t| t.cover.clone()) {
             Some(c) if !c.is_empty() => {
                 if ink_cover {
-                    match self.studio_dither(ui.ctx(), &c) {
+                    // (dotted at the size it's shown: a dot to a screen pixel)
+                    let px = (r.width() * ui.ctx().pixels_per_point()).round().clamp(32.0, 1280.0) as usize;
+                    match self.studio_dither(ui.ctx(), slot, &c, px) {
                         Some(id) => {
                             let mut m = egui::Mesh::with_texture(id);
                             m.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
@@ -490,26 +512,35 @@ impl App {
         p.rect_stroke(r.expand(2.0), 0.0, Stroke::new(1.0_f32, ink()));
     }
 
-    /// The cover printed in the screen's ink: its picture squeezed to 128 by 128 and ordered-dithered into dots of ink
-    /// on clear (made once per cover and screen colour, off the frame).
-    fn studio_dither(&mut self, ctx: &egui::Context, cover: &str) -> Option<egui::TextureId> {
-        let url = format!("thumb:{}", crate::api::cover_url(cover, 160));
-        let key = format!("{}|{}", url, crate::skin::STUDIO_SCREEN.load(std::sync::atomic::Ordering::Relaxed));
-        if self.studio_dith.0 == key {
-            return self.studio_dith.1.as_ref().map(|t| t.id());
+    /// The cover printed in the screen's ink for one place (`slot`), `px` screen pixels across: the whole cover dotted
+    /// in the ink, a dot to a pixel (made off the frame, again when the size or the screen colour changes; meanwhile
+    /// the last one of the same cover shows).
+    fn studio_dither(&mut self, ctx: &egui::Context, slot: &'static str, cover: &str, px: usize) -> Option<egui::TextureId> {
+        let url = crate::api::cover_url(cover, if px > 640 { 1280 } else { 640 });
+        let same = format!("{}|{}", cover, crate::skin::STUDIO_SCREEN.load(std::sync::atomic::Ordering::Relaxed));
+        let key = format!("{}|{}", same, px);
+        let held = self.studio_dith.get(slot).filter(|h| h.0 == same).map(|h| (h.1 == key, h.2.id()));
+        if let Some((true, id)) = held {
+            return Some(id);
         }
-        if self.studio_dith_busy == key {
-            return None;
+        let now = ctx.input(|i| i.time);
+        let wait = match self.studio_dith_busy.get(slot) {
+            Some((k, _)) if *k == key => true,
+            // (resized: the one being made finishes first, unless it's taking a while)
+            Some((k, t)) => k.starts_with(&format!("{}|", same)) && now - t < 0.5,
+            None => false,
+        };
+        if !wait {
+            self.studio_dith_busy.insert(slot, (key.clone(), now));
+            let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), ctx.clone());
+            let inkc = ink();
+            std::thread::spawn(move || {
+                let Some(img) = crate::picture(&api, &url) else { return };
+                let _ = tx.send(Msg::StudioDither(slot, key, dither(&img, inkc, px)));
+                ctx.request_repaint();
+            });
         }
-        self.studio_dith_busy = key.clone();
-        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), ctx.clone());
-        let inkc = ink();
-        std::thread::spawn(move || {
-            let Some(img) = crate::picture(&api, &url) else { return };
-            let _ = tx.send(Msg::StudioDither(key, dither(&img, inkc)));
-            ctx.request_repaint();
-        });
-        None
+        held.map(|h| h.1)
     }
 
     /// Studio's Now Playing: one big screen with tabs on its frame. With none picked: the cover, the song in big dot
@@ -638,7 +669,7 @@ impl App {
             marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 16.0, ink());
             let time = self.deck_time();
             let shown = if time.starts_with('-') { time } else { format!(" {}", time) };
-            digits(&p, Pos2::new(r.min.x, mq.max.y + 26.0 * s), 34.0 * s, &shown, ink(), ghost());
+            time_digits(&p, Pos2::new(r.min.x, mq.max.y + 26.0 * s), 34.0 * s, &shown, tr.duration);
         }
         let lr = Rect::from_min_max(Pos2::new(r.min.x + lw + 30.0, r.min.y), r.max);
         let cp = p.with_clip_rect(lr);
@@ -823,7 +854,7 @@ impl App {
         let cover = Rect::from_min_size(head.min, Vec2::splat(head.height()));
         self.studio_cover(ui, cover, "studio_np", 160);
         if let Some(tr) = self.cur_track() {
-            let mq = Rect::from_min_max(Pos2::new(cover.max.x + 14.0, head.min.y), Pos2::new(head.max.x - 160.0 * s, head.min.y + 24.0 * s));
+            let mq = Rect::from_min_max(Pos2::new(cover.max.x + 14.0, head.min.y), Pos2::new(head.max.x - 230.0 * s, head.min.y + 24.0 * s));
             marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 18.0, ink());
             let info = crate::meta::get(tr.id).unwrap_or_default();
             let mut parts: Vec<String> = Vec::new();
@@ -839,8 +870,8 @@ impl App {
             px(&p, Pos2::new(mq.min.x, head.max.y - 10.0 * s), egui::Align2::LEFT_CENTER, &parts.join("  ·  "), 8.0, dim());
             let time = self.deck_time();
             let shown = if time.starts_with('-') { time } else { format!(" {}", time) };
-            let tw = digits(&p, Pos2::new(head.max.x - 150.0 * s, head.center().y), 40.0 * s, &shown, ink(), ghost());
-            let tr_r = Rect::from_min_size(Pos2::new(head.max.x - 150.0 * s, head.min.y), Vec2::new(tw + 6.0, head.height()));
+            let tw = time_digits(&p, Pos2::new(head.max.x - 220.0 * s, head.center().y), 40.0 * s, &shown, tr.duration);
+            let tr_r = Rect::from_min_size(Pos2::new(head.max.x - 220.0 * s, head.min.y), Vec2::new(tw + 6.0, head.height()));
             if ui.interact(tr_r, ui.id().with("studio_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
                 self.time_left = !self.time_left;
                 self.dirty = true;
@@ -852,34 +883,66 @@ impl App {
     }
 }
 
-/// A picture ordered-dithered into dots of `ink` on clear (128 by 128).
-pub(crate) fn dither(img: &egui::ColorImage, ink: Color32) -> egui::ColorImage {
-    const N: usize = 128;
-    const BAYER: [u8; 64] = [
-        0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25,
-        15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21,
-    ];
+/// A picture (its middle square) dotted in `ink` on clear, `n` dots across: its brightness spread by error diffusion
+/// (Floyd-Steinberg, the rows in turn left to right and back), so faces and lettering stay recognizable.
+pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize) -> egui::ColorImage {
+    let n = n.max(1);
     let [w, h] = img.size;
-    let mut px = vec![Color32::TRANSPARENT; N * N];
-    for y in 0..N {
-        for x in 0..N {
-            // (a box average of the picture under this dot, its brightness lifted a little so mid-greys keep detail)
-            let (x0, x1) = (x * w / N, ((x + 1) * w / N).max(x * w / N + 1).min(w));
-            let (y0, y1) = (y * h / N, ((y + 1) * h / N).max(y * h / N + 1).min(h));
-            let (mut sum, mut n) = (0.0f32, 0.0f32);
-            for yy in y0..y1 {
-                for xx in x0..x1 {
-                    let c = img.pixels[yy * w + xx];
-                    sum += 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
-                    n += 1.0;
-                }
+    let s = w.min(h).max(1);
+    let (ox, oy) = ((w - s.min(w)) / 2, (h - s.min(h)) / 2);
+    let gray = image::GrayImage::from_fn(s as u32, s as u32, |x, y| {
+        let c = img.pixels.get((oy + y as usize) * w + ox + x as usize).copied().unwrap_or(Color32::WHITE);
+        image::Luma([(0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) as u8])
+    });
+    let small = image::imageops::resize(&gray, n as u32, n as u32, image::imageops::FilterType::CatmullRom);
+    // (brightness lifted a little, so the mid-greys keep their detail)
+    let mut v: Vec<f32> = small.pixels().map(|p| (p.0[0] as f32 / 255.0).powf(0.9)).collect();
+    let mut px = vec![Color32::TRANSPARENT; n * n];
+    for y in 0..n {
+        let right = y % 2 == 0;
+        // the next dot along the row, and the one before it
+        let ahead = |x: usize| if right { (x + 1 < n).then_some(x + 1) } else { x.checked_sub(1) };
+        let behind = |x: usize| if right { x.checked_sub(1) } else { (x + 1 < n).then_some(x + 1) };
+        for i in 0..n {
+            let x = if right { i } else { n - 1 - i };
+            let k = y * n + x;
+            let dark = v[k] < 0.5;
+            if dark {
+                px[k] = ink;
             }
-            let g = (sum / n.max(1.0) / 255.0).powf(0.85);
-            let t = (BAYER[(y % 8) * 8 + (x % 8)] as f32 + 0.5) / 64.0;
-            if g < t {
-                px[y * N + x] = ink;
+            let err = v[k] - if dark { 0.0 } else { 1.0 };
+            if let Some(a) = ahead(x) {
+                v[y * n + a] += err * 7.0 / 16.0;
+            }
+            if y + 1 < n {
+                if let Some(b) = behind(x) {
+                    v[(y + 1) * n + b] += err * 3.0 / 16.0;
+                }
+                v[(y + 1) * n + x] += err * 5.0 / 16.0;
+                if let Some(a) = ahead(x) {
+                    v[(y + 1) * n + a] += err / 16.0;
+                }
             }
         }
     }
-    egui::ColorImage { size: [N, N], pixels: px }
+    egui::ColorImage { size: [n, n], pixels: px }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dither_keeps_the_tone() {
+        // a mid grey comes out about half dots, white none, black all, at the size asked
+        let grey = |g: u8| egui::ColorImage::new([40, 30], Color32::from_gray(g));
+        let ink = Color32::BLACK;
+        let count = |img: &egui::ColorImage| img.pixels.iter().filter(|c| **c == ink).count();
+        let d = dither(&grey(128), ink, 64);
+        assert_eq!(d.size, [64, 64]);
+        let f = count(&d) as f32 / (64.0 * 64.0);
+        assert!((0.35..0.6).contains(&f), "{}", f);
+        assert_eq!(count(&dither(&grey(255), ink, 32)), 0);
+        assert_eq!(count(&dither(&grey(0), ink, 32)), 32 * 32);
+    }
 }
