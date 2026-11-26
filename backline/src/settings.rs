@@ -277,6 +277,14 @@ impl App {
             if let Some(v) = st["style_colors"][i].as_u64() {
                 at.store(v as u8, Ordering::Relaxed);
             }
+        }
+        for (i, at) in [&crate::skin::STREAM_OWN, &crate::skin::HW_OWN[0], &crate::skin::HW_OWN[1], &crate::skin::STUDIO_OWN[0], &crate::skin::STUDIO_OWN[1]]
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(v) = st["style_own"][i].as_u64() {
+                at.store(v as u32 & 0x00ff_ffff, Ordering::Relaxed);
+            }
         }        // the skin worn last time, put on before the first frame so the window opens already wearing it: one of
         // Backline's looks, your Custom one, or a Winamp skin (from its saved file; gone, Backline's look instead)
         let worn = (st["winamp"][0].as_str(), st["winamp"][1].as_str());
@@ -510,6 +518,14 @@ impl App {
                 crate::skin::AMB_FADE.load(Ordering::Relaxed),
                 crate::skin::STUDIO_SCREEN.load(Ordering::Relaxed),
                 crate::skin::STUDIO_COVER.load(Ordering::Relaxed)
+            ],
+            // (your own colours for the styles: Streaming's accent, Hardware's writing and glass, Studio's glass and ink)
+            "style_own": [
+                crate::skin::STREAM_OWN.load(Ordering::Relaxed),
+                crate::skin::HW_OWN[0].load(Ordering::Relaxed),
+                crate::skin::HW_OWN[1].load(Ordering::Relaxed),
+                crate::skin::STUDIO_OWN[0].load(Ordering::Relaxed),
+                crate::skin::STUDIO_OWN[1].load(Ordering::Relaxed)
             ],
             "ambient_look": [
                 [self.ambient.background.r(), self.ambient.background.g(), self.ambient.background.b()],

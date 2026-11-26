@@ -846,6 +846,8 @@ pub(crate) fn check_box(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Respon
 
 pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -> egui::Response {
     let w = (w * font::ui_scale()).max(text_w(text, 2.0) + 16.0);
+    // (never wider than the row it's in: on a narrow page it shrinks and its words are fitted, never off the edge)
+    let w = w.min(ui.max_rect().width().max(40.0));
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
     let down = resp.is_pointer_button_down_on() || active;
     if winamp_ui::chrome_on() {
@@ -892,6 +894,32 @@ pub(crate) fn retro_btn(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Re
 
 /// A heading in small spaced capitals with an accent line under it (a skin worn): `px` the text size. Returns how
 /// wide it came out.
+/// How wide `spaced_caps` draws `text`.
+fn spaced_caps_w(text: &str, px: f32) -> f32 {
+    font::keep_caps(|| {
+        let up = text.to_uppercase();
+        let n = up.chars().count() as f32;
+        up.chars().map(|c| text_w(&c.to_string(), px)).sum::<f32>() + 1.6 * px * (n - 1.0).max(0.0)
+    })
+}
+
+/// `spaced_caps` in no more than `max_w`: smaller first (down to two thirds), then cut with "...".
+pub(crate) fn spaced_caps_fit(p: &egui::Painter, at: Pos2, text: &str, px: f32, max_w: f32, col: Color32) -> f32 {
+    let w = spaced_caps_w(text, px);
+    if w <= max_w {
+        return spaced_caps(p, at, text, px, col);
+    }
+    let k = (px * max_w / w).max(px * 0.66);
+    if spaced_caps_w(text, k) <= max_w {
+        return spaced_caps(p, at, text, k, col);
+    }
+    let mut t: Vec<char> = text.chars().collect();
+    while t.len() > 1 && spaced_caps_w(&format!("{}...", t.iter().collect::<String>().trim_end()), k) > max_w {
+        t.pop();
+    }
+    spaced_caps(p, at, &format!("{}...", t.iter().collect::<String>().trim_end()), k, col)
+}
+
 pub(crate) fn spaced_caps(p: &egui::Painter, at: Pos2, text: &str, px: f32, col: Color32) -> f32 {
     font::keep_caps(|| {
         let up = text.to_uppercase();
@@ -914,7 +942,7 @@ pub(crate) fn section_header(ui: &mut egui::Ui, text: &str) {
     if winamp_ui::chrome_on() {
         ui.add_space(8.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
-        spaced_caps(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 9.0), text, 1.4, pal().ink);
+        spaced_caps_fit(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 9.0), text, 1.4, rect.width() - 8.0, pal().ink);
         return;
     }
     font::keep_caps(|| {
@@ -1483,7 +1511,7 @@ pub(crate) fn title_line(ui: &mut egui::Ui, text: &str, px: f32, col: Color32) {
     if winamp_ui::chrome_on() && px >= 2.5 && text.chars().any(|c| c.is_alphabetic()) && !text.chars().any(|c| c.is_lowercase()) {
         ui.add_space(4.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
-        spaced_caps(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 12.0), text, 1.9, col);
+        spaced_caps_fit(ui.painter(), Pos2::new(rect.min.x + 4.0, rect.min.y + 12.0), text, 1.9, rect.width() - 8.0, col);
         return;
     }
     // a line of words under a heading (a skin worn): it starts with a capital, and a button named in capitals reads

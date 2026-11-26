@@ -16,6 +16,38 @@ pub(crate) struct LookEdit {
     pending: bool,
 }
 
+/// Your own colours for the style worn, being picked: which style, what it wore before (its choice and its own
+/// colours, for Cancel), the colour being picked, when it was last put on and whether a change waits to be.
+pub(crate) struct StyleEdit {
+    style: u8,
+    before: (u8, [u32; 2]),
+    role: usize,
+    drawn_at: f64,
+    pending: bool,
+}
+
+/// A style's own colours: what each is called, and where it's kept.
+fn style_own(st: u8) -> (&'static str, Vec<(&'static str, &'static std::sync::atomic::AtomicU32)>, &'static std::sync::atomic::AtomicU8, usize) {
+    use crate::skin::*;
+    match st {
+        STYLE_STREAMING => ("STREAMING: YOUR OWN ACCENT", vec![("Accent", &STREAM_OWN)], &STREAM_ACC, STREAM_ACCENTS.len()),
+        STYLE_HARDWARE => ("HARDWARE: YOUR OWN SCREEN", vec![("Writing", &HW_OWN[0]), ("Glass", &HW_OWN[1])], &HW_SCREEN, HW_SCREENS.len()),
+        _ => ("STUDIO: YOUR OWN SCREEN", vec![("Screen", &STUDIO_OWN[0]), ("Ink", &STUDIO_OWN[1])], &STUDIO_SCREEN, STUDIO_SCREENS.len()),
+    }
+}
+
+/// The style's own choices, as quick picks for one of its colours.
+fn style_picks(st: u8, role: usize) -> Vec<Color32> {
+    use crate::skin::*;
+    match (st, role) {
+        (STYLE_STREAMING, _) => STREAM_ACCENTS.iter().map(|a| a.1).collect(),
+        (STYLE_HARDWARE, 0) => HW_SCREENS.iter().map(|s| s.1).collect(),
+        (STYLE_HARDWARE, _) => HW_SCREENS.iter().map(|s| s.2).collect(),
+        (_, 0) => STUDIO_SCREENS.iter().map(|s| s.1).collect(),
+        _ => STUDIO_SCREENS.iter().map(|s| s.3).collect(),
+    }
+}
+
 /// The colors you can pick, in the editor's order.
 const ROLES: [&str; 4] = ["Background", "Display", "Accent", "Text"];
 
@@ -248,6 +280,11 @@ impl App {
 
     /// Open the Custom look's editor, wearing it straight away.
     pub(crate) fn edit_look(&mut self) {
+        // (a style worn: its own colours, staying in it)
+        if matches!(crate::skin::style(), crate::skin::STYLE_STREAMING | crate::skin::STYLE_HARDWARE | crate::skin::STYLE_STUDIO) {
+            self.edit_style();
+            return;
+        }
         let now = self.ctx.input(|i| i.time);
         self.look_edit = Some(LookEdit {
             before: (self.wa_worn.clone(), SKIN.load(Ordering::Relaxed), self.custom, self.look_custom),
@@ -256,6 +293,165 @@ impl App {
             pending: false,
         });
         self.wear_custom();
+    }
+
+    /// Your own colours for the style worn (Streaming, Hardware, Studio): its last choice, picked here; you stay in the
+    /// style. Starts from the colours it wears now.
+    pub(crate) fn edit_style(&mut self) {
+        let st = crate::skin::style();
+        let (_, roles, at, own) = style_own(st);
+        let before = (at.load(Ordering::Relaxed), [0, 1].map(|k| roles.get(k).map_or(0, |r| r.1.load(Ordering::Relaxed))));
+        // (first time: your own starts as what you wear)
+        if (at.load(Ordering::Relaxed) as usize) < own {
+            let now: Vec<Color32> = match st {
+                crate::skin::STYLE_STREAMING => vec![crate::skin::stream_accent().1],
+                crate::skin::STYLE_HARDWARE => {
+                    let s = crate::skin::hw_screen_named();
+                    vec![s.1, s.2]
+                }
+                _ => {
+                    let s = crate::skin::studio_screen();
+                    vec![s.1, s.3]
+                }
+            };
+            for (r, c) in roles.iter().zip(now) {
+                crate::skin::set_rgb(r.1, c);
+            }
+        }
+        self.style_edit = Some(StyleEdit { style: st, before, role: 0, drawn_at: 0.0, pending: false });
+        self.style_color(match st {
+            crate::skin::STYLE_STREAMING => 0,
+            crate::skin::STYLE_HARDWARE => 1,
+            _ => 4,
+        }, own as u8);
+    }
+
+    /// The style's own colours being picked: a chip for each, the picker, the style's choices as quick picks; Done
+    /// keeps them, Cancel (or Esc) puts back what it wore.
+    pub(crate) fn style_panel(&mut self, ctx: &egui::Context) {
+        let Some(edit) = self.style_edit.as_ref() else { return };
+        let st = edit.style;
+        if crate::skin::style() != st {
+            self.style_edit = None;
+            return;
+        }
+        let (title, roles, at, _) = style_own(st);
+        let (mut done, mut cancel) = ctx.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+        let mut role = edit.role.min(roles.len() - 1);
+        let pending = edit.pending;
+        let mut changed = false;
+        panel(ctx, "style_edit", 520.0, |ui| {
+            title_line(ui, title, 3.0, pal().ink);
+            ui.add_space(2.0);
+            para(ui, "The whole style is drawn in these colors.", pal().ink2);
+            ui.add_space(6.0);
+            if roles.len() > 1 {
+                ui.horizontal_wrapped(|ui| {
+                    for (k, (name, c)) in roles.iter().enumerate() {
+                        let w = crate::font::text_w(name, 1.6) + 40.0;
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::click());
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let p = ui.painter();
+                        p.rect_filled(r, crate::corner(), if k == role { pal().btn_hi } else if resp.hovered() { pal().sel } else { pal().btn_face });
+                        // (the one being picked outlined: a lighter or darker fill alone doesn't read in every look)
+                        if k == role {
+                            p.rect_stroke(r.shrink(0.5), crate::corner(), Stroke::new(1.5_f32, pal().ink));
+                        }
+                        p.circle_filled(Pos2::new(r.min.x + 14.0, r.center().y), 7.0, crate::skin::rgb(c));
+                        p.circle_stroke(Pos2::new(r.min.x + 14.0, r.center().y), 7.0, Stroke::new(1.0_f32, pal().edge));
+                        crate::font::ptext(p, Pos2::new(r.min.x + 28.0, r.center().y), Align::Min, name, 1.6, pal().ink);
+                        if resp.clicked() {
+                            role = k;
+                        }
+                    }
+                });
+                ui.add_space(8.0);
+            }
+            ui.horizontal_wrapped(|ui| {
+                let slot = roles[role].1;
+                let mut c = crate::skin::rgb(slot);
+                let before = c;
+                ui.vertical(|ui| {
+                    ui.spacing_mut().slider_width = 230.0;
+                    egui::color_picker::color_picker_color32(ui, &mut c, egui::color_picker::Alpha::Opaque);
+                });
+                ui.add_space(12.0);
+                ui.vertical(|ui| {
+                    for row in style_picks(st, role).chunks(5) {
+                        ui.horizontal(|ui| {
+                            for q in row {
+                                let (r, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+                                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.painter().rect_filled(r.shrink(1.0), crate::corner(), *q);
+                                let on = *q == c;
+                                let edge = if on { pal().ink } else if resp.hovered() { pal().ink2 } else { pal().edge };
+                                ui.painter().rect_stroke(r.shrink(1.0), crate::corner(), Stroke::new(if on { 2.0_f32 } else { 1.0 }, edge));
+                                if resp.clicked() {
+                                    c = *q;
+                                }
+                            }
+                        });
+                    }
+                });
+                if c != before {
+                    crate::skin::set_rgb(slot, c);
+                    changed = true;
+                }
+            });
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if retro_btn_w(ui, "DONE", 96.0, true).clicked() {
+                    done = true;
+                }
+                if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        let now = ctx.input(|i| i.time);
+        if let Some(e) = self.style_edit.as_mut() {
+            e.role = role;
+            if changed {
+                e.pending = true;
+            }
+        }
+        // (the style put on again a few times a second while the colours move, and once more when they stop)
+        let due = self.style_edit.as_ref().is_some_and(|e| e.pending && now - e.drawn_at > 0.15);
+        if due || (pending && !changed && !ctx.input(|i| i.pointer.any_down())) {
+            if let Some(e) = self.style_edit.as_mut() {
+                e.pending = false;
+                e.drawn_at = now;
+            }
+            self.wear_style_again(st);
+        }
+        if self.style_edit.as_ref().is_some_and(|e| e.pending) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(60));
+        }
+        if cancel {
+            let Some(e) = self.style_edit.take() else { return };
+            at.store(e.before.0, Ordering::Relaxed);
+            for (r, v) in roles.iter().zip(e.before.1) {
+                r.1.store(v, Ordering::Relaxed);
+            }
+            self.wear_style_again(st);
+            self.dirty = true;
+        } else if done {
+            if self.style_edit.as_ref().is_some_and(|e| e.pending) {
+                self.wear_style_again(st);
+            }
+            self.style_edit = None;
+            self.dirty = true;
+        }
+    }
+
+    /// The style worn put on again, in its colours as they are now.
+    fn wear_style_again(&mut self, st: u8) {
+        self.studio_dith.clear();
+        match st {
+            crate::skin::STYLE_STREAMING => self.wear_style(false),
+            crate::skin::STYLE_HARDWARE => self.wear_style(true),
+            _ => self.wear_studio(),
+        }
     }
 
     /// The Custom look's editor: Start From a look; Background, Display, Accent and Text each picked right here (the
@@ -586,7 +782,7 @@ fn style_colors(hardware: bool) -> (Color32, Color32, Color32) {
     if hardware {
         (Color32::from_rgb(34, 35, 38), Color32::from_rgb(20, 21, 22), crate::skin::hw_screen().0)
     } else {
-        let acc = crate::skin::STREAM_ACCENTS[crate::skin::STREAM_ACC.load(Ordering::Relaxed) as usize % crate::skin::STREAM_ACCENTS.len()].1;
+        let acc = crate::skin::stream_accent().1;
         (Color32::from_rgb(0, 0, 0), Color32::from_rgb(18, 18, 18), acc)
     }
 }

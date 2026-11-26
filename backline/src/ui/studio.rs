@@ -283,21 +283,96 @@ pub(crate) fn blocks(p: &egui::Painter, r: Rect, f: f32) {
 }
 
 /// A spectrum as LCD columns of blocks, the unlit blocks faintly there: one column per band.
-pub(crate) fn bars(p: &egui::Painter, r: Rect, bands: &[f32], peaks: &[f32], gap: f32, block: f32) {
+pub(crate) fn bars(p: &egui::Painter, r: Rect, bands: &[f32], gap: f32, block: f32) {
     let n = bands.len().max(1);
     let w = (r.width() - gap * (n - 1) as f32) / n as f32;
     let rows = ((r.height() + 2.0) / (block + 2.0)).floor().max(2.0) as usize;
+    let caps = bar_caps(p.ctx(), r, bands, rows);
+    let mut moving = false;
     for (i, v) in bands.iter().enumerate() {
         let x = r.min.x + i as f32 * (w + gap);
         let lit = (v.clamp(0.0, 1.0) * rows as f32).round() as usize;
-        // (the second layer: each bar's peak, a lit block that sits at its highest and falls back slowly)
-        let peak = peaks.get(i).map(|q| (q.clamp(0.0, 1.0) * rows as f32).round() as usize).filter(|&k| k > lit && k > 0);
+        // (the second layer: each bar's cap, a block floating a row above it - knocked up as the bar jumps, then
+        // hanging a moment and falling back onto it)
+        let cap = caps.get(i).map_or(lit + 1, |c| ((c * rows as f32).round() as usize).max(lit + 1));
+        moving |= cap > lit + 1;
         for s in 0..rows {
             let y = r.max.y - (s as f32 + 1.0) * (block + 2.0) + 2.0;
-            let on = s < lit || peak == Some(s + 1);
+            let on = s < lit || (lit > 0 && s == cap);
             p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, block)), 0.0, if on { ink() } else { ghost() });
         }
     }
+    if moving {
+        p.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    }
+}
+
+/// The caps over one set of bars (kept by where the bars are drawn), moved on to now: each sits a row above its bar,
+/// is thrown up when the bar rises fast, hangs a moment at the top, then falls back as a ball would. Their heights
+/// (0..1) in the bars' order.
+fn bar_caps(ctx: &egui::Context, r: Rect, bands: &[f32], rows: usize) -> Vec<f32> {
+    use std::sync::Mutex;
+    /// (height, speed up, how long it still hangs; the bar's last height)
+    type Caps = (f64, Vec<(f32, f32, f32, f32)>);
+    static ALL: Mutex<Vec<((i32, i32, i32), Caps)>> = Mutex::new(Vec::new());
+    let t = ctx.input(|i| i.time);
+    let key = (r.min.x as i32, r.min.y as i32, r.width() as i32);
+    let mut all = ALL.lock().unwrap_or_else(|e| e.into_inner());
+    let at = match all.iter().position(|(k, _)| *k == key) {
+        Some(i) => i,
+        None => {
+            if all.len() > 12 {
+                all.remove(0);
+            }
+            all.push((key, (t, Vec::new())));
+            all.len() - 1
+        }
+    };
+    let (last, caps) = &mut all[at].1;
+    let dt = ((t - *last) as f32).clamp(0.0, 0.1);
+    *last = t;
+    if caps.len() != bands.len() {
+        *caps = bands.iter().map(|&b| (b, 0.0, 0.0, b)).collect();
+    }
+    let row = 1.0 / rows as f32;
+    const GRAVITY: f32 = 4.5;
+    const HANG: f32 = 0.15;
+    for (c, &b) in caps.iter_mut().zip(bands) {
+        let b = b.clamp(0.0, 1.0);
+        let floor = b + row;
+        let rise = if dt > 0.0 { (b - c.3) / dt } else { 0.0 };
+        c.3 = b;
+        if c.0 <= floor {
+            // the bar under it pushes it: rising fast, it's thrown up past the bar
+            c.0 = floor;
+            // (at most about a tenth of the height: a bounce, not a throw)
+            if rise > 0.6 {
+                c.1 = c.1.max((rise * 0.15).min(0.8));
+            } else if c.1 < 0.0 {
+                c.1 = 0.0;
+            }
+        }
+        if c.1 > 0.0 {
+            c.0 += c.1 * dt;
+            c.1 -= GRAVITY * dt;
+            if c.1 <= 0.0 {
+                // at the top: hangs a moment
+                c.1 = 0.0;
+                c.2 = HANG;
+            }
+        } else if c.2 > 0.0 {
+            c.2 -= dt;
+        } else {
+            c.1 -= GRAVITY * dt;
+            c.0 += c.1 * dt;
+        }
+        if c.0 <= floor {
+            c.0 = floor;
+            c.1 = c.1.max(0.0);
+        }
+        c.0 = c.0.min(1.0);
+    }
+    caps.iter().map(|c| c.0).collect()
 }
 
 /// `text` scrolling right to left in dot type across `r` (whole and still when it fits).
@@ -340,7 +415,7 @@ impl App {
         let p = ui.painter().clone();
         let id = ui.id().with("studio_deck");
         let tr = self.cur_track();
-        let (bands, peaks, _) = self.viz_data(0);
+        let (bands, _, _) = self.viz_data(0);
         let s = sc();
         // ---- the cover, the time, the song, the stream
         let cs = (r.height() * 0.32).clamp(56.0 * s, 92.0 * s);
@@ -390,7 +465,7 @@ impl App {
             let vh = (r.max.y - y - 8.0 - (26.0 * s + 46.0 * s)).clamp(24.0, 400.0);
             let vr = Rect::from_min_max(Pos2::new(r.min.x, y), Pos2::new(r.max.x, y + vh));
             let b32 = crate::viz::resample(&bands, 32, 1.0);
-            bars(&p, vr, &b32, &crate::viz::resample(&peaks, 32, 1.0), 2.0, 3.0);
+            bars(&p, vr, &b32, 2.0, 3.0);
             if self.cur.is_some() && !self.stopped && !self.paused {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
             }
@@ -554,7 +629,8 @@ impl App {
     /// the last one of the same cover shows).
     fn studio_dither(&mut self, ctx: &egui::Context, slot: &'static str, cover: &str, px: usize) -> Option<egui::TextureId> {
         let url = crate::api::cover_url(cover, if px > 640 { 1280 } else { 640 });
-        let same = format!("{}|{}", cover, crate::skin::STUDIO_SCREEN.load(std::sync::atomic::Ordering::Relaxed));
+        let (_, glass, _, inkc, _) = crate::skin::studio_screen();
+        let same = format!("{}|{:?}{:?}", cover, glass, inkc);
         let key = format!("{}|{}", same, px);
         // (a new cover dissolving in over the last: a step of it every frame)
         if let Some((old, new, t0)) = self.studio_dith_anim.get(slot).cloned() {
@@ -723,9 +799,9 @@ impl App {
             }
         }
         // the spectrum along the foot
-        let (bands, peaks, _) = self.viz_data(1);
+        let (bands, _, _) = self.viz_data(1);
         let br = Rect::from_min_max(Pos2::new(x0, bars_top), r.max);
-        bars(&p, br, &crate::viz::resample(&bands, 32, 1.0), &crate::viz::resample(&peaks, 32, 1.0), 3.0, 3.0);
+        bars(&p, br, &crate::viz::resample(&bands, 32, 1.0), 3.0, 3.0);
         if self.cur.is_some() && !self.stopped && !self.paused {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
         }
@@ -876,8 +952,8 @@ impl App {
                 ui.interact(body, ui.id().with("studio_3d"), Sense::click()).context_menu(|ui| self.vis_menu(ui));
             }
             _ => {
-                let (bands, peaks, _) = self.viz_data(1);
-                bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), &crate::viz::resample(&peaks, 32, 1.0), 6.0, 6.0);
+                let (bands, _, _) = self.viz_data(1);
+                bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), 6.0, 6.0);
             }
         }
         // the song in a card at the bottom left while the mouse moves, as every look shows it over its visuals
@@ -946,12 +1022,11 @@ impl App {
         let n_cols: usize = self.studio_terr_n.clamp(16, 256);
         // (a new row every 30 ms: the rows close together, a few seconds deep)
         const EVERY: f64 = 0.03;
-        let playing = self.cur.is_some() && !self.stopped && !self.paused;
         let k = self.viz[1].gain / self.viz[0].gain.max(self.viz[1].gain);
         let now = crate::viz::resample(&self.bands, n_cols, k);
         let t = p.ctx().input(|i| i.time);
-        // (rows come in only while the song plays: paused, the land holds still)
-        if (playing && t - self.studio_terr_at > EVERY) || self.studio_terr.is_empty() {
+        // (rows keep coming in when the music pauses or stops: the land flows on, flattening out; the owner's ask)
+        if t - self.studio_terr_at > EVERY || self.studio_terr.is_empty() {
             // (a little of the last row in the new one, so a moment's flicker doesn't jump)
             let row: Vec<f32> = match self.studio_terr.first() {
                 Some(prev) if prev.len() == n_cols => now.iter().zip(prev).map(|(a, b)| a * 0.6 + b * 0.4).collect(),
@@ -966,12 +1041,10 @@ impl App {
         let frac = ((t - self.studio_terr_at) / EVERY).clamp(0.0, 1.0) as f32;
         let slid = self.studio_terr_pushed as f64 + frac as f64;
 
-        // the motion's own clock: it runs while the song plays, so a pause holds the camera and the waves where they are
+        // the motion's own clock (a long gap - the page out of sight - doesn't jump it)
         let dt = (t - self.studio_terr_last).clamp(0.0, 0.1) as f32;
         self.studio_terr_last = t;
-        if playing {
-            self.studio_terr_clock += dt as f64;
-        }
+        self.studio_terr_clock += dt as f64;
         let mc = self.studio_terr_clock as f32;
         let mut cam = match self.studio_terr_cam {
             1 => TerrCam {
@@ -996,7 +1069,6 @@ impl App {
             self.studio_terr_look[a] += (aim[a] - self.studio_terr_look[a]) * ease;
         }
         let [lx, ly] = self.studio_terr_look;
-        let leaning = (lx - aim[0]).abs() + (ly - aim[1]).abs() > 0.002 || lx.abs() + ly.abs() > 0.002;
         cam.pan += lx * 0.12;
         cam.turn -= lx * 0.9;
         cam.roll += lx * 0.06;
@@ -1022,19 +1094,19 @@ impl App {
         let rip_on = matches!(self.studio_terr_mouse, 1 | 3);
         if let Some(h) = hover.filter(|_| rip_on) {
             let moved = (h - self.studio_terr_mouse_at.0).length();
-            if clicked || (moved > 10.0 && t - self.studio_terr_mouse_at.1 > 0.06) {
+            if clicked || (moved > 60.0 && t - self.studio_terr_mouse_at.1 > 0.3) {
                 let q = rot(h, -sn);
                 let z = (((q.y - r.min.y) / r.height() - cam.hz) / (0.96 - cam.hz)).clamp(0.0, 1.0);
                 let persp = 0.28 + 0.72 * z;
                 let u = (q.x - c.x - cam.turn * (1.0 - z) * r.width() * 0.3) / (r.width() * 1.05 * cam.spread * persp) + cam.pan;
-                let big = if clicked { 1.1 } else { 0.22 + (moved / 300.0).min(0.2) };
+                let big = if clicked { 0.3 } else { 0.07 };
                 self.studio_terr_waves.push((u, (1.0 - z) * (n_rows - 1) as f32, slid, t, big));
                 self.studio_terr_mouse_at = (h, t);
             }
         }
-        self.studio_terr_waves.retain(|w| t - w.3 < 3.5);
-        if self.studio_terr_waves.len() > 20 {
-            let extra = self.studio_terr_waves.len() - 20;
+        self.studio_terr_waves.retain(|w| t - w.3 < 2.5);
+        if self.studio_terr_waves.len() > 8 {
+            let extra = self.studio_terr_waves.len() - 8;
             self.studio_terr_waves.drain(..extra);
         }
         // (each ripple rides back with the rows it fell on, as a stone's rings drift down a river)
@@ -1055,9 +1127,9 @@ impl App {
             }
             for &(wu, wd, age, amp) in &waves {
                 let dist = ((u - wu).powi(2) + ((d - wd) * deep).powi(2)).sqrt();
-                let off = dist - 0.3 * age;
-                if off.abs() < 0.18 {
-                    v += amp * (-(off / 0.06).powi(2)).exp() * (off * 48.0).cos() * (-age * 0.9).exp() / (1.0 + 2.0 * dist);
+                let off = dist - 0.22 * age;
+                if off.abs() < 0.1 {
+                    v += amp * (-(off / 0.035).powi(2)).exp() * (off * 70.0).cos() * (-age * 1.6).exp() / (1.0 + 5.0 * dist);
                 }
             }
             v
@@ -1108,10 +1180,8 @@ impl App {
             }
             prev = Some(pts);
         }
-        // (at most 60 frames a second: smooth, without drawing flat out; while ripples spread or the view glides too)
-        if playing || !self.studio_terr_waves.is_empty() || leaning {
-            p.ctx().request_repaint_after(std::time::Duration::from_millis(16));
-        }
+        // (at most 60 frames a second: smooth, without drawing flat out; paused or playing, it keeps moving)
+        p.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 
     /// Over the visuals, while the mouse moves (and a few seconds after): the song in a card at the bottom left, its

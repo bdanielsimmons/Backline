@@ -2033,6 +2033,8 @@ struct App {
     look_custom: bool,
     /// the Custom look's editor, while open
     look_edit: Option<looks::LookEdit>,
+    /// your own colours for the style worn, being picked (`style_panel`)
+    style_edit: Option<looks::StyleEdit>,
     /// whether the system's title bar is on (None: not set yet this window state; see `app_bar`)
     deco_now: Option<bool>,
     /// the queue hidden (the PL button), the player taking the whole column
@@ -2916,6 +2918,7 @@ impl App {
             amb_t0: 0.0,
             look_custom: false,
             look_edit: None,
+            style_edit: None,
             deco_now: None,
             queue_hidden: false,
             wa_pl_top: 0.0,
@@ -4236,6 +4239,7 @@ impl eframe::App for App {
         self.palette_overlay(ctx);
         self.prefs_overlay(ctx, &mut acts);
         self.look_panel(ctx);
+        self.style_panel(ctx);
         // the first time in: once you've chosen Tidal or not, straight into the tour
         if !self.tour_seen && (self.auth == Auth::In || self.offline) && self.frames >= 10 && self.tour.is_none() {
             self.tour_seen = true;

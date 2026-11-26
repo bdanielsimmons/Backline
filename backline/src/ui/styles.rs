@@ -237,7 +237,8 @@ impl App {
         // (or as wide as you dragged it, as Classic's stack: the line between the page and the column; a double-click
         // gives it its own width back)
         let set = if self.practice { self.style_prac_col_w } else { self.style_col_w };
-        let most = (screen.width() - 260.0).max(300.0);
+        // (the library keeps at least 440 points: its pages read; a window too narrow for both, the column gives way)
+        let most = (screen.width() - 440.0 * font::ui_scale()).max(300.0);
         let col_w = if set > 0.0 { set.within(300.0, most) } else { col_w };
         let edge = Rect::from_min_size(Pos2::new(screen.max.x - col_w - 7.0, screen.min.y + crate::FRAME_TOP), Vec2::new(12.0, screen.height() - crate::FRAME_TOP - bar_h));
         match crate::chrome::splitter(ctx, "split_style_col", edge, true) {
@@ -1110,7 +1111,7 @@ impl App {
         let inner = Rect::from_min_max(card.min + Vec2::new(10.0, 26.0), card.max - Vec2::new(10.0, 8.0));
         let row_a = Rect::from_min_size(inner.min, Vec2::new(inner.width(), (inner.height() * 0.5).max(40.0)));
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-        let (bands, peaks, _) = self.viz_data(0);
+        let (bands, _, _) = self.viz_data(0);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
         if crate::studio::on() {
             // one screen: the time in segments, the song in dot type at its top right, the bars under it
@@ -1125,7 +1126,7 @@ impl App {
             }
             if self.mini_viz {
                 let vr = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 30.0), row_a.max - Vec2::new(8.0, 6.0));
-                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), &crate::viz::resample(&peaks, 24, 1.0), 2.0, 2.0);
+                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), 2.0, 2.0);
             }
         } else if hw {
             // all on the screen: the time big, the song small at its top right, the meter under it

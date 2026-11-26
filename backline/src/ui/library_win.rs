@@ -602,6 +602,35 @@ impl App {
                         crate::views::dim_line(ui, kind, 1.0, pal().ink2);
                         let (r, _) = ui.allocate_exact_size(Vec2::new(nw, 26.0 * sc), Sense::hover());
                         crate::font::ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &name, 2.4, nw - 8.0, pal().ink);
+                        // (a style: the colour it wears, a chip and its name)
+                        let worn_col = match style_kind {
+                            Some(crate::skin::STYLE_STUDIO) => {
+                                let s = crate::skin::studio_screen();
+                                Some((format!("{} screen", s.0), s.3, s.1))
+                            }
+                            Some(crate::skin::STYLE_HARDWARE) => {
+                                let s = crate::skin::hw_screen_named();
+                                Some((format!("{} screen", s.0), s.1, s.2))
+                            }
+                            Some(crate::skin::STYLE_STREAMING) => {
+                                let s = crate::skin::stream_accent();
+                                Some((format!("{} accent", s.0), s.1, Color32::from_rgb(18, 18, 18)))
+                            }
+                            Some(_) => {
+                                let f = crate::skin::AMB_FEELS[crate::skin::AMB_FEEL.load(Ordering::Relaxed) as usize % crate::skin::AMB_FEELS.len()];
+                                Some((format!("{}, from the album", f), pal().ink2, pal().row_alt))
+                            }
+                            None => None,
+                        };
+                        if let Some((cname, main, back)) = worn_col {
+                            let (r, _) = ui.allocate_exact_size(Vec2::new(nw, 22.0 * sc), Sense::hover());
+                            let chip = Rect::from_min_size(Pos2::new(r.min.x + 4.0, r.center().y - 8.0 * sc), Vec2::splat(16.0 * sc));
+                            let p = ui.painter();
+                            p.rect_filled(chip, crate::corner(), back);
+                            p.rect_filled(chip.shrink(4.0 * sc), 0.0, main);
+                            p.rect_stroke(chip, crate::corner(), Stroke::new(1.0_f32, pal().edge));
+                            crate::font::ptext_fit(p, Pos2::new(chip.max.x + 8.0, r.center().y), Align::Min, &cname, 1.6, (r.max.x - chip.max.x - 12.0).max(10.0), pal().ink2);
+                        }
                     });
                 });
                 // the ways to change it, under it (they wrap on a narrow page, never off the edge)
@@ -610,8 +639,12 @@ impl App {
                     if retro_btn(ui, "Change Skin", false).tip("All skins: Backline's own looks and Winamp skins.").clicked() {
                         acts.push(Action::WaOpen);
                     }
-                    if retro_btn(ui, "Your Own Colors", false).tip("Make a look of your own: pick its colors.").clicked() {
-                        acts.push(Action::EditLook);
+                    // (Ambient Color's colours come from the album: nothing to pick)
+                    if style_kind != Some(crate::skin::STYLE_AMBIENT) {
+                        let tip = if style { "Pick this style's colors yourself." } else { "Make a look of your own: pick its colors." };
+                        if retro_btn(ui, "Your Own Colors", false).tip(tip).clicked() {
+                            acts.push(Action::EditLook);
+                        }
                     }
                 });
             });
@@ -751,21 +784,24 @@ impl App {
         ui.add_space(4.0);
         match st {
             STYLE_STREAMING => {
-                let items: Vec<(&str, Color32, Color32)> = crate::skin::STREAM_ACCENTS.iter().map(|(n, c)| (*n, *c, Color32::from_rgb(18, 18, 18))).collect();
+                let mut items: Vec<(&str, Color32, Color32)> = crate::skin::STREAM_ACCENTS.iter().map(|(n, c)| (*n, *c, Color32::from_rgb(18, 18, 18))).collect();
+                items.push((crate::skin::OWN, crate::skin::rgb(&crate::skin::STREAM_OWN), Color32::from_rgb(18, 18, 18)));
                 if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::STREAM_ACC.load(Ordering::Relaxed) as usize, false) {
-                    acts.push(Action::StyleColor(0, i as u8));
+                    acts.push(if i + 1 == items.len() { Action::EditLook } else { Action::StyleColor(0, i as u8) });
                 }
             }
             STYLE_HARDWARE => {
-                let items: Vec<(&str, Color32, Color32)> = crate::skin::HW_SCREENS.iter().map(|(n, f, b)| (*n, *f, *b)).collect();
+                let mut items: Vec<(&str, Color32, Color32)> = crate::skin::HW_SCREENS.iter().map(|(n, f, b)| (*n, *f, *b)).collect();
+                items.push((crate::skin::OWN, crate::skin::rgb(&crate::skin::HW_OWN[0]), crate::skin::rgb(&crate::skin::HW_OWN[1])));
                 if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::HW_SCREEN.load(Ordering::Relaxed) as usize, true) {
-                    acts.push(Action::StyleColor(1, i as u8));
+                    acts.push(if i + 1 == items.len() { Action::EditLook } else { Action::StyleColor(1, i as u8) });
                 }
             }
             STYLE_STUDIO => {
-                let items: Vec<(&str, Color32, Color32)> = crate::skin::STUDIO_SCREENS.iter().map(|(n, glass, _, ink, _)| (*n, *ink, *glass)).collect();
+                let mut items: Vec<(&str, Color32, Color32)> = crate::skin::STUDIO_SCREENS.iter().map(|(n, glass, _, ink, _)| (*n, *ink, *glass)).collect();
+                items.push((crate::skin::OWN, crate::skin::rgb(&crate::skin::STUDIO_OWN[1]), crate::skin::rgb(&crate::skin::STUDIO_OWN[0])));
                 if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::STUDIO_SCREEN.load(Ordering::Relaxed) as usize, false) {
-                    acts.push(Action::StyleColor(4, i as u8));
+                    acts.push(if i + 1 == items.len() { Action::EditLook } else { Action::StyleColor(4, i as u8) });
                 }
             }
             STYLE_AMBIENT => {

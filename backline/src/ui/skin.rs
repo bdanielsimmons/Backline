@@ -176,9 +176,55 @@ pub(crate) const STUDIO_SCREENS: [(&str, Color32, Color32, Color32, Color32); 4]
     ("Amber", c(37, 24, 10), c(48, 32, 16), c(255, 181, 71), c(255, 181, 71)),
 ];
 
+/// Your own colours for each style, its last choice (after its table's): Streaming's accent, Hardware's writing and
+/// glass, Studio's glass and ink (0xRRGGBB; picked in `style_panel`).
+pub(crate) static STREAM_OWN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x00c8_a0ff);
+pub(crate) static HW_OWN: [std::sync::atomic::AtomicU32; 2] =
+    [std::sync::atomic::AtomicU32::new(0x00c8_a0ff), std::sync::atomic::AtomicU32::new(0x001c_1028)];
+pub(crate) static STUDIO_OWN: [std::sync::atomic::AtomicU32; 2] =
+    [std::sync::atomic::AtomicU32::new(0x0024_3a2c), std::sync::atomic::AtomicU32::new(0x00d2_f0c4)];
+/// The name of a style's own colours among its choices.
+pub(crate) const OWN: &str = "Your Own";
+
+pub(crate) fn rgb(v: &std::sync::atomic::AtomicU32) -> Color32 {
+    let v = v.load(Ordering::Relaxed);
+    Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
+}
+
+pub(crate) fn set_rgb(at: &std::sync::atomic::AtomicU32, c: Color32) {
+    at.store(((c.r() as u32) << 16) | ((c.g() as u32) << 8) | c.b() as u32, Ordering::Relaxed);
+}
+
+/// Streaming's accent now: its name and colour.
+pub(crate) fn stream_accent() -> (&'static str, Color32) {
+    let i = STREAM_ACC.load(Ordering::Relaxed) as usize;
+    if i >= STREAM_ACCENTS.len() {
+        (OWN, rgb(&STREAM_OWN))
+    } else {
+        STREAM_ACCENTS[i]
+    }
+}
+
 /// Studio's screen now.
 pub(crate) fn studio_screen() -> (&'static str, Color32, Color32, Color32, Color32) {
-    STUDIO_SCREENS[STUDIO_SCREEN.load(Ordering::Relaxed) as usize % STUDIO_SCREENS.len()]
+    let i = STUDIO_SCREEN.load(Ordering::Relaxed) as usize;
+    if i >= STUDIO_SCREENS.len() {
+        // (your own: the keys a shade toward the ink, the frames' names in the lighter of the two, on the black body)
+        let (glass, ink) = (rgb(&STUDIO_OWN[0]), rgb(&STUDIO_OWN[1]));
+        let lum = |c: Color32| c.r() as u32 * 3 + c.g() as u32 * 6 + c.b() as u32;
+        return (OWN, glass, glass.lerp_to_gamma(ink, 0.06), ink, if lum(glass) > lum(ink) { glass } else { ink });
+    }
+    STUDIO_SCREENS[i]
+}
+
+/// Hardware's screen now: its name, writing and glass (Hardware's own, also when Studio is worn).
+pub(crate) fn hw_screen_named() -> (&'static str, Color32, Color32) {
+    let i = HW_SCREEN.load(Ordering::Relaxed) as usize;
+    if i >= HW_SCREENS.len() {
+        (OWN, rgb(&HW_OWN[0]), rgb(&HW_OWN[1]))
+    } else {
+        HW_SCREENS[i]
+    }
 }
 pub(crate) const AMB_FADES: [(&str, f32); 3] = [("Quick", 0.6), ("Medium", 1.5), ("Slow", 3.0)];
 
@@ -189,7 +235,7 @@ pub(crate) fn hw_screen() -> (Color32, Color32) {
         let s = studio_screen();
         return (s.3, s.1);
     }
-    let s = HW_SCREENS[HW_SCREEN.load(Ordering::Relaxed) as usize % HW_SCREENS.len()];
+    let s = hw_screen_named();
     (s.1, s.2)
 }
 
