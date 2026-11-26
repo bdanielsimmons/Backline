@@ -198,6 +198,8 @@ impl App {
                 x = r.min.x - 6.0;
                 let h = ui.interact(r, ui.id().with(("np_switch", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
                 let fill = if on { 0.22 } else if h.hovered() { 0.14 } else { 0.08 };
+                // (the foot's soft shade under the word, so it reads over a pale cover or visuals)
+                soft_spot(&p, r.shrink2(Vec2::new(10.0, 9.0)), 10.0, 0.36 * show);
                 p.rect_filled(r, 6.0, Color32::from_rgba_premultiplied((255.0 * fill * show) as u8, (255.0 * fill * show) as u8, (255.0 * fill * show) as u8, (255.0 * fill * show) as u8));
                 ptext(&p, r.center(), Align::Center, name, 1.5, OVER.gamma_multiply(if on || h.hovered() { show } else { 0.75 * show }));
                 if h.clicked() {
@@ -792,6 +794,9 @@ impl App {
             }
         }
         let line = Rect::from_center_size(sb.center(), Vec2::new(sb.width(), 4.0));
+        // (a soft shade under the bar, the time, the volume and every button, so they read over a pale cover or
+        // visuals as well as a dark one)
+        soft_spot(&p, line, 8.0, 0.36);
         p.rect_filled(line, 2.0, Color32::from_rgba_premultiplied(60, 60, 60, 60));
         let frac = if active && dur > 0.0 { (pos / dur).clamp(0.0, 1.0) } else { 0.0 };
         p.rect_filled(Rect::from_min_size(line.min, Vec2::new(line.width() * frac, line.height())), 2.0, over);
@@ -885,6 +890,7 @@ impl App {
         let vol = Rect::from_min_max(Pos2::new(full.min.x + 56.0, cy - 7.0), Pos2::new(full.min.x + 170.0, cy + 7.0));
         let spk = Rect::from_center_size(Pos2::new(full.min.x + 38.0, cy), Vec2::splat(24.0));
         let sh = ui.interact(spk, ui.id().with("np_mute"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(if self.volume <= 0.0 { "Unmute" } else { "Mute" });
+        soft_spot(&p, Rect::from_center_size(spk.center(), Vec2::splat(12.0)), 10.0, 0.42);
         crate::vicon::named(&p, spk.shrink(4.0), "headphones", if sh.hovered() { Color32::WHITE } else { over.gamma_multiply(if self.volume <= 0.0 { 0.45 } else { 0.9 }) });
         if sh.clicked() {
             if self.volume > 0.0 {
@@ -905,6 +911,7 @@ impl App {
             acts.push(Action::Volume((self.volume + wheel * 0.002).clamp(0.0, 1.0)));
         }
         let vl = Rect::from_center_size(vol.center(), Vec2::new(vol.width(), 4.0));
+        soft_spot(&p, vl, 8.0, 0.36);
         p.rect_filled(vl, 2.0, Color32::from_rgba_premultiplied(60, 60, 60, 60));
         p.rect_filled(Rect::from_min_size(vl.min, Vec2::new(vl.width() * self.volume.clamp(0.0, 1.0), 4.0)), 2.0, over);
         // ---- at the right: speed, practice, the output, "...", Close
