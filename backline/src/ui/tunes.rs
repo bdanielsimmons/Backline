@@ -362,7 +362,7 @@ impl App {
             if retro_btn(ui, "< TUNES", false).clicked() {
                 acts.push(Action::OpenTune(None));
             }
-            if retro_btn(ui, "CHART", false).tip("Its chord changes and the band, on the Chart page. Back comes here.").clicked() {
+            if retro_btn(ui, "CHART", false).tip("Open its chord changes and the band on the Chart page.").clicked() {
                 acts.push(Action::OpenChart);
             }
         });
@@ -566,7 +566,7 @@ impl App {
         if nvers == 0 {
             para(
                 ui,
-                "Nothing here yet. Play a recording and press ADD CURRENT, or right-click any song and choose ADD TO A TUNE.",
+                "No recordings yet. Play a recording and press ADD CURRENT, or right-click any song and choose ADD TO A TUNE.",
                 pal().ink2,
             );
         }

@@ -522,7 +522,7 @@ impl App {
                 let r = ui
                     .interact(sr.expand2(Vec2::new(0.0, 2.0)), ui.id().with("wv_strip"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
-                    .tip("The whole song: click or drag to look at another part. It returns to the song after a few seconds.");
+                    .tip("The whole song. Click or drag to view another part; the view returns to the playhead after a few seconds.");
                 if let Some(pp) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
                     let t = ((pp.x - sr.min.x) / sr.width()).clamp(0.0, 1.0) * dur1;
                     self.wv_start = (t - span / 2.0).within(0.0, (dur1 - span).max(0.0));
@@ -679,7 +679,7 @@ impl App {
                 let r = ui
                     .interact(track.expand2(Vec2::new(0.0, 4.0)), ui.id().with("wv_scroll"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
-                    .tip("Drag to scroll through the song. It returns to the song after a few seconds.");
+                    .tip("Drag to scroll through the song. The view returns to the playhead after a few seconds.");
                 fill_rect(&p, track, pal().ink.gamma_multiply(0.15));
                 let w = (track.width() * span / dur1).max(14.0);
                 let x0 = track.min.x + (track.width() - w) * (start / (dur1 - span).max(0.001));
@@ -704,7 +704,7 @@ impl App {
             if let Some(id) = tid.filter(|id| !self.is_demo(*id)) {
                 let w4 = chip_w("+ MARK");
                 let mb = crate::chip(ui, chip_at(w1 + w2 + w3 + 9.0, w4), "+ MARK", false, "wv_mark").tip(
-                    "Adds a bookmark at the current position (or press K, or alt + click the waveform). Right-click to set their color. Click a flag to jump to it, or right-click it to recolor or remove it.",
+                    "Add a bookmark at the playhead  (K, or Alt + click the waveform). Right-click to pick the bookmark color.",
                 );
                 if mb.clicked() {
                     self.add_mark(id, shown);
@@ -1382,7 +1382,7 @@ impl App {
         centered_row(ui, "marks_add", |ui| {
             if retro_btn(ui, &format!("+ BOOKMARK AT {}", fmt_t(now)), false)
                 .tip(format!(
-                    "Adds a bookmark at the current position (or press {}, or alt + click the waveform).",
+                    "Add a bookmark at the playhead  ({}, or Alt + click the waveform)",
                     self.key_text(crate::prefs::Cmd::Bookmark)
                 ))
                 .clicked()
@@ -1398,7 +1398,7 @@ impl App {
         ui.add_space(4.0);
         let n = self.store.marks.get(&id).map_or(0, |l| l.len());
         if n == 0 {
-            para(ui, "No bookmarks on this song yet. They mark places to find your way: the solo, the key change, the bar you keep missing.", pal().ink2);
+            para(ui, "No bookmarks yet. Mark the places you come back to: the solo, the key change, the bar you keep missing.", pal().ink2);
             return;
         }
         let mut drop = None;

@@ -824,7 +824,7 @@ impl App {
             let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let out = crate::views::field(ui, &mut self.ed, id, &mut self.plan.keeper_new, r, "a keeper: the lick, phrase or solo bit, and where it's from", false);
             add = out.enter;
-            if retro_btn(ui, "ADD", false).tip("Keep it: Review brings it back until you can play it cold.").clicked() {
+            if retro_btn(ui, "ADD", false).tip("Keep it. It comes back in Review until you can play it cold.").clicked() {
                 add = true;
             }
         });
@@ -833,7 +833,7 @@ impl App {
             self.plan.keepers().push(Keeper { text, added: store::today_str(), played: vec![], seen: String::new() });
             self.plan.save_keepers();
             self.plan.keeper_new.clear();
-            self.set_note("KEPT. REVIEW BRINGS IT BACK");
+            self.set_note("KEPT FOR REVIEW");
         }
     }
 
@@ -843,7 +843,7 @@ impl App {
         let ks = self.plan.keepers().clone();
         title_line(ui, "TODAY'S KEEPERS", 2.0, pal().ink);
         if ks.is_empty() {
-            text_block(ui, "No keepers yet. In the fun slot, write down what's worth keeping, and it comes up here.", 2.0, pal().ink2, 6.0);
+            text_block(ui, "No keepers yet. Write down what's worth keeping in the fun slot.", 2.0, pal().ink2, 6.0);
             return;
         }
         let mut hit: Option<(usize, bool)> = None;
@@ -1136,7 +1136,7 @@ impl App {
         // ---- the keepers
         ui.add_space(6.0);
         section_header(ui, "KEEPERS");
-        text_block(ui, "What's worth keeping from the fun slot. Review brings back two a day. A keeper is solid once you've played it cold on 3 days, a week apart; then it comes back every two weeks.", 2.0, pal().ink2, 6.0);
+        text_block(ui, "What's worth keeping from the fun slot. Two come back for review each day. A keeper is solid once you've played it cold on 3 days, a week apart; then it comes back every two weeks.", 2.0, pal().ink2, 6.0);
         self.keeper_add(ui, crate::tools::F_PLAN_KEEPER);
         let ks = self.plan.keepers().clone();
         let mut gone: Option<usize> = None;

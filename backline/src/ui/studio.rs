@@ -464,7 +464,7 @@ impl App {
         px(&p, Pos2::new(bx, y + 11.0 * s), egui::Align2::LEFT_CENTER, "BAL", 7.0, dim());
         let bal = Rect::from_min_max(Pos2::new(bx + 24.0 * s, y + 11.0 * s - 5.0), Pos2::new(r.max.x, y + 11.0 * s + 5.0));
         if bal.width() > 24.0 {
-            let bh = ui.interact(bal.expand2(Vec2::new(0.0, 5.0)), id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance (double-click: centred)");
+            let bh = ui.interact(bal.expand2(Vec2::new(0.0, 5.0)), id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance  (double-click to center)");
             if bh.double_clicked() {
                 acts.push(Action::Balance(0));
             } else if bh.clicked() || bh.dragged() {
@@ -566,7 +566,13 @@ impl App {
         ];
         if let Some(i) = frame_tabs(ui, r, &tabs, "studio_np_tab") {
             let v = i as u8 + 1;
-            self.studio_np = if self.studio_np == v { 0 } else { v };
+            if v == 2 && (self.studio_np != 2 || !self.q_cur_seen) {
+                // Up Next opened, or clicked again with the song playing out of sight: the list goes to it
+                self.studio_np = 2;
+                self.q_jump = true;
+            } else {
+                self.studio_np = if self.studio_np == v { 0 } else { v };
+            }
             self.dirty = true;
         }
         let inner = r.shrink(18.0);
@@ -576,17 +582,18 @@ impl App {
             3 => self.np_about(ui, &p, inner, ink()),
             4 => self.np_loops(ui, &p, inner, acts, ink()),
             5 => self.studio_visuals(ui, inner),
-            _ => self.studio_np_main(ui, inner),
+            _ => self.studio_np_main(ui, inner, acts),
         }
     }
 
     /// The main view: the cover, the song big, the rest small.
-    fn studio_np_main(&mut self, ui: &mut egui::Ui, r: Rect) {
+    fn studio_np_main(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let s = sc();
         let cs = r.height().min(r.width() * 0.44).max(80.0);
         let cover = Rect::from_min_size(Pos2::new(r.min.x, r.center().y - cs / 2.0), Vec2::splat(cs));
         self.studio_cover(ui, cover, "studio_np", 640);
+        cover_switch(ui, cover, acts);
         let x0 = cover.max.x + 26.0;
         let right = Rect::from_min_max(Pos2::new(x0, r.min.y), r.max);
         let Some(tr) = self.cur_track() else {
@@ -629,22 +636,35 @@ impl App {
             x = br.max.x + 8.0;
         }
         y += 40.0 * s;
-        // what's next: the next few songs
+        // what's next: every song after this one, as many as there's room for, the wheel scrolling them; a click plays one
         let bars_top = r.max.y - (right.height() * 0.3).clamp(52.0 * s, 200.0);
         let from = self.cur.map_or(0, |c| c + 1);
-        let next: Vec<Track> = self.queue.iter().skip(from).take(4).cloned().collect();
-        if !next.is_empty() {
+        let left = self.queue.len().saturating_sub(from);
+        if left > 0 {
             p.line_segment([Pos2::new(x0, y), Pos2::new(r.max.x, y)], Stroke::new(1.0_f32, ink()));
-            px(&p, Pos2::new(x0, y + 12.0 * s), egui::Align2::LEFT_CENTER, "UP NEXT", 7.0, dim());
-            let mut ny = y + 32.0 * s;
-            for n in &next {
-                if ny > bars_top - 14.0 * s {
-                    break;
-                }
-                let nr = Rect::from_min_max(Pos2::new(x0, ny - 11.0 * s), Pos2::new(r.max.x - 64.0 * s, ny + 11.0 * s));
-                marquee(ui, nr, &format!("{} · {}", n.title.to_uppercase(), n.artists_text().to_uppercase()), 15.0, ink());
-                dot(&p, Pos2::new(r.max.x, ny), egui::Align2::RIGHT_CENTER, &fmt_time(n.duration), 15.0, ink());
-                ny += 26.0 * s;
+            px(&p, Pos2::new(x0, y + 12.0 * s), egui::Align2::LEFT_CENTER, "UP NEXT", 9.0, dim());
+            let list = Rect::from_min_max(Pos2::new(x0, y + 22.0 * s), Pos2::new(r.max.x, bars_top - 8.0 * s));
+            if list.height() > 24.0 * s {
+                let rh = 26.0 * s;
+                let mut c = ui.new_child(egui::UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
+                egui::ScrollArea::vertical().id_salt("studio_next").auto_shrink([false, false]).show_rows(&mut c, rh, left, |ui, rows| {
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    for k in rows {
+                        let i = from + k;
+                        let Some(n) = self.queue.get(i) else { continue };
+                        let (row, h) = ui.allocate_exact_size(Vec2::new(ui.available_width(), rh), Sense::click());
+                        let h = h.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
+                        if h.hovered() {
+                            ui.painter().rect_filled(row, 0.0, key_col());
+                        }
+                        let nr = Rect::from_min_max(Pos2::new(row.min.x + 4.0, row.min.y), Pos2::new(row.max.x - 64.0 * s, row.max.y));
+                        marquee(ui, nr, &format!("{} · {}", n.title.to_uppercase(), n.artists_text().to_uppercase()), 15.0, ink());
+                        dot(ui.painter(), Pos2::new(row.max.x - 4.0, row.center().y), egui::Align2::RIGHT_CENTER, &fmt_time(n.duration), 15.0, ink());
+                        if h.clicked() {
+                            acts.push(Action::PlayIndex(i));
+                        }
+                    }
+                });
             }
         }
         // the spectrum along the foot
@@ -664,6 +684,7 @@ impl App {
         let lw = (r.width() * 0.26).clamp(150.0, 240.0);
         let cover = Rect::from_min_size(r.min, Vec2::splat(lw));
         self.studio_cover(ui, cover, "studio_np", 640);
+        cover_switch(ui, cover, acts);
         if let Some(tr) = self.cur_track() {
             let mq = Rect::from_min_size(Pos2::new(r.min.x, cover.max.y + 14.0), Vec2::new(lw, 22.0 * s));
             marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 16.0, ink());
@@ -853,6 +874,7 @@ impl App {
         let head = Rect::from_min_size(r.min, Vec2::new(r.width(), 56.0 * s));
         let cover = Rect::from_min_size(head.min, Vec2::splat(head.height()));
         self.studio_cover(ui, cover, "studio_np", 160);
+        cover_switch(ui, cover, acts);
         if let Some(tr) = self.cur_track() {
             let mq = Rect::from_min_max(Pos2::new(cover.max.x + 14.0, head.min.y), Pos2::new(head.max.x - 230.0 * s, head.min.y + 24.0 * s));
             marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 18.0, ink());
@@ -883,8 +905,19 @@ impl App {
     }
 }
 
-/// A picture (its middle square) dotted in `ink` on clear, `n` dots across: its brightness spread by error diffusion
-/// (Floyd-Steinberg, the rows in turn left to right and back), so faces and lettering stay recognizable.
+/// A click on a cover in Now Playing switches it between its own colors and the screen's ink.
+fn cover_switch(ui: &egui::Ui, r: Rect, acts: &mut Vec<Action>) {
+    let ink = crate::skin::STUDIO_COVER.load(std::sync::atomic::Ordering::Relaxed) == 1;
+    let tip = if ink { "Click for the cover in color" } else { "Click for the cover in the screen's ink" };
+    let h = ui.interact(r, ui.id().with("studio_cover_switch"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+    if h.clicked() {
+        acts.push(Action::StyleColor(5, if ink { 0 } else { 1 }));
+    }
+}
+
+/// A picture (its middle square) dotted in `ink` on clear, `n` dots across, each dot one of four shades of the ink (as
+/// an old four-shade LCD): its brightness spread by error diffusion (Floyd-Steinberg, the rows in turn left to right and
+/// back), so faces and lettering stay recognizable.
 pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize) -> egui::ColorImage {
     let n = n.max(1);
     let [w, h] = img.size;
@@ -906,11 +939,13 @@ pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize) -> egui::Co
         for i in 0..n {
             let x = if right { i } else { n - 1 - i };
             let k = y * n + x;
-            let dark = v[k] < 0.5;
-            if dark {
-                px[k] = ink;
+            // (the nearest of the four shades: clear, light, dark, the ink itself)
+            let q = (v[k].clamp(0.0, 1.0) * 3.0).round() / 3.0;
+            if q < 1.0 {
+                let a = ((1.0 - q) * 255.0).round() as u8;
+                px[k] = Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), a);
             }
-            let err = v[k] - if dark { 0.0 } else { 1.0 };
+            let err = v[k] - q;
             if let Some(a) = ahead(x) {
                 v[y * n + a] += err * 7.0 / 16.0;
             }
@@ -934,15 +969,15 @@ mod tests {
 
     #[test]
     fn dither_keeps_the_tone() {
-        // a mid grey comes out about half dots, white none, black all, at the size asked
+        // a mid grey comes out about half inked, white clear, black all ink, at the size asked
         let grey = |g: u8| egui::ColorImage::new([40, 30], Color32::from_gray(g));
         let ink = Color32::BLACK;
-        let count = |img: &egui::ColorImage| img.pixels.iter().filter(|c| **c == ink).count();
+        let inked = |img: &egui::ColorImage| img.pixels.iter().map(|c| c.a() as f32 / 255.0).sum::<f32>() / img.pixels.len() as f32;
         let d = dither(&grey(128), ink, 64);
         assert_eq!(d.size, [64, 64]);
-        let f = count(&d) as f32 / (64.0 * 64.0);
-        assert!((0.35..0.6).contains(&f), "{}", f);
-        assert_eq!(count(&dither(&grey(255), ink, 32)), 0);
-        assert_eq!(count(&dither(&grey(0), ink, 32)), 32 * 32);
+        let f = inked(&d);
+        assert!((0.38..0.56).contains(&f), "{}", f);
+        assert_eq!(inked(&dither(&grey(255), ink, 32)), 0.0);
+        assert_eq!(inked(&dither(&grey(0), ink, 32)), 1.0);
     }
 }

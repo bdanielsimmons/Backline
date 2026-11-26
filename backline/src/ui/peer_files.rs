@@ -395,7 +395,7 @@ impl App {
             format!("{} songs on {}, {}", list.len(), name, size_text(total))
         };
         title_line(ui, &head, 2.0, pal().ink2);
-        para(ui, "Click a song on the other computer to pick it, then copy the ones you picked here: they go in your Music folder and your files. Right-click one to play it from there.", pal().ink2);
+        para(ui, "Click songs to pick them, then press COPY HERE. They go in your Music folder and your files. Right-click a song to play it from the other computer.", pal().ink2);
         // the songs, filtered as you type
         let filter = self.lib_filter.trim().to_string();
         let order: Vec<usize> = if filter.is_empty() {
@@ -425,7 +425,7 @@ impl App {
                 .filter(|&(here, k)| !here && !self.peer.here.contains(&list[k].path))
                 .map(|(_, k)| list[k].path.clone())
                 .collect();
-            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(format!("Picks every song on {} in the list as it's filtered, except those here already.", name)).clicked() {
+            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(format!("Pick every song from {} in the filtered list, except ones already on this computer.", name)).clicked() {
                 self.peer.sel.extend(shown);
             }
             if !self.peer.sel.is_empty() && retro_btn(ui, "CLEAR", false).clicked() {

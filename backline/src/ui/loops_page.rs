@@ -312,7 +312,7 @@ impl App {
             .collect();
         members.sort_by(|a, b| a.2.name.cmp(&b.2.name).then(a.0.cmp(&b.0)).then(a.1.cmp(&b.1)));
         if members.is_empty() {
-            para(ui, "No loops in it yet. Right-click a loop in LOOPS or the PRACTICE panel to move it here.", pal().ink2);
+            para(ui, "No loops in this group yet. Right-click a loop in LOOPS or the PRACTICE panel to move it here.", pal().ink2);
             return;
         }
         for (k, (id, i, s)) in members.iter().enumerate() {
@@ -322,7 +322,7 @@ impl App {
             let sub = song.clone();
             if let Some(r) = list_row(ui, k, None, || title.clone(), || sub.clone(), RowState::Normal, false, false) {
                 let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if s.note.is_empty() {
-                    "Click to play this loop.".to_string()
+                    "Play this loop.".to_string()
                 } else {
                     s.note.clone()
                 });
@@ -649,7 +649,7 @@ impl App {
             } else if self.loops_all {
                 "No loops or bookmarks yet. In PRACTICE, set A and B and press SAVE LOOP, or press + MARK."
             } else {
-                "Nothing this week yet. Practice a song or save a loop and it shows up here. ALL has every song."
+                "Nothing this week yet. Songs you practice or loop appear here. ALL shows every song."
             };
             para(ui, msg, pal().ink2);
             return;
@@ -722,7 +722,7 @@ impl App {
             }
         }
         if c.v.is_none() {
-            hresp.clone().tip("Backline doesn't know which song this is: it was bookmarked before songs were kept with their bookmarks.");
+            hresp.clone().tip("Unknown song. This bookmark is from an older version of Backline.");
         }
         if let Some(v) = &c.v {
             let pr = ui.interact(play_r, ui.id().with(("spot_play", c.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play the song.");
@@ -816,7 +816,7 @@ impl App {
         ui.add_space(10.0);
         // ---- each loop and bookmark: starred loops first, the rest in song order
         if c.loops.is_empty() && c.marks.is_empty() {
-            para(ui, "Practiced, nothing saved yet. Set A and B in PRACTICE and press SAVE LOOP, or press + MARK.", pal().ink2);
+            para(ui, "No loops or bookmarks yet. Set A and B in PRACTICE and press SAVE LOOP, or press + MARK.", pal().ink2);
             return;
         }
         enum Row<'a> {
@@ -882,7 +882,7 @@ impl App {
                     let sh = ui
                         .interact(star_r, ui.id().with(("loop_star", c.id, *i)), Sense::click())
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip(if s.fav { "Starred. Click to unstar." } else { "Star it as one that matters, like a part for a gig coming up." });
+                        .tip(if s.fav { "Starred. Click to unstar." } else { "Star it to keep it at the top." });
                     let star_col = if s.fav {
                         STAR_COL
                     } else if sh.hovered() || resp.hovered() {

@@ -211,6 +211,9 @@ impl App {
         } else {
             (screen.width() * 0.27).clamp(360.0, 440.0)
         };
+        // (a narrow window, half a screen: the column gives way so the page keeps room to be read; the places down
+        // the side fold to their strip of icons first, in library_ui)
+        let col_w = col_w.min(screen.width() - 520.0 * font::ui_scale()).max(320.0);
         {
             egui::SidePanel::right("st_col").exact_width(col_w).resizable(false).show_separator_line(false).frame(none).show(ctx, |ui| {
                 let r = ui.max_rect();
@@ -722,6 +725,12 @@ impl App {
             for (i, tr) in queue.iter().enumerate() {
                 let (row0, h) = ui.allocate_exact_size(Vec2::new(w0, rh), Sense::click_and_drag());
                 rects.push((i, row0));
+                if cur == Some(i) {
+                    if self.q_jump {
+                        ui.scroll_to_rect(row0, Some(Align::Center));
+                    }
+                    self.q_cur_seen = ui.is_rect_visible(row0);
+                }
                 if !ui.is_rect_visible(row0) {
                     continue;
                 }
@@ -788,6 +797,10 @@ impl App {
                 if h.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     acts.push(Action::PlayIndex(i));
                 }
+            }
+            self.q_jump = false;
+            if cur.is_none() {
+                self.q_cur_seen = true;
             }
             // a song being moved: a line where it will land, moved on release
             if let Some(from) = self.q_drag {
@@ -1208,15 +1221,20 @@ impl App {
             self.time_left = !self.time_left;
             self.dirty = true;
         }
-        // (the plain decks: the stream's details under the cover, at the right)
+        // (the plain decks: the stream's details under the cover, at the right; the times along the bar under them, clear
+        // of them at any text size)
+        let mut y0 = top.max.y + if hw { 8.0 } else { 18.0 };
         if !hw {
             let info = self.deck_info();
             if !info.is_empty() {
-                ptext_fit(&p, Pos2::new(r.max.x, top.max.y + 10.0), Align::Max, &info, 1.25, r.width(), fg2());
+                let ih = font::text_px(1.25);
+                let iy = top.max.y + 4.0 + ih / 2.0;
+                ptext_fit(&p, Pos2::new(r.max.x, iy), Align::Max, &info, 1.25, r.width(), fg2());
+                // (the bar's times are centred 8 below its top)
+                y0 = y0.max(iy + ih / 2.0 + 6.0 + font::text_px(1.4) / 2.0 - 8.0);
             }
         }
         // ---- how far in
-        let y0 = top.max.y + if hw { 8.0 } else { 18.0 };
         let prog = Rect::from_min_max(Pos2::new(r.min.x - 4.0, y0), Pos2::new(r.max.x + 4.0, y0 + 16.0));
         self.progress(ui, prog, acts, if hw { amber() } else { fg() });
         // ---- the transport, open files at its end
@@ -1291,7 +1309,7 @@ impl App {
             ptext(&p, Pos2::new(sx, bal.center().y), Align::Min, "L R", 1.1, fg2());
         }
         let line = Rect::from_min_max(Pos2::new(bal.min.x, bal.center().y - 2.0), Pos2::new(bal.max.x, bal.center().y + 2.0));
-        let h = ui.interact(bal, id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance (double-click: centred)");
+        let h = ui.interact(bal, id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance  (double-click to center)");
         if h.double_clicked() {
             acts.push(Action::Balance(0));
         } else if h.clicked() || h.dragged() {
@@ -1340,7 +1358,7 @@ impl App {
         let rh = 54.0;
         let mut y = r.min.y + 30.0;
         if from >= queue.len() {
-            ptext(&p, Pos2::new(r.min.x + 2.0, y + 14.0), Align::Min, "Nothing after this song.", 1.5, fg2());
+            ptext(&p, Pos2::new(r.min.x + 2.0, y + 14.0), Align::Min, "End of the queue.", 1.5, fg2());
             return;
         }
         // (a row partly in view is drawn, cut at the panel's foot, so none pops in as the window grows)

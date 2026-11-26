@@ -558,7 +558,7 @@ pub(crate) fn note_card(ui: &mut egui::Ui, d: i64, day: &store::Day, px: f32, fi
     draw_notes(&p.with_clip_rect(rr), o, w - 2.0 * pad, &laid, slide.1, hit.map(|h| h.0), find);
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let resp = if star_hot {
-        resp.tip(if day.star { "Starred. Click to take the star off." } else { "Star this day." })
+        resp.tip(if day.star { "Starred. Click to unstar." } else { "Star this day." })
     } else if let Some(u) = &url {
         resp.tip(u)
     } else if let Some(t) = &tag {
@@ -986,12 +986,12 @@ impl App {
             let mut jump: Option<(i64, i8)> = None;
             ui.horizontal_wrapped(|ui| {
                 if let Some(d) = near_old {
-                    if retro_btn(ui, &format!("< {}", period_name(&store::date_str(d))), false).tip("The notes before this.").clicked() {
+                    if retro_btn(ui, &format!("< {}", period_name(&store::date_str(d))), false).tip("Older notes.").clicked() {
                         jump = Some((d, -1));
                     }
                 }
                 if let Some(d) = near_new {
-                    if retro_btn(ui, &format!("{} >", period_name(&store::date_str(d))), false).tip("The notes after this.").clicked() {
+                    if retro_btn(ui, &format!("{} >", period_name(&store::date_str(d))), false).tip("Newer notes.").clicked() {
                         jump = Some((d, 1));
                     }
                 }
@@ -1175,7 +1175,7 @@ impl App {
             // a star for the day (once it has notes)
             let starred = self.store.days.iter().find(|d| d.date == note_date).filter(|d| !d.note.trim().is_empty()).map(|d| d.star);
             if let Some(on) = starred {
-                if star_btn(ui, on).tip(if on { "Starred. Click to take the star off." } else { "Star this day: one that clicked." }).clicked() {
+                if star_btn(ui, on).tip(if on { "Starred. Click to unstar." } else { "Star this day." }).clicked() {
                     if let Some(d) = self.store.days.iter_mut().find(|d| d.date == note_date) {
                         d.star = !on;
                         self.store_dirty = true;

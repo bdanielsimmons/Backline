@@ -414,7 +414,7 @@ enum Msg {
 }
 
 /// A page of Backline's own, shown over the library (one at a time; going anywhere in the library leaves it).
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Side {
     /// BACKLINE: skins and settings
     Backline,
@@ -425,7 +425,7 @@ enum Side {
 }
 
 /// Which list the library shows.
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum Sec {
     Tidal,
     Files,
@@ -1093,6 +1093,14 @@ struct App {
     studio_np: u8,
     studio_vis: u8,
     studio_dith: HashMap<&'static str, (String, String, egui::TextureHandle)>,
+    /// Up Next goes to the song playing on its next frame (opened, or its tab clicked again)
+    q_jump: bool,
+    /// how wide Now Playing's keys at the foot's right came out (the transport keeps clear of them)
+    np_row_w: f32,
+    /// the song playing was in sight in Up Next on its last frame
+    q_cur_seen: bool,
+    /// when the last frame was drawn (clock time): a long gap (the computer asleep) goes in the log
+    last_frame_wall: Option<std::time::SystemTime>,
     studio_dith_busy: HashMap<&'static str, (String, f64)>,
     studio_terr: Vec<Vec<f32>>,
     studio_terr_at: f64,
@@ -2243,6 +2251,10 @@ impl App {
             studio_np: 0,
             studio_vis: 0,
             studio_dith: HashMap::new(),
+            q_jump: false,
+            np_row_w: 330.0,
+            q_cur_seen: true,
+            last_frame_wall: None,
             studio_dith_busy: HashMap::new(),
             studio_terr: Vec::new(),
             studio_terr_at: 0.0,
@@ -3316,7 +3328,7 @@ impl App {
         if self.net_down {
             self.net_down = false;
             self.images.retry_failed();
-            self.set_note("BACK ONLINE. TIDAL IS HERE AGAIN");
+            self.set_note("BACK ONLINE");
         }
         self.auth = Auth::In;
         self.offline = false;
@@ -3458,7 +3470,7 @@ impl App {
                     return;
                 }
                 self.apply(Action::FileGone(t.id));
-                self.set_note(&format!("GONE FROM DISK, REMOVED: {}", name.to_uppercase()));
+                self.set_note(&format!("FILE MISSING, REMOVED: {}", name.to_uppercase()));
                 if i < self.queue.len() {
                     self.play_index(i);
                 }
@@ -3780,6 +3792,13 @@ impl eframe::App for App {
         // when no one is at the screen
         test_shot(ctx);
         crate::test_hooks::practice_demo(self);
+        // (a long gap since the last frame, as after the computer sleeps, goes in the log: the laptop's graphics driver
+        // has crashed a few minutes after waking)
+        let wall = std::time::SystemTime::now();
+        if let Some(gap) = self.last_frame_wall.and_then(|t| wall.duration_since(t).ok()).filter(|g| g.as_secs() >= 300) {
+            crate::api::log(&format!("frames: none for {} min (asleep or hidden), drawing again", gap.as_secs() / 60));
+        }
+        self.last_frame_wall = Some(wall);
         // can anyone see the window? (minimized or covered: the visuals and the redraws while playing stop)
         onscreen::check(ctx, frame);
         // Ambient Color follows the cover playing; Now Playing's blurred cover too

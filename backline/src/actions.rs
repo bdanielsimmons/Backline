@@ -1436,7 +1436,7 @@ impl App {
                     let ids: Vec<i64> = d.tracks.iter().map(|t| t.id).collect();
                     let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
                     self.tidal_lists = None;
-                    self.toast(&format!("Making {} on Tidal...", name));
+                    self.toast(&format!("Creating {} on Tidal...", name));
                     std::thread::spawn(move || {
                         let r = api.playlist_create(&name, &desc).and_then(|u| {
                             if !ids.is_empty() {
@@ -1444,7 +1444,7 @@ impl App {
                             }
                             Ok(u)
                         });
-                        let _ = tx.send(Msg::TidalListMade(r.map(|_| format!("Made {} on Tidal{}", name, songs))));
+                        let _ = tx.send(Msg::TidalListMade(r.map(|_| format!("Created {} on Tidal{}", name, songs))));
                         ctx.request_repaint();
                     });
                 } else {
@@ -1469,7 +1469,7 @@ impl App {
                     if self.sec == Sec::Lists {
                         self.pl_open = Some(self.store.playlists.len() - 1);
                     }
-                    self.toast(&format!("Made {} in Backline{}", name, songs));
+                    self.toast(&format!("Created {} in Backline{}", name, songs));
                     self.store_dirty = true;
                     self.serial += 1;
                 }
@@ -1580,7 +1580,7 @@ impl App {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
                         api::log(&format!("update install: {}", e));
-                        self.set_note("UPDATE FAILED. IT WILL TRY AGAIN");
+                        self.set_note("UPDATE FAILED. TRYING AGAIN LATER");
                         self.upd_state = 3;
                     }
                 }

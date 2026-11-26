@@ -418,9 +418,9 @@ impl App {
             .anchor(egui::Align2::CENTER_TOP, [0.0, 4.0])
             .show(ctx, |ui| {
                 let tip = if from_link {
-                    "Saves everything and restarts Backline on the new version from your linked computer. It also restarts by itself once nothing is playing and no one has used it for a minute."
+                    "Saves everything and restarts Backline on the new version from your linked computer. Otherwise it restarts once Backline has been idle for a minute with nothing playing."
                 } else {
-                    "Saves everything and restarts Backline on the new version. Otherwise it installs the next time you open the app. You can turn on automatic restart in Preferences."
+                    "Saves everything and restarts Backline on the new version. Otherwise it installs the next time you open Backline. Turn on automatic restart in Preferences."
                 };
                 if retro_btn(ui, &format!("UPDATE {} READY - CLICK TO RESTART", info.tag.to_uppercase()), true)
                     .tip(tip)

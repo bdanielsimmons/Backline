@@ -344,7 +344,7 @@ impl App {
                     // the display and the writing can go back to being worked out
                     if (role == 1 && look.display.is_some()) || (role == 3 && look.text.is_some()) {
                         ui.add_space(6.0);
-                        auto = retro_btn(ui, "Auto", false).tip("Worked out from the background again.").clicked();
+                        auto = retro_btn(ui, "Auto", false).tip("Pick it automatically from the background.").clicked();
                     }
                 });
                 if auto {

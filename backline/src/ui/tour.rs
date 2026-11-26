@@ -170,7 +170,7 @@ const PRACTICE_TOUR: &[Step] = &[
         key: "MOREBOX",
         scene: Scene::PracticeMore(0),
         title: "3. SPEED TRAINER",
-        text: "The TRAINER plays your loop a few times, then speeds it up a little. It keeps doing that.",
+        text: "The TRAINER plays your loop a few times, then speeds it up a little, again and again.",
         ab: true,
         speed: 85,
         ..BASE

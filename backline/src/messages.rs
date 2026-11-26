@@ -48,7 +48,7 @@ impl App {
                         self.set_note(if self.go_offline {
                             "OFFLINE MODE: ONLY WHAT'S ON THIS COMPUTER"
                         } else {
-                            "NO INTERNET, SO PLAYING WHAT'S ON THIS COMPUTER. TIDAL COMES BACK BY ITSELF"
+                            "NO INTERNET. PLAYING WHAT'S ON THIS COMPUTER UNTIL TIDAL RECONNECTS"
                         });
                     }
                 }

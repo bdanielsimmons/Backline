@@ -238,7 +238,7 @@ impl App {
             ui.add_space(6.0);
             egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| match &rows {
                 None => crate::dim_line(ui, "LOADING YOUR TIDAL PLAYLISTS...", 1.0, pal().dim),
-                Some(r) if r.is_empty() => crate::dim_line(ui, "NONE YET. MAKE ONE BELOW.", 1.0, pal().dim),
+                Some(r) if r.is_empty() => crate::dim_line(ui, "NO PLAYLISTS YET. CREATE ONE BELOW.", 1.0, pal().dim),
                 Some(_) if order.is_empty() => crate::dim_line(ui, "NO PLAYLISTS MATCH.", 1.0, pal().dim),
                 Some(r) => {
                     for (row, &k) in order.iter().enumerate() {

@@ -1252,7 +1252,7 @@ impl App {
                     ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| self.sheet_lock(ui, None));
                 });
                 ui.add_space(8.0);
-                para(ui, "Play a song or open a tune in TUNES to see its changes here. They are looked up for you.", pal().ink2);
+                para(ui, "Play a song or open a tune in TUNES to see its changes here.", pal().ink2);
                 para(ui, "Paste an iReal Pro link to import the changes and the composer.", pal().ink2);
                 ui.horizontal(|ui| {
                     let w = (ui.available_width() - 90.0).max(80.0);

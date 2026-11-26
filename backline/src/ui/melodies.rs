@@ -1360,7 +1360,7 @@ impl App {
                     }
                 } else if let Some(m) = picked_mark {
                     if retro_btn(ui, "REMOVE THIS MOVE", false)
-                        .tip("Stop marking this move on this tune. RESTORE under MOVES brings it back.")
+                        .tip("Stop marking this move on this tune. To bring it back, press RESTORE under MOVES.")
                         .clicked()
                     {
                         // one you kept: forgotten; one Backline spotted: hidden
@@ -2294,7 +2294,7 @@ impl App {
     // ------------------------------------------------------------------ MOVES
 
     fn cm_moves_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Here are the moves you saved from your transcriptions. Click one to see it, play it or hear it in another key. Star the ones to work on. In SONGS, the colored strips over the bars are moves Backline spots. Click one to save it.", pal().ink2);
+        para(ui, "The moves you saved from your transcriptions. Click one to see it, play it or hear it in another key. Star the ones to work on. In SONGS, the colored strips over the bars are moves Backline spots. Click one to save it.", pal().ink2);
         // the moves kept
         ui.add_space(8.0);
         section_header(ui, &format!("YOUR MOVES  ({})", self.cm_moves.len()));

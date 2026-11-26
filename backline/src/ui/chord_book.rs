@@ -541,11 +541,19 @@ impl App {
             if !fam.video.is_empty() && crate::line_icon_btn(ui, "video", "The video lesson for this family, on YouTube").clicked() {
                 crate::views::open_link(&format!("https://www.youtube.com/watch?v={}", fam.video));
             }
-            // in a window of its own (to keep it beside the chart and the song), or back
-            let tip = if self.cb_in_window { "Put the Chord Book back in the main window" } else { "Pop out: the Chord Book in a window of its own" };
-            if crate::line_icon_btn(ui, "mini", tip).clicked() {
-                self.cb_pop = !self.cb_in_window;
+            // in a window of its own (to keep it beside the chart and the song; the main window goes back to where it
+            // was), or back in (Pop In: the main window on the Chord Book again)
+            if self.cb_in_window {
+                if retro_btn(ui, "Pop In", false).tip("Back into the main window").clicked() {
+                    self.cb_pop = false;
+                    self.dirty = true;
+                }
+            } else if crate::line_icon_btn(ui, "mini", "Pop out into its own window").clicked() {
+                self.cb_pop = true;
                 self.dirty = true;
+                if self.can_go(true) {
+                    acts.push(Action::Back);
+                }
             }
             // how the walk works: hear each voicing, hide the names
             if self.cb_view == 1 || self.cb_view == 3 {
@@ -661,9 +669,9 @@ impl App {
     /// THE CHORD BOOK's page while it's in its own window: a line saying so, and the way to bring it back.
     pub(crate) fn cb_popped_note(&mut self, ui: &mut egui::Ui) {
         ui.add_space(12.0);
-        para(ui, "The Chord Book is open in a window of its own.", pal().ink2);
+        para(ui, "The Chord Book is open in its own window.", pal().ink2);
         ui.add_space(6.0);
-        if retro_btn(ui, "Bring It Back", false).tip("Put the Chord Book back here and close its window").clicked() {
+        if retro_btn(ui, "Pop In", false).tip("Back into the main window").clicked() {
             self.cb_pop = false;
             self.dirty = true;
         }
@@ -714,6 +722,18 @@ impl App {
                 }
             }
         });
+        if !self.cb_pop {
+            self.cb_pop_in(acts);
+        }
+    }
+
+    /// The Chord Book back in the main window, and the main window on it (out of Now Playing if it's there).
+    fn cb_pop_in(&mut self, acts: &mut Vec<Action>) {
+        if self.art_view {
+            acts.push(Action::ToggleArt);
+        }
+        self.chords_tab = 10;
+        acts.push(Action::Section(crate::Sec::Chords));
     }
 
     /// One voicing's card: the shared voicing card (chord box, staff and tab, HEAR / SAVE) with his name, the notes
@@ -766,7 +786,7 @@ impl App {
                     card_text(ui, w, "These notes don't fit the strings in this order.", crate::chords::CL_SEMI);
                     ui.horizontal(|ui| {
                         ui.add_space(4.0);
-                        let tip = if starred { "Starred: it's at the top of CARDS. Click to take the star off" } else { "Star it: a chord you keep, shown at the top of CARDS" };
+                        let tip = if starred { "Starred, at the top of CARDS. Click to unstar" } else { "Star it to keep it at the top of CARDS" };
                         if crate::views::star_btn(ui, starred).tip(tip).clicked() {
                             clicked.set(Some(CardAsk::Star));
                         }
@@ -1043,7 +1063,7 @@ impl App {
                     crate::font::keep_caps(|| ptext(ui.painter(), Pos2::new(rr.min.x, rr.center().y), Align::Min, &r.name, 2.2, pal().accent));
                 }
                 let back = if hidden { "BACK TO THE WALK".to_string() } else { format!("BACK TO {}", c.symbol) };
-                let tip = format!("Back to the chord you're on in the walk ({} of {n}). Esc does it too, and so does clicking the chord being tried again", i + 1);
+                let tip = format!("Back to your place in the walk ({} of {n})  (Esc)", i + 1);
                 if retro_btn(ui, &back, false).tip(&tip).clicked() {
                     ask.back = true;
                 }
@@ -1102,10 +1122,10 @@ impl App {
         // the buttons: where to go (each key under its button), what to hear, how to show it
         ui.add_space(6.0);
         let shown_grip = trying.and_then(|r| r.grip).or(st.grip);
-        ui.horizontal_top(|ui| {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui| {
             let steps = [
-                ("PREVIOUS", "LEFT", "The chord before, along the line (the left arrow key)", i.checked_sub(1)),
-                ("NEXT", "RIGHT", "The next chord along the line (the right arrow key)", (i + 1 < n).then_some(i + 1)),
+                ("PREVIOUS", "LEFT", "Previous chord along the line  (Left)", i.checked_sub(1)),
+                ("NEXT", "RIGHT", "Next chord along the line  (Right)", (i + 1 < n).then_some(i + 1)),
             ];
             for (label, key, tip, to) in steps {
                 ui.vertical(|ui| {
@@ -1136,16 +1156,16 @@ impl App {
                 }
             }
             let auto = self.cb_auto.is_some();
-            if retro_btn(ui, if auto { "STOP" } else { "AUTO" }, auto).tip("Walk on by itself, one voicing every few seconds").clicked() {
+            if retro_btn(ui, if auto { "STOP" } else { "AUTO" }, auto).tip("Walk automatically, one voicing every few seconds").clicked() {
                 self.cb_auto = if auto { None } else { Some(Instant::now()) };
             }
             ui.add_space(14.0);
             ui.vertical(|ui| {
                 let on = w.stars[i];
                 let tip = if on {
-                    "Starred: it's at the top of CARDS. Click (or S) to take the star off"
+                    "Starred, at the top of CARDS. Click to unstar  (S)"
                 } else {
-                    "Star this chord (the S key): a chord you keep, shown at the top of CARDS"
+                    "Star this chord to keep it at the top of CARDS  (S)"
                 };
                 let b = crate::views::star_btn(ui, on).tip(tip);
                 if b.clicked() {
@@ -1628,7 +1648,7 @@ impl App {
                 }
             }
             ui.add_space(12.0);
-            if retro_btn(ui, "RELOAD THE BOOK", false).tip("Read chord_book.txt again (after it's been edited)").clicked() {
+            if retro_btn(ui, "RELOAD THE BOOK", false).tip("Reload chord_book.txt after editing it").clicked() {
                 self.cb_tried = false;
             }
             ui.add_space(20.0);
@@ -1985,7 +2005,7 @@ impl App {
             keycap(ui.painter(), kr.center() - Vec2::new(12.0, 0.0), "DOWN");
             keycap(ui.painter(), kr.center() + Vec2::new(12.0, 0.0), "UP");
             let what = if f.walk.inversions { "station" } else { "part" };
-            let _ = resp.tip(format!("The up and down arrow keys: the next {what}, and back to the one before"));
+            let _ = resp.tip(format!("Up: next {what}. Down: previous {what}."));
         });
         go
     }

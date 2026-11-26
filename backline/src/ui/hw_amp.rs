@@ -94,19 +94,29 @@ impl App {
         crate::styles::lcd(&p, up);
         crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(12.0), up.min.y + m.v(12.0)), Align::Min, "UP NEXT", 1.1 * s, lw);
         let from = self.cur.map_or(0, |c| c + 1);
-        let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(from).take(5).collect();
+        let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(from).take(4).collect();
         if rows.is_empty() {
             crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(12.0), up.min.y + m.v(34.0)), Align::Min, "NOTHING AFTER THIS SONG", 1.15 * s, lw);
         }
         for (k, (i, tr)) in rows.iter().enumerate() {
-            let row = Rect::from_min_size(Pos2::new(up.min.x + m.v(6.0), up.min.y + m.v(22.0 + 19.0 * k as f32)), Vec2::new(up.width() - m.v(12.0), m.v(18.5)));
-            let h = ui.interact(row, ui.id().with(("hw_next", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play this song");
+            // each song: its cover, the title over the artist, the length at the right
+            let rh = m.v(25.0);
+            let row = Rect::from_min_size(Pos2::new(up.min.x + m.v(6.0), up.min.y + m.v(21.0) + rh * k as f32), Vec2::new(up.width() - m.v(12.0), rh));
+            let h = ui.interact(row, ui.id().with(("hw_next", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
             if h.hovered() {
                 p.rect_filled(row, m.v(2.0), crate::styles::amber().gamma_multiply(0.1));
             }
+            let cs = rh - m.v(4.0);
+            let cr = Rect::from_min_size(Pos2::new(row.min.x + m.v(4.0), row.center().y - cs / 2.0), Vec2::splat(cs));
+            let url = if tr.cover.is_empty() { String::new() } else { format!("thumb:{}", crate::api::cover_url(&tr.cover, 80)) };
+            crate::row_cover(ui, cr, &url);
             let len = fmt_time(tr.duration);
             let tw = text_w(&len, 1.2 * s);
-            crate::styles::lcd_text(&p, Pos2::new(row.min.x + m.v(6.0), row.center().y), Align::Min, &tr.title, 1.2 * s, row.width() - tw - m.v(22.0));
+            let tx = cr.max.x + m.v(7.0);
+            let room = row.max.x - tx - tw - m.v(14.0);
+            crate::styles::lcd_text(&p, Pos2::new(tx, row.center().y - m.v(5.5)), Align::Min, &tr.title, 1.15 * s, room);
+            let artist = tr.artists_text().to_uppercase();
+            font::keep_caps(|| ptext_fit(&p, Pos2::new(tx, row.center().y + m.v(6.0)), Align::Min, &artist, 0.95 * s, room, crate::styles::amber().gamma_multiply(0.6)));
             crate::styles::lcd_text(&p, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &len, 1.2 * s, tw + 4.0);
             if h.clicked() {
                 acts.push(Action::PlayIndex(*i));
@@ -216,7 +226,7 @@ impl App {
             let tip = match i {
                 0 => "Meters under the panel: tuning, stereo, loudness and the analyzer",
                 1 => "The analyzer as light behind smoked glass (right-click for the visuals instead)",
-                _ if off => "Lyrics: this song has none",
+                _ if off => "No lyrics for this song",
                 _ => "The lyrics, lit through the cloth",
             };
             let h = ui.interact(row, ui.id().with(("hw_show", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);

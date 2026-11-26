@@ -1605,3 +1605,20 @@ pub(crate) fn setup_style(ctx: &egui::Context) {
     }
     ctx.set_style(s);
 }
+
+/// A page drawn wider than its room (a row of buttons that doesn't wrap, pushing past the page's edge and widening
+/// everything under it): said in the log, once a page and width, so it can be found and fixed. Rows of controls
+/// should wrap (`horizontal_wrapped`, or a left-to-right layout `with_main_wrap(true)`), never run off the page.
+pub(crate) fn overflow_check(ui: &egui::Ui, room: Rect, page: &str) {
+    let over = ui.min_rect().max.x - room.max.x;
+    if over <= 2.0 {
+        return;
+    }
+    static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let key = format!("{} {:.0}", page, room.width());
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if !seen.contains(&key) {
+        seen.push(key);
+        crate::api::log(&format!("layout: {} is {:.0} px wider than its room ({:.0} px)", page, over, room.width()));
+    }
+}

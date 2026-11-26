@@ -607,7 +607,7 @@ impl App {
                 // the ways to change it, under it (they wrap on a narrow page, never off the edge)
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    if retro_btn(ui, "Change Skin", false).tip("All the skins: Backline's own looks and Winamp skins, each shown.").clicked() {
+                    if retro_btn(ui, "Change Skin", false).tip("All skins: Backline's own looks and Winamp skins.").clicked() {
                         acts.push(Action::WaOpen);
                     }
                     if retro_btn(ui, "Your Own Colors", false).tip("Make a look of your own: pick its colors.").clicked() {
@@ -666,7 +666,7 @@ impl App {
         // played here, by day
         section_header(ui, "RECENTLY PLAYED");
         if self.store.recent.is_empty() {
-            dim_line(ui, "NOTHING YET. SONGS SHOW UP HERE AS YOU PLAY THEM", 1.0, pal().dim);
+            dim_line(ui, "NOTHING YET. SONGS YOU PLAY APPEAR HERE", 1.0, pal().dim);
         }
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         let day = |at: u64| -> &'static str {
@@ -766,13 +766,6 @@ impl App {
                 let items: Vec<(&str, Color32, Color32)> = crate::skin::STUDIO_SCREENS.iter().map(|(n, glass, _, ink, _)| (*n, *ink, *glass)).collect();
                 if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::STUDIO_SCREEN.load(Ordering::Relaxed) as usize, false) {
                     acts.push(Action::StyleColor(4, i as u8));
-                }
-                ui.add_space(6.0);
-                crate::views::label(ui, "NOW PLAYING'S COVER", 220.0);
-                let cov = crate::skin::STUDIO_COVER.load(Ordering::Relaxed) as usize;
-                let tips = ["The cover in its own colors".to_string(), "The cover printed in the screen's ink, in dots like an old LCD".to_string()];
-                if let Some(k) = crate::widgets::segments_tips(ui, &crate::skin::STUDIO_COVERS, cov, &tips) {
-                    acts.push(Action::StyleColor(5, k as u8));
                 }
             }
             STYLE_AMBIENT => {
@@ -883,7 +876,7 @@ impl App {
     /// screenshots. A click shows the skin big first (`wa_preview_panel`); WEAR IT puts it on.
     pub(crate) fn winamp_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let sc = crate::font::ui_scale();
-        para(ui, "Skins made for Winamp, from the Winamp Skin Museum. Click one to see it big.", pal().ink2);
+        para(ui, "Skins made for Winamp, from the Winamp Skin Museum. Click one to preview it.", pal().ink2);
         self.wa_wearing(ui, acts);
         ui.add_space(8.0);
         let tabs = [
@@ -902,7 +895,7 @@ impl App {
         }
         let q = self.wa_q.trim().to_string();
         let caption = match self.wa_tab {
-            1 => "Kept until you take them off. Click one to see it big.".to_string(),
+            1 => "Your favorite skins. Click one to preview it.".to_string(),
             2 => "The skins you wore lately, newest first.".to_string(),
             _ if q.is_empty() => "The museum's best. More load as you scroll.".to_string(),
             _ => format!("Skins matching \"{}\".", q),
@@ -928,8 +921,8 @@ impl App {
                 ui.add_space(gap);
             }
             match tab {
-                1 if list.is_empty() => para(ui, "No favorites yet. Point at a skin and click its star.", pal().ink2),
-                2 if list.is_empty() => para(ui, "The skins you wear show up here.", pal().ink2),
+                1 if list.is_empty() => para(ui, "No favorites yet. Click the star on any skin.", pal().ink2),
+                2 if list.is_empty() => para(ui, "No recent skins yet.", pal().ink2),
                 0 if self.wa_busy => para(ui, "Loading skins...", pal().ink2),
                 0 if list.is_empty() => para(ui, "No skins found. Try another word, or clear the search for the museum's best.", pal().ink2),
                 0 if !self.wa_end => {
@@ -998,12 +991,12 @@ impl App {
                         crate::font::ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &name, 2.4, nw - 8.0, pal().ink);
                     });
                     if retro_btn(ui, if fav { "In Favorites" } else { "Add to Favorites" }, fav)
-                        .tip(if fav { "In your favorites. Click to take it out." } else { "Keep it in your favorites." })
+                        .tip(if fav { "In your favorites. Click to remove." } else { "Add to favorites" })
                         .clicked()
                     {
                         acts.push(Action::WaFav(md5.clone(), name.clone()));
                     }
-                    if retro_btn(ui, "Backline Look", false).tip("Take the skin off: Backline's own look.").clicked() {
+                    if retro_btn(ui, "Backline Look", false).tip("Back to Backline's own look.").clicked() {
                         acts.push(if self.look_custom {
                             Action::EditLook
                         } else {
@@ -1039,7 +1032,7 @@ impl App {
         }
         if clear_w > 0.0 {
             let cr = Rect::from_center_size(Pos2::new(pill.max.x - 12.0 - clear_w / 2.0, pill.center().y), Vec2::splat(22.0 * sc));
-            let x = ui.interact(cr, ui.id().with("wa_clear"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Clear: the museum's best");
+            let x = ui.interact(cr, ui.id().with("wa_clear"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Clear the search");
             crate::vicon::named(ui.painter(), cr.shrink(4.0 * sc), "close", if x.hovered() { pal().ink } else { pal().ink2 });
             if x.clicked() {
                 self.wa_q.clear();
@@ -1092,13 +1085,13 @@ impl App {
             p.circle_filled(star.center(), star.width() / 2.0, Color32::from_black_alpha(200));
             star_mark(&p, star.center(), 8.5 * sc, if fav { Some(pal().bar_txt) } else { None }, if fav { pal().bar_txt } else { Color32::from_gray(235) });
         }
-        let sr = sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if fav { "In your favorites. Click to take it out." } else { "Add to favorites" });
+        let sr = sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if fav { "In your favorites. Click to remove." } else { "Add to favorites" });
         if sr.clicked() {
             acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
         }
         let label = crate::font::fit(&s.name, 1.5, cw);
         crate::font::ptext(&p, Pos2::new(cell.min.x + 2.0, cell.max.y - name_h / 2.0 + 2.0), Align::Min, &label, 1.5, if on { pal().ink } else { pal().ink2 });
-        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}. Click to see it big.", s.name));
+        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}. Click to preview.", s.name));
         if r.clicked() && !sr.hovered() {
             self.wa_preview = Some(s.clone());
         }
@@ -1164,10 +1157,10 @@ impl App {
                 if retro_btn(ui, if fav { "In Favorites" } else { "Add to Favorites" }, fav).clicked() {
                     acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
                 }
-                if at.is_some_and(|k| k > 0) && retro_btn(ui, "Previous", false).tip("The skin before  (Left)").clicked() {
+                if at.is_some_and(|k| k > 0) && retro_btn(ui, "Previous", false).tip("Previous skin  (Left)").clicked() {
                     step = -1;
                 }
-                if at.is_some_and(|k| k + 1 < list.len()) && retro_btn(ui, "Next", false).tip("The next skin  (Right)").clicked() {
+                if at.is_some_and(|k| k + 1 < list.len()) && retro_btn(ui, "Next", false).tip("Next skin  (Right)").clicked() {
                     step = 1;
                 }
                 if retro_btn(ui, "Close", false).tip("Esc").clicked() {
@@ -1414,6 +1407,8 @@ impl App {
             } else {
                 auto
             };
+            // (a narrow window: the places fold to their strip of icons rather than squeeze the page)
+            let sw = if all.width() - sw < 440.0 * font::ui_scale() { rail } else { sw };
             let side = Rect::from_min_max(all.min, Pos2::new(all.min.x + sw, all.max.y));
             let edge = Rect::from_min_size(Pos2::new(side.max.x - 4.0, side.min.y), Vec2::new(8.0, side.height()));
             match crate::chrome::splitter(ui.ctx(), "split_nav", edge, true) {
@@ -1464,6 +1459,8 @@ impl App {
             let main = if styled { rest.shrink(16.0) } else { rest.shrink2(Vec2::new(20.0, 14.0)) };
             let mut body = ui.new_child(egui::UiBuilder::new().max_rect(main).layout(egui::Layout::top_down(Align::Min)));
             self.library_body(&mut body, acts, false);
+            let page = format!("{:?}{}", self.sec, self.side.map(|s| format!(" / {:?}", s)).unwrap_or_default());
+            crate::widgets::overflow_check(&body, main, &page);
             ui.allocate_rect(all, Sense::hover());
             return;
         }
@@ -1471,7 +1468,10 @@ impl App {
         let mut page = crate::page_ui(ui, all);
         logo(&mut page);
         page.add_space(4.0);
+        let room = page.max_rect();
         self.library_body(&mut page, acts, true);
+        let name = format!("{:?}{}", self.sec, self.side.map(|s| format!(" / {:?}", s)).unwrap_or_default());
+        crate::widgets::overflow_check(&page, room, &name);
         ui.allocate_rect(all, Sense::hover());
     }
 
@@ -1957,9 +1957,9 @@ impl App {
                 let col = if ok { pal().ink } else { pal().dim.gamma_multiply(0.6) };
                 let icon: &[&str] = if back { &IC_BACK } else { &IC_FWD };
                 let r = icon_btn_w(ui, icon, false, col, 38.0).tip(if back {
-                    "Back. The mouse back button works too."
+                    "Back  (mouse back button)"
                 } else {
-                    "Forward. The mouse forward button works too."
+                    "Forward  (mouse forward button)"
                 });
                 if r.clicked() && ok {
                     acts.push(if back { Action::Back } else { Action::Forward });

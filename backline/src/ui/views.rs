@@ -698,7 +698,7 @@ impl App {
             dim_line(ui, "YOUR TIDAL LIKES SHOW ONCE TIDAL > MY LIBRARY HAS LOADED", 1.0, pal().dim);
         }
         if all == 0 {
-            para(ui, "Nothing here yet. Click the heart on any song and it shows up here. That works for Tidal, your files, SoundCloud and YouTube.", pal().ink2);
+            para(ui, "No songs yet. Click the heart on any song from Tidal, your files, SoundCloud or YouTube to add it here.", pal().ink2);
             return;
         }
         self.filter_box(ui, "Filter by title, artist or album");
@@ -1751,7 +1751,7 @@ impl App {
             let o = field(ui, &mut self.ed, F_PL_LINK, &mut self.pl_link, rect, "Apple Music or Spotify playlist link", false);
             let busy = self.pl_importing;
             let go = retro_btn_w(ui, if busy { "FINDING..." } else { "FIND SONGS" }, 102.0, false)
-                .tip("Paste a playlist link from Apple Music or Spotify: its songs are found on Tidal (on YouTube without Tidal) and made a playlist.")
+                .tip("Paste an Apple Music or Spotify playlist link. Backline finds its songs on Tidal (or YouTube without Tidal) and makes a playlist.")
                 .clicked();
             if (o.enter || go) && !busy {
                 acts.push(Action::PlaylistImport(self.pl_link.trim().to_string()));
@@ -1760,7 +1760,7 @@ impl App {
         self.share_buttons(ui, acts);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "SAVE QUEUE AS PLAYLIST", false)
-                .tip("Turns the queue into a playlist, named after what it was started from (a radio, a mix). You can change the name.")
+                .tip("Save the queue as a playlist, named after its source (a radio, a mix). You can rename it.")
                 .clicked()
             {
                 acts.push(Action::PlaylistFromQueue);
@@ -1829,7 +1829,7 @@ impl App {
             if !self.store.playlists[pi].link.is_empty() {
                 let busy = self.pl_updating == Some(pi);
                 if retro_btn(ui, if busy { "CHECKING..." } else { "CHECK FOR NEW SONGS" }, false)
-                    .tip("Add the songs added to the original playlist since it was brought in")
+                    .tip("Get the songs added to the original playlist since you imported it")
                     .clicked()
                     && !busy
                 {

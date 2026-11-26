@@ -96,7 +96,7 @@ pub(crate) fn list_row(
             fill_rect(p, Rect::from_min_max(Pos2::new(bx, cy + 4.0 - h), Pos2::new(bx + 2.0, cy + 4.0)), fg2);
         }
         ui.interact(mr, ui.id().with(("stems_mark", idx, rect.min.y as i32)), Sense::hover())
-            .tip("Stems ready: drums, bass, vocals and the rest can be turned on and off.");
+            .tip("Stems ready: turn drums, bass, vocals and the rest on or off.");
         rw += 16.0;
     }
     // a heart, when the caller asked for one
@@ -218,11 +218,11 @@ pub(crate) fn loop_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, t: f32, both:
     if !practice_tools() {
         return;
     }
-    if menu_item(ui, &format!("Loop start (A) here  {}", fmt_t(t))) {
+    if menu_item(ui, &format!("Set Loop Start (A)  {}", fmt_t(t))) {
         acts.push(Action::SetAAt(t));
         ui.close_menu();
     }
-    if menu_item(ui, &format!("Loop end (B) here  {}", fmt_t(t))) {
+    if menu_item(ui, &format!("Set Loop End (B)  {}", fmt_t(t))) {
         acts.push(Action::SetBAt(t));
         ui.close_menu();
     }
@@ -1291,7 +1291,7 @@ pub(crate) fn page_view(
                             acts.push(Action::Follow(page.artist_id.clone(), !page.following));
                         }
                         if let Some(r) = &page.radio {
-                            if retro_btn(ui, "RADIO", false).tip("Their radio: music like theirs.").clicked() {
+                            if retro_btn(ui, "RADIO", false).tip("Artist radio: similar music.").clicked() {
                                 acts.push(Action::Open(r.clone()));
                             }
                         }

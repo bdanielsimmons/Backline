@@ -340,7 +340,7 @@ impl App {
                                 });
                             } else {
                                 para(ui, &format!("This computer's code: {}", sv.code_shown()), pal().ink);
-                                para(ui, "Type this code on your other computer: the first time, it takes this computer's plan, progress and lists (what it had is backed up). Or type that computer's code here to take its things:", pal().ink2);
+                                para(ui, "Type this code on your other computer. The first time, it takes this computer's plan, progress and lists (its own are backed up). Or type its code here to take its plan, progress and lists instead:", pal().ink2);
                                 ui.horizontal(|ui| {
                                     let (rect, _) = ui.allocate_exact_size(egui::vec2(120.0, crate::bh()), egui::Sense::hover());
                                     let o = crate::views::field(ui, &mut self.ed, crate::tools::F_SYNC_CODE, &mut self.sync_in, rect, "Code", false);
@@ -541,7 +541,7 @@ impl App {
                         });
 
                         section_header(ui, "ZOOM");
-                        para(ui, "Make buttons and text bigger or smaller. CTRL and + or - does the same (CMD on a Mac).", pal().ink2);
+                        para(ui, "Make buttons and text bigger or smaller. Shortcut: CTRL and + or - (CMD on a Mac).", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             let now = (ctx.zoom_factor() * 100.0).round() as i32;
                             for pct in [90, 100, 115, 130, 150, 175] {

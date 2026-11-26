@@ -985,7 +985,7 @@ impl App {
             ui.add_space(6.0);
             experimental_chip(ui);
             ui.add_space(14.0);
-            if retro_btn(ui, "UNDO", false).tip("Take back the last change (Ctrl+Z)").clicked() && !running {
+            if retro_btn(ui, "UNDO", false).tip("Undo the last change  (Ctrl+Z)").clicked() && !running {
                 self.lab_undo_last();
             }
             if retro_btn(ui, "KEEP IT", false).tip("Keep it under its name (a kept one by the same name is replaced)").clicked() || out.enter {
@@ -1059,7 +1059,7 @@ impl App {
         ui.painter().rect_filled(fill, if crate::winamp_ui::chrome_on() { 2.0 } else { 0.0 }, pal().ink2);
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
-            .tip("Your chords' volume, separate from the song's (the player's own volume)");
+            .tip("Chord volume, separate from the song volume");
         if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
             self.lab_vol = ((p.x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
             self.dirty = true;
@@ -1146,7 +1146,7 @@ impl App {
                 self.store.lab_bench.bpm = (bpm + 2.0).min(240.0);
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "TAP TEMPO", false).tip("Tap it on the beat a few times and the tempo follows").clicked() && !running {
+            if retro_btn(ui, "TAP TEMPO", false).tip("Tap on the beat a few times to set the tempo").clicked() && !running {
                 self.lab_tempo_tap();
             }
         });
@@ -1154,7 +1154,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             // (over the record it goes round by itself)
             if !record {
-                if crate::check_box(ui, "REPEAT", self.lab_repeat).tip("Play goes round and round until you stop it").clicked() {
+                if crate::check_box(ui, "REPEAT", self.lab_repeat).tip("Repeat until you stop it").clicked() {
                     self.lab_repeat = !self.lab_repeat;
                     self.dirty = true;
                 }
@@ -1667,7 +1667,7 @@ impl App {
                 self.lab_sel = i + 1;
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "REMOVE", false).tip("Take this chord out").clicked() && !running {
+            if retro_btn(ui, "REMOVE", false).tip("Remove this chord").clicked() && !running {
                 let chords = &mut self.store.lab_bench.chords;
                 if chords.len() > 1 {
                     chords.remove(i);
@@ -1677,7 +1677,7 @@ impl App {
                 self.lab_sel = i.saturating_sub(1);
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "CLEAR ALL", false).tip("Take every chord out (Undo brings them back)").clicked() && !running {
+            if retro_btn(ui, "CLEAR ALL", false).tip("Remove every chord (you can undo it)").clicked() && !running {
                 self.store.lab_bench.chords = vec![blank()];
                 self.lab_sel = 0;
                 self.store_dirty = true;
@@ -1713,13 +1713,13 @@ impl App {
         let step = snap_step(self.lab_snap);
         ui.horizontal_wrapped(|ui| {
             tool_group(ui, "LENGTH", |ui| {
-                if retro_btn(ui, "- SHORTER", false).tip("Hold it for less").clicked() && !running {
+                if retro_btn(ui, "- SHORTER", false).tip("Shorten this chord").clicked() && !running {
                     let c = &mut self.store.lab_bench.chords[i];
                     c.beats = snap_to(c.beats - step, self.lab_snap);
                     c.timed = true;
                     self.store_dirty = true;
                 }
-                if retro_btn(ui, "+ LONGER", false).tip("Hold it for more").clicked() && !running {
+                if retro_btn(ui, "+ LONGER", false).tip("Lengthen this chord").clicked() && !running {
                     let c = &mut self.store.lab_bench.chords[i];
                     c.beats = snap_to(c.beats + step, self.lab_snap);
                     c.timed = true;
@@ -1727,13 +1727,13 @@ impl App {
                 }
             });
             tool_group(ui, "ORDER", |ui| {
-                if retro_btn(ui, "< EARLIER", false).tip("Swap it with the chord before").clicked() && i > 0 && !running {
+                if retro_btn(ui, "< EARLIER", false).tip("Swap with the previous chord").clicked() && i > 0 && !running {
                     self.store.lab_bench.chords.swap(i, i - 1);
                     self.lab_sel = i - 1;
                     self.store_dirty = true;
                 }
                 let n = self.store.lab_bench.chords.len();
-                if retro_btn(ui, "LATER >", false).tip("Swap it with the chord after").clicked() && i + 1 < n && !running {
+                if retro_btn(ui, "LATER >", false).tip("Swap with the next chord").clicked() && i + 1 < n && !running {
                     self.store.lab_bench.chords.swap(i, i + 1);
                     self.lab_sel = i + 1;
                     self.store_dirty = true;
@@ -1761,7 +1761,7 @@ impl App {
                         }
                     } else {
                         let label = if custom { cur.name.clone() } else { "CUSTOM".to_string() };
-                        if retro_btn(ui, &label, custom).tip("Call it what you like").clicked() && !running {
+                        if retro_btn(ui, &label, custom).tip("Type your own name for it").clicked() && !running {
                             self.ed.id = crate::tools::F_LAB_CUSTOM;
                         }
                     }
@@ -1778,7 +1778,7 @@ impl App {
                 if retro_btn(ui, "HEAR IT", false).tip("Hear this chord").clicked() {
                     self.lab_hear(self.lab_sel);
                 }
-                if retro_btn(ui, "CLEAR", false).tip("Take every note off the neck").clicked() && !running {
+                if retro_btn(ui, "CLEAR", false).tip("Clear the neck").clicked() && !running {
                     let c = &mut self.store.lab_bench.chords[self.lab_sel];
                     c.grip = [None; 6];
                     c.name.clear();

@@ -349,9 +349,9 @@ impl App {
             if let Some(on) = more.star {
                 let sr = Rect::from_min_size(Pos2::new(nr.max.x - 30.0, nr.min.y + 1.0), Vec2::new(28.0, nr.height() - 2.0));
                 let tip = if on {
-                    "Starred: it's at the top of CARDS. Click to take the star off"
+                    "Starred, at the top of CARDS. Click to unstar"
                 } else {
-                    "Star it: a chord you keep, shown at the top of CARDS"
+                    "Star it to keep it at the top of CARDS"
                 };
                 let r = ui.interact(sr, id.with("star"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
                 crate::quiet_h(ui.painter(), sr, r.is_pointer_button_down_on(), r.hovered());
@@ -1103,7 +1103,7 @@ impl App {
         if self.store.my_chords.is_empty() {
             para(
                 ui,
-                "Nothing here yet. Press SAVE under any voicing, or build one on the neck in BUILD and save it.",
+                "No saved voicings yet. Press SAVE under any voicing, or build one on the neck in BUILD and save it.",
                 pal().ink2,
             );
             return;

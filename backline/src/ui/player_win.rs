@@ -437,7 +437,7 @@ impl App {
         let strip_r = ui
             .interact(strip, ui.id().with("strip"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to open the folder where tracks are saved on this computer.");
+            .tip("Open the folder where tracks are saved.");
         inset(p, strip, pal().display);
         let (dtxt, dcol): (String, Color32) = match &track {
             None => (format!("TRACKS ARE SAVED TO: {}", cache::dir().display()), pal().ink2),
@@ -803,11 +803,11 @@ impl App {
                 "OFFLINE" => {
                     if chip(ui, r, net_txt, off, "c_offline")
                         .tip(if self.go_offline {
-                            "Offline mode. Nothing goes out to the internet, and only what's on this computer plays. Click to go online."
+                            "Offline. Only what's on this computer plays. Click to go online."
                         } else if self.net_down {
-                            "No internet right now, so only what's on this computer plays. Click to switch to offline mode."
+                            "No internet right now. Click to stay offline."
                         } else {
-                            "Online. Click to go offline, so only what's on this computer plays and nothing goes out."
+                            "Online. Click to go offline."
                         })
                         .clicked()
                     {

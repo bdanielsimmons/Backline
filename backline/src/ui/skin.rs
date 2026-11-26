@@ -166,7 +166,7 @@ pub(crate) const HW_SCREENS: [(&str, Color32, Color32); 5] = [
 ];
 pub(crate) const AMB_FEELS: [&str; 3] = ["Dark", "Deep", "Light"];
 /// Studio's screens (the Skins page): their name, glass, keys, ink, and the names on their frames; whether its covers
-/// are printed in the screen's ink (1) or in their own colours (0).
+/// are printed in the screen's ink (1) or in their own colours (0; a click on the cover in Now Playing switches).
 pub(crate) static STUDIO_SCREEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 pub(crate) static STUDIO_COVER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 pub(crate) const STUDIO_SCREENS: [(&str, Color32, Color32, Color32, Color32); 4] = [
@@ -175,7 +175,6 @@ pub(crate) const STUDIO_SCREENS: [(&str, Color32, Color32, Color32, Color32); 4]
     ("Blue", c(42, 86, 184), c(35, 74, 163), c(234, 241, 255), c(169, 192, 242)),
     ("Amber", c(37, 24, 10), c(48, 32, 16), c(255, 181, 71), c(255, 181, 71)),
 ];
-pub(crate) const STUDIO_COVERS: [&str; 2] = ["In Color", "In the Screen's Ink"];
 
 /// Studio's screen now.
 pub(crate) fn studio_screen() -> (&'static str, Color32, Color32, Color32, Color32) {

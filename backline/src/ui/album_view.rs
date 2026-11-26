@@ -215,6 +215,7 @@ impl App {
                             } else {
                                 self.show_lyrics = true;
                                 self.np_tab = tab;
+                                self.q_jump |= tab == 1;
                             }
                             self.dirty = true;
                         }
@@ -516,6 +517,8 @@ impl App {
                 p.rect_filled(Rect::from_min_size(Pos2::new(tr.min.x + 4.0, ty + 11.0), Vec2::new(text_w(t, 1.7), 2.0)), 1.0, OVER);
             }
             if h.clicked() {
+                // (Up Next, opened or clicked again: the list goes to the song playing)
+                self.q_jump |= i == 1;
                 self.np_tab = i as u8;
                 self.dirty = true;
             }
@@ -679,7 +682,7 @@ impl App {
         let loops = self.store.sections.get(&tr.id).cloned().unwrap_or_default();
         let marks = self.store.marks.get(&tr.id).cloned().unwrap_or_default();
         if loops.is_empty() && marks.is_empty() {
-            ptext_fit(p, Pos2::new(r.min.x + 4.0, r.min.y + 18.0), Align::Min, "No loops or bookmarks of this song yet. Practice mode makes them.", 1.6, r.width() - 8.0, ink.gamma_multiply(0.6));
+            ptext_fit(p, Pos2::new(r.min.x + 4.0, r.min.y + 18.0), Align::Min, "No loops or bookmarks yet. Make them in Practice.", 1.6, r.width() - 8.0, ink.gamma_multiply(0.6));
             return;
         }
         let mut y = r.min.y + 4.0;
@@ -832,7 +835,13 @@ impl App {
         let liked_now = self.cur_track().map(|t| self.liked.contains(&t.id)).unwrap_or(false);
         let cur_t = self.cur_track();
         let gap = 44.0;
-        let x0 = full.center().x;
+        // (the transport in the middle; a narrow window: left of the keys at the right, clear of them, and then the
+        // volume slider goes, its headphones staying)
+        let half = 2.5 * gap + 34.0;
+        let row_left = full.max.x - 28.0 - self.np_row_w.max(100.0) - 12.0;
+        let x0 = full.center().x.min(row_left - half);
+        let vol_room = x0 - half - 12.0 >= full.min.x + 170.0;
+        let x0 = if vol_room { x0 } else { x0.max(full.min.x + 60.0 + half) };
         let mut n = 0usize;
         let mut bare = |ui: &mut egui::Ui, icon: &str, on: bool, big: bool, tip: &str, x: f32| -> bool {
             n += 1;
@@ -900,30 +909,34 @@ impl App {
                 acts.push(Action::Volume(self.vol_before.max(0.3)));
             }
         }
-        let vr = ui.interact(vol, ui.id().with("np_vol"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Volume {}%", (self.volume * 100.0).round()));
-        if vr.dragged() || vr.clicked() {
-            if let Some(pp) = vr.interact_pointer_pos() {
-                acts.push(Action::Volume(((pp.x - vol.min.x) / vol.width()).clamp(0.0, 1.0)));
+        // (a narrow window: the slider goes, the headphones stay)
+        if vol_room {
+            let vr = ui.interact(vol, ui.id().with("np_vol"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Volume {}%", (self.volume * 100.0).round()));
+            if vr.dragged() || vr.clicked() {
+                if let Some(pp) = vr.interact_pointer_pos() {
+                    acts.push(Action::Volume(((pp.x - vol.min.x) / vol.width()).clamp(0.0, 1.0)));
+                }
             }
+            let wheel = ui.input(|i| i.smooth_scroll_delta.y);
+            if vr.hovered() && wheel != 0.0 {
+                acts.push(Action::Volume((self.volume + wheel * 0.002).clamp(0.0, 1.0)));
+            }
+            let vl = Rect::from_center_size(vol.center(), Vec2::new(vol.width(), 4.0));
+            soft_spot(&p, vl, 8.0, 0.22);
+            p.rect_filled(vl, 2.0, Color32::from_rgba_premultiplied(60, 60, 60, 60));
+            p.rect_filled(Rect::from_min_size(vl.min, Vec2::new(vl.width() * self.volume.clamp(0.0, 1.0), 4.0)), 2.0, over);
         }
-        let wheel = ui.input(|i| i.smooth_scroll_delta.y);
-        if vr.hovered() && wheel != 0.0 {
-            acts.push(Action::Volume((self.volume + wheel * 0.002).clamp(0.0, 1.0)));
-        }
-        let vl = Rect::from_center_size(vol.center(), Vec2::new(vol.width(), 4.0));
-        soft_spot(&p, vl, 8.0, 0.22);
-        p.rect_filled(vl, 2.0, Color32::from_rgba_premultiplied(60, 60, 60, 60));
-        p.rect_filled(Rect::from_min_size(vl.min, Vec2::new(vl.width() * self.volume.clamp(0.0, 1.0), 4.0)), 2.0, over);
         // ---- at the right: speed, practice, the output, "...", Close
-        let row = Rect::from_min_max(Pos2::new(x0 + 3.5 * gap, cy - bh() / 2.0), Pos2::new(full.max.x - 28.0, cy + bh() / 2.0));
+        let row = Rect::from_min_max(Pos2::new(x0 + 2.5 * gap + 30.0, cy - bh() / 2.0), Pos2::new(full.max.x - 28.0, cy + bh() / 2.0));
         // (the tour points at the controls along the foot)
         tour::mark("ARTBTNS", Rect::from_min_max(Pos2::new(full.min.x + 28.0, cy - bh() / 2.0), row.max));
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(row), |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let used = ui
+            .allocate_new_ui(egui::UiBuilder::new().max_rect(row), |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if retro_btn(ui, "CLOSE", false).tip("Back to the library  (ESC)").clicked() {
                     acts.push(Action::ToggleArt);
                 }
-                let more = crate::line_icon_btn(ui, "more", "More: the visualizer, the visuals, what's shown, full screen...");
+                let more = foot_icon(ui, "more", over, "More: the visualizer, the visuals, what's shown, full screen...");
                 let id = ui.id().with("np_more");
                 if more.clicked() {
                     ui.memory_mut(|m| m.toggle_popup(id));
@@ -932,7 +945,7 @@ impl App {
                     ui.set_min_width(260.0);
                     self.np_more_items(ui, acts);
                 });
-                let ob = crate::line_icon_btn(ui, "headphones", "Sound output: speakers, headphones or Bluetooth");
+                let ob = foot_icon(ui, "headphones", over, "Sound output: speakers, headphones or Bluetooth");
                 self.output_popup(ui, &ob, acts);
                 if practice_tools() && retro_btn(ui, "PRACTICE", self.practice).tip("Practice mode: the waveform, loops and speed  (P)").clicked() {
                     acts.push(Action::TogglePractice);
@@ -943,8 +956,13 @@ impl App {
                     acts.push(Action::Speed(crate::tools::next_speed(self.speed)));
                 }
                 spd.context_menu(|ui| self.speed_menu(ui, acts));
-            });
-        });
+                })
+                .response
+                .rect
+            })
+            .inner;
+        // (how wide the keys at the right came out: next frame the transport keeps clear of them)
+        self.np_row_w = used.width();
     }
 
     /// The "..." menu's items: the visualizer behind the cover and its settings, the visuals, popping them out,
@@ -953,14 +971,7 @@ impl App {
         let mark = |on: bool| if on { "> " } else { "   " };
         // (Hardware's amp has no cover to dress: what's under its panel, the visuals, full screen)
         if crate::studio::on() {
-            for (i, name) in crate::skin::STUDIO_COVERS.iter().enumerate() {
-                let on = crate::skin::STUDIO_COVER.load(std::sync::atomic::Ordering::Relaxed) as usize == i;
-                if menu_item(ui, &format!("{}Cover: {}", mark(on), name)) {
-                    acts.push(Action::StyleColor(5, i as u8));
-                    ui.close_menu();
-                }
-            }
-            ui.separator();
+            // (the cover's color or ink: a click on the cover)
             if menu_item(ui, &format!("   {}", if self.fullscreen { "Exit Full Screen  (F)" } else { "Full Screen  (F)" })) {
                 acts.push(Action::ToggleFullscreen);
                 ui.close_menu();
@@ -1032,6 +1043,19 @@ const OVER: Color32 = Color32::from_rgb(240, 240, 238);
 /// A soft dark spot under something drawn straight over the picture: `inner` (a rounded shape, as round as its
 /// shorter side allows: a circle for a square) filled at `a`, fading smoothly to nothing over `spread` all round, the
 /// same in every direction. One gradient (no steps, no edge), so the symbol on it reads over any visual.
+/// An icon key along Now Playing's foot, in the foot's own colour (on the cover's backdrop or Studio's black body,
+/// not a page's ink), a soft shade under it as the other controls have; full strength under the pointer.
+fn foot_icon(ui: &mut egui::Ui, icon: &str, col: Color32, tip: &str) -> egui::Response {
+    let h = bh();
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(h + 2.0, h), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+    let p = ui.painter();
+    soft_spot(p, Rect::from_center_size(r.center(), Vec2::splat(h * 0.4)), 10.0, 0.28);
+    let c = if resp.hovered() { col } else { col.gamma_multiply(0.82) };
+    crate::vicon::named(p, Rect::from_center_size(r.center(), Vec2::splat(h * 0.58)), icon, c);
+    resp
+}
+
 fn soft_spot(p: &egui::Painter, inner: Rect, spread: f32, a: f32) {
     let rr = inner.width().min(inner.height()) / 2.0;
     // the corner arcs' centres, each with the angle its quarter starts at (going round)
