@@ -211,28 +211,72 @@ pub(crate) fn hardware() -> bool {
     matches!(crate::skin::style(), crate::skin::STYLE_HARDWARE | crate::skin::STYLE_STUDIO)
 }
 
-/// A rubber key (the Hardware style): raised on a shadow, a light edge along its top; pressed, it sinks.
-pub(crate) fn key_face(p: &egui::Painter, r: Rect, down: bool, hover: bool) {
+/// A Hardware key (the owner's pick on style sheet 10, Tone Bevel): its depth from the face's own tone, a shade lighter
+/// at the top with a dark edge along its foot, no light line on it; held, it drops a little; on, the whole key warms
+/// (and what's written on it goes amber, `key_ink`), no separate light.
+pub(crate) fn key_face_on(p: &egui::Painter, r: Rect, down: bool, hover: bool, on: bool) {
     if crate::studio::on() {
-        crate::studio::key(p, r, false, down, hover);
+        crate::studio::key(p, r, on, down, hover);
         return;
     }
     let rad = corner();
-    let lift = if down { 0.0 } else { 2.0 };
-    p.rect_filled(r.translate(Vec2::new(0.0, 2.0)), rad, Color32::from_black_alpha(170));
-    let k = r.translate(Vec2::new(0.0, 2.0 - lift));
-    let face = if down {
-        pal().panel.lerp_to_gamma(Color32::BLACK, 0.15)
+    let panel = pal().panel;
+    let amber = crate::styles::amber();
+    let k = if down { r.translate(Vec2::new(0.0, 1.0)) } else { r };
+    // (the dark edge along its foot, and a soft shadow under it while it stands up)
+    if !down {
+        p.rect_filled(r.translate(Vec2::new(0.0, 2.0)), rad, Color32::from_black_alpha(115));
+    }
+    p.rect_filled(k.translate(Vec2::new(0.0, 1.0)), rad, Color32::from_rgb(11, 12, 13));
+    let (top, bot) = if on {
+        let warm = panel.lerp_to_gamma(amber, 0.16);
+        (warm.lerp_to_gamma(Color32::WHITE, if hover { 0.07 } else { 0.03 }), panel.lerp_to_gamma(amber, 0.1))
+    } else if down {
+        let d = panel.lerp_to_gamma(Color32::BLACK, 0.08);
+        (d, d)
     } else if hover {
-        pal().panel.lerp_to_gamma(Color32::WHITE, 0.16)
+        (panel.lerp_to_gamma(Color32::WHITE, 0.17), panel.lerp_to_gamma(Color32::WHITE, 0.09))
     } else {
-        pal().panel.lerp_to_gamma(Color32::WHITE, 0.09)
+        (panel.lerp_to_gamma(Color32::WHITE, 0.12), panel.lerp_to_gamma(Color32::WHITE, 0.05))
     };
-    p.rect_filled(k, rad, face);
-    p.line_segment(
-        [Pos2::new(k.min.x + rad, k.min.y + 0.5), Pos2::new(k.max.x - rad, k.min.y + 0.5)],
-        Stroke::new(1.0_f32, Color32::from_white_alpha(if down { 8 } else { 26 })),
-    );
+    p.rect_filled(k, rad, bot);
+    grad_rect(p, k.shrink(0.5), rad, top, bot);
+}
+
+/// What's written on a Hardware key: amber on one that's on, else light grey.
+pub(crate) fn key_ink(on: bool) -> Color32 {
+    if on {
+        crate::styles::amber()
+    } else {
+        Color32::from_gray(214)
+    }
+}
+
+/// A rounded rectangle filled from `top` at its top to `bot` at its foot.
+pub(crate) fn grad_rect(p: &egui::Painter, r: Rect, rad: f32, top: Color32, bot: Color32) {
+    let rad = rad.min(r.height() / 2.0).min(r.width() / 2.0).max(0.0);
+    let col = |y: f32| top.lerp_to_gamma(bot, ((y - r.min.y) / r.height().max(1.0)).clamp(0.0, 1.0));
+    let mut m = egui::Mesh::default();
+    m.colored_vertex(r.center(), col(r.center().y));
+    let corners = [
+        (Pos2::new(r.max.x - rad, r.min.y + rad), -90.0f32),
+        (Pos2::new(r.max.x - rad, r.max.y - rad), 0.0),
+        (Pos2::new(r.min.x + rad, r.max.y - rad), 90.0),
+        (Pos2::new(r.min.x + rad, r.min.y + rad), 180.0),
+    ];
+    const K: usize = 4;
+    for (c, a0) in corners {
+        for j in 0..=K {
+            let a = (a0 + 90.0 * j as f32 / K as f32).to_radians();
+            let q = c + Vec2::new(a.cos(), a.sin()) * rad;
+            m.colored_vertex(q, col(q.y));
+        }
+    }
+    let n = (m.vertices.len() - 1) as u32;
+    for i in 0..n {
+        m.add_triangle(0, 1 + i, 1 + (i + 1) % n);
+    }
+    p.add(m);
 }
 
 /// A small light that's on (the Hardware style), with a soft glow round it.
@@ -815,14 +859,10 @@ pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -
             return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         }
         if hardware() {
-            key_face(ui.painter(), rect.shrink2(Vec2::new(1.0, 2.0)), resp.is_pointer_button_down_on(), resp.hovered());
+            key_face_on(ui.painter(), rect.shrink2(Vec2::new(1.0, 2.0)), resp.is_pointer_button_down_on(), resp.hovered(), active);
             let dy = if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 };
-            winamp_ui::as_title(|| {
-                ui_text(ui.painter(), rect.center() + Vec2::new(0.0, dy), Align::Center, text, 2.0, rect.width() - 8.0, pal().ink)
-            });
-            if active {
-                led(ui.painter(), Pos2::new(rect.min.x + 7.0, rect.min.y + 7.0));
-            }
+            let col = if active { crate::styles::amber() } else { pal().ink };
+            winamp_ui::as_title(|| ui_text(ui.painter(), rect.center() + Vec2::new(0.0, dy), Align::Center, text, 2.0, rect.width() - 8.0, col));
             return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         }
         quiet_h(ui.painter(), rect, resp.is_pointer_button_down_on(), resp.hovered());

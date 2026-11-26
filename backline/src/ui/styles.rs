@@ -600,15 +600,10 @@ impl App {
                     crate::studio::key(&p, kr, lit, h.is_pointer_button_down_on(), h.hovered());
                     crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(13.0)), icon, crate::studio::key_fg(lit));
                 } else {
-                    crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
-                    if n == 1 {
-                        let k = kr.translate(Vec2::new(0.0, if h.is_pointer_button_down_on() { 2.0 } else { 0.0 }));
-                        p.rect_filled(k, crate::corner(), amber().gamma_multiply(if lit { 0.55 } else { 0.32 }));
-                    }
-                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(13.0)), icon, Color32::from_gray(214));
-                    if lit && n != 1 {
-                        crate::led(&p, Pos2::new(kr.min.x + 7.0, kr.min.y + 7.0));
-                    }
+                    let down = h.is_pointer_button_down_on();
+                    crate::key_face_on(&p, kr, down, h.hovered(), lit);
+                    let c = kr.center() + Vec2::new(0.0, if down { 1.0 } else { 0.0 });
+                    crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(13.0)), icon, crate::key_ink(lit));
                 }
                 if h.clicked() {
                     acts.push(a);
@@ -1128,11 +1123,11 @@ impl App {
                     crate::studio::key(&p, kr, lit, h.is_pointer_button_down_on(), h.hovered());
                     crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(12.0)), icon, crate::studio::key_fg(lit));
                 } else {
-                    crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
-                    if n == 1 {
-                        p.rect_filled(kr, crate::corner(), amber().gamma_multiply(if playing { 0.55 } else { 0.32 }));
-                    }
-                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(12.0)), icon, Color32::from_gray(214));
+                    let lit = n == 1 && playing;
+                    let down = h.is_pointer_button_down_on();
+                    crate::key_face_on(&p, kr, down, h.hovered(), lit);
+                    let c = kr.center() + Vec2::new(0.0, if down { 1.0 } else { 0.0 });
+                    crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(12.0)), icon, crate::key_ink(lit));
                 }
                 if h.clicked() {
                     acts.push(a);
@@ -1285,11 +1280,10 @@ impl App {
             let kr = Rect::from_min_size(Pos2::new(r.min.x + n as f32 * (kw + 6.0), ky), Vec2::new(kw, kh));
             let h = ui.interact(kr, id.with(("key", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             if hw {
-                crate::key_face(&p, kr, h.is_pointer_button_down_on(), h.hovered());
-                if n == 1 {
-                    p.rect_filled(kr, crate::corner(), amber().gamma_multiply(if lit { 0.55 } else { 0.32 }));
-                }
-                crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(15.0)), icon, Color32::from_gray(214));
+                let down = h.is_pointer_button_down_on();
+                crate::key_face_on(&p, kr, down, h.hovered(), lit);
+                let c = kr.center() + Vec2::new(0.0, if down { 1.0 } else { 0.0 });
+                crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(15.0)), icon, crate::key_ink(lit));
             } else {
                 crate::quiet_h(&p, kr, h.is_pointer_button_down_on(), h.hovered());
                 if n == 1 {
@@ -1317,11 +1311,9 @@ impl App {
             let tr = Rect::from_min_size(Pos2::new(r.min.x + n as f32 * (tw + 8.0), ry), Vec2::splat(tw));
             if hw {
                 let h = ui.interact(tr, id.with(("tg", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
-                crate::key_face(&p, tr, h.is_pointer_button_down_on(), h.hovered());
-                crate::vicon::named(&p, tr.shrink(6.0), icon, if on { amber() } else { Color32::from_gray(200) });
-                if on {
-                    crate::led(&p, Pos2::new(tr.center().x, tr.min.y - 4.0));
-                }
+                let down = h.is_pointer_button_down_on();
+                crate::key_face_on(&p, tr, down, h.hovered(), on);
+                crate::vicon::named(&p, tr.shrink(6.0).translate(Vec2::new(0.0, if down { 1.0 } else { 0.0 })), icon, crate::key_ink(on));
                 if h.clicked() {
                     self.deck_toggle(n, acts);
                 }
