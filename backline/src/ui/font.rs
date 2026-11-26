@@ -416,11 +416,40 @@ pub fn keep_caps<R>(f: impl FnOnce() -> R) -> R {
 
 /// With a skin's frames on, a label written in capitals reads in normal case ("PICK ONE..." as "Pick One...").
 fn case(text: &str) -> std::borrow::Cow<'_, str> {
-    if crate::winamp_ui::chrome_on() && !KEEP_CAPS.with(|c| c.get()) {
+    let t = if crate::winamp_ui::chrome_on() && !KEEP_CAPS.with(|c| c.get()) {
         crate::winamp_ui::display_case(text)
     } else {
         std::borrow::Cow::Borrowed(text)
+    };
+    // (Studio: a sharp in a note or chord name drawn as the music sign; the typewriter face's own # is a number sign)
+    if crate::studio::on() && t.contains('#') {
+        std::borrow::Cow::Owned(music_sharps(&t))
+    } else {
+        t
     }
+}
+
+/// The '#'s in note and chord names as music sharps: after a note's letter ("C#", "F#m7") or before a number in a
+/// chord ("#11", "7#9", "(#5)"); any other '#' ("#1 hit") stays as it is.
+pub(crate) fn music_sharps(text: &str) -> String {
+    let cs: Vec<char> = text.chars().collect();
+    cs.iter()
+        .enumerate()
+        .map(|(i, &c)| {
+            if c != '#' {
+                return c;
+            }
+            let prev = if i > 0 { cs[i - 1] } else { ' ' };
+            let next = cs.get(i + 1).copied().unwrap_or(' ');
+            let note = matches!(prev, 'A'..='G');
+            let ext = next.is_ascii_digit() && (prev.is_ascii_alphanumeric() || prev == '(' || prev == '/');
+            if note || ext {
+                '\u{266F}'
+            } else {
+                c
+            }
+        })
+        .collect()
 }
 
 /// Text width for the smooth-font looks (the modern skins, or a Winamp skin's playlist font).
@@ -553,7 +582,7 @@ fn draw_dots(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, col
 // ------------------------------------------------------------------ drawn symbols
 // The chord symbols no font draws well (a triangle for major 7, a small circle for diminished) are drawn as shapes,
 // sized to the capitals of whatever font is on.
-const DRAWN: [char; 3] = ['\u{0394}', '\u{00b0}', '\u{266D}'];
+const DRAWN: [char; 4] = ['\u{0394}', '\u{00b0}', '\u{266D}', '\u{266F}'];
 
 /// Text cut into runs of plain text (Ok) and drawn symbols (Err).
 fn drawn_split(text: &str) -> Vec<Result<&str, char>> {
@@ -589,6 +618,8 @@ fn drawn_w(c: char, px: f32) -> f32 {
         h * 0.6
     } else if c == '\u{266D}' {
         h * 0.62
+    } else if c == '\u{266F}' {
+        h * 0.66
     } else {
         h * 1.05 + h * 0.2
     }
@@ -628,6 +659,19 @@ fn ptext_drawn(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, c
                 ];
                 p.add(egui::Shape::line(bowl, s));
                 x += drawn_w('\u{266D}', px);
+            }
+            Err('\u{266F}') => {
+                // a sharp: two upright strokes, the right one a touch higher, crossed by two heavier bars rising to the
+                // right
+                let s = egui::Stroke::new(line, color);
+                let (l, r) = (x + ch * 0.2, x + ch * 0.44);
+                p.line_segment([Pos2::new(l, anchor.y - ch * 0.48), Pos2::new(l, anchor.y + ch * 0.62)], s);
+                p.line_segment([Pos2::new(r, anchor.y - ch * 0.62), Pos2::new(r, anchor.y + ch * 0.48)], s);
+                let bar = egui::Stroke::new(line * 1.7, color);
+                for dy in [-0.2f32, 0.2] {
+                    p.line_segment([Pos2::new(x + ch * 0.06, anchor.y + ch * (dy + 0.07)), Pos2::new(x + ch * 0.58, anchor.y + ch * (dy - 0.07))], bar);
+                }
+                x += drawn_w('\u{266F}', px);
             }
             Err(c) => {
                 // an upright triangle, as tall as the capitals

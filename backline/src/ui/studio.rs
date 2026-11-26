@@ -3,7 +3,7 @@
 //! part is a screen (cream, gray, blue or amber) set in a black body and named in brackets on its frame; keys have a
 //! fine outline; the time is LCD digits with the unlit segments faintly there; the song scrolls by in dot type; lists
 //! are in a typewriter face. Its Now Playing is one big screen with tabs on its frame (Lyrics, Up Next, About, Loops,
-//! Visuals), the visuals drawn in the screen's ink (bars, a scope; the terrain only in dev builds).
+//! Visuals), the visuals drawn in the screen's ink (bars, a scope, the terrain).
 
 use super::*;
 
@@ -546,8 +546,8 @@ impl App {
     /// Studio's Now Playing: one big screen with tabs on its frame. With none picked: the cover, the song in big dot
     /// type, who plays it and the album, key, tempo, tuning and loops in little boxes, what's next, the spectrum.
     /// Lyrics: the cover, song and time small at the left, the words in dot type, the line being sung inverted. Up
-    /// Next, About and Loops as the other styles have them. Visuals: drawn in the ink (bars, a scope; the terrain only
-    /// in dev builds). Practising: the waveform big, its keys, the practice tabs under it.
+    /// Next, About and Loops as the other styles have them. Visuals: drawn in the ink (bars, a scope, the
+    /// terrain). Practising: the waveform big, its keys, the practice tabs under it.
     pub(crate) fn np_studio(&mut self, ui: &mut egui::Ui, area: Rect, dt: f32, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let prac = practice_tools() && self.practice;
@@ -758,13 +758,12 @@ impl App {
     }
 
     /// The visuals in the screen's ink: LCD bars, or a scope (the sound's own wave, steadied on a rising edge so it
-    /// stands still), or (dev builds only) the terrain, the last few seconds of the spectrum as a wire grid running
+    /// stands still), or the terrain, the last few seconds of the spectrum as a wire grid running
     /// away from you. Three small keys at the top right pick.
     fn studio_visuals(&mut self, ui: &mut egui::Ui, r: Rect) {
         let p = ui.painter().clone();
         let s = sc();
-        let dev = crate::update::alpha() > 0;
-        let names: Vec<&str> = if dev { vec!["Bars", "Scope", "Terrain"] } else { vec!["Bars", "Scope"] };
+        let names = ["Bars", "Scope", "Terrain"];
         let cur = (self.studio_vis as usize).min(names.len() - 1);
         let mut x = r.max.x;
         for (i, n) in names.iter().enumerate().rev() {
@@ -817,7 +816,7 @@ impl App {
         }
     }
 
-    /// The terrain (dev builds only): each moment's spectrum a row, the newest at the front, rows running back into
+    /// The terrain: each moment's spectrum a row, the newest at the front, rows running back into
     /// the distance; drawn back to front, each row hiding what's behind it, as a wire grid in the ink.
     fn studio_terrain(&mut self, p: &egui::Painter, r: Rect) {
         const ROWS: usize = 26;
@@ -915,16 +914,14 @@ fn cover_switch(ui: &egui::Ui, r: Rect, acts: &mut Vec<Action>) {
     }
 }
 
-/// A picture (its middle square) dotted in `ink` on clear, `n` dots across, each dot one of four shades of the ink (as
+/// A picture (the whole of it, framed as the color cover shows it) dotted in `ink` on clear, `n` dots across, each dot one of four shades of the ink (as
 /// an old four-shade LCD): its brightness spread by error diffusion (Floyd-Steinberg, the rows in turn left to right and
 /// back), so faces and lettering stay recognizable.
 pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize) -> egui::ColorImage {
     let n = n.max(1);
     let [w, h] = img.size;
-    let s = w.min(h).max(1);
-    let (ox, oy) = ((w - s.min(w)) / 2, (h - s.min(h)) / 2);
-    let gray = image::GrayImage::from_fn(s as u32, s as u32, |x, y| {
-        let c = img.pixels.get((oy + y as usize) * w + ox + x as usize).copied().unwrap_or(Color32::WHITE);
+    let gray = image::GrayImage::from_fn(w.max(1) as u32, h.max(1) as u32, |x, y| {
+        let c = img.pixels.get(y as usize * w + x as usize).copied().unwrap_or(Color32::WHITE);
         image::Luma([(0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) as u8])
     });
     let small = image::imageops::resize(&gray, n as u32, n as u32, image::imageops::FilterType::CatmullRom);

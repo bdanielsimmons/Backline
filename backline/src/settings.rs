@@ -253,7 +253,7 @@ impl App {
         app.studio_np = st["studio_np"].as_u64().unwrap_or(0).min(5) as u8;
         app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(2) as u8;
         app.time_left = st["time_left"].as_bool().unwrap_or(false);
-        app.cb_pop = st["cb_pop"].as_bool().unwrap_or(false);
+        // (the Chord Book always starts back in the main window: a restart puts a popped-out one back in)
         if let Some(a) = st["cb_pop_rect"].as_array().filter(|a| a.len() == 4) {
             let v: Vec<f32> = a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
             if v.len() == 4 && v[2] > 200.0 && v[3] > 200.0 {
