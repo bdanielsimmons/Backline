@@ -2002,10 +2002,15 @@ fn news_line(ui: &mut egui::Ui, area: Option<&str>, text: &str, tag_w: f32) {
             if let Some(a) = area {
                 let w = crate::font::text_w(&a.to_uppercase(), NEWS_TAG_PX) + 14.0;
                 let pill = Rect::from_min_size(Pos2::new(r.min.x, r.min.y + 3.0), Vec2::new(w, 19.0));
-                ui.painter().rect_filled(pill, 9.5, pal().display.lerp_to_gamma(pal().accent, 0.22));
-                crate::font::keep_caps(|| {
-                    ptext_fit(ui.painter(), pill.center(), Align::Center, &a.to_uppercase(), NEWS_TAG_PX, w - 8.0, pal().ink)
-                });
+                // (small square corners, as the app's tags are; Studio: a box in the screen's ink, as its KEY and BPM)
+                let ink = if crate::studio::on() {
+                    ui.painter().rect_stroke(pill, 0.0, egui::Stroke::new(1.0_f32, crate::studio::ink()));
+                    crate::studio::ink()
+                } else {
+                    ui.painter().rect_filled(pill, crate::corner(), pal().display.lerp_to_gamma(pal().accent, 0.22));
+                    pal().ink
+                };
+                crate::font::keep_caps(|| ptext_fit(ui.painter(), pill.center(), Align::Center, &a.to_uppercase(), NEWS_TAG_PX, w - 8.0, ink));
             }
         }
         ui.vertical(|ui| {
