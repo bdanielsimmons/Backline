@@ -254,6 +254,7 @@ impl App {
         app.studio_terr_n = st["studio_terr_n"].as_u64().map_or(160, |v| v.clamp(16, 256) as usize);
         app.studio_terr_rows = st["studio_terr_rows2"].as_u64().map_or(160, |v| v.clamp(16, 240) as usize);
         app.style_col_w = st["style_col_w"].as_f64().unwrap_or(0.0) as f32;
+        app.style_deck_h = st["style_deck_h"].as_f64().unwrap_or(0.0) as f32;
         app.style_prac_col_w = st["style_prac_col_w"].as_f64().unwrap_or(0.0) as f32;
         app.time_left = st["time_left"].as_bool().unwrap_or(false);
         // (the Chord Book always starts back in the main window: a restart puts a popped-out one back in)
@@ -425,6 +426,9 @@ impl App {
             let new = if v < 2 { 0b1000 } else { 0 } | if v < 3 { 0b10000 } else { 0 };
             COLS.store(c as u32 | new, Ordering::Relaxed);
         }
+        if let Some(v) = st["track_sort"].as_u64() {
+            crate::tracks::SORT.store(v as u8, Ordering::Relaxed);
+        }
         if let Some(v) = st["vinyl"].as_bool() {
             VINYL.store(v, Ordering::Relaxed);
         }
@@ -488,6 +492,7 @@ impl App {
             "studio_terr_n": self.studio_terr_n,
             "studio_terr_rows2": self.studio_terr_rows,
             "style_col_w": self.style_col_w,
+            "style_deck_h": self.style_deck_h,
             "style_prac_col_w": self.style_prac_col_w,
             "time_left": self.time_left,
             "cb_pop": self.cb_pop,
@@ -622,6 +627,7 @@ impl App {
             "pomo_left": self.pomo_left,
             "pomo_was": self.pomo_was,
             "cols": COLS.load(Ordering::Relaxed),
+            "track_sort": crate::tracks::SORT.load(Ordering::Relaxed),
             "cols_v": 3,
             "vinyl": VINYL.load(Ordering::Relaxed),
             "row_art": ROW_ARTS.load(Ordering::Relaxed),

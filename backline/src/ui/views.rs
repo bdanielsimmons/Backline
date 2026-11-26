@@ -891,7 +891,12 @@ impl App {
         if !above {
             col_header(ui, true, art);
         }
-        for (i, e) in list.iter().enumerate() {
+        let order = crate::tracks::sort_order(list.len(), |i, c| {
+            let e = &list[i];
+            crate::tracks::song_sort_key(e.id, &e.title, &e.artist, "", e.dur, &e.kind, c)
+        });
+        for (pos, &i) in order.iter().enumerate() {
+            let e = &list[i];
             let state = if playing == Some(e.id) { RowState::Playing } else { RowState::Normal };
             let stored = if yt { cache::has(e.id) } else { true };
             crate::row_heart(self.liked.contains(&e.id));
@@ -901,8 +906,8 @@ impl App {
             }
             let r = list_row(
                 ui,
-                i,
-                Some(i + 1),
+                pos,
+                Some(pos + 1),
                 || track_cells(e.id, &e.title, &e.artist, "", &e.kind),
                 || {
                     if e.dur == 0.0 && e.cover.is_empty() && (which == 2 || which == 3 || which == 6) {
@@ -922,8 +927,9 @@ impl App {
             }
             if let Some(r) = r {
                 if r.clicked() {
-                    let tracks: Vec<Track> = list.iter().map(|x: &Ext| x.to_track()).collect();
-                    acts.push(Action::Play(tracks, i));
+                    // (in the order shown)
+                    let tracks: Vec<Track> = order.iter().map(|&k| list[k].to_track()).collect();
+                    acts.push(Action::Play(tracks, pos));
                 }
                 let liked = self.liked.contains(&e.id);
                 r.context_menu(|ui| {
@@ -1233,15 +1239,10 @@ impl App {
         ui.add_space(4.0);
         let have = sources::ytdlp_path().is_some();
         ui.horizontal_wrapped(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, bh()), Sense::hover());
-            ptext(
-                ui.painter(),
-                Pos2::new(rect.min.x + 2.0, rect.center().y),
-                Align::Min,
-                if have { "YT-DLP: READY" } else { "YT-DLP: MISSING" },
-                2.0,
-                if have { pal().ink } else { pal().red },
-            );
+            // (as wide as its words in the look's own font: a fixed slot let a wide font run under the key)
+            let said = if have { "YT-DLP: READY" } else { "YT-DLP: MISSING" };
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(text_w(said, 2.0) + 12.0, bh()), Sense::hover());
+            ptext(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, said, 2.0, if have { pal().ink } else { pal().red });
             if retro_btn(ui, if have { "UPDATE YT-DLP" } else { "GET YT-DLP" }, !have)
                 .tip("Downloads the free yt-dlp tool from its official GitHub page.")
                 .clicked()
@@ -1882,14 +1883,21 @@ impl App {
             para(ui, "Empty. Right-click any song and choose ADD TO A BACKLINE PLAYLIST.", pal().ink2);
             return;
         }
-        let tracks: Vec<Track> = items.iter().map(|v| v.to_track()).collect();
+        let order = crate::tracks::sort_order(items.len(), |i, c| {
+            let v = &items[i];
+            crate::tracks::song_sort_key(v.id, &v.title, &v.artist, &v.album, v.dur, &v.kind, c)
+        });
+        let sorted = crate::tracks::sort_now().is_some();
+        // (played in the order shown)
+        let tracks: Vec<Track> = order.iter().map(|&i| items[i].to_track()).collect();
         crate::set_list_link(&self.store.playlists[pi].link);
         play_buttons(ui, &tracks, acts, false);
         ui.add_space(4.0);
         let playing = self.cur_track().map(|t| t.id);
         let art = crate::row_arts_on();
         col_header(ui, true, art);
-        for (k, v) in items.iter().enumerate() {
+        for (pos, &k) in order.iter().enumerate() {
+            let v = &items[k];
             let state = if playing == Some(v.id) { RowState::Playing } else { RowState::Normal };
             let stored = v.kind == "file" || cache::has(v.id);
             crate::row_heart(self.liked.contains(&v.id));
@@ -1905,8 +1913,8 @@ impl App {
             let len = v.loop_ab.map_or(v.dur, |(a, b)| b - a);
             let r = list_row(
                 ui,
-                k,
-                Some(k + 1),
+                pos,
+                Some(pos + 1),
                 || track_cells(v.id, &title, &v.artist, &v.album, &v.kind),
                 || if col_on(2) { fmt_time(len) } else { String::new() },
                 state,
@@ -1921,7 +1929,7 @@ impl App {
                     match v.loop_ab {
                         // a loop plays looping, from its start
                         Some(ab) => acts.push(Action::PlaySaved(v.clone(), Some(ab))),
-                        None => acts.push(Action::Play(tracks.clone(), k)),
+                        None => acts.push(Action::Play(tracks.clone(), pos)),
                     }
                 }
                 let tidal = self.ext_of(v.id).is_none();
@@ -1933,11 +1941,12 @@ impl App {
                         ui.close_menu();
                     }
                     crate::song_items(ui, acts, &t, liked, tidal);
-                    if k > 0 && menu_item(ui, "Move Up") {
+                    // (moving a song: only in the list's own order)
+                    if !sorted && k > 0 && menu_item(ui, "Move Up") {
                         acts.push(Action::PlaylistMove(pi, k, -1));
                         ui.close_menu();
                     }
-                    if k + 1 < items.len() && menu_item(ui, "Move Down") {
+                    if !sorted && k + 1 < items.len() && menu_item(ui, "Move Down") {
                         acts.push(Action::PlaylistMove(pi, k, 1));
                         ui.close_menu();
                     }

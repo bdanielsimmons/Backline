@@ -195,7 +195,7 @@ pub(crate) fn lcd_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px
 /// A label printed on the panel (Hardware): small spaced capitals.
 fn printed(p: &egui::Painter, at: Pos2, text: &str) {
     if style() == STYLE_STUDIO {
-        crate::studio::px(p, at, egui::Align2::LEFT_CENTER, &text.to_uppercase(), 7.0, crate::studio::dim());
+        crate::studio::px(p, at, egui::Align2::LEFT_CENTER, &text.to_uppercase(), 8.5, crate::studio::dim());
         return;
     }
     font::keep_caps(|| ptext(p, at, Align::Min, &text.to_uppercase(), 1.0, Color32::from_gray(128)));
@@ -272,12 +272,35 @@ impl App {
                 // the deck at the top right, the classic player's controls made easy (the owner); practising keeps it,
                 // the practice panel goes under it
                 {
-                    let dr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 266.0));
+                    // (as tall as you drag the line under it, everything on it scaled to match: bigger text, bigger
+                    // keys; a double-click gives it its own height back)
+                    const DECK_H: f32 = 266.0;
+                    let most = (r.max.y - y - 180.0).max(DECK_H);
+                    let deck_h = if self.style_deck_h > 0.0 { self.style_deck_h.within(220.0, most) } else { DECK_H };
+                    let dr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + deck_h));
                     panel_named(ui.painter(), dr, "Now Playing");
-                    if st == STYLE_STUDIO {
-                        self.studio_deck(ui, dr.shrink(16.0), acts);
-                    } else {
-                        self.style_deck(ui, dr.shrink(14.0), acts);
+                    // (the scale: the height's, held back by the width, at least what it was)
+                    let by_h = deck_h / DECK_H;
+                    let by_w = (dr.width() - 32.0) / 340.0;
+                    let k = by_h.min(by_w.max(1.0)).clamp(0.85, 2.2);
+                    font::with_scale(font::ui_scale() * k, || {
+                        if st == STYLE_STUDIO {
+                            self.studio_deck(ui, dr.shrink(16.0), acts);
+                        } else {
+                            self.style_deck(ui, dr.shrink(14.0), acts);
+                        }
+                    });
+                    let edge = Rect::from_center_size(Pos2::new(dr.center().x, dr.max.y + pad / 2.0), Vec2::new(dr.width(), 10.0));
+                    match crate::chrome::splitter(ui.ctx(), "split_style_deck", edge, false) {
+                        Some(Some(at)) => {
+                            self.style_deck_h = (at - y).within(220.0, most);
+                            self.dirty = true;
+                        }
+                        Some(None) => {
+                            self.style_deck_h = 0.0;
+                            self.dirty = true;
+                        }
+                        None => {}
                     }
                     y = dr.max.y + pad;
                 }
@@ -764,7 +787,7 @@ impl App {
         let at = if below { Pos2::new(head.min.x + 2.0, head.max.y + 6.0) } else { Pos2::new(head.max.x - 4.0, head.center().y) };
         let align = if below { Align::Min } else { Align::Max };
         if studio {
-            crate::studio::px(&p, Pos2::new(head.min.x, head.center().y), egui::Align2::LEFT_CENTER, &info.to_uppercase(), 8.0, crate::studio::dim());
+            crate::studio::px(&p, Pos2::new(head.min.x, head.center().y), egui::Align2::LEFT_CENTER, &info.to_uppercase(), 9.5, crate::studio::dim());
             p.line_segment([Pos2::new(head.min.x, head.max.y), Pos2::new(head.max.x, head.max.y)], Stroke::new(1.0_f32, crate::studio::ink()));
         } else if hw {
             font::keep_caps(|| ptext_fit(&p, at, align, &info.to_uppercase(), px, r.width() - 4.0, Color32::from_gray(128)));
@@ -1086,7 +1109,7 @@ impl App {
         let inner = Rect::from_min_max(card.min + Vec2::new(10.0, 26.0), card.max - Vec2::new(10.0, 8.0));
         let row_a = Rect::from_min_size(inner.min, Vec2::new(inner.width(), (inner.height() * 0.5).max(40.0)));
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-        let (bands, _, _) = self.viz_data(0);
+        let (bands, peaks, _) = self.viz_data(0);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
         if crate::studio::on() {
             // one screen: the time in segments, the song in dot type at its top right, the bars under it
@@ -1101,7 +1124,7 @@ impl App {
             }
             if self.mini_viz {
                 let vr = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 30.0), row_a.max - Vec2::new(8.0, 6.0));
-                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), 2.0, 2.0);
+                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), &crate::viz::resample(&peaks, 24, 1.0), 2.0, 2.0);
             }
         } else if hw {
             // all on the screen: the time big, the song small at its top right, the meter under it
@@ -1225,7 +1248,8 @@ impl App {
         let tr = self.cur_track();
         let (bands, _, _) = self.viz_data(0);
         // ---- the cover, then the screen (Hardware) or the song beside it
-        let top = Rect::from_min_size(r.min, Vec2::new(r.width(), (r.height() * 0.46).clamp(90.0, 128.0)));
+        let s = font::ui_scale();
+        let top = Rect::from_min_size(r.min, Vec2::new(r.width(), (r.height() * 0.46).clamp(90.0 * s, 128.0 * s)));
         let cover = Rect::from_min_size(top.min, Vec2::splat(top.height()));
         match tr.as_ref().map(|t| t.cover.as_str()) {
             Some(c) if !c.is_empty() => crate::paint_held(ui, &mut self.images, "st_deck", &crate::cover_url(c, 320), cover, false),
@@ -1244,34 +1268,34 @@ impl App {
             lcd(&p, scr);
             let w = scr.width() - 20.0;
             if let Some(tr) = &tr {
-                lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0), Align::Min, &tr.title, 1.3, w);
-                lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0), Align::Min, &tr.artists_text(), 1.05, w);
+                lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0 * s), Align::Min, &tr.title, 1.3, w);
+                lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artists_text(), 1.05, w);
             }
             let mid = scr.min.y + scr.height() * 0.58;
-            let big = ((scr.height() - 50.0) / 9.0).clamp(2.6, 4.4);
+            let big = ((scr.height() / s - 50.0) / 9.0).clamp(2.6, 4.4);
             let tw = hw_time(&p, Pos2::new(scr.min.x + 10.0, mid), &self.deck_time(), tr.as_ref().map_or(0.0, |t| t.duration), big, w * 0.7);
-            time_r = Rect::from_center_size(Pos2::new(scr.min.x + 10.0 + tw / 2.0, mid), Vec2::new(tw + 8.0, 34.0));
+            time_r = Rect::from_center_size(Pos2::new(scr.min.x + 10.0 + tw / 2.0, mid), Vec2::new(tw + 8.0, 34.0 * s));
             if self.mini_viz {
-                let vr = Rect::from_min_max(Pos2::new(scr.min.x + 22.0 + tw, mid - 16.0), Pos2::new(scr.max.x - 10.0, mid + 14.0));
+                let vr = Rect::from_min_max(Pos2::new(scr.min.x + 22.0 + tw, mid - 16.0 * s), Pos2::new(scr.max.x - 10.0, mid + 14.0 * s));
                 if vr.width() > 24.0 {
                     mini_viz(&p, vr, &bands, amber(), true);
                 }
                 self.viz_tick(ui.ctx());
             }
-            lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.max.y - 11.0), Align::Min, &self.deck_info(), 1.0, w);
+            lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.max.y - 11.0 * s), Align::Min, &self.deck_info(), 1.0, w);
         } else {
             let tx = cover.max.x + 12.0;
             let room = top.max.x - tx;
             if let Some(tr) = &tr {
-                crate::row_text(&p, Pos2::new(tx, top.min.y + 9.0), Align::Min, &tr.title, room, fg());
-                crate::row_text(&p, Pos2::new(tx, top.min.y + 27.0), Align::Min, &tr.artists_text(), room, fg2());
+                crate::row_text(&p, Pos2::new(tx, top.min.y + 9.0 * s), Align::Min, &tr.title, room, fg());
+                crate::row_text(&p, Pos2::new(tx, top.min.y + 27.0 * s), Align::Min, &tr.artists_text(), room, fg2());
             }
-            let big = (top.height() / 34.0).clamp(1.8, 3.2);
+            let big = (top.height() / s / 34.0).clamp(1.8, 3.2);
             let ty = top.max.y - top.height() * 0.28;
             let tw = font::keep_caps(|| ptext(&p, Pos2::new(tx, ty), Align::Min, &self.deck_time(), big, fg()));
-            time_r = Rect::from_min_size(Pos2::new(tx, ty - 16.0), Vec2::new(tw + 8.0, 32.0));
+            time_r = Rect::from_min_size(Pos2::new(tx, ty - 16.0 * s), Vec2::new(tw + 8.0, 32.0 * s));
             if self.mini_viz {
-                mini_viz(&p, Rect::from_min_max(Pos2::new(tx + tw + 12.0, top.min.y + 42.0), Pos2::new(top.max.x, top.max.y - 6.0)), &bands, if style() == STYLE_AMBIENT { fg().gamma_multiply(0.8) } else { pal().accent }, false);
+                mini_viz(&p, Rect::from_min_max(Pos2::new(tx + tw + 12.0, top.min.y + 42.0 * s), Pos2::new(top.max.x, top.max.y - 6.0)), &bands, if style() == STYLE_AMBIENT { fg().gamma_multiply(0.8) } else { pal().accent }, false);
                 self.viz_tick(ui.ctx());
             }
         }
@@ -1294,10 +1318,10 @@ impl App {
             }
         }
         // ---- how far in
-        let prog = Rect::from_min_max(Pos2::new(r.min.x - 4.0, y0), Pos2::new(r.max.x + 4.0, y0 + 16.0));
+        let prog = Rect::from_min_max(Pos2::new(r.min.x - 4.0, y0), Pos2::new(r.max.x + 4.0, y0 + 16.0 * s));
         self.progress(ui, prog, acts, if hw { amber() } else { fg() });
         // ---- the transport, open files at its end
-        let ky = prog.max.y + 8.0;
+        let ky = prog.max.y + 8.0 * s;
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
         let keys = [
             ("prev", Action::Prev, "Previous", false),
@@ -1307,7 +1331,7 @@ impl App {
             ("skip", Action::Next, "Next", false),
             ("folder", Action::AddFiles, "Open files", false),
         ];
-        let kh = 34.0;
+        let kh = 34.0 * s;
         let kw = (r.width() - 5.0 * 6.0) / 6.0;
         for (n, (icon, a, tip, lit)) in keys.into_iter().enumerate() {
             let kr = Rect::from_min_size(Pos2::new(r.min.x + n as f32 * (kw + 6.0), ky), Vec2::new(kw, kh));
@@ -1316,14 +1340,14 @@ impl App {
                 let down = h.is_pointer_button_down_on();
                 crate::key_face_on(&p, kr, down, h.hovered(), lit);
                 let c = kr.center() + Vec2::new(0.0, if down { 1.0 } else { 0.0 });
-                crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(15.0)), icon, crate::key_ink(lit));
+                crate::vicon::named(&p, Rect::from_center_size(c, Vec2::splat(15.0 * s)), icon, crate::key_ink(lit));
             } else {
                 crate::quiet_h(&p, kr, h.is_pointer_button_down_on(), h.hovered());
                 if n == 1 {
                     p.circle_filled(kr.center(), kh / 2.0, fg());
-                    crate::vicon::named(&p, Rect::from_center_size(kr.center() + Vec2::new(1.0, 0.0), Vec2::splat(12.0)), icon, on_fg());
+                    crate::vicon::named(&p, Rect::from_center_size(kr.center() + Vec2::new(1.0, 0.0), Vec2::splat(12.0 * s)), icon, on_fg());
                 } else {
-                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(15.0)), icon, if lit || h.hovered() { fg() } else { fg2() });
+                    crate::vicon::named(&p, Rect::from_center_size(kr.center(), Vec2::splat(15.0 * s)), icon, if lit || h.hovered() { fg() } else { fg2() });
                 }
             }
             if h.clicked() {
@@ -1331,7 +1355,7 @@ impl App {
             }
         }
         // ---- shuffle, repeat, the equalizer, the playlist; the volume and the balance
-        let ry = ky + kh + 12.0;
+        let ry = ky + kh + 12.0 * s;
         let rep_on = !matches!(self.repeat, crate::Repeat::Off);
         let toggles = [
             ("shuffle", self.shuffle, "Shuffle"),
@@ -1339,14 +1363,14 @@ impl App {
             ("sliders", self.show_eq, "The equalizer"),
             ("list", !self.queue_hidden, "The playlist"),
         ];
-        let tw = 30.0;
+        let tw = 30.0 * s;
         for (n, (icon, on, tip)) in toggles.into_iter().enumerate() {
             let tr = Rect::from_min_size(Pos2::new(r.min.x + n as f32 * (tw + 8.0), ry), Vec2::splat(tw));
             if hw {
                 let h = ui.interact(tr, id.with(("tg", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
                 let down = h.is_pointer_button_down_on();
                 crate::key_face_on(&p, tr, down, h.hovered(), on);
-                crate::vicon::named(&p, tr.shrink(6.0).translate(Vec2::new(0.0, if down { 1.0 } else { 0.0 })), icon, crate::key_ink(on));
+                crate::vicon::named(&p, tr.shrink(6.0 * s).translate(Vec2::new(0.0, if down { 1.0 } else { 0.0 })), icon, crate::key_ink(on));
                 if h.clicked() {
                     self.deck_toggle(n, acts);
                 }
@@ -1356,9 +1380,9 @@ impl App {
         }
         // the volume, then the balance (a click on its middle: centred)
         let sx = r.min.x + 4.0 * (tw + 8.0) + 8.0;
-        let vol = Rect::from_min_max(Pos2::new(sx, ry - 1.0), Pos2::new(r.max.x, ry + 13.0));
+        let vol = Rect::from_min_max(Pos2::new(sx, ry - 1.0), Pos2::new(r.max.x, ry + 13.0 * s));
         self.volume_line(ui, vol, acts);
-        let bal = Rect::from_min_max(Pos2::new(sx + 26.0, ry + 18.0), Pos2::new(r.max.x, ry + 30.0));
+        let bal = Rect::from_min_max(Pos2::new(sx + 26.0 * s, ry + 18.0 * s), Pos2::new(r.max.x, ry + 30.0 * s));
         if hw {
             printed(&p, Pos2::new(sx, bal.center().y), "Bal");
         } else {

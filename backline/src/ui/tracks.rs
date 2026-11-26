@@ -274,6 +274,95 @@ pub(crate) static COL_W: Mutex<[f32; 3]> = Mutex::new([0.4, 0.3, 0.3]);
 /// the columns were changed (shown, hidden or resized): the settings need saving
 pub(crate) static COLS_CHANGED: AtomicBool = AtomicBool::new(false);
 
+/// How every track list is sorted (a click on a heading; the header's right-click menu too): 0 the list's own order,
+/// else the column + 1 (`SORT_NAMES`), with 0x80 set for the other way round. Kept with your settings.
+pub(crate) static SORT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) const SORT_NAMES: [&str; 7] = ["Name", "Artist", "Album", "Length", "Key", "BPM", "Source"];
+
+/// The sort picked: the column (an index of `SORT_NAMES`) and whether it runs the other way.
+pub(crate) fn sort_now() -> Option<(u8, bool)> {
+    let v = SORT.load(Ordering::Relaxed);
+    (v & 0x7f > 0).then(|| ((v & 0x7f) - 1, v & 0x80 != 0))
+}
+
+/// A heading clicked: sorted by it, then the other way, then the list's own order again.
+fn sort_click(col: u8) {
+    let next = match sort_now() {
+        Some((c, false)) if c == col => (col + 1) | 0x80,
+        Some((c, true)) if c == col => 0,
+        _ => col + 1,
+    };
+    SORT.store(next, Ordering::Relaxed);
+    COLS_CHANGED.store(true, Ordering::Relaxed);
+}
+
+/// A row's value in a column, to sort by.
+pub(crate) enum SortKey {
+    T(String),
+    N(f32),
+}
+
+/// A song's value in sort column `col`: its name, artist, album, length, key, tempo or where it comes from (None:
+/// unknown, sorted last).
+pub(crate) fn song_sort_key(id: i64, title: &str, artist: &str, album: &str, dur: f32, kind: &str, col: u8) -> Option<SortKey> {
+    let text = |s: &str| (!s.trim().is_empty()).then(|| SortKey::T(s.trim().to_lowercase()));
+    match col {
+        0 => text(title),
+        1 => text(artist),
+        2 => text(album),
+        3 => (dur > 0.0).then_some(SortKey::N(dur)),
+        4 => meta::get(id).filter(|i| i.key.is_some()).map(|i| SortKey::T(meta::key_text(&i))),
+        5 => meta::get(id).and_then(|i| i.bpm).map(|b| SortKey::N(b as f32)),
+        _ => text(source_label(kind)),
+    }
+}
+
+/// The order to show `n` rows in, by the sort picked (`key`: row `i`'s value in a column); the list's own order when
+/// none is. Unknown values go last either way; ties keep the list's order.
+pub(crate) fn sort_order(n: usize, key: impl Fn(usize, u8) -> Option<SortKey>) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..n).collect();
+    if let Some((col, desc)) = sort_now() {
+        let keys: Vec<Option<SortKey>> = (0..n).map(|i| key(i, col)).collect();
+        order.sort_by(|&a, &b| match (&keys[a], &keys[b]) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (None, _) => std::cmp::Ordering::Greater,
+            (_, None) => std::cmp::Ordering::Less,
+            (Some(x), Some(y)) => {
+                let o = match (x, y) {
+                    (SortKey::N(p), SortKey::N(q)) => p.partial_cmp(q).unwrap_or(std::cmp::Ordering::Equal),
+                    (SortKey::T(p), SortKey::T(q)) => p.cmp(q),
+                    (SortKey::N(_), SortKey::T(_)) => std::cmp::Ordering::Less,
+                    (SortKey::T(_), SortKey::N(_)) => std::cmp::Ordering::Greater,
+                };
+                if desc {
+                    o.reverse()
+                } else {
+                    o
+                }
+            }
+        });
+    }
+    order
+}
+
+/// Writing that reads on `bg`: `want` when it stands out enough, else the look's page or ink colour (whichever
+/// stands out more), else white or black.
+fn readable_on(bg: Color32, want: Color32) -> Color32 {
+    let lum = |c: Color32| (0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) / 255.0;
+    let far = |c: Color32| (lum(c) - lum(bg)).abs();
+    if far(want) >= 0.35 {
+        return want;
+    }
+    let best = if far(pal().display) > far(pal().ink) { pal().display } else { pal().ink };
+    if far(best) >= 0.35 {
+        best
+    } else if lum(bg) < 0.5 {
+        Color32::from_gray(235)
+    } else {
+        Color32::from_gray(20)
+    }
+}
+
 /// The library's songs after a look (`newest`: Tidal's newest hundred, newest first; `total`: its count now): the
 /// newest as Tidal has them on top (new ones, and any taken out and liked again: moved up, never twice), the rest as
 /// they were. None when the count doesn't add up (some were taken out, or more came than the look sees): then it's
@@ -541,6 +630,8 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     let (rect, painter) = sticky_head(ui, rect, "col_head");
     let resp = ui.interact(rect, ui.id().with("col_head_hit"), Sense::click());
     fill_rect(&painter, rect, pal().edge);
+    // (the headings in a colour that reads on the band, whatever the look: Studio's ink band had ink headings)
+    let head = readable_on(pal().edge, pal().accent);
     let cy = rect.center().y;
     let fit = row_fit(w, numbered, art);
     let tx = rect.min.x + fit.lead;
@@ -551,27 +642,52 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
         // covers on or off: a little picture, lit when they're on
         art_switch(ui, p, Pos2::new(rect.min.x + 18.0, cy), rect.height(), "col_head_art");
     }
+    // each heading kept inside its column; a click sorts by it (again: the other way; a third time: the list's own
+    // order), an arrow beside the one sorted by
+    let sorted = sort_now();
+    let mut heads: Vec<(u8, Rect)> = Vec::new();
+    let mut heading = |col: u8, at: Pos2, align: Align, name: &str, room: f32| {
+        ui_text(p, at, align, name, 2.0, room, head);
+        let tw = font::keep_caps(|| text_w(name, 2.0)).min(room);
+        let (x0, x1) = if align == Align::Max { (at.x - tw, at.x) } else { (at.x, at.x + tw) };
+        if let Some((c, desc)) = sorted.filter(|(c, _)| *c == col) {
+            let _ = c;
+            let ax = if align == Align::Max { x0 - 9.0 } else { x1 + 9.0 };
+            let (tip, a, b) = if desc { (cy + 3.0, cy - 3.0, cy - 3.0) } else { (cy - 3.0, cy + 3.0, cy + 3.0) };
+            p.add(egui::Shape::convex_polygon(vec![Pos2::new(ax, tip), Pos2::new(ax + 4.0, a), Pos2::new(ax - 4.0, b)], head, Stroke::NONE));
+        }
+        heads.push((col, Rect::from_min_max(Pos2::new(x0 - 4.0, rect.min.y), Pos2::new(x1 + 16.0, rect.max.y))));
+    };
     if fit.src {
         let sc = font::ui_scale();
-        ui_text(p, Pos2::new(rect.max.x - 10.0 - fit.right, cy), Align::Min, "SOURCE", 2.0, (SRC_W - 10.0) * sc, pal().accent);
+        heading(6, Pos2::new(rect.max.x - 10.0 - fit.right, cy), Align::Min, "SOURCE", (SRC_W - 10.0) * sc);
     }
     if fit.kb {
         let sc = font::ui_scale();
         let kx = rect.max.x - 10.0 - (80.0 + KB_W) * sc;
-        ui_text(p, Pos2::new(kx, cy), Align::Min, "KEY", 2.0, (KB_GAP - 6.0) * sc, pal().accent);
-        ui_text(p, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 2.0, 50.0 * sc, pal().accent);
+        heading(4, Pos2::new(kx, cy), Align::Min, "KEY", (KB_GAP - 6.0) * sc);
+        heading(5, Pos2::new(kx + KB_GAP * sc, cy), Align::Min, "BPM", 50.0 * sc);
     }
-    // each heading kept inside its column
-    ui_text(p, Pos2::new(tx, cy), Align::Min, "NAME", 2.0, (cw[0] - 12.0).max(20.0), pal().accent);
+    heading(0, Pos2::new(tx, cy), Align::Min, "NAME", (cw[0] - 12.0).max(20.0));
     let mut x = tx + cw[0];
     for (i, name) in COL_NAMES[..2].iter().enumerate() {
         if cw[i + 1] > 0.0 {
-            ui_text(p, Pos2::new(x, cy), Align::Min, name, 2.0, (cw[i + 1] - 12.0).max(20.0), pal().accent);
+            heading(i as u8 + 1, Pos2::new(x, cy), Align::Min, name, (cw[i + 1] - 12.0).max(20.0));
             x += cw[i + 1];
         }
     }
     if col_on(2) {
-        ui_text(p, Pos2::new(rect.max.x - 10.0, cy), Align::Max, "LENGTH", 2.0, 76.0 * font::ui_scale(), pal().accent);
+        heading(3, Pos2::new(rect.max.x - 10.0, cy), Align::Max, "LENGTH", 76.0 * font::ui_scale());
+    }
+    for (col, hr) in heads {
+        let tip = match sorted {
+            Some((c, false)) if c == col => "Sorted by this. Click for the other way round".to_string(),
+            Some((c, true)) if c == col => "Sorted by this, the other way round. Click for the list's own order".to_string(),
+            _ => format!("Sort by {}", SORT_NAMES[col as usize].to_lowercase()),
+        };
+        if ui.interact(hr, ui.id().with(("col_sort", col)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked() {
+            sort_click(col);
+        }
     }
     // drag the line between two columns to share the room differently
     let vis: Vec<usize> = (0..3).filter(|&i| cw[i] > 0.0).collect();
@@ -607,6 +723,24 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
         if menu_item(ui, if on { "[x] COVERS" } else { "[ ] COVERS" }) {
             ROW_ARTS.store(!on, Ordering::Relaxed);
             COLS_CHANGED.store(true, Ordering::Relaxed);
+        }
+        ui.separator();
+        crate::views::dim_line(ui, "SORT BY", 1.0, pal().ink2);
+        let cur = sort_now();
+        if menu_item(ui, if cur.is_none() { "> THE LIST'S OWN ORDER" } else { "   THE LIST'S OWN ORDER" }) {
+            SORT.store(0, Ordering::Relaxed);
+            COLS_CHANGED.store(true, Ordering::Relaxed);
+        }
+        for (i, name) in SORT_NAMES.iter().enumerate() {
+            let on = cur.is_some_and(|(c, _)| c as usize == i);
+            let way = match cur {
+                Some((_, true)) if on => "  (Z-A, HIGH-LOW)",
+                _ if on => "  (A-Z, LOW-HIGH)",
+                _ => "",
+            };
+            if menu_item(ui, &format!("{}{}{}", if on { "> " } else { "   " }, name.to_uppercase(), way)) {
+                sort_click(i as u8);
+            }
         }
     });
 }
@@ -661,8 +795,15 @@ pub(crate) fn tracks_list(
     col_header(ui, true, art);
     // only the rows on screen (and a screen either side, so covers are asked for ahead) do any work; the rest are
     // one stretch of room each, above and below (thousands of songs cost nothing off screen)
+    let order = sort_order(tracks.len(), |i, c| {
+        let t = &tracks[i];
+        song_sort_key(t.id, &t.title, &t.artists_text(), &t.album, t.duration, track_kind(src, t.id), c)
+    });
+    let shown: Vec<Track> = if sort_now().is_some() { order.iter().map(|&i| tracks[i].clone()).collect() } else { Vec::new() };
     let (first, last) = row_window(ui, tracks.len(), art);
-    for (i, t) in tracks.iter().enumerate().take(last).skip(first) {
+    for pos in first..last.min(order.len()) {
+        let i = order[pos];
+        let t = &tracks[i];
         // (a song Tidal can't stream any more, with no copy here: greyed, and it doesn't play)
         let gone = t.gone && !cache::has(t.id);
         let state = if playing_id == Some(t.id) {
@@ -679,8 +820,8 @@ pub(crate) fn tracks_list(
         }
         let r = list_row(
             ui,
-            i,
-            Some(i + 1),
+            pos,
+            Some(pos + 1),
             || track_cells(t.id, &t.title, &t.artists_text(), &t.album, track_kind(src, t.id)),
             || if col_on(2) { fmt_time(t.duration) } else { String::new() },
             state,
@@ -693,7 +834,12 @@ pub(crate) fn tracks_list(
         if let Some(r) = r {
             let r = if gone { r.on_hover_text("No longer available on Tidal.") } else { r };
             if r.clicked() && !gone {
-                acts.push(Action::Play(tracks.to_vec(), i));
+                // (in the order shown: sorted, the next song is the next one down)
+                if shown.is_empty() {
+                    acts.push(Action::Play(tracks.to_vec(), i));
+                } else {
+                    acts.push(Action::Play(shown.clone(), pos));
+                }
             }
             r.context_menu(|ui| {
                 song_items(ui, acts, t, liked.contains(&t.id), true);

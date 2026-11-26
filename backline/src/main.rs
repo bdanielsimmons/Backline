@@ -1112,6 +1112,8 @@ struct App {
     studio_terr_rows: usize,
     /// the styles' right column, dragged wider or narrower (0: its own width), listening and practising
     style_col_w: f32,
+    /// the styles' deck (Now Playing at the top of the column), dragged taller or shorter (0: its own height)
+    style_deck_h: f32,
     style_prac_col_w: f32,
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
@@ -2271,6 +2273,7 @@ impl App {
             studio_terr_n: 160,
             studio_terr_rows: 160,
             style_col_w: 0.0,
+            style_deck_h: 0.0,
             style_prac_col_w: 0.0,
             fullscreen: false,
             fs_by_art: false,

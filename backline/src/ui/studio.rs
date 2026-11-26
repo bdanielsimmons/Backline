@@ -283,16 +283,19 @@ pub(crate) fn blocks(p: &egui::Painter, r: Rect, f: f32) {
 }
 
 /// A spectrum as LCD columns of blocks, the unlit blocks faintly there: one column per band.
-pub(crate) fn bars(p: &egui::Painter, r: Rect, bands: &[f32], gap: f32, block: f32) {
+pub(crate) fn bars(p: &egui::Painter, r: Rect, bands: &[f32], peaks: &[f32], gap: f32, block: f32) {
     let n = bands.len().max(1);
     let w = (r.width() - gap * (n - 1) as f32) / n as f32;
     let rows = ((r.height() + 2.0) / (block + 2.0)).floor().max(2.0) as usize;
     for (i, v) in bands.iter().enumerate() {
         let x = r.min.x + i as f32 * (w + gap);
         let lit = (v.clamp(0.0, 1.0) * rows as f32).round() as usize;
+        // (the second layer: each bar's peak, a lit block that sits at its highest and falls back slowly)
+        let peak = peaks.get(i).map(|q| (q.clamp(0.0, 1.0) * rows as f32).round() as usize).filter(|&k| k > lit && k > 0);
         for s in 0..rows {
             let y = r.max.y - (s as f32 + 1.0) * (block + 2.0) + 2.0;
-            p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, block)), 0.0, if s < lit { ink() } else { ghost() });
+            let on = s < lit || peak == Some(s + 1);
+            p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, block)), 0.0, if on { ink() } else { ghost() });
         }
     }
 }
@@ -337,10 +340,10 @@ impl App {
         let p = ui.painter().clone();
         let id = ui.id().with("studio_deck");
         let tr = self.cur_track();
-        let (bands, _, _) = self.viz_data(0);
+        let (bands, peaks, _) = self.viz_data(0);
         let s = sc();
         // ---- the cover, the time, the song, the stream
-        let cs = (r.height() * 0.32).clamp(56.0, 92.0);
+        let cs = (r.height() * 0.32).clamp(56.0 * s, 92.0 * s);
         let cover = Rect::from_min_size(r.min, Vec2::splat(cs));
         self.studio_cover(ui, cover, "studio_deck", 320);
         if ui.interact(cover, id.with("cover"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Now Playing  (A)").clicked() {
@@ -364,30 +367,30 @@ impl App {
         // the stream's details, each a little label; Stereo (or Mono) lit
         let info = self.deck_info();
         let mut x = tx;
-        let ly = mq.max.y + 9.0 * s;
+        let ly = mq.max.y + 10.0 * s;
         for part in info.split(" · ").filter(|t| !t.is_empty()) {
             let t = part.to_uppercase();
             let lit = t == "STEREO" || t == "MONO";
-            let w = p.ctx().fonts(|f| f.layout_no_wrap(t.clone(), egui::FontId::new(7.0 * s, egui::FontFamily::Name("studio_px".into())), Color32::WHITE).size().x) + 8.0;
+            let w = p.ctx().fonts(|f| f.layout_no_wrap(t.clone(), egui::FontId::new(8.5 * s, egui::FontFamily::Name("studio_px".into())), Color32::WHITE).size().x) + 8.0;
             if x + w > r.max.x {
                 break;
             }
-            let lr = Rect::from_min_size(Pos2::new(x, ly - 6.0 * s), Vec2::new(w, 12.0 * s));
+            let lr = Rect::from_min_size(Pos2::new(x, ly - 7.0 * s), Vec2::new(w, 14.0 * s));
             if lit {
                 p.rect_filled(lr, 0.0, ink());
             }
             p.rect_stroke(lr, 0.0, Stroke::new(1.0_f32, if lit { ink() } else { dim() }));
-            px(&p, lr.center() + Vec2::new(0.0, 0.5), egui::Align2::CENTER_CENTER, &t, 7.0, if lit { scr() } else { dim() });
+            px(&p, lr.center() + Vec2::new(0.0, 0.5), egui::Align2::CENTER_CENTER, &t, 8.5, if lit { scr() } else { dim() });
             x = lr.max.x + 5.0;
         }
         // ---- the visualizer, how far in
         let mut y = cover.max.y.max(ly + 8.0 * s) + 8.0;
         if self.mini_viz {
             // (as tall as the room left over: what's under it takes 26 + 46 rows)
-            let vh = (r.max.y - y - 8.0 - (26.0 + 46.0 * s)).clamp(24.0, 110.0);
+            let vh = (r.max.y - y - 8.0 - (26.0 * s + 46.0 * s)).clamp(24.0, 400.0);
             let vr = Rect::from_min_max(Pos2::new(r.min.x, y), Pos2::new(r.max.x, y + vh));
             let b32 = crate::viz::resample(&bands, 32, 1.0);
-            bars(&p, vr, &b32, 2.0, 3.0);
+            bars(&p, vr, &b32, &crate::viz::resample(&peaks, 32, 1.0), 2.0, 3.0);
             if self.cur.is_some() && !self.stopped && !self.paused {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
             }
@@ -429,7 +432,7 @@ impl App {
             }
         }
         let vx = r.min.x + 6.0 * (kw + 3.0) + 8.0;
-        px(&p, Pos2::new(vx, y + kh / 2.0), egui::Align2::LEFT_CENTER, "VOL", 7.0, dim());
+        px(&p, Pos2::new(vx, y + kh / 2.0), egui::Align2::LEFT_CENTER, "VOL", 8.5, dim());
         let vol = Rect::from_min_max(Pos2::new(vx + 24.0 * s, y + kh / 2.0 - 5.0), Pos2::new(r.max.x, y + kh / 2.0 + 5.0));
         let vh = ui.interact(vol.expand2(Vec2::new(0.0, 5.0)), id.with("vol"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Volume {}%", (self.volume * 100.0).round()));
         if vh.clicked() || vh.dragged() {
@@ -472,7 +475,7 @@ impl App {
             }
         }
         let bx = x + 8.0;
-        px(&p, Pos2::new(bx, y + 11.0 * s), egui::Align2::LEFT_CENTER, "BAL", 7.0, dim());
+        px(&p, Pos2::new(bx, y + 11.0 * s), egui::Align2::LEFT_CENTER, "BAL", 8.5, dim());
         let bal = Rect::from_min_max(Pos2::new(bx + 24.0 * s, y + 11.0 * s - 5.0), Pos2::new(r.max.x, y + 11.0 * s + 5.0));
         if bal.width() > 24.0 {
             let bh = ui.interact(bal.expand2(Vec2::new(0.0, 5.0)), id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance  (double-click to center)");
@@ -653,7 +656,7 @@ impl App {
         marquee(ui, line, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), big, ink());
         let mut y = line.max.y + 10.0;
         let who = if tr.album.is_empty() { tr.artists_text() } else { format!("{} · {}", tr.artists_text(), tr.album) };
-        px(&p, Pos2::new(x0, y), egui::Align2::LEFT_CENTER, &who.to_uppercase(), 8.0, dim());
+        px(&p, Pos2::new(x0, y), egui::Align2::LEFT_CENTER, &who.to_uppercase(), 10.0, dim());
         y += 22.0 * s;
         // what's known of it, each in a little box
         // (key, tempo and loops always have a box, dim dashes while unknown, like an unlit readout; the tuning only
@@ -716,9 +719,9 @@ impl App {
             }
         }
         // the spectrum along the foot
-        let (bands, _, _) = self.viz_data(1);
+        let (bands, peaks, _) = self.viz_data(1);
         let br = Rect::from_min_max(Pos2::new(x0, bars_top), r.max);
-        bars(&p, br, &crate::viz::resample(&bands, 32, 1.0), 3.0, 3.0);
+        bars(&p, br, &crate::viz::resample(&bands, 32, 1.0), &crate::viz::resample(&peaks, 32, 1.0), 3.0, 3.0);
         if self.cur.is_some() && !self.stopped && !self.paused {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
         }
@@ -887,8 +890,8 @@ impl App {
                 ui.interact(body, ui.id().with("studio_3d"), Sense::click()).context_menu(|ui| self.vis_menu(ui));
             }
             _ => {
-                let (bands, _, _) = self.viz_data(1);
-                bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), 6.0, 6.0);
+                let (bands, peaks, _) = self.viz_data(1);
+                bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), &crate::viz::resample(&peaks, 32, 1.0), 6.0, 6.0);
             }
         }
         // the song in a card at the bottom left while the mouse moves, as every look shows it over its visuals
@@ -1013,7 +1016,7 @@ impl App {
             if let Some(a) = info.a4 {
                 parts.push(format!("A = {:.0}", a));
             }
-            px(&p, Pos2::new(mq.min.x, head.max.y - 10.0 * s), egui::Align2::LEFT_CENTER, &parts.join("  ·  "), 8.0, dim());
+            px(&p, Pos2::new(mq.min.x, head.max.y - 10.0 * s), egui::Align2::LEFT_CENTER, &parts.join("  ·  "), 9.5, dim());
             let time = self.deck_time();
             let shown = if time.starts_with('-') { time } else { format!(" {}", time) };
             let tw = time_digits(&p, Pos2::new(head.max.x - 220.0 * s, head.center().y), 40.0 * s, &shown, tr.duration);
