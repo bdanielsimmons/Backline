@@ -845,6 +845,9 @@ impl App {
         let x0 = full.center().x.min(row_left - half);
         let vol_room = x0 - half - 12.0 >= full.min.x + 170.0;
         let x0 = if vol_room { x0 } else { x0.max(full.min.x + 60.0 + half) };
+        // (narrower still: previous, play and next alone, shuffle, repeat and the heart left to the keyboard and menus)
+        let slim = x0 + half + 12.0 > row_left;
+        let x0 = if slim { (full.min.x + 60.0 + 1.5 * gap + 34.0).max(row_left - 1.5 * gap - 46.0) } else { x0 };
         let mut n = 0usize;
         let mut bare = |ui: &mut egui::Ui, icon: &str, on: bool, big: bool, tip: &str, x: f32| -> bool {
             n += 1;
@@ -873,7 +876,7 @@ impl App {
             }
             resp.clicked()
         };
-        if bare(ui, "shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }, x0 - 2.5 * gap) {
+        if !slim && bare(ui, "shuffle", self.shuffle, false, if self.shuffle { "Shuffle: on" } else { "Shuffle: off" }, x0 - 2.5 * gap) {
             acts.push(Action::Shuffle);
         }
         if bare(ui, "prev", false, false, "Previous", x0 - 1.5 * gap) {
@@ -890,10 +893,10 @@ impl App {
             Repeat::All => "Repeat: all  (click for one)",
             Repeat::One => "Repeat: one  (click for off)",
         };
-        if bare(ui, "loop", self.repeat != Repeat::Off, false, rep_tip, x0 + 1.5 * gap + 8.0) {
+        if !slim && bare(ui, "loop", self.repeat != Repeat::Off, false, rep_tip, x0 + 1.5 * gap + 8.0) {
             acts.push(Action::Repeat);
         }
-        if bare(ui, "heart", liked_now, false, if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" }, x0 + 2.5 * gap + 8.0) {
+        if !slim && bare(ui, "heart", liked_now, false, if liked_now { "Remove from My Tracks  (H)" } else { "Add to My Tracks  (H)" }, x0 + 2.5 * gap + 8.0) {
             if let Some(t) = &cur_t {
                 acts.push(Action::ToggleLike(t.clone()));
             }

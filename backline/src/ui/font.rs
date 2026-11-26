@@ -717,17 +717,35 @@ pub fn ptext_fit(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32,
         return;
     }
     if smooth(text) {
+        // (smaller, but not past seven tenths of its size: then cut with "...", never past its room)
         let mut k = px;
-        while k > px * 0.55 && mw(text, k) > max_w {
+        while k > px * 0.7 && mw(text, k) > max_w {
             k -= 0.05;
         }
-        ptext(p, anchor, h, text, k, color);
+        if mw(text, k) > max_w {
+            let mut t: Vec<char> = text.chars().collect();
+            while !t.is_empty() && mw(&format!("{}...", t.iter().collect::<String>()), k) > max_w {
+                t.pop();
+            }
+            ptext(p, anchor, h, &(t.iter().collect::<String>().trim_end().to_string() + "..."), k, color);
+        } else {
+            ptext(p, anchor, h, text, k, color);
+        }
         return;
     }
     let mut k = spx(px);
     let step = thick(1.0);
     while k > thick(1.0) && pw(text, k) > max_w {
         k -= step;
+    }
+    // (still too long at the smallest dots: cut with "...")
+    if pw(text, k) > max_w {
+        let mut t: Vec<char> = text.chars().collect();
+        while !t.is_empty() && pw(&format!("{}...", t.iter().collect::<String>()), k) > max_w {
+            t.pop();
+        }
+        draw_dots(p, anchor, h, &(t.iter().collect::<String>().trim_end().to_string() + "..."), k, color);
+        return;
     }
     draw_dots(p, anchor, h, text, k, color);
 }

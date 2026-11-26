@@ -1639,6 +1639,8 @@ pub(crate) fn setup_style(ctx: &egui::Context) {
     if crate::skin::style() != 0 {
         s.spacing.scroll = egui::style::ScrollStyle::floating();
         s.spacing.scroll.bar_width = 8.0;
+        // (but a strip of its own at the list's edge: nothing under the bar, a column's last words never under it)
+        s.spacing.scroll.floating_allocated_width = 10.0;
     } else {
         s.spacing.scroll = egui::style::ScrollStyle::solid();
         s.spacing.scroll.bar_width = 12.0;
