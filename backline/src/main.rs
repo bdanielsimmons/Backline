@@ -1114,6 +1114,20 @@ struct App {
     /// Studio's terrain: bands across and rows deep (right-click it)
     studio_terr_n: usize,
     studio_terr_rows: usize,
+    /// Studio's terrain, right-click: the camera (0 still, 1 sway, 2 change angles), the mouse (0 nothing, 1 ripples,
+    /// 2 look around, 3 both), and the ground rolling in slow waves
+    studio_terr_cam: u8,
+    studio_terr_mouse: u8,
+    studio_terr_swell: bool,
+    /// the terrain's motion: its own clock (runs while the song plays), when its last frame was, rows slid in so far,
+    /// the view's lean toward the mouse, the ripples in the ground (across, rows deep, rows slid in then, born, height),
+    /// and where and when the mouse last made one
+    studio_terr_clock: f64,
+    studio_terr_last: f64,
+    studio_terr_pushed: u64,
+    studio_terr_look: [f32; 2],
+    studio_terr_waves: Vec<(f32, f32, f64, f64, f32)>,
+    studio_terr_mouse_at: (Pos2, f64),
     /// the styles' right column, dragged wider or narrower (0: its own width), listening and practising
     style_col_w: f32,
     /// the styles' deck (Now Playing at the top of the column), dragged taller or shorter (0: its own height)
@@ -2277,6 +2291,15 @@ impl App {
             studio_terr_at: 0.0,
             studio_terr_n: 160,
             studio_terr_rows: 160,
+            studio_terr_cam: 0,
+            studio_terr_mouse: 0,
+            studio_terr_swell: false,
+            studio_terr_clock: 0.0,
+            studio_terr_last: 0.0,
+            studio_terr_pushed: 0,
+            studio_terr_look: [0.0; 2],
+            studio_terr_waves: Vec::new(),
+            studio_terr_mouse_at: (Pos2::ZERO, 0.0),
             style_col_w: 0.0,
             style_deck_h: 0.0,
             style_prac_col_w: 0.0,

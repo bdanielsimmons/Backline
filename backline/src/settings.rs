@@ -253,6 +253,9 @@ impl App {
         app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(3) as u8;
         app.studio_terr_n = st["studio_terr_n"].as_u64().map_or(160, |v| v.clamp(16, 256) as usize);
         app.studio_terr_rows = st["studio_terr_rows2"].as_u64().map_or(160, |v| v.clamp(16, 240) as usize);
+        app.studio_terr_cam = st["studio_terr_cam"].as_u64().unwrap_or(0).min(2) as u8;
+        app.studio_terr_mouse = st["studio_terr_mouse"].as_u64().unwrap_or(0).min(3) as u8;
+        app.studio_terr_swell = st["studio_terr_swell"].as_bool().unwrap_or(false);
         app.style_col_w = st["style_col_w"].as_f64().unwrap_or(0.0) as f32;
         app.style_deck_h = st["style_deck_h"].as_f64().unwrap_or(0.0) as f32;
         app.style_prac_col_w = st["style_prac_col_w"].as_f64().unwrap_or(0.0) as f32;
@@ -491,6 +494,9 @@ impl App {
             "studio_vis": self.studio_vis,
             "studio_terr_n": self.studio_terr_n,
             "studio_terr_rows2": self.studio_terr_rows,
+            "studio_terr_cam": self.studio_terr_cam,
+            "studio_terr_mouse": self.studio_terr_mouse,
+            "studio_terr_swell": self.studio_terr_swell,
             "style_col_w": self.style_col_w,
             "style_deck_h": self.style_deck_h,
             "style_prac_col_w": self.style_prac_col_w,

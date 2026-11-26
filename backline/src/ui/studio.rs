@@ -864,29 +864,11 @@ impl App {
                 }
             }
             2 => {
-                self.studio_terrain(&p, body);
-                ui.interact(body, ui.id().with("studio_terr_menu"), Sense::click()).on_hover_text("Right-click for the terrain's detail").context_menu(|ui| {
-                    let mark = |on: bool| if on { "> " } else { "   " };
-                    crate::views::dim_line(ui, "BANDS ACROSS", 1.0, crate::pal().ink2);
-                    for n in [48usize, 96, 160, 240] {
-                        if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_n == n), n)) {
-                            self.studio_terr_n = n;
-                            self.studio_terr.clear();
-                            self.dirty = true;
-                            ui.close_menu();
-                        }
-                    }
-                    ui.separator();
-                    crate::views::dim_line(ui, "ROWS DEEP", 1.0, crate::pal().ink2);
-                    for n in [64usize, 96, 160, 240] {
-                        if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_rows == n), n)) {
-                            self.studio_terr_rows = n;
-                            self.studio_terr.clear();
-                            self.dirty = true;
-                            ui.close_menu();
-                        }
-                    }
-                });
+                let resp = ui.interact(body, ui.id().with("studio_terr_menu"), Sense::click());
+                // (no tip once the mouse plays with it: it would sit over the ripples)
+                let resp = if self.studio_terr_mouse == 0 { resp.on_hover_text("Right-click for the terrain's settings") } else { resp };
+                self.studio_terrain(&p, body, resp.hover_pos(), resp.clicked());
+                resp.context_menu(|ui| self.studio_terr_menu(ui));
             }
             3 => {
                 // the 3D visuals, as the other looks show them (right-click: pick another)
@@ -902,9 +884,61 @@ impl App {
         self.studio_vis_card(ui, body);
     }
 
+    /// The terrain's right-click menu: the camera, the mouse, the rolling ground, and how fine it's drawn.
+    fn studio_terr_menu(&mut self, ui: &mut egui::Ui) {
+        let mark = |on: bool| if on { "> " } else { "   " };
+        crate::views::dim_line(ui, "CAMERA", 1.0, crate::pal().ink2);
+        for (i, n) in ["Still", "Sway", "Change Angles"].iter().enumerate() {
+            if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_cam == i as u8), n)) {
+                self.studio_terr_cam = i as u8;
+                self.dirty = true;
+                ui.close_menu();
+            }
+        }
+        ui.separator();
+        crate::views::dim_line(ui, "MOUSE", 1.0, crate::pal().ink2);
+        for (i, n) in ["Nothing", "Ripples (Click for a Big One)", "Look Around", "Ripples and Look Around"].iter().enumerate() {
+            if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_mouse == i as u8), n)) {
+                self.studio_terr_mouse = i as u8;
+                self.studio_terr_waves.clear();
+                self.dirty = true;
+                ui.close_menu();
+            }
+        }
+        ui.separator();
+        if crate::menu_item(ui, &format!("{}Rolling Ground", mark(self.studio_terr_swell))) {
+            self.studio_terr_swell = !self.studio_terr_swell;
+            self.dirty = true;
+            ui.close_menu();
+        }
+        ui.separator();
+        crate::sub_menu(ui, "Bands Across", |ui| {
+            for n in [48usize, 96, 160, 240] {
+                if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_n == n), n)) {
+                    self.studio_terr_n = n;
+                    self.studio_terr.clear();
+                    self.dirty = true;
+                    ui.close_menu();
+                }
+            }
+        });
+        crate::sub_menu(ui, "Rows Deep", |ui| {
+            for n in [64usize, 96, 160, 240] {
+                if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_rows == n), n)) {
+                    self.studio_terr_rows = n;
+                    self.studio_terr.clear();
+                    self.dirty = true;
+                    ui.close_menu();
+                }
+            }
+        });
+    }
+
     /// The terrain: each moment's spectrum a row, the newest at the front, rows running back into
-    /// the distance; drawn back to front, each row hiding what's behind it, as a wire grid in the ink.
-    fn studio_terrain(&mut self, p: &egui::Painter, r: Rect) {
+    /// the distance; drawn back to front, each row hiding what's behind it, as a wire grid in the ink. The camera can
+    /// sway or glide between angles, the ground roll in slow waves, and the mouse ripple it or turn the view
+    /// (`hover`: where the mouse is over it; `clicked`: a big ripple there).
+    fn studio_terrain(&mut self, p: &egui::Painter, r: Rect, hover: Option<Pos2>, clicked: bool) {
         // (many rows close together, each sliding back a little every frame, and many points across: the wave smooth
         // and moving gently, the owner's ask)
         // (straight from the analysis, as fine as it's asked for here, not through the visualizer's bar count)
@@ -912,10 +946,12 @@ impl App {
         let n_cols: usize = self.studio_terr_n.clamp(16, 256);
         // (a new row every 30 ms: the rows close together, a few seconds deep)
         const EVERY: f64 = 0.03;
+        let playing = self.cur.is_some() && !self.stopped && !self.paused;
         let k = self.viz[1].gain / self.viz[0].gain.max(self.viz[1].gain);
         let now = crate::viz::resample(&self.bands, n_cols, k);
         let t = p.ctx().input(|i| i.time);
-        if t - self.studio_terr_at > EVERY || self.studio_terr.is_empty() {
+        // (rows come in only while the song plays: paused, the land holds still)
+        if (playing && t - self.studio_terr_at > EVERY) || self.studio_terr.is_empty() {
             // (a little of the last row in the new one, so a moment's flicker doesn't jump)
             let row: Vec<f32> = match self.studio_terr.first() {
                 Some(prev) if prev.len() == n_cols => now.iter().zip(prev).map(|(a, b)| a * 0.6 + b * 0.4).collect(),
@@ -924,33 +960,139 @@ impl App {
             self.studio_terr_at = if t - self.studio_terr_at > EVERY * 3.0 { t } else { self.studio_terr_at + EVERY };
             self.studio_terr.insert(0, row);
             self.studio_terr.truncate(n_rows + 1);
+            self.studio_terr_pushed += 1;
         }
         // (how far the rows have slid since the newest came in)
         let frac = ((t - self.studio_terr_at) / EVERY).clamp(0.0, 1.0) as f32;
-        let cp = p.with_clip_rect(r);
-        let rows = &self.studio_terr;
-        let pt = |i: usize, d: f32, v: f32| {
-            // d: how deep, in rows (0 the front); deeper rows narrower and higher up
+        let slid = self.studio_terr_pushed as f64 + frac as f64;
+
+        // the motion's own clock: it runs while the song plays, so a pause holds the camera and the waves where they are
+        let dt = (t - self.studio_terr_last).clamp(0.0, 0.1) as f32;
+        self.studio_terr_last = t;
+        if playing {
+            self.studio_terr_clock += dt as f64;
+        }
+        let mc = self.studio_terr_clock as f32;
+        let mut cam = match self.studio_terr_cam {
+            1 => TerrCam {
+                pan: 0.05 * (0.11 * mc).sin() + 0.02 * (0.29 * mc + 1.0).sin(),
+                hz: 0.18 + 0.06 * (0.07 * mc).sin(),
+                roll: 0.05 * (0.09 * mc + 0.5).sin(),
+                turn: 0.4 * (0.13 * mc + 1.0).sin(),
+                lift: 1.0 + 0.12 * (0.05 * mc).sin(),
+                spread: 1.08,
+            },
+            2 => TerrCam::shot(mc),
+            _ => TerrCam::REST,
+        };
+        // the view leaning toward the mouse (back to rest when it leaves), eased so it glides
+        let look_on = matches!(self.studio_terr_mouse, 2 | 3);
+        let aim = match hover.filter(|_| look_on) {
+            Some(h) => [((h.x - r.center().x) / r.width()).clamp(-0.5, 0.5), ((h.y - r.center().y) / r.height()).clamp(-0.5, 0.5)],
+            None => [0.0, 0.0],
+        };
+        let ease = 1.0 - (-dt * 3.0).exp();
+        for a in 0..2 {
+            self.studio_terr_look[a] += (aim[a] - self.studio_terr_look[a]) * ease;
+        }
+        let [lx, ly] = self.studio_terr_look;
+        let leaning = (lx - aim[0]).abs() + (ly - aim[1]).abs() > 0.002 || lx.abs() + ly.abs() > 0.002;
+        cam.pan += lx * 0.12;
+        cam.turn -= lx * 0.9;
+        cam.roll += lx * 0.06;
+        cam.hz = (cam.hz - ly * 0.22).clamp(0.0, 0.5);
+        cam.lift *= 1.0 + ly * 0.4;
+
+        let c = r.center();
+        let (sn, cs) = cam.roll.sin_cos();
+        let rot = |q: Pos2, s: f32| {
+            let v = q - c;
+            Pos2::new(c.x + v.x * cs - v.y * s, c.y + v.x * s + v.y * cs)
+        };
+        // a spot on the land, before the roll: u across (-0.5 the left edge, 0.5 the right), d rows deep, v its height
+        let flat = |u: f32, d: f32, v: f32| {
             let z = (1.0 - d / (n_rows - 1) as f32).max(0.0);
             let persp = 0.28 + 0.72 * z;
-            let x = r.center().x + (i as f32 / (n_cols - 1) as f32 - 0.5) * r.width() * 1.05 * persp;
-            let base = r.min.y + r.height() * (0.18 + 0.78 * z);
-            Pos2::new(x, base - v * r.height() * 0.42 * persp)
+            let x = c.x + (u - cam.pan) * r.width() * 1.05 * cam.spread * persp + cam.turn * (1.0 - z) * r.width() * 0.3;
+            let base = r.min.y + r.height() * (cam.hz + (0.96 - cam.hz) * z);
+            Pos2::new(x, base - v * r.height() * 0.42 * persp * cam.lift)
         };
+
+        // the mouse rippling the land: small ripples as it moves, a big one on a click, where it points on the ground
+        let rip_on = matches!(self.studio_terr_mouse, 1 | 3);
+        if let Some(h) = hover.filter(|_| rip_on) {
+            let moved = (h - self.studio_terr_mouse_at.0).length();
+            if clicked || (moved > 10.0 && t - self.studio_terr_mouse_at.1 > 0.06) {
+                let q = rot(h, -sn);
+                let z = (((q.y - r.min.y) / r.height() - cam.hz) / (0.96 - cam.hz)).clamp(0.0, 1.0);
+                let persp = 0.28 + 0.72 * z;
+                let u = (q.x - c.x - cam.turn * (1.0 - z) * r.width() * 0.3) / (r.width() * 1.05 * cam.spread * persp) + cam.pan;
+                let big = if clicked { 1.1 } else { 0.22 + (moved / 300.0).min(0.2) };
+                self.studio_terr_waves.push((u, (1.0 - z) * (n_rows - 1) as f32, slid, t, big));
+                self.studio_terr_mouse_at = (h, t);
+            }
+        }
+        self.studio_terr_waves.retain(|w| t - w.3 < 3.5);
+        if self.studio_terr_waves.len() > 20 {
+            let extra = self.studio_terr_waves.len() - 20;
+            self.studio_terr_waves.drain(..extra);
+        }
+        // (each ripple rides back with the rows it fell on, as a stone's rings drift down a river)
+        let waves: Vec<(f32, f32, f32, f32)> = self
+            .studio_terr_waves
+            .iter()
+            .map(|w| (w.0, w.1 + (slid - w.2) as f32, (t - w.3) as f32, w.4))
+            .filter(|w| w.1 < n_rows as f32 + 40.0)
+            .collect();
+        let deep = 1.6 / (n_rows - 1) as f32;
+        let swell = self.studio_terr_swell;
+        let height = |u: f32, d: f32, v: f32| {
+            let mut v = v;
+            if swell {
+                // (two slow swells crossing, running away from you)
+                let zf = d / (n_rows - 1) as f32;
+                v += 0.075 * (0.6 * (7.0 * u + 9.0 * zf - 1.3 * mc).sin() + 0.4 * (-4.5 * u + 5.0 * zf - 0.8 * mc + 1.0).sin());
+            }
+            for &(wu, wd, age, amp) in &waves {
+                let dist = ((u - wu).powi(2) + ((d - wd) * deep).powi(2)).sqrt();
+                let off = dist - 0.3 * age;
+                if off.abs() < 0.18 {
+                    v += amp * (-(off / 0.06).powi(2)).exp() * (off * 48.0).cos() * (-age * 0.9).exp() / (1.0 + 2.0 * dist);
+                }
+            }
+            v
+        };
+
+        // (with the camera moving, the land runs on past its edges - the spectrum mirrored - so its sides stay out of
+        // sight)
+        let moving = self.studio_terr_cam != 0 || lx.abs() + ly.abs() > 0.002;
+        let ext = if moving { (n_cols / 3) as i32 } else { 0 };
+        let n = n_cols as i32;
+        let cols: Vec<(f32, usize)> = (-ext..n + ext)
+            .map(|i| {
+                let src = if i < 0 { -i } else if i >= n { 2 * n - 2 - i } else { i };
+                (i as f32 / (n - 1) as f32 - 0.5, src.clamp(0, n - 1) as usize)
+            })
+            .collect();
+        let cp = p.with_clip_rect(r);
+        let rows = &self.studio_terr;
+        let below = r.height() * 1.5;
+        let mut prev: Option<Vec<Pos2>> = None;
         for j in (0..rows.len()).rev() {
             let d = j as f32 + frac;
             if d > (n_rows - 1) as f32 {
                 continue;
             }
             let row = &rows[j];
-            let pts: Vec<Pos2> = (0..n_cols).map(|i| pt(i, d, row.get(i).copied().unwrap_or(0.0))).collect();
+            let flats: Vec<Pos2> = cols.iter().map(|&(u, s)| flat(u, d, height(u, d, row.get(s).copied().unwrap_or(0.0)))).collect();
+            let pts: Vec<Pos2> = flats.iter().map(|q| rot(*q, sn)).collect();
             // (the ground under the line, in the glass's colour, hides the rows behind)
             let mut m = egui::Mesh::default();
-            for q in &pts {
+            for (q, f) in pts.iter().zip(&flats) {
                 m.colored_vertex(*q, scr());
-                m.colored_vertex(Pos2::new(q.x, r.max.y), scr());
+                m.colored_vertex(rot(Pos2::new(f.x, f.y + below), sn), scr());
             }
-            for i in 0..n_cols - 1 {
+            for i in 0..pts.len() - 1 {
                 let a = (2 * i) as u32;
                 m.add_triangle(a, a + 2, a + 1);
                 m.add_triangle(a + 1, a + 2, a + 3);
@@ -958,15 +1100,16 @@ impl App {
             cp.add(m);
             let near = 1.0 - d / n_rows as f32;
             cp.add(egui::Shape::line(pts.clone(), Stroke::new(0.5 + 1.3 * near, ink().gamma_multiply(0.45 + 0.55 * near))));
-            if j + 1 < rows.len() && d + 1.0 <= (n_rows - 1) as f32 {
-                let back = &rows[j + 1];
-                for i in (0..n_cols).step_by(8) {
-                    cp.line_segment([pts[i], pt(i, d + 1.0, back.get(i).copied().unwrap_or(0.0))], Stroke::new(0.5_f32, ink().gamma_multiply(0.45)));
+            // (the lines running back, to the row behind, every eighth point)
+            if let Some(back) = &prev {
+                for i in (0..pts.len()).filter(|i| (*i as i32 - ext).rem_euclid(8) == 0) {
+                    cp.line_segment([pts[i], back[i]], Stroke::new(0.5_f32, ink().gamma_multiply(0.45)));
                 }
             }
+            prev = Some(pts);
         }
-        // (at most 60 frames a second: smooth, without drawing flat out)
-        if self.cur.is_some() && !self.stopped && !self.paused {
+        // (at most 60 frames a second: smooth, without drawing flat out; while ripples spread or the view glides too)
+        if playing || !self.studio_terr_waves.is_empty() || leaning {
             p.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
@@ -1033,6 +1176,60 @@ impl App {
         // the waveform (the whole song above it), then the practice tabs and their tools: the same in every style
         let body = Rect::from_min_max(Pos2::new(r.min.x, head.max.y + 12.0), r.max);
         self.practice_stack(ui, body, acts, true);
+    }
+}
+
+/// Where the terrain's camera stands: `pan` sideways (the land's widths), `hz` how far down the far rows sit (of the
+/// screen's height), `roll` its lean (radians), `turn` the far rows swung aside (of the width), `lift` the hills'
+/// height, `spread` the land's width.
+#[derive(Clone, Copy)]
+struct TerrCam {
+    pan: f32,
+    hz: f32,
+    roll: f32,
+    turn: f32,
+    lift: f32,
+    spread: f32,
+}
+
+impl TerrCam {
+    const REST: TerrCam = TerrCam { pan: 0.0, hz: 0.18, roll: 0.0, turn: 0.0, lift: 1.0, spread: 1.0 };
+    /// The angles Change Angles glides between: as it starts, low and wide, high above, banking, close in.
+    const SHOTS: [TerrCam; 5] = [
+        TerrCam::REST,
+        TerrCam { pan: -0.05, hz: 0.32, roll: -0.04, turn: 0.35, lift: 1.35, spread: 1.25 },
+        TerrCam { pan: 0.05, hz: 0.03, roll: 0.05, turn: -0.25, lift: 0.75, spread: 0.95 },
+        TerrCam { pan: -0.06, hz: 0.15, roll: 0.11, turn: 0.6, lift: 1.1, spread: 1.15 },
+        TerrCam { pan: 0.06, hz: 0.26, roll: -0.08, turn: -0.55, lift: 1.4, spread: 1.5 },
+    ];
+
+    fn mix(a: TerrCam, b: TerrCam, k: f32) -> TerrCam {
+        let m = |x: f32, y: f32| x + (y - x) * k;
+        TerrCam {
+            pan: m(a.pan, b.pan),
+            hz: m(a.hz, b.hz),
+            roll: m(a.roll, b.roll),
+            turn: m(a.turn, b.turn),
+            lift: m(a.lift, b.lift),
+            spread: m(a.spread, b.spread),
+        }
+    }
+
+    /// Change Angles, `t` seconds in: each angle held a while, then a slow glide to the next, never the same twice
+    /// running; drifting a little while it holds.
+    fn shot(t: f32) -> TerrCam {
+        const ORDER: [usize; 10] = [0, 1, 3, 2, 4, 1, 2, 0, 3, 4];
+        const HOLD: f32 = 12.0;
+        const GLIDE: f32 = 5.0;
+        let n = (t / HOLD).floor().max(0.0) as usize;
+        let to = TerrCam::SHOTS[ORDER[n % ORDER.len()]];
+        let from = if n == 0 { to } else { TerrCam::SHOTS[ORDER[(n - 1) % ORDER.len()]] };
+        let k = ((t - n as f32 * HOLD) / GLIDE).clamp(0.0, 1.0);
+        let mut c = TerrCam::mix(from, to, k * k * (3.0 - 2.0 * k));
+        c.pan += 0.02 * (0.2 * t).sin();
+        c.roll += 0.012 * (0.3 * t + 1.0).sin();
+        c.turn += 0.08 * (0.17 * t).sin();
+        c
     }
 }
 
