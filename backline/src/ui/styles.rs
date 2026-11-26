@@ -234,6 +234,32 @@ impl App {
         // (a narrow window, half a screen: the column gives way so the page keeps room to be read; the places down
         // the side fold to their strip of icons first, in library_ui)
         let col_w = col_w.min(screen.width() - 520.0 * font::ui_scale()).max(320.0);
+        // (or as wide as you dragged it, as Classic's stack: the line between the page and the column; a double-click
+        // gives it its own width back)
+        let set = if self.practice { self.style_prac_col_w } else { self.style_col_w };
+        let most = (screen.width() - 260.0).max(300.0);
+        let col_w = if set > 0.0 { set.within(300.0, most) } else { col_w };
+        let edge = Rect::from_min_size(Pos2::new(screen.max.x - col_w - 7.0, screen.min.y + crate::FRAME_TOP), Vec2::new(12.0, screen.height() - crate::FRAME_TOP - bar_h));
+        match crate::chrome::splitter(ctx, "split_style_col", edge, true) {
+            Some(Some(x)) => {
+                let w = (screen.max.x - x).within(300.0, most);
+                if self.practice {
+                    self.style_prac_col_w = w;
+                } else {
+                    self.style_col_w = w;
+                }
+                self.dirty = true;
+            }
+            Some(None) => {
+                if self.practice {
+                    self.style_prac_col_w = 0.0;
+                } else {
+                    self.style_col_w = 0.0;
+                }
+                self.dirty = true;
+            }
+            None => {}
+        }
         {
             egui::SidePanel::right("st_col").exact_width(col_w).resizable(false).show_separator_line(false).frame(none).show(ctx, |ui| {
                 let r = ui.max_rect();
@@ -569,17 +595,24 @@ impl App {
                 _ => crate::paint_page_art(ui, &mut self.images, "", cover, false),
             }
             p.rect_stroke(cover, 3.0, Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
-            let scr = Rect::from_min_max(Pos2::new(cover.max.x + 10.0, r.min.y), Pos2::new(cover.max.x + 10.0 + (r.width() * 0.28).clamp(200.0, 340.0), r.max.y));
-            lcd(&p, scr);
+            // (the keys need their room: a narrow window shrinks the screen, then the song on it, then the screen)
+            let key_room = 5.0 * 54.0 + 40.0;
+            let scr_w = (r.width() * 0.28).clamp(200.0, 340.0).min(e.min.x - cover.max.x - 10.0 - key_room);
+            let screen_on = scr_w >= 150.0;
+            let scr = Rect::from_min_max(Pos2::new(cover.max.x + 10.0, r.min.y), Pos2::new(cover.max.x + 10.0 + scr_w.max(0.0), r.max.y));
+            if screen_on {
+                lcd(&p, scr);
+            }
             let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-            if studio {
+            if !screen_on {
+            } else if studio {
                 let t = self.deck_time();
                 let shown = if t.starts_with('-') { t } else { format!(" {}", t) };
                 crate::studio::time_digits(&p, Pos2::new(scr.min.x + 8.0, scr.center().y), 30.0, &shown, bar_dur);
             } else {
-                hw_time(&p, Pos2::new(scr.min.x + 12.0, scr.center().y), &fmt_time(pos), bar_dur, 3.6, 190.0);
+                hw_time(&p, Pos2::new(scr.min.x + 12.0, scr.center().y), &fmt_time(pos), bar_dur, 3.6, (scr.width() - 20.0).min(190.0));
             }
-            if let Some(tr) = self.cur_track() {
+            if let Some(tr) = self.cur_track().filter(|_| scr.width() - 190.0 >= 60.0) {
                 let w = scr.width() - 190.0;
                 lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w);
                 lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w);
@@ -588,7 +621,7 @@ impl App {
                 acts.push(Action::ToggleArt);
             }
             // the keys, and how far in under them
-            let mid = (scr.max.x + 20.0 + e.min.x - 20.0) / 2.0;
+            let mid = (if screen_on { scr.max.x } else { cover.max.x } + 20.0 + e.min.x - 20.0) / 2.0;
             let kw = 48.0;
             let playing = self.cur.is_some() && !self.stopped && !self.paused;
             let keys = [("prev", Action::Prev, "Previous", false), ("play", Action::PlayBtn, "Play", playing), ("pause", Action::PauseBtn, "Pause", self.paused), ("stop", Action::StopBtn, "Stop", false), ("skip", Action::Next, "Next", false)];
@@ -609,7 +642,7 @@ impl App {
                     acts.push(a);
                 }
             }
-            let pw = (5.0 * (kw + 6.0) + 120.0).min(e.min.x - scr.max.x - 40.0);
+            let pw = (5.0 * (kw + 6.0) + 120.0).min(e.min.x - if screen_on { scr.max.x } else { cover.max.x } - 40.0);
             let prog = Rect::from_center_size(Pos2::new(mid, r.max.y - 12.0), Vec2::new(pw, 16.0));
             self.progress(ui, prog, acts, amber());
             return;

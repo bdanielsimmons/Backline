@@ -1477,7 +1477,16 @@ impl App {
         if let Some(c) = self.cur {
             // (how far into the whole queue: the songs before this one and this one so far, out of them all)
             let done: f32 = queue.iter().take(c).map(|t| t.duration).sum::<f32>() + pos;
-            text_at(7.0, 10.0, &format!("{}/{}", fmt_long(done), fmt_long(total)));
+            // (the box holds 15 of the skin's letters: a long queue's total loses its seconds, then the song's too)
+            let mut t = format!("{}/{}", fmt_long(done), fmt_long(total));
+            let short = |s: String| s.rsplit_once(':').filter(|(h, _)| h.contains(':')).map_or(s.clone(), |(h, _)| h.to_string());
+            if t.chars().count() > 15 {
+                t = format!("{}/{}", fmt_long(done), short(fmt_long(total)));
+            }
+            if t.chars().count() > 15 {
+                t = format!("{}/{}", short(fmt_long(done)), short(fmt_long(total)));
+            }
+            text_at(7.0, 10.0, &t);
             text_at(66.0, 23.0, &format!("{:>5}", fmt_time(pos)));
         }
         // the mini transport

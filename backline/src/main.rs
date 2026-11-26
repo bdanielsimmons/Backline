@@ -1075,11 +1075,10 @@ struct App {
     np_blur: Option<egui::TextureHandle>,
     np_blur_for: String,
     vu: [f32; 2],
-    /// Hardware's Now Playing (an amp): what shows under its panel (0 meters, 1 visuals, 2 lyrics), what the visuals
-    /// are there (0 the analyzer as light, 1 the visuals), the stereo correlation and K-weighted loudness its meters
+    /// Hardware's Now Playing (an amp): what shows under its panel (0 meters, 1 the analyzer as light, 2 lyrics), the
+    /// stereo correlation and K-weighted loudness its meters
     /// read (eased), its three small meters' needles, until when each peak light stays lit, its tolex and cloth
     hw_show: u8,
-    hw_vis: u8,
     hw_corr: f32,
     hw_ms: f32,
     hw_need: [f32; 3],
@@ -1108,6 +1107,12 @@ struct App {
     studio_dith_busy: HashMap<&'static str, (String, f64)>,
     studio_terr: Vec<Vec<f32>>,
     studio_terr_at: f64,
+    /// Studio's terrain: bands across and rows deep (right-click it)
+    studio_terr_n: usize,
+    studio_terr_rows: usize,
+    /// the styles' right column, dragged wider or narrower (0: its own width), listening and practising
+    style_col_w: f32,
+    style_prac_col_w: f32,
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
     fs_by_art: bool,
@@ -2245,7 +2250,6 @@ impl App {
             np_blur_for: String::new(),
             vu: [0.0; 2],
             hw_show: 0,
-            hw_vis: 0,
             hw_corr: 1.0,
             hw_ms: 0.0,
             hw_need: [0.0, -1.2, -40.0],
@@ -2264,6 +2268,10 @@ impl App {
             studio_dith_busy: HashMap::new(),
             studio_terr: Vec::new(),
             studio_terr_at: 0.0,
+            studio_terr_n: 160,
+            studio_terr_rows: 96,
+            style_col_w: 0.0,
+            style_prac_col_w: 0.0,
             fullscreen: false,
             fs_by_art: false,
             art_tilt: Vec2::ZERO,
@@ -3684,7 +3692,8 @@ impl App {
             (Vec::new(), 44100.0)
         };
         // analysed once at the finer of the two bar counts and the higher sensitivity; each view reshapes it
-        let nb = self.viz[0].n.max(self.viz[1].n).clamp(8, 96);
+        let terrain = crate::studio::on() && self.art_view && self.studio_np == 5 && self.studio_vis == 2;
+        let nb = self.viz[0].n.max(self.viz[1].n).clamp(8, 96).max(if terrain { self.studio_terr_n.clamp(16, 256) } else { 0 });
         let gain = self.viz[0].gain.max(self.viz[1].gain);
         analyse(&mut self.bands, &mut self.peaks, &mut self.viz_wave, &samples, rate, nb, gain);
     }

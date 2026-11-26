@@ -108,6 +108,10 @@ pub(crate) fn frame(p: &egui::Painter, r: Rect, name: &str) {
         let t = format!("─[ {} ]─", name.to_uppercase());
         let size = 10.0;
         let w = p.ctx().fonts(|f| f.layout_no_wrap(t.clone(), egui::FontId::new(size * sc(), egui::FontFamily::Name("studio_px".into())), Color32::WHITE).size().x);
+        // (a frame too narrow for its name, as the folded side list: no name rather than half of one)
+        if w + 20.0 > r.width() {
+            return;
+        }
         let at = Pos2::new(r.min.x + 10.0, r.min.y - 1.0);
         p.rect_filled(Rect::from_min_size(Pos2::new(at.x - 3.0, at.y - 7.0 * sc()), Vec2::new(w + 6.0, 14.0 * sc())), 0.0, BODY);
         px(p, at, egui::Align2::LEFT_CENTER, &t, size, label());
@@ -852,7 +856,31 @@ impl App {
                     p.add(egui::Shape::line(pts, Stroke::new(2.0_f32, ink())));
                 }
             }
-            2 => self.studio_terrain(&p, body),
+            2 => {
+                self.studio_terrain(&p, body);
+                ui.interact(body, ui.id().with("studio_terr_menu"), Sense::click()).on_hover_text("Right-click for the terrain's detail").context_menu(|ui| {
+                    let mark = |on: bool| if on { "> " } else { "   " };
+                    crate::views::dim_line(ui, "BANDS ACROSS", 1.0, crate::pal().ink2);
+                    for n in [48usize, 96, 160, 240] {
+                        if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_n == n), n)) {
+                            self.studio_terr_n = n;
+                            self.studio_terr.clear();
+                            self.dirty = true;
+                            ui.close_menu();
+                        }
+                    }
+                    ui.separator();
+                    crate::views::dim_line(ui, "ROWS DEEP", 1.0, crate::pal().ink2);
+                    for n in [32usize, 64, 96, 140] {
+                        if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_rows == n), n)) {
+                            self.studio_terr_rows = n;
+                            self.studio_terr.clear();
+                            self.dirty = true;
+                            ui.close_menu();
+                        }
+                    }
+                });
+            }
             3 => {
                 // the 3D visuals, as the other looks show them (right-click: pick another)
                 self.vis_paint(ui, body, 1);
@@ -872,21 +900,22 @@ impl App {
     fn studio_terrain(&mut self, p: &egui::Painter, r: Rect) {
         // (many rows close together, each sliding back a little every frame, and many points across: the wave smooth
         // and moving gently, the owner's ask)
-        const ROWS: usize = 64;
-        const COLS: usize = 112;
+        // (straight from the analysis, as fine as it's asked for here, not through the visualizer's bar count)
+        let n_rows: usize = self.studio_terr_rows.clamp(16, 160);
+        let n_cols: usize = self.studio_terr_n.clamp(16, 256);
         const EVERY: f64 = 0.05;
-        let (bands, _, _) = self.viz_data(1);
-        let now = crate::viz::resample(&bands, COLS, 1.0);
+        let k = self.viz[1].gain / self.viz[0].gain.max(self.viz[1].gain);
+        let now = crate::viz::resample(&self.bands, n_cols, k);
         let t = p.ctx().input(|i| i.time);
         if t - self.studio_terr_at > EVERY || self.studio_terr.is_empty() {
             // (a little of the last row in the new one, so a moment's flicker doesn't jump)
             let row: Vec<f32> = match self.studio_terr.first() {
-                Some(prev) if prev.len() == COLS => now.iter().zip(prev).map(|(a, b)| a * 0.6 + b * 0.4).collect(),
+                Some(prev) if prev.len() == n_cols => now.iter().zip(prev).map(|(a, b)| a * 0.6 + b * 0.4).collect(),
                 _ => now,
             };
             self.studio_terr_at = if t - self.studio_terr_at > EVERY * 3.0 { t } else { self.studio_terr_at + EVERY };
             self.studio_terr.insert(0, row);
-            self.studio_terr.truncate(ROWS + 1);
+            self.studio_terr.truncate(n_rows + 1);
         }
         // (how far the rows have slid since the newest came in)
         let frac = ((t - self.studio_terr_at) / EVERY).clamp(0.0, 1.0) as f32;
@@ -894,36 +923,36 @@ impl App {
         let rows = &self.studio_terr;
         let pt = |i: usize, d: f32, v: f32| {
             // d: how deep, in rows (0 the front); deeper rows narrower and higher up
-            let z = (1.0 - d / (ROWS - 1) as f32).max(0.0);
+            let z = (1.0 - d / (n_rows - 1) as f32).max(0.0);
             let persp = 0.28 + 0.72 * z;
-            let x = r.center().x + (i as f32 / (COLS - 1) as f32 - 0.5) * r.width() * 1.05 * persp;
+            let x = r.center().x + (i as f32 / (n_cols - 1) as f32 - 0.5) * r.width() * 1.05 * persp;
             let base = r.min.y + r.height() * (0.18 + 0.78 * z);
             Pos2::new(x, base - v * r.height() * 0.42 * persp)
         };
         for j in (0..rows.len()).rev() {
             let d = j as f32 + frac;
-            if d > (ROWS - 1) as f32 {
+            if d > (n_rows - 1) as f32 {
                 continue;
             }
             let row = &rows[j];
-            let pts: Vec<Pos2> = (0..COLS).map(|i| pt(i, d, row.get(i).copied().unwrap_or(0.0))).collect();
+            let pts: Vec<Pos2> = (0..n_cols).map(|i| pt(i, d, row.get(i).copied().unwrap_or(0.0))).collect();
             // (the ground under the line, in the glass's colour, hides the rows behind)
             let mut m = egui::Mesh::default();
             for q in &pts {
                 m.colored_vertex(*q, scr());
                 m.colored_vertex(Pos2::new(q.x, r.max.y), scr());
             }
-            for i in 0..COLS - 1 {
+            for i in 0..n_cols - 1 {
                 let a = (2 * i) as u32;
                 m.add_triangle(a, a + 2, a + 1);
                 m.add_triangle(a + 1, a + 2, a + 3);
             }
             cp.add(m);
-            let near = 1.0 - d / ROWS as f32;
+            let near = 1.0 - d / n_rows as f32;
             cp.add(egui::Shape::line(pts.clone(), Stroke::new(0.5 + 1.3 * near, ink().gamma_multiply(0.45 + 0.55 * near))));
-            if j + 1 < rows.len() && d + 1.0 <= (ROWS - 1) as f32 {
+            if j + 1 < rows.len() && d + 1.0 <= (n_rows - 1) as f32 {
                 let back = &rows[j + 1];
-                for i in (0..COLS).step_by(8) {
+                for i in (0..n_cols).step_by(8) {
                     cp.line_segment([pts[i], pt(i, d + 1.0, back.get(i).copied().unwrap_or(0.0))], Stroke::new(0.5_f32, ink().gamma_multiply(0.45)));
                 }
             }

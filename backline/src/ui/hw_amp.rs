@@ -35,7 +35,7 @@ const FACE_SOFT: Color32 = Color32::from_rgb(90, 76, 54);
 const FACE_RED: Color32 = Color32::from_rgb(179, 39, 28);
 
 /// What shows under the panel.
-const SHOW_NAMES: [&str; 3] = ["METERS", "VISUALS", "LYRICS"];
+const SHOW_NAMES: [&str; 3] = ["METERS", "LIGHT", "LYRICS"];
 
 impl App {
     /// The amp, fitted into `r`.
@@ -225,7 +225,7 @@ impl App {
             let row = Rect::from_min_max(Pos2::new(br.min.x - 2.0, br.min.y - 2.0), Pos2::new(dc.x + m.v(42.0), br.max.y + 2.0));
             let tip = match i {
                 0 => "Meters under the panel: tuning, stereo, loudness and the analyzer",
-                1 => "The analyzer as light behind smoked glass (right-click for the visuals instead)",
+                1 => "The analyzer as light behind smoked glass",
                 _ if off => "No lyrics for this song",
                 _ => "The lyrics, lit through the cloth",
             };
@@ -241,23 +241,6 @@ impl App {
                     acts.push(Action::TogglePractice);
                 }
             }
-            if i == 1 {
-                h.context_menu(|ui| {
-                    if menu_item(ui, &format!("{}Analyzer Light", if self.hw_vis == 0 { "> " } else { "   " })) {
-                        self.hw_vis = 0;
-                        self.hw_show = 1;
-                        self.dirty = true;
-                        ui.close_menu();
-                    }
-                    if menu_item(ui, &format!("{}The Visuals", if self.hw_vis == 1 { "> " } else { "   " })) {
-                        self.hw_vis = 1;
-                        self.hw_show = 1;
-                        self.dirty = true;
-                        ui.close_menu();
-                    }
-                    crate::sub_menu(ui, "   Pick the Visuals", |ui| self.vis_menu(ui));
-                });
-            }
         }
 
         // ---- under the panel: a second black panel
@@ -268,12 +251,9 @@ impl App {
             1 => {
                 let g = inner.shrink(m.v(10.0));
                 glass(&p, m, g);
-                if self.hw_vis == 1 {
-                    self.vis_paint(ui, g.shrink(m.v(2.0)), 1);
-                } else {
-                    let bands = crate::viz::resample(&self.bands, 64, 1.0);
-                    light_columns(&p.with_clip_rect(g.shrink(1.0)), g.shrink(m.v(4.0)), &bands);
-                }
+                // (the analyzer light only: the 3D visuals belong to the other looks; they pop out from the "..." menu)
+                let bands = crate::viz::resample(&self.bands, 64, 1.0);
+                light_columns(&p.with_clip_rect(g.shrink(1.0)), g.shrink(m.v(4.0)), &bands);
                 glare(&p, m, g);
             }
             2 => {

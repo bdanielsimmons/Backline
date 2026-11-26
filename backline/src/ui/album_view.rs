@@ -498,10 +498,9 @@ impl App {
         tex: Option<egui::TextureId>,
         acts: &mut Vec<Action>,
     ) {
-        use crate::skin::{style, STYLE_AMBIENT};
-        if style() == STYLE_AMBIENT {
-            p.rect_filled(r.expand(10.0), 16.0, Color32::from_rgba_premultiplied(26, 26, 26, 26));
-        }
+        // (a pane of glass behind the panel, the lyrics and the rest, in every look that has this panel; Studio and
+        // Hardware draw their own screens)
+        p.rect_filled(r.expand(10.0), 16.0, Color32::from_rgba_premultiplied(26, 26, 26, 26));
         // the tabs
         let tabs = ["Lyrics", "Up Next", "About", "Loops"];
         let mut x = if st_lyrics { r.max.x - tabs.iter().map(|t| text_w(t, 1.7) + 22.0).sum::<f32>() } else { r.min.x + 4.0 };
@@ -951,6 +950,15 @@ impl App {
                     ui.set_min_width(260.0);
                     self.np_more_items(ui, acts);
                 });
+                // (the visuals in a window of their own, or back: in every look)
+                if crate::popout::CAN {
+                    let out = self.pop.is_some();
+                    let tip = if out { "Put the visuals back" } else { "Pop out the visuals into their own window" };
+                    let pb = foot_icon(ui, "mini", if out { pal().accent } else { over }, tip);
+                    if pb.clicked() {
+                        self.pop_toggle();
+                    }
+                }
                 let ob = foot_icon(ui, "headphones", over, "Sound output: speakers, headphones or Bluetooth");
                 self.output_popup(ui, &ob, acts);
                 if practice_tools() && retro_btn(ui, "PRACTICE", self.practice).tip("Practice mode: the waveform, loops and speed  (P)").clicked() {
@@ -978,6 +986,10 @@ impl App {
         // (Hardware's amp has no cover to dress: what's under its panel, the visuals, full screen)
         if crate::studio::on() {
             // (the cover's color or ink: a click on the cover)
+            if crate::popout::CAN && menu_item(ui, if self.pop.is_some() { "   Put the Visuals Back" } else { "   Pop Out the Visuals" }) {
+                self.pop_toggle();
+                ui.close_menu();
+            }
             if menu_item(ui, &format!("   {}", if self.fullscreen { "Exit Full Screen  (F)" } else { "Full Screen  (F)" })) {
                 acts.push(Action::ToggleFullscreen);
                 ui.close_menu();
@@ -985,14 +997,17 @@ impl App {
             return;
         }
         if crate::skin::style() == crate::skin::STYLE_HARDWARE {
-            for (i, name) in ["Meters", "Visuals", "Lyrics"].iter().enumerate() {
+            for (i, name) in ["Meters", "Analyzer Light", "Lyrics"].iter().enumerate() {
                 if menu_item(ui, &format!("{}Under the Panel: {}", mark(self.hw_show as usize == i), name)) {
                     self.hw_show = i as u8;
                     self.dirty = true;
                     ui.close_menu();
                 }
             }
-            crate::sub_menu(ui, "   Pick the Visuals", |ui| self.vis_menu(ui));
+            if crate::popout::CAN && menu_item(ui, if self.pop.is_some() { "   Put the Visuals Back" } else { "   Pop Out the Visuals" }) {
+                self.pop_toggle();
+                ui.close_menu();
+            }
             ui.separator();
             if menu_item(ui, &format!("   {}", if self.fullscreen { "Exit Full Screen  (F)" } else { "Full Screen  (F)" })) {
                 acts.push(Action::ToggleFullscreen);
