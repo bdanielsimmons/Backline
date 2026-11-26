@@ -248,6 +248,10 @@ Second line: comp lighter here.", m.1.note);
                     app.queue = Arc::new(vec![t]);
                     app.play_index(0);
                 }
+                // (BACKLINE_NP=1: in Now Playing)
+                if std::env::var_os("BACKLINE_NP").is_some() {
+                    app.art_view = true;
+                }
             }
             // the New Playlist panel for the tour song (BACKLINE_ART=<picture file>: with that picture picked)
             Ok("newplaylist") => {
@@ -740,5 +744,40 @@ pub(crate) fn lab_auto(app: &mut App, acts: &mut Vec<Action>) {
             TAPPED.with(|t| t.set(k + 1));
             app.lab_tap();
         }
+    }
+}
+
+/// A test copy's clicks (BACKLINE_CLICKS="x,y@t;x,y@t;..." in points, at seconds since it started): each a press and,
+/// a frame later, a release at that place, put in the window's input, so a click can be checked in a picture.
+pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
+    use std::sync::Mutex;
+    static LEFT: Mutex<Option<Vec<(f32, f32, f64, u8)>>> = Mutex::new(None);
+    let mut left = LEFT.lock().unwrap_or_else(|e| e.into_inner());
+    if left.is_none() {
+        let list = std::env::var("BACKLINE_CLICKS").unwrap_or_default();
+        *left = Some(
+            list.split(';')
+                .filter_map(|c| {
+                    let (xy, t) = c.split_once('@')?;
+                    let (x, y) = xy.split_once(',')?;
+                    Some((x.trim().parse().ok()?, y.trim().parse().ok()?, t.trim().parse().ok()?, 0u8))
+                })
+                .collect(),
+        );
+    }
+    let Some(now) = raw.time else { return };
+    let Some(list) = left.as_mut() else { return };
+    for c in list.iter_mut() {
+        if c.3 >= 2 || now < c.2 {
+            continue;
+        }
+        let pos = egui::Pos2::new(c.0, c.1);
+        raw.events.push(egui::Event::PointerMoved(pos));
+        raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: c.3 == 0, modifiers: Default::default() });
+        if c.3 == 0 {
+            crate::api::log(&format!("test click at {:.0},{:.0}", c.0, c.1));
+        }
+        c.3 += 1;
+        break;
     }
 }

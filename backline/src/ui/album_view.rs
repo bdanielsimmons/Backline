@@ -797,6 +797,9 @@ impl App {
             }
         }
         let line = Rect::from_center_size(sb.center(), Vec2::new(sb.width(), 4.0));
+        if active && dur > 0.0 {
+            crate::widgets::seek_label(ui, &sr, line, |x| ((x - sb.min.x) / sb.width()).clamp(0.0, 1.0) * dur);
+        }
         // (a soft shade under the bar, the time, the volume and every button, so they read over a pale cover or
         // visuals as well as a dark one)
         soft_spot(&p, line, 8.0, 0.22);

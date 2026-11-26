@@ -972,8 +972,21 @@ impl App {
                 if self.studio_dith_busy.get(slot).is_some_and(|b| b.0 == key) {
                     self.studio_dith_busy.remove(slot);
                     let cover = key.rsplit_once('|').map_or(key.as_str(), |(c, _)| c).to_string();
-                    let tex = self.ctx.load_texture(format!("studio_dither_{}", slot), img, egui::TextureOptions::NEAREST);
-                    self.studio_dith.insert(slot, (cover, key, tex));
+                    let img = std::sync::Arc::new(img);
+                    let now = self.ctx.input(|i| i.time);
+                    match self.studio_dith.get_mut(slot) {
+                        // (another cover in the same place at the same size: the new one dissolves in over it)
+                        Some(h) if h.0 != cover && h.3.size == img.size => {
+                            self.studio_dith_anim.insert(slot, (h.3.clone(), img.clone(), now));
+                            h.0 = cover;
+                            h.1 = key;
+                            h.3 = img;
+                        }
+                        _ => {
+                            let tex = self.ctx.load_texture(format!("studio_dither_{}", slot), (*img).clone(), egui::TextureOptions::NEAREST);
+                            self.studio_dith.insert(slot, (cover, key, tex, img));
+                        }
+                    }
                 }
             }
             Msg::NpBlur(url, img) => {

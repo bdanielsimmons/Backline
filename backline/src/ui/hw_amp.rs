@@ -80,7 +80,7 @@ impl App {
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
         let lw = scr.width() - m.v(24.0);
         let time = if self.time_left { format!("-{}", fmt_time((self.cur_track().map_or(0.0, |t| t.duration) - pos).max(0.0))) } else { fmt_time(pos) };
-        crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), Align::Min, &time, 3.9 * s, lw);
+        crate::styles::hw_time(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), &time, self.cur_track().map_or(0.0, |t| t.duration), 3.9 * s, lw);
         if ui.interact(scr, ui.id().with("hw_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
             self.time_left = !self.time_left;
             self.dirty = true;

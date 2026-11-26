@@ -1622,3 +1622,26 @@ pub(crate) fn overflow_check(ui: &egui::Ui, room: Rect, page: &str) {
         crate::api::log(&format!("layout: {} is {:.0} px wider than its room ({:.0} px)", page, over, room.width()));
     }
 }
+
+/// Where a click on a seek bar would go: while the pointer is over the bar (or drags along it), the time there in a
+/// small label above the pointer and a fine line at it, so you can pick a spot before you click. The same on every
+/// bar in every look (`t_at`: the time at a point across the bar).
+pub(crate) fn seek_label(ui: &egui::Ui, resp: &egui::Response, bar: Rect, t_at: impl Fn(f32) -> f32) {
+    let Some(pp) = resp.hover_pos().or_else(|| resp.interact_pointer_pos().filter(|_| resp.dragged())) else {
+        return;
+    };
+    let text = fmt_time(t_at(pp.x).max(0.0));
+    let studio = crate::studio::on();
+    let (fill, edge, ink) = if studio { (crate::studio::scr(), crate::studio::ink(), crate::studio::ink()) } else { (pal().display, pal().edge, pal().ink) };
+    let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, resp.id.with("seek_label")));
+    let sc = font::ui_scale();
+    let (w, h) = (font::keep_caps(|| text_w(&text, 1.4)) + 14.0 * sc, 20.0 * sc);
+    let screen = ui.ctx().screen_rect();
+    let cx = pp.x.clamp(screen.min.x + w / 2.0 + 2.0, screen.max.x - w / 2.0 - 2.0);
+    let cy = (bar.min.y - h / 2.0 - 6.0).max(screen.min.y + h / 2.0 + 2.0);
+    let r = Rect::from_center_size(Pos2::new(cx, cy), Vec2::new(w, h));
+    p.rect_filled(r, if studio { 0.0 } else { crate::corner() }, fill);
+    p.rect_stroke(r, if studio { 0.0 } else { crate::corner() }, Stroke::new(1.0_f32, edge));
+    font::keep_caps(|| ptext(&p, r.center(), Align::Center, &text, 1.4, ink));
+    p.line_segment([Pos2::new(pp.x, bar.min.y - 2.0), Pos2::new(pp.x, bar.max.y + 2.0)], Stroke::new(1.0_f32, ink.gamma_multiply(0.8)));
+}

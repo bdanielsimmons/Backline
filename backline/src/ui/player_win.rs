@@ -317,6 +317,7 @@ impl App {
                     acts.push(Action::Seek(t));
                 }
             }
+            crate::widgets::seek_label(ui, &skr, sk, |x| ((x - sk.min.x - thumb_w / 2.0) / (sk.width() - thumb_w)).clamp(0.0, 1.0) * dur);
         }
         if skr.secondary_clicked() && dur > 0.0 {
             if let Some(pp) = skr.interact_pointer_pos() {

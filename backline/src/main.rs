@@ -1092,7 +1092,11 @@ struct App {
     /// the one being made), the terrain's rows (newest first) and when the last was taken
     studio_np: u8,
     studio_vis: u8,
-    studio_dith: HashMap<&'static str, (String, String, egui::TextureHandle)>,
+    studio_dith: HashMap<&'static str, (String, String, egui::TextureHandle, std::sync::Arc<egui::ColorImage>)>,
+    /// a new cover dissolving in over the last in a Studio place: the two, and when it began
+    studio_dith_anim: HashMap<&'static str, (std::sync::Arc<egui::ColorImage>, std::sync::Arc<egui::ColorImage>, f64)>,
+    /// when Studio's covers were last switched between color and ink (the switch fades)
+    studio_cover_at: f64,
     /// Up Next goes to the song playing on its next frame (opened, or its tab clicked again)
     q_jump: bool,
     /// how wide Now Playing's keys at the foot's right came out (the transport keeps clear of them)
@@ -2251,6 +2255,8 @@ impl App {
             studio_np: 0,
             studio_vis: 0,
             studio_dith: HashMap::new(),
+            studio_dith_anim: HashMap::new(),
+            studio_cover_at: -10.0,
             q_jump: false,
             np_row_w: 330.0,
             q_cur_seen: true,
@@ -3779,6 +3785,9 @@ fn ctrl_click_is_right_click(events: &mut [egui::Event], held: &mut bool) {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if crate::test_hooks::hidden_test_copy() {
+            crate::test_hooks::fake_clicks(raw);
+        }
         if cfg!(target_os = "macos") {
             static HELD: AtomicBool = AtomicBool::new(false);
             let mut held = HELD.load(Ordering::Relaxed);

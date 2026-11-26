@@ -194,9 +194,13 @@ pub(crate) fn time_digits(p: &egui::Painter, at: Pos2, h: f32, shown: &str, dur:
     if dur <= 0.0 {
         return tw;
     }
-    let size = (h / sc() * 0.46).clamp(9.0, 18.0);
-    let r = px(p, Pos2::new(at.x + tw + 6.0, at.y + h * 0.44 + 1.0), egui::Align2::LEFT_BOTTOM, &format!("/ {}", fmt_time(dur)), size, ink());
-    tw + 6.0 + r.width()
+    // (the length in the same digits, half the size, after a slash, on the big digits' foot)
+    let sh = h * 0.5;
+    let foot = at.y + h * 0.44;
+    let x0 = at.x + tw + h * 0.1;
+    p.line_segment([Pos2::new(x0, foot), Pos2::new(x0 + sh * 0.34, foot - sh * 0.88)], Stroke::new((h * 0.06).max(1.4), ink()));
+    let lw = digits(p, Pos2::new(x0 + sh * 0.5, foot - sh * 0.44), sh, &fmt_time(dur), ink(), ghost());
+    tw + h * 0.1 + sh * 0.5 + lw
 }
 
 /// LCD digits, `h` tall, from `at` (left middle): every segment there, the unlit ones faint. ':' and '-' and ' '
@@ -394,6 +398,9 @@ impl App {
                 acts.push(Action::Seek(((pp.x - seek.min.x) / seek.width()).clamp(0.0, 1.0) * dur));
             }
         }
+        if dur > 0.0 {
+            crate::widgets::seek_label(ui, &h, seek, |x| ((x - seek.min.x) / seek.width()).clamp(0.0, 1.0) * dur);
+        }
         blocks(&p, seek, if dur > 0.0 { pos / dur } else { 0.0 });
         y = seek.max.y + 9.0;
         // ---- the transport, Open, the volume
@@ -485,23 +492,46 @@ impl App {
         let p = ui.painter().clone();
         let tr = self.cur_track();
         let ink_cover = crate::skin::STUDIO_COVER.load(std::sync::atomic::Ordering::Relaxed) == 1;
+        let now = ui.input(|i| i.time);
+        // (just switched between color and ink: the one switched to fades in over the other)
+        let sw = ((now - self.studio_cover_at) / 0.35).clamp(0.0, 1.0) as f32;
+        if sw < 1.0 {
+            ui.ctx().request_repaint();
+        }
+        let quad = |id: egui::TextureId, a: f32| {
+            let mut m = egui::Mesh::with_texture(id);
+            m.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::from_white_alpha((a * 255.0) as u8));
+            p.add(m);
+        };
         match tr.as_ref().map(|t| t.cover.clone()) {
             Some(c) if !c.is_empty() => {
-                if ink_cover {
-                    // (dotted at the size it's shown: a dot to a screen pixel)
+                let url = crate::cover_url(&c, size);
+                // (dotted at the size it's shown: a dot to a screen pixel)
+                let dith = if ink_cover || sw < 1.0 {
                     let px = (r.width() * ui.ctx().pixels_per_point()).round().clamp(32.0, 1280.0) as usize;
-                    match self.studio_dither(ui.ctx(), slot, &c, px) {
-                        Some(id) => {
-                            let mut m = egui::Mesh::with_texture(id);
-                            m.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
-                            p.add(m);
-                        }
+                    self.studio_dither(ui.ctx(), slot, &c, px)
+                } else {
+                    None
+                };
+                if sw >= 1.0 && !ink_cover {
+                    crate::paint_held(ui, &mut self.images, slot, &url, r, false);
+                } else if sw >= 1.0 {
+                    match dith {
+                        Some(id) => quad(id, 1.0),
                         None => {
                             p.rect_filled(r, 0.0, ghost());
                         }
                     }
                 } else {
-                    crate::paint_held(ui, &mut self.images, slot, &crate::cover_url(&c, size), r, false);
+                    let color = self.images.held(slot, &url, false, now).0;
+                    let (under, over) = if ink_cover { (color, dith) } else { (dith, color) };
+                    p.rect_filled(r, 0.0, ghost());
+                    if let Some(id) = under {
+                        quad(id, 1.0);
+                    }
+                    if let Some(id) = over {
+                        quad(id, sw);
+                    }
                 }
             }
             _ => {
@@ -519,7 +549,21 @@ impl App {
         let url = crate::api::cover_url(cover, if px > 640 { 1280 } else { 640 });
         let same = format!("{}|{}", cover, crate::skin::STUDIO_SCREEN.load(std::sync::atomic::Ordering::Relaxed));
         let key = format!("{}|{}", same, px);
-        let held = self.studio_dith.get(slot).filter(|h| h.0 == same).map(|h| (h.1 == key, h.2.id()));
+        // (a new cover dissolving in over the last: a step of it every frame)
+        if let Some((old, new, t0)) = self.studio_dith_anim.get(slot).cloned() {
+            let t = (((ctx.input(|i| i.time) - t0) / 0.5) as f32).clamp(0.0, 1.0);
+            if let Some(h) = self.studio_dith.get_mut(slot) {
+                if t >= 1.0 || old.size != new.size {
+                    h.2.set((*new).clone(), egui::TextureOptions::NEAREST);
+                    self.studio_dith_anim.remove(slot);
+                } else {
+                    h.2.set(dissolve(&old, &new, t * t * (3.0 - 2.0 * t)), egui::TextureOptions::NEAREST);
+                    ctx.request_repaint();
+                }
+            }
+        }
+        // (the one this place last had stays up, even another song's, until the new one is made and dissolves in)
+        let held = self.studio_dith.get(slot).map(|h| (h.0 == same && h.1 == key, h.2.id()));
         if let Some((true, id)) = held {
             return Some(id);
         }
@@ -593,7 +637,7 @@ impl App {
         let cs = r.height().min(r.width() * 0.44).max(80.0);
         let cover = Rect::from_min_size(Pos2::new(r.min.x, r.center().y - cs / 2.0), Vec2::splat(cs));
         self.studio_cover(ui, cover, "studio_np", 640);
-        cover_switch(ui, cover, acts);
+        cover_switch(ui, cover, acts, "np");
         let x0 = cover.max.x + 26.0;
         let right = Rect::from_min_max(Pos2::new(x0, r.min.y), r.max);
         let Some(tr) = self.cur_track() else {
@@ -684,7 +728,7 @@ impl App {
         let lw = (r.width() * 0.26).clamp(150.0, 240.0);
         let cover = Rect::from_min_size(r.min, Vec2::splat(lw));
         self.studio_cover(ui, cover, "studio_np", 640);
-        cover_switch(ui, cover, acts);
+        cover_switch(ui, cover, acts, "np");
         if let Some(tr) = self.cur_track() {
             let mq = Rect::from_min_size(Pos2::new(r.min.x, cover.max.y + 14.0), Vec2::new(lw, 22.0 * s));
             marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 16.0, ink());
@@ -763,7 +807,7 @@ impl App {
     fn studio_visuals(&mut self, ui: &mut egui::Ui, r: Rect) {
         let p = ui.painter().clone();
         let s = sc();
-        let names = ["Bars", "Scope", "Terrain"];
+        let names = ["Bars", "Scope", "Terrain", "3D"];
         let cur = (self.studio_vis as usize).min(names.len() - 1);
         let mut x = r.max.x;
         for (i, n) in names.iter().enumerate().rev() {
@@ -809,38 +853,60 @@ impl App {
                 }
             }
             2 => self.studio_terrain(&p, body),
+            3 => {
+                // the 3D visuals, as the other looks show them (right-click: pick another)
+                self.vis_paint(ui, body, 1);
+                ui.interact(body, ui.id().with("studio_3d"), Sense::click()).context_menu(|ui| self.vis_menu(ui));
+            }
             _ => {
                 let (bands, _, _) = self.viz_data(1);
                 bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), 6.0, 6.0);
             }
         }
+        // the song in a card at the bottom left while the mouse moves, as every look shows it over its visuals
+        self.studio_vis_card(ui, body);
     }
 
     /// The terrain: each moment's spectrum a row, the newest at the front, rows running back into
     /// the distance; drawn back to front, each row hiding what's behind it, as a wire grid in the ink.
     fn studio_terrain(&mut self, p: &egui::Painter, r: Rect) {
-        const ROWS: usize = 26;
-        const COLS: usize = 40;
+        // (many rows close together, each sliding back a little every frame, and many points across: the wave smooth
+        // and moving gently, the owner's ask)
+        const ROWS: usize = 64;
+        const COLS: usize = 112;
+        const EVERY: f64 = 0.05;
         let (bands, _, _) = self.viz_data(1);
         let now = crate::viz::resample(&bands, COLS, 1.0);
         let t = p.ctx().input(|i| i.time);
-        if t - self.studio_terr_at > 0.08 || self.studio_terr.is_empty() {
-            self.studio_terr_at = t;
-            self.studio_terr.insert(0, now);
-            self.studio_terr.truncate(ROWS);
+        if t - self.studio_terr_at > EVERY || self.studio_terr.is_empty() {
+            // (a little of the last row in the new one, so a moment's flicker doesn't jump)
+            let row: Vec<f32> = match self.studio_terr.first() {
+                Some(prev) if prev.len() == COLS => now.iter().zip(prev).map(|(a, b)| a * 0.6 + b * 0.4).collect(),
+                _ => now,
+            };
+            self.studio_terr_at = if t - self.studio_terr_at > EVERY * 3.0 { t } else { self.studio_terr_at + EVERY };
+            self.studio_terr.insert(0, row);
+            self.studio_terr.truncate(ROWS + 1);
         }
+        // (how far the rows have slid since the newest came in)
+        let frac = ((t - self.studio_terr_at) / EVERY).clamp(0.0, 1.0) as f32;
+        let cp = p.with_clip_rect(r);
         let rows = &self.studio_terr;
-        let pt = |i: usize, j: usize, v: f32| {
-            // j: 0 the front row; deeper rows narrower and higher up
-            let z = 1.0 - j as f32 / (ROWS - 1) as f32;
+        let pt = |i: usize, d: f32, v: f32| {
+            // d: how deep, in rows (0 the front); deeper rows narrower and higher up
+            let z = (1.0 - d / (ROWS - 1) as f32).max(0.0);
             let persp = 0.28 + 0.72 * z;
             let x = r.center().x + (i as f32 / (COLS - 1) as f32 - 0.5) * r.width() * 1.05 * persp;
             let base = r.min.y + r.height() * (0.18 + 0.78 * z);
             Pos2::new(x, base - v * r.height() * 0.42 * persp)
         };
         for j in (0..rows.len()).rev() {
+            let d = j as f32 + frac;
+            if d > (ROWS - 1) as f32 {
+                continue;
+            }
             let row = &rows[j];
-            let pts: Vec<Pos2> = (0..COLS).map(|i| pt(i, j, row.get(i).copied().unwrap_or(0.0))).collect();
+            let pts: Vec<Pos2> = (0..COLS).map(|i| pt(i, d, row.get(i).copied().unwrap_or(0.0))).collect();
             // (the ground under the line, in the glass's colour, hides the rows behind)
             let mut m = egui::Mesh::default();
             for q in &pts {
@@ -852,16 +918,44 @@ impl App {
                 m.add_triangle(a, a + 2, a + 1);
                 m.add_triangle(a + 1, a + 2, a + 3);
             }
-            p.with_clip_rect(r).add(m);
-            let w = 0.6 + 1.2 * (1.0 - j as f32 / ROWS as f32);
-            p.with_clip_rect(r).add(egui::Shape::line(pts.clone(), Stroke::new(w, ink())));
-            if j + 1 < rows.len() {
+            cp.add(m);
+            let near = 1.0 - d / ROWS as f32;
+            cp.add(egui::Shape::line(pts.clone(), Stroke::new(0.5 + 1.3 * near, ink().gamma_multiply(0.45 + 0.55 * near))));
+            if j + 1 < rows.len() && d + 1.0 <= (ROWS - 1) as f32 {
                 let back = &rows[j + 1];
-                for i in (0..COLS).step_by(3) {
-                    p.with_clip_rect(r).line_segment([pts[i], pt(i, j + 1, back.get(i).copied().unwrap_or(0.0))], Stroke::new(0.6_f32, ink().gamma_multiply(0.6)));
+                for i in (0..COLS).step_by(8) {
+                    cp.line_segment([pts[i], pt(i, d + 1.0, back.get(i).copied().unwrap_or(0.0))], Stroke::new(0.5_f32, ink().gamma_multiply(0.45)));
                 }
             }
         }
+        if self.cur.is_some() && !self.stopped && !self.paused {
+            p.ctx().request_repaint();
+        }
+    }
+
+    /// Over the visuals, while the mouse moves (and a few seconds after): the song in a card at the bottom left, its
+    /// cover, title and artist, as the other looks show it over theirs.
+    fn studio_vis_card(&mut self, ui: &mut egui::Ui, r: Rect) {
+        let Some(tr) = self.cur_track() else { return };
+        let idle = (ui.input(|i| i.time) - self.np_move_at) as f32;
+        let show = (1.0 - (idle - 3.0) / 0.6).clamp(0.0, 1.0);
+        if show <= 0.0 {
+            return;
+        }
+        let s = sc();
+        let card = Rect::from_min_size(Pos2::new(r.min.x + 6.0, r.max.y - 104.0 * s), Vec2::new((440.0 * s).min(r.width() * 0.6), 96.0 * s));
+        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(card));
+        c.set_opacity(show);
+        let p = c.painter().clone();
+        p.rect_filled(card, 0.0, scr());
+        p.rect_stroke(card, 0.0, Stroke::new(1.0_f32, ink()));
+        let cs = card.height() - 20.0;
+        let cr = Rect::from_min_size(card.min + Vec2::splat(10.0), Vec2::splat(cs));
+        self.studio_cover(&c, cr, "studio_vis_card", 160);
+        let tx = cr.max.x + 14.0;
+        let room = (card.max.x - tx - 10.0).max(20.0);
+        marquee(&c, Rect::from_min_max(Pos2::new(tx, card.center().y - 26.0 * s), Pos2::new(tx + room, card.center().y - 2.0 * s)), &tr.title.to_uppercase(), 16.0, ink());
+        px(&p, Pos2::new(tx, card.center().y + 14.0 * s), egui::Align2::LEFT_CENTER, &tr.artists_text().to_uppercase(), 9.0, dim());
     }
 
     /// Practising in Now Playing: the cover, the song in dot type and the time in digits, then the practice layout every
@@ -873,7 +967,7 @@ impl App {
         let head = Rect::from_min_size(r.min, Vec2::new(r.width(), 56.0 * s));
         let cover = Rect::from_min_size(head.min, Vec2::splat(head.height()));
         self.studio_cover(ui, cover, "studio_np", 160);
-        cover_switch(ui, cover, acts);
+        cover_switch(ui, cover, acts, "np");
         if let Some(tr) = self.cur_track() {
             let mq = Rect::from_min_max(Pos2::new(cover.max.x + 14.0, head.min.y), Pos2::new(head.max.x - 230.0 * s, head.min.y + 24.0 * s));
             marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 18.0, ink());
@@ -904,11 +998,38 @@ impl App {
     }
 }
 
-/// A click on a cover in Now Playing switches it between its own colors and the screen's ink.
-fn cover_switch(ui: &egui::Ui, r: Rect, acts: &mut Vec<Action>) {
+/// Between two covers dotted in ink, `t` of the way (0..1): each dot the new cover's once a hash of its place falls
+/// under `t`, so the new cover sparkles in over the old one.
+fn dissolve(old: &egui::ColorImage, new: &egui::ColorImage, t: f32) -> egui::ColorImage {
+    let pixels = old
+        .pixels
+        .iter()
+        .zip(&new.pixels)
+        .enumerate()
+        .map(|(i, (a, b))| {
+            // (a well-mixed hash of the dot's place: no pattern in which dots go first)
+            let mut x = i as u32;
+            x ^= x >> 16;
+            x = x.wrapping_mul(0x7feb_352d);
+            x ^= x >> 15;
+            x = x.wrapping_mul(0x846c_a68b);
+            x ^= x >> 16;
+            if ((x >> 8) as f32 / 16_777_216.0) < t {
+                *b
+            } else {
+                *a
+            }
+        })
+        .collect();
+    egui::ColorImage { size: new.size, pixels }
+}
+
+/// A click on a cover (Now Playing's, the player bar's) switches every Studio cover between its own colors and the
+/// screen's ink.
+pub(crate) fn cover_switch(ui: &egui::Ui, r: Rect, acts: &mut Vec<Action>, salt: &str) {
     let ink = crate::skin::STUDIO_COVER.load(std::sync::atomic::Ordering::Relaxed) == 1;
     let tip = if ink { "Click for the cover in color" } else { "Click for the cover in the screen's ink" };
-    let h = ui.interact(r, ui.id().with("studio_cover_switch"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+    let h = ui.interact(r, ui.id().with(("studio_cover_switch", salt)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
     if h.clicked() {
         acts.push(Action::StyleColor(5, if ink { 0 } else { 1 }));
     }

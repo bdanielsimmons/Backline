@@ -657,6 +657,7 @@ impl App {
             1 if crate::skin::style() == crate::skin::STYLE_HARDWARE => self.wear_style(true),
             4 if crate::skin::style() == crate::skin::STYLE_STUDIO => self.wear_studio(),
             2 => self.amb_for.clear(),
+            5 => self.studio_cover_at = self.ctx.input(|i| i.time),
             _ => {}
         }
         self.ctx.request_repaint();

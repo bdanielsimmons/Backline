@@ -146,6 +146,26 @@ pub(crate) fn lcd(p: &egui::Painter, r: Rect) {
 }
 
 /// Amber words on a screen, glowing a little.
+/// Hardware's big time on its amber screen with the song's length after it, half the size, in the same light (every
+/// look shows how long the song is). Returns how wide, the length included.
+pub(crate) fn hw_time(p: &egui::Painter, at: Pos2, shown: &str, dur: f32, big: f32, max_w: f32) -> f32 {
+    let tw = font::keep_caps(|| text_w(shown, big));
+    lcd_text(p, at, Align::Min, shown, big, max_w);
+    if dur <= 0.0 {
+        return tw;
+    }
+    let small = big * 0.5;
+    let len = format!("/ {}", fmt_time(dur));
+    let lw = font::keep_caps(|| text_w(&len, small));
+    if tw + 8.0 + lw > max_w {
+        return tw;
+    }
+    // (on the big digits' foot)
+    let dy = (font::text_px(big) - font::text_px(small)) * 0.36;
+    lcd_text(p, Pos2::new(at.x + tw + 8.0, at.y + dy), Align::Min, &len, small, lw + 4.0);
+    tw + 8.0 + lw
+}
+
 pub(crate) fn lcd_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px: f32, max_w: f32) {
     font::keep_caps(|| {
         // (too long for its room: cut short with ..., never run into what's beside it)
@@ -441,6 +461,9 @@ impl App {
                     acts.push(Action::Seek(((pp.x - line.min.x) / line.width()).clamp(0.0, 1.0) * dur));
                 }
             }
+            if dur > 0.0 {
+                crate::widgets::seek_label(ui, &h, line, |x| ((x - line.min.x) / line.width()).clamp(0.0, 1.0) * dur);
+            }
             crate::studio::blocks(&p, line, if dur > 0.0 { pos / dur } else { 0.0 });
             if self.cur.is_some() && !self.stopped && !self.paused {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
@@ -453,6 +476,9 @@ impl App {
             if let (Some(pp), true) = (h.interact_pointer_pos(), dur > 0.0) {
                 acts.push(Action::Seek(((pp.x - line.min.x) / line.width()).clamp(0.0, 1.0) * dur));
             }
+        }
+        if dur > 0.0 {
+            crate::widgets::seek_label(ui, &h, line, |x| ((x - line.min.x) / line.width()).clamp(0.0, 1.0) * dur);
         }
         let f = if dur > 0.0 { (pos / dur).clamp(0.0, 1.0) } else { 0.0 };
         p.rect_filled(line, 2.0, wash(75));
@@ -532,7 +558,13 @@ impl App {
             let studio = st == STYLE_STUDIO;
             // the cover, then the screen: the time big, the song beside it
             let cover = Rect::from_min_size(r.min, Vec2::splat(r.height()));
+            let bar_dur = self.cur_track().map_or(0.0, |t| t.duration);
             match self.cur_track().map(|t| t.cover) {
+                // (Studio: the cover as every Studio cover is, in color or in the screen's ink; a click switches)
+                Some(_) if studio => {
+                    self.studio_cover(ui, cover, "studio_bar", 160);
+                    crate::studio::cover_switch(ui, cover, acts, "bar");
+                }
                 Some(c) if !c.is_empty() => crate::paint_held(ui, &mut self.images, "st_bar", &crate::cover_url(&c, 160), cover, false),
                 _ => crate::paint_page_art(ui, &mut self.images, "", cover, false),
             }
@@ -543,14 +575,14 @@ impl App {
             if studio {
                 let t = self.deck_time();
                 let shown = if t.starts_with('-') { t } else { format!(" {}", t) };
-                crate::studio::digits(&p, Pos2::new(scr.min.x + 8.0, scr.center().y), 30.0, &shown, crate::studio::ink(), crate::studio::ghost());
+                crate::studio::time_digits(&p, Pos2::new(scr.min.x + 8.0, scr.center().y), 30.0, &shown, bar_dur);
             } else {
-                lcd_text(&p, Pos2::new(scr.min.x + 12.0, scr.center().y), Align::Min, &fmt_time(pos), 3.6, 120.0);
+                hw_time(&p, Pos2::new(scr.min.x + 12.0, scr.center().y), &fmt_time(pos), bar_dur, 3.6, 190.0);
             }
             if let Some(tr) = self.cur_track() {
-                let w = scr.width() - 130.0;
+                let w = scr.width() - 190.0;
                 lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w);
-                lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &format!("{}  {}", tr.artists_text(), fmt_time(tr.duration)), 1.1, w);
+                lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w);
             }
             if ui.interact(scr, id.with("screen"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Now Playing  (A)").clicked() {
                 acts.push(Action::ToggleArt);
@@ -1189,8 +1221,7 @@ impl App {
             }
             let mid = scr.min.y + scr.height() * 0.58;
             let big = ((scr.height() - 50.0) / 9.0).clamp(2.6, 4.4);
-            let tw = font::keep_caps(|| text_w(&self.deck_time(), big));
-            lcd_text(&p, Pos2::new(scr.min.x + 10.0, mid), Align::Min, &self.deck_time(), big, w * 0.6);
+            let tw = hw_time(&p, Pos2::new(scr.min.x + 10.0, mid), &self.deck_time(), tr.as_ref().map_or(0.0, |t| t.duration), big, w * 0.7);
             time_r = Rect::from_center_size(Pos2::new(scr.min.x + 10.0 + tw / 2.0, mid), Vec2::new(tw + 8.0, 34.0));
             if self.mini_viz {
                 let vr = Rect::from_min_max(Pos2::new(scr.min.x + 22.0 + tw, mid - 16.0), Pos2::new(scr.max.x - 10.0, mid + 14.0));

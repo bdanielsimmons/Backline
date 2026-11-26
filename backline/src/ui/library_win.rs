@@ -1359,6 +1359,9 @@ impl App {
                 seeking = true;
             }
         }
+        if tr.duration > 0.0 {
+            crate::widgets::seek_label(ui, &seek, line, |x| ((x - line.min.x) / line.width()).clamp(0.0, 1.0) * tr.duration);
+        }
         if crate::draw_heart(ui, heart, self.liked.contains(&tr.id), resp.hovered(), id.with("heart")) {
             acts.push(Action::ToggleLike(tr.clone()));
         } else if resp.clicked() && !clicked_control && !seeking {

@@ -251,7 +251,7 @@ impl App {
         app.hw_show = st["hw_show"].as_u64().unwrap_or(0).min(2) as u8;
         app.hw_vis = st["hw_vis"].as_u64().unwrap_or(0).min(1) as u8;
         app.studio_np = st["studio_np"].as_u64().unwrap_or(0).min(5) as u8;
-        app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(2) as u8;
+        app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(3) as u8;
         app.time_left = st["time_left"].as_bool().unwrap_or(false);
         // (the Chord Book always starts back in the main window: a restart puts a popped-out one back in)
         if let Some(a) = st["cb_pop_rect"].as_array().filter(|a| a.len() == 4) {

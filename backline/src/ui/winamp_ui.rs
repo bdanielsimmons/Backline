@@ -474,6 +474,19 @@ impl App {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
             }
         }
+        // the song's length small under the big time, in the skin's own text, over the visualizer's corner (the owner's
+        // pick on style sheet 10: every look shows how long the song is)
+        if active {
+            if let Some(tr) = &track {
+                let len = format!("/{}", fmt_time(tr.duration));
+                let n = len.chars().count() as f32;
+                let x = 99.0 - n * 5.0;
+                if let Some(bg) = t.text_bg {
+                    p.rect_filled(pl.r(x - 1.0, 41.0, n * 5.0 + 1.0, 7.0), 0.0, bg);
+                }
+                wa_text(&t, &p, pl, x, 41.0, &len);
+            }
+        }
         // volume: the strip picture follows the level; right-click it for the sound output
         let vr = pl.r(107.0, 57.0, 68.0, 13.0);
         // as many level pictures as this skin has (usually 28), 15 pixels apart
@@ -604,8 +617,10 @@ impl App {
                     self.seek_drag = Some(((pp.x - pr.min.x - 14.5 * pl.s) / (219.0 * pl.s)).clamp(0.0, 1.0) * dur);
                 }
             }
+            crate::widgets::seek_label(ui, &ph, pr, |x| ((x - pr.min.x - 14.5 * pl.s) / (219.0 * pl.s)).clamp(0.0, 1.0) * dur);
             if ph.dragged() || ph.hovered() {
-                let at = self.seek_drag.unwrap_or(pos);
+                // (where it would go: the place being dragged to, or under the pointer)
+                let at = self.seek_drag.or_else(|| ph.hover_pos().map(|pp| ((pp.x - pr.min.x - 14.5 * pl.s) / (219.0 * pl.s)).clamp(0.0, 1.0) * dur)).unwrap_or(pos);
                 say = Some(format!("SEEK TO: {}/{} ({}%)", fmt_time(at), fmt_time(dur), (at / dur * 100.0).round()));
             }
             if ph.drag_stopped() || ph.clicked() {

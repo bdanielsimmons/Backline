@@ -956,6 +956,9 @@ impl App {
                     }
                 }
             }
+            if self.sel_anchor.is_none() && self.marker_drag == 0 {
+                crate::widgets::seek_label(ui, &resp, inn, time_at);
+            }
             if resp.secondary_clicked() {
                 if let Some(pp) = resp.interact_pointer_pos() {
                     self.menu_t = time_at(pp.x);
