@@ -643,6 +643,10 @@ enum Action {
     StopSequence,
     /// open the editor for a song's title and artist (not Tidal's), and save what was typed
     EditInfo(i64, String, String),
+    /// a song gone from Tidal plays from a copy of yours (a YouTube, SoundCloud or file song): (the Tidal song, yours)
+    UseCopy(i64, i64),
+    /// a song gone from Tidal: the copy it plays from taken away
+    DropCopy(i64),
     SaveInfo(i64, String, String),
     /// load your Tidal library again
     RefreshLibrary,

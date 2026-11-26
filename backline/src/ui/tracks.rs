@@ -296,6 +296,44 @@ fn sort_click(col: u8) {
     COLS_CHANGED.store(true, Ordering::Relaxed);
 }
 
+/// Your own songs (YouTube, SoundCloud, files) that a song gone from Tidal can play from: their ids and "artist
+/// title", kept up to date by the library page as its lists change (`refresh_my_copies`).
+static MY_COPIES: Mutex<(u64, Vec<(i64, String)>)> = Mutex::new((u64::MAX, Vec::new()));
+
+/// The library's own lists, looked at each frame: the copies list made again only when they change.
+pub(crate) fn refresh_my_copies(lists: &[&[crate::store::Ext]]) {
+    let key = lists.iter().flat_map(|l| l.iter()).fold(lists.len() as u64, |k, e| {
+        k.wrapping_mul(31).wrapping_add(e.id as u64).wrapping_add(e.title.len() as u64 * 7 + e.artist.len() as u64)
+    });
+    let mut m = MY_COPIES.lock().unwrap_or_else(|e| e.into_inner());
+    if m.0 != key {
+        m.1 = lists.iter().flat_map(|l| l.iter()).map(|e| (e.id, format!("{} {}", e.artist, e.title))).collect();
+        m.0 = key;
+    }
+}
+
+/// Your songs most like `title` by `artist` (sharing words with it, the most first), up to a dozen.
+fn copies_like(title: &str, artist: &str) -> Vec<(i64, String)> {
+    let words = |s: &str| -> Vec<String> {
+        s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 3).map(|w| w.to_string()).collect()
+    };
+    let want_t = words(title);
+    let want_a = words(artist);
+    let m = MY_COPIES.lock().unwrap_or_else(|e| e.into_inner());
+    let mut scored: Vec<(usize, i64, String)> = m
+        .1
+        .iter()
+        .filter_map(|(id, name)| {
+            let have = words(name);
+            let t = want_t.iter().filter(|w| have.contains(w)).count();
+            let a = want_a.iter().filter(|w| have.contains(w)).count();
+            (t > 0).then_some((t * 2 + a, *id, name.clone()))
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.into_iter().take(12).map(|(_, id, n)| (id, n)).collect()
+}
+
 /// A row's value in a column, to sort by.
 pub(crate) enum SortKey {
     T(String),
@@ -842,7 +880,26 @@ pub(crate) fn tracks_list(
                 }
             }
             r.context_menu(|ui| {
-                // (gone from Tidal: find it on YouTube, then paste its link on the YouTube page)
+                // (gone from Tidal: play it from a copy of yours - added on the YouTube page, SoundCloud or a file -
+                // in its place; or find it on YouTube to add one)
+                if t.gone {
+                    crate::sub_menu(ui, "Play From My Copy", |ui| {
+                        let like = copies_like(&t.title, &t.artists_text());
+                        if like.is_empty() {
+                            crate::views::dim_line(ui, "NONE OF YOUR SONGS MATCH. ADD ONE ON THE YOUTUBE PAGE.", 1.0, pal().ink2);
+                        }
+                        for (id, name) in like {
+                            if menu_item(ui, &name) {
+                                acts.push(Action::UseCopy(t.id, id));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                    if cache::has(t.id) && menu_item(ui, "Remove My Copy") {
+                        acts.push(Action::DropCopy(t.id));
+                        ui.close_menu();
+                    }
+                }
                 if gone && menu_item(ui, "Search YouTube for It") {
                     let q: String = format!("{} {}", t.artists_text(), t.title)
                         .chars()
@@ -1574,5 +1631,20 @@ mod link_tests {
         assert_eq!(clean_link("https://open.spotify.com/playlist/37i9dQZF1?si=a1b2c3"), "https://open.spotify.com/playlist/37i9dQZF1");
         assert_eq!(clean_link("https://music.apple.com/us/playlist/x/pl.u-123?ls=1&app=music"), "https://music.apple.com/us/playlist/x/pl.u-123");
         assert_eq!(clean_link("  https://soundcloud.com/a/sets/b#t=1  "), "https://soundcloud.com/a/sets/b");
+    }
+}
+
+#[cfg(test)]
+mod copy_tests {
+    use super::*;
+
+    #[test]
+    fn a_gone_song_finds_your_copy_by_name() {
+        let e = |id: i64, title: &str, artist: &str| crate::store::Ext { id, title: title.into(), artist: artist.into(), ..Default::default() };
+        let yt = vec![e(-1, "Summer Love (Official Audio)", "Some Uploader"), e(-2, "Winter Song", "Someone")];
+        refresh_my_copies(&[&yt]);
+        let found = copies_like("Summer Love (feat. A Friend)", "An Artist");
+        assert_eq!(found.first().map(|f| f.0), Some(-1));
+        assert!(found.iter().all(|f| f.0 != -2));
     }
 }

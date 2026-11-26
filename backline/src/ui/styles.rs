@@ -1008,8 +1008,9 @@ pub(crate) fn style_card(ui: &mut egui::Ui, kind: u8, name: &str, w: f32, on: bo
 pub(crate) fn swatches(ui: &mut egui::Ui, items: &[(&str, Color32, Color32)], cur: usize, dot: bool) -> Option<usize> {
     let sc = font::ui_scale();
     let mut hit = None;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 14.0 * sc;
+    // (as many to a row as fit: a narrow page wraps them, never runs them off its side)
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(14.0 * sc, 10.0 * sc);
         for (i, (name, main, back)) in items.iter().enumerate() {
             let w = (text_w(name, 1.6) + 8.0).max(64.0 * sc);
             let (cell, resp) = ui.allocate_exact_size(Vec2::new(w, 64.0 * sc), Sense::click());

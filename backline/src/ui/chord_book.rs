@@ -715,8 +715,10 @@ impl App {
                     }
                 });
             }
+            // (the page on the look's own page colour: Studio's is its screen's glass, the ink written for it)
+            let fill = if crate::studio::on() { crate::studio::scr() } else { pal().display };
             egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(pal().display).inner_margin(egui::Margin::same(16.0)))
+                .frame(egui::Frame::none().fill(fill).inner_margin(egui::Margin::same(16.0)))
                 .show(ctx, |ui| page(self, ui, acts));
             if own {
                 // the border, over everything; the edges size the window

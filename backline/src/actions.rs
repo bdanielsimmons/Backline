@@ -111,6 +111,26 @@ impl App {
                 self.ed.id = 0;
             }
             Action::SaveInfo(id, title, artist) => self.save_info(id, title, artist),
+            Action::UseCopy(tidal, mine) => {
+                // your copy's sound in the Tidal song's place on this computer: it plays from there in its album,
+                // playlists and My Tracks, under Tidal's names
+                let bytes = crate::cache::get(mine).or_else(|| {
+                    self.ext_of(mine).filter(|e| e.kind == "file").and_then(|e| std::fs::read(&e.src).ok()).filter(|b| b.len() > 1024)
+                });
+                match bytes {
+                    Some(b) if crate::cache::put(tidal, &b).is_some() => {
+                        self.serial += 1;
+                        self.set_note("PLAYS FROM YOUR COPY NOW");
+                    }
+                    Some(_) => self.set_err("Couldn't save the copy".to_string()),
+                    None => self.set_note("PLAY YOUR COPY ONCE FIRST, SO IT'S ON THIS COMPUTER"),
+                }
+            }
+            Action::DropCopy(tidal) => {
+                crate::cache::remove(tidal);
+                self.serial += 1;
+                self.set_note("COPY REMOVED");
+            }
             Action::PlaySequenceAt(chords, gap, tag) => {
                 if !chords.is_empty() {
                     self.player.send(Cmd::StopOnce);

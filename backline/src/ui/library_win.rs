@@ -708,7 +708,7 @@ impl App {
         let step = |ui: &mut egui::Ui, n: &str, text: &str| {
             let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
             ptext(ui.painter(), Pos2::new(r.min.x + 2.0, r.center().y), Align::Min, n, 2.0, pal().ink2);
-            ptext(ui.painter(), Pos2::new(r.min.x + 20.0, r.center().y), Align::Min, text, 2.0, pal().ink);
+            crate::font::ptext_fit(ui.painter(), Pos2::new(r.min.x + 20.0, r.center().y), Align::Min, text, 2.0, r.width() - 24.0, pal().ink);
         };
         step(ui, "1", "Style");
         let sc = crate::font::ui_scale();
@@ -1944,6 +1944,8 @@ impl App {
 
     /// The library's page: the places' tabs (`tabs`: when there is no side list), the search row, the page itself.
     fn library_body(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, tabs: bool) {
+        // (your own songs, for a song gone from Tidal to play from)
+        crate::tracks::refresh_my_copies(&[&self.store.yt, &self.store.sc, &self.store.files]);
         // which list: Tidal / my files / YouTube / tunes / diary
         if tabs {
             let tabs_top = ui.cursor().min.y;

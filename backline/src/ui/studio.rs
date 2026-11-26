@@ -585,9 +585,13 @@ impl App {
             self.studio_dith_busy.insert(slot, (key.clone(), now));
             let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), ctx.clone());
             let inkc = ink();
+            // (a screen whose ink is lighter than its glass - Amber, Blue - prints the picture's light parts in ink, so
+            // it isn't a negative)
+            let lum = |c: Color32| 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
+            let light = lum(inkc) > lum(scr());
             std::thread::spawn(move || {
                 let Some(img) = crate::picture(&api, &url) else { return };
-                let _ = tx.send(Msg::StudioDither(slot, key, dither(&img, inkc, px)));
+                let _ = tx.send(Msg::StudioDither(slot, key, dither(&img, inkc, px, light)));
                 ctx.request_repaint();
             });
         }
@@ -1072,7 +1076,7 @@ pub(crate) fn cover_switch(ui: &egui::Ui, r: Rect, acts: &mut Vec<Action>, salt:
 /// A picture (the whole of it, framed as the color cover shows it) dotted in `ink` on clear, `n` dots across, each dot one of four shades of the ink (as
 /// an old four-shade LCD): its brightness spread by error diffusion (Floyd-Steinberg, the rows in turn left to right and
 /// back), so faces and lettering stay recognizable.
-pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize) -> egui::ColorImage {
+pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize, light_ink: bool) -> egui::ColorImage {
     let n = n.max(1);
     let [w, h] = img.size;
     let gray = image::GrayImage::from_fn(w.max(1) as u32, h.max(1) as u32, |x, y| {
@@ -1081,7 +1085,7 @@ pub(crate) fn dither(img: &egui::ColorImage, ink: Color32, n: usize) -> egui::Co
     });
     let small = image::imageops::resize(&gray, n as u32, n as u32, image::imageops::FilterType::CatmullRom);
     // (brightness lifted a little, so the mid-greys keep their detail)
-    let mut v: Vec<f32> = small.pixels().map(|p| (p.0[0] as f32 / 255.0).powf(0.9)).collect();
+    let mut v: Vec<f32> = small.pixels().map(|p| (p.0[0] as f32 / 255.0).powf(0.9)).map(|g| if light_ink { 1.0 - g } else { g }).collect();
     let mut px = vec![Color32::TRANSPARENT; n * n];
     for y in 0..n {
         let right = y % 2 == 0;
@@ -1125,11 +1129,14 @@ mod tests {
         let grey = |g: u8| egui::ColorImage::new([40, 30], Color32::from_gray(g));
         let ink = Color32::BLACK;
         let inked = |img: &egui::ColorImage| img.pixels.iter().map(|c| c.a() as f32 / 255.0).sum::<f32>() / img.pixels.len() as f32;
-        let d = dither(&grey(128), ink, 64);
+        let d = dither(&grey(128), ink, 64, false);
         assert_eq!(d.size, [64, 64]);
         let f = inked(&d);
         assert!((0.38..0.56).contains(&f), "{}", f);
-        assert_eq!(inked(&dither(&grey(255), ink, 32)), 0.0);
-        assert_eq!(inked(&dither(&grey(0), ink, 32)), 1.0);
+        assert_eq!(inked(&dither(&grey(255), ink, 32, false)), 0.0);
+        assert_eq!(inked(&dither(&grey(0), ink, 32, false)), 1.0);
+        // (light ink on dark glass: white is all ink, black none, so the picture isn't a negative)
+        assert_eq!(inked(&dither(&grey(255), ink, 32, true)), 1.0);
+        assert_eq!(inked(&dither(&grey(0), ink, 32, true)), 0.0);
     }
 }
