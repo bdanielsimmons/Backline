@@ -985,6 +985,8 @@ impl App {
     /// liked songs, playlists, tunes, the queue, where you left off), and in the file's own tags for your files.
     pub(crate) fn save_info(&mut self, id: i64, title: String, artist: String) {
         let mut id = id;
+        // (a song of yours - a file, YouTube, SoundCloud - takes its album too; Tidal's keep Tidal's)
+        let yours = self.ext_of(id).is_some();
         let (title, artist) = (title.trim().to_string(), artist.trim().to_string());
         if title.is_empty() {
             return;
@@ -1011,8 +1013,8 @@ impl App {
             for e in list.iter_mut().filter(|e| e.id == id) {
                 e.title = title.clone();
                 e.artist = artist.clone();
+                e.album = album.clone();
                 if e.kind == "file" {
-                    e.album = album.clone();
                     file = Some(e.src.clone());
                 }
             }
@@ -1020,12 +1022,13 @@ impl App {
         for e in self.yt_results.iter_mut().chain(self.sc_results.iter_mut()).filter(|e| e.id == id) {
             e.title = title.clone();
             e.artist = artist.clone();
+            e.album = album.clone();
         }
         let fix = |v: &mut store::Version| {
             if v.id == id {
                 v.title = title.clone();
                 v.artist = artist.clone();
-                if v.kind == "file" {
+                if yours {
                     v.album = album.clone();
                 }
             }
@@ -1043,7 +1046,7 @@ impl App {
             if t.id == id {
                 t.title = title.clone();
                 t.artist = artist.clone();
-                if file.is_some() {
+                if yours {
                     t.album = album.clone();
                 }
             }

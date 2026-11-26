@@ -842,6 +842,15 @@ pub(crate) fn tracks_list(
                 }
             }
             r.context_menu(|ui| {
+                // (gone from Tidal: find it on YouTube, then paste its link on the YouTube page)
+                if gone && menu_item(ui, "Search YouTube for It") {
+                    let q: String = format!("{} {}", t.artists_text(), t.title)
+                        .chars()
+                        .map(|c| if c.is_alphanumeric() { c.to_string() } else { "+".to_string() })
+                        .collect();
+                    crate::views::open_link(&format!("https://www.youtube.com/results?search_query={}", q));
+                    ui.close_menu();
+                }
                 song_items(ui, acts, t, liked.contains(&t.id), true);
                 link_item(ui, acts, track_link(t, None));
                 if let Some(uuid) = own {

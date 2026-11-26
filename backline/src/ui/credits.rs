@@ -353,10 +353,11 @@ impl App {
                 ("BPM", crate::tools::F_INFO_BPM, bpm, "e.g. 120"),
             ];
             if !tidal {
+                let (album, file_name) = (&mut self.edit_extra.0, &mut self.edit_extra.1);
                 if is_file {
-                    rows.insert(0, ("FILE NAME", crate::tools::F_INFO_FILE, &mut self.edit_extra.1, "The file's name on disk"));
-                    rows.insert(0, ("ALBUM", crate::tools::F_INFO_ALBUM, &mut self.edit_extra.0, "Album"));
+                    rows.insert(0, ("FILE NAME", crate::tools::F_INFO_FILE, file_name, "The file's name on disk"));
                 }
+                rows.insert(0, ("ALBUM", crate::tools::F_INFO_ALBUM, album, "Album"));
                 rows.insert(0, ("ARTIST", crate::tools::F_INFO_ARTIST, artist, "Artist"));
                 rows.insert(0, ("TITLE", crate::tools::F_INFO_TITLE, title, "Song title"));
             }

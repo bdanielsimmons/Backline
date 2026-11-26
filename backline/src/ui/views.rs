@@ -893,7 +893,7 @@ impl App {
         }
         let order = crate::tracks::sort_order(list.len(), |i, c| {
             let e = &list[i];
-            crate::tracks::song_sort_key(e.id, &e.title, &e.artist, "", e.dur, &e.kind, c)
+            crate::tracks::song_sort_key(e.id, &e.title, &e.artist, &e.album, e.dur, &e.kind, c)
         });
         for (pos, &i) in order.iter().enumerate() {
             let e = &list[i];
@@ -908,7 +908,7 @@ impl App {
                 ui,
                 pos,
                 Some(pos + 1),
-                || track_cells(e.id, &e.title, &e.artist, "", &e.kind),
+                || track_cells(e.id, &e.title, &e.artist, &e.album, &e.kind),
                 || {
                     if e.dur == 0.0 && e.cover.is_empty() && (which == 2 || which == 3 || which == 6) {
                         "(loading info)".to_string()

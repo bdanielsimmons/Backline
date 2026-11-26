@@ -1831,7 +1831,8 @@ struct App {
     seq_play: Option<(Instant, f32, String, usize)>,
     /// the song whose info is being edited: its id, the title and the artist as typed
     edit_info: Option<(i64, String, String)>,
-    /// EDIT INFO for a file: its album and its file name (renamed on disk when changed)
+    /// EDIT INFO for a song of yours (a file, YouTube, SoundCloud): its album, and a file's name (renamed on disk when
+    /// changed)
     edit_extra: (String, String),
     /// DIARY: which page (0 diary, 1 routine, 2 listening, 3 masters); LISTENING on gospel
     diary_tab: u8,

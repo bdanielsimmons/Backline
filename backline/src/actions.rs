@@ -104,7 +104,8 @@ impl App {
                         e.album.clone(),
                         std::path::Path::new(&e.src).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
                     ),
-                    None => (String::new(), String::new()),
+                    // (YouTube, SoundCloud: the album too)
+                    None => (self.ext_of(id).map(|e| e.album).unwrap_or_default(), String::new()),
                 };
                 self.edit_info = Some((id, title, artist));
                 self.ed.id = 0;

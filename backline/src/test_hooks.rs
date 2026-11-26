@@ -182,6 +182,13 @@ Second line: comp lighter here.", m.1.note);
             }
             Ok("mine") => app.sec = Sec::Mine,
             Ok("yt") => app.sec = Sec::Yt,
+            // EDIT INFO open for the first YouTube song
+            Ok("editinfo") => {
+                app.sec = Sec::Yt;
+                if let Some(e) = app.store.yt.first().cloned() {
+                    app.apply(Action::EditInfo(e.id, e.title.clone(), e.artist.clone()));
+                }
+            }
             Ok("diary") => app.sec = Sec::Diary,
             Ok("diarywrite") => {
                 app.sec = Sec::Diary;
