@@ -544,7 +544,7 @@ impl App {
             // in a window of its own (to keep it beside the chart and the song; the main window goes back to where it
             // was), or back in (Pop In: the main window on the Chord Book again)
             if self.cb_in_window {
-                if retro_btn(ui, "Pop In", false).tip("Back into the main window").clicked() {
+                if !crate::app_bar() && retro_btn(ui, "Pop In", false).tip("Back into the main window").clicked() {
                     self.cb_pop = false;
                     self.dirty = true;
                 }
@@ -684,7 +684,9 @@ impl App {
             return;
         }
         let id = egui::ViewportId::from_hash_of("chord_book_window");
-        let mut vb = egui::ViewportBuilder::default().with_title("Chord Book").with_min_inner_size([520.0, 420.0]);
+        // (with the main window's own bar, this one has its own too: a slim bar and a fine border in the look's colors)
+        let own = crate::app_bar();
+        let mut vb = egui::ViewportBuilder::default().with_title("Chord Book").with_min_inner_size([520.0, 420.0]).with_decorations(!own);
         vb = match self.cb_pop_rect {
             Some([x, y, w, h]) => vb.with_position([x, y]).with_inner_size([w, h]),
             None => vb.with_inner_size([980.0, 820.0]),
@@ -705,9 +707,25 @@ impl App {
                 }
                 return;
             }
+            if own {
+                egui::TopBottomPanel::top("cb_bar").exact_height(32.0).show_separator_line(false).frame(egui::Frame::none()).show(ctx, |ui| {
+                    if cb_window_bar(ui) {
+                        self.cb_pop = false;
+                        self.dirty = true;
+                    }
+                });
+            }
             egui::CentralPanel::default()
                 .frame(egui::Frame::none().fill(pal().display).inner_margin(egui::Margin::same(16.0)))
                 .show(ctx, |ui| page(self, ui, acts));
+            if own {
+                // the border, over everything; the edges size the window
+                let r = ctx.screen_rect();
+                let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("cb_border")));
+                let col = if crate::studio::on() { crate::studio::BODY } else { pal().edge };
+                p.rect_stroke(r.shrink(0.5), 0.0, Stroke::new(if crate::studio::on() { 3.0_f32 } else { 1.0_f32 }, col));
+                crate::chrome::edge_resize(ctx);
+            }
             let (close, outer, inner) = ctx.input(|i| (i.viewport().close_requested(), i.viewport().outer_rect, i.viewport().inner_rect));
             if close {
                 self.cb_pop = false;
@@ -2384,4 +2402,71 @@ mod tests {
         );
         assert_eq!(super::hide_notes("Alto Bb to Ab; Tenor C to D (up a whole step)."), "Alto; Tenor up a whole step.");
     }
+}
+
+/// The popped-out Chord Book's own bar (the main window has its own, so this one does too): the look's colors, its name
+/// at the left (Studio: in brackets on its black body), POP IN, minimize and close at the right; dragged, it moves the
+/// window, double-clicked it fills the screen. Returns whether it was put back (Pop In or close).
+fn cb_window_bar(ui: &mut egui::Ui) -> bool {
+    let bar = ui.max_rect();
+    let p = ui.painter().clone();
+    let ctx = ui.ctx().clone();
+    let studio = crate::studio::on();
+    let (fill, ink) = if studio { (crate::studio::BODY, crate::studio::label()) } else { (pal().display, pal().ink2) };
+    p.rect_filled(bar, 0.0, fill);
+    if !studio {
+        p.line_segment([Pos2::new(bar.min.x, bar.max.y - 0.5), Pos2::new(bar.max.x, bar.max.y - 0.5)], Stroke::new(1.0_f32, pal().edge));
+    }
+    // (moving it first: the keys over it win)
+    let drag = ui.interact(bar, ui.id().with("cb_bar_drag"), Sense::click_and_drag());
+    if drag.double_clicked() {
+        let max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+    } else if drag.drag_started() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    let at = Pos2::new(bar.min.x + 14.0, bar.center().y);
+    if studio {
+        crate::studio::px(&p, at, egui::Align2::LEFT_CENTER, "─[ CHORD BOOK ]─", 10.0, ink);
+    } else {
+        crate::font::keep_caps(|| ptext(&p, at, Align::Min, "CHORD BOOK", 1.3, ink));
+    }
+    let mut back = false;
+    let bw = 40.0;
+    for (k, tip) in [(0, "Close"), (1, "Minimize")] {
+        let r = Rect::from_min_size(Pos2::new(bar.max.x - bw * (k as f32 + 1.0), bar.min.y), Vec2::new(bw, bar.height()));
+        let b = ui.interact(r, ui.id().with(("cb_bar_key", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
+        if b.hovered() {
+            p.rect_filled(r, 0.0, if k == 0 { Color32::from_rgb(196, 43, 28) } else { ink.gamma_multiply(0.12) });
+        }
+        let c = r.center();
+        let s = Stroke::new(1.2_f32, if b.hovered() && k == 0 { Color32::WHITE } else { ink });
+        if k == 0 {
+            p.line_segment([c + Vec2::new(-4.5, -4.5), c + Vec2::new(4.5, 4.5)], s);
+            p.line_segment([c + Vec2::new(-4.5, 4.5), c + Vec2::new(4.5, -4.5)], s);
+        } else {
+            p.line_segment([c + Vec2::new(-4.5, 0.0), c + Vec2::new(4.5, 0.0)], s);
+        }
+        if b.clicked() {
+            if k == 0 {
+                back = true;
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            }
+        }
+    }
+    // POP IN, left of them
+    let label = "POP IN";
+    let tw = crate::font::keep_caps(|| crate::font::text_w(label, 1.2)) + 18.0;
+    let r = Rect::from_center_size(Pos2::new(bar.max.x - 2.0 * bw - 8.0 - tw / 2.0, bar.center().y), Vec2::new(tw, 22.0));
+    let b = ui.interact(r, ui.id().with("cb_bar_popin"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Back into the main window");
+    if studio {
+        crate::studio::key(&p, r, false, b.is_pointer_button_down_on(), b.hovered());
+        crate::font::keep_caps(|| ptext(&p, r.center(), Align::Center, label, 1.2, crate::studio::key_fg(false)));
+    } else {
+        p.rect_stroke(r, crate::corner(), Stroke::new(1.0_f32, if b.hovered() { pal().ink } else { pal().edge }));
+        crate::font::keep_caps(|| ptext(&p, r.center(), Align::Center, label, 1.2, if b.hovered() { pal().ink } else { ink }));
+    }
+    back |= b.clicked();
+    back
 }

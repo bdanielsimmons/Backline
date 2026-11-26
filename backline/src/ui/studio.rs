@@ -871,7 +871,7 @@ impl App {
                     }
                     ui.separator();
                     crate::views::dim_line(ui, "ROWS DEEP", 1.0, crate::pal().ink2);
-                    for n in [32usize, 64, 96, 140] {
+                    for n in [64usize, 96, 160, 240] {
                         if crate::menu_item(ui, &format!("{}{}", mark(self.studio_terr_rows == n), n)) {
                             self.studio_terr_rows = n;
                             self.studio_terr.clear();
@@ -901,9 +901,10 @@ impl App {
         // (many rows close together, each sliding back a little every frame, and many points across: the wave smooth
         // and moving gently, the owner's ask)
         // (straight from the analysis, as fine as it's asked for here, not through the visualizer's bar count)
-        let n_rows: usize = self.studio_terr_rows.clamp(16, 160);
+        let n_rows: usize = self.studio_terr_rows.clamp(16, 240);
         let n_cols: usize = self.studio_terr_n.clamp(16, 256);
-        const EVERY: f64 = 0.05;
+        // (a new row every 30 ms: the rows close together, a few seconds deep)
+        const EVERY: f64 = 0.03;
         let k = self.viz[1].gain / self.viz[0].gain.max(self.viz[1].gain);
         let now = crate::viz::resample(&self.bands, n_cols, k);
         let t = p.ctx().input(|i| i.time);
@@ -957,8 +958,9 @@ impl App {
                 }
             }
         }
+        // (at most 60 frames a second: smooth, without drawing flat out)
         if self.cur.is_some() && !self.stopped && !self.paused {
-            p.ctx().request_repaint();
+            p.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
 

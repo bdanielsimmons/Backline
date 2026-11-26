@@ -464,10 +464,23 @@ impl App {
             self.viz_panel = Some(0);
         }
         let (bands, peaks, wave) = self.viz_data(0);
+        // (the song's length sits in the visualizer's top right corner, under the time: the visualizer keeps out
+        // from under it, nothing behind the letters)
+        let len_x = track.as_ref().filter(|_| active).map(|tr| 99.0 - format!("/{}", fmt_time(tr.duration)).chars().count() as f32 * 5.0);
         if active && self.viz[0].mode == 3 {
-            self.vis_paint(ui, pl.r(24.0, 43.0, 76.0, 16.0), 2);
+            let w = len_x.map_or(76.0, |x| (x - 2.0 - 24.0).max(10.0));
+            self.vis_paint(ui, pl.r(24.0, 43.0, w, 16.0), 2);
         } else if active {
-            skin_viz(&p, pl.o + Vec2::new(24.0, 43.0) * pl.s, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
+            let at = pl.o + Vec2::new(24.0, 43.0) * pl.s;
+            match len_x {
+                Some(x) => {
+                    let left = p.with_clip_rect(pl.r(24.0, 43.0, x - 1.0 - 24.0, 16.0));
+                    skin_viz(&left, at, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
+                    let under = p.with_clip_rect(pl.r(x - 1.0, 49.0, 100.0 - (x - 1.0), 10.0));
+                    skin_viz(&under, at, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode);
+                }
+                None => skin_viz(&p, at, pl.s, &t.vis, &bands, &peaks, &wave, self.viz[0].mode),
+            }
             // Winamp's own visualizer ran at about 30 frames a second; so does this one (half the work of every frame),
             // while it can be seen
             if crate::onscreen::seen() {
@@ -480,11 +493,7 @@ impl App {
             if let Some(tr) = &track {
                 let len = format!("/{}", fmt_time(tr.duration));
                 let n = len.chars().count() as f32;
-                let x = 99.0 - n * 5.0;
-                if let Some(bg) = t.text_bg {
-                    p.rect_filled(pl.r(x - 1.0, 41.0, n * 5.0 + 1.0, 7.0), 0.0, bg);
-                }
-                wa_text(&t, &p, pl, x, 41.0, &len);
+                wa_text(&t, &p, pl, 99.0 - n * 5.0, 42.0, &len);
             }
         }
         // volume: the strip picture follows the level; right-click it for the sound output

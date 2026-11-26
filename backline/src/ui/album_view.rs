@@ -381,8 +381,9 @@ impl App {
         };
         let corners = |h: f32| [xf(-h, -h), xf(h, -h), xf(h, h), xf(-h, h)];
         let h = a / 2.0;
-        // (the record is an experiment, only on a dev build: the owner never used it)
-        let dev = crate::update::alpha() > 0;
+        // (the record: the cover spinning as a record on a turntable, an experiment; right-click the cover or the
+        // title)
+        let dev = true;
         let hit = ui.interact(Rect::from_center_size(center, Vec2::splat(a)), ui.id().with("np_cover"), Sense::click());
         hit.context_menu(|ui| {
             for (i, name) in ["NONE", "SUBTLE", "SKIN COLOR"].iter().enumerate() {
@@ -395,7 +396,7 @@ impl App {
             }
             if dev {
                 let on = VINYL.load(Ordering::Relaxed);
-                if menu_item(ui, &format!("{}Record (Experimental, Dev Build)", if on { "> " } else { "   " })) {
+                if menu_item(ui, &format!("{}Spin as a Record (Experimental)", if on { "> " } else { "   " })) {
                     acts.push(Action::ToggleVinyl);
                     ui.close_menu();
                 }
@@ -479,6 +480,12 @@ impl App {
                     self.dirty = true;
                     ui.close_menu();
                 }
+            }
+            ui.separator();
+            let on = VINYL.load(Ordering::Relaxed);
+            if menu_item(ui, &format!("{}SPIN AS A RECORD (EXPERIMENTAL)", if on { "> " } else { "   " })) {
+                self.apply(Action::ToggleVinyl);
+                ui.close_menu();
             }
         });
     }

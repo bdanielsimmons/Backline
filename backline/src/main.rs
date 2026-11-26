@@ -2269,7 +2269,7 @@ impl App {
             studio_terr: Vec::new(),
             studio_terr_at: 0.0,
             studio_terr_n: 160,
-            studio_terr_rows: 96,
+            studio_terr_rows: 160,
             style_col_w: 0.0,
             style_prac_col_w: 0.0,
             fullscreen: false,

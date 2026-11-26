@@ -252,7 +252,7 @@ impl App {
         app.studio_np = st["studio_np"].as_u64().unwrap_or(0).min(5) as u8;
         app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(3) as u8;
         app.studio_terr_n = st["studio_terr_n"].as_u64().map_or(160, |v| v.clamp(16, 256) as usize);
-        app.studio_terr_rows = st["studio_terr_rows"].as_u64().map_or(96, |v| v.clamp(16, 160) as usize);
+        app.studio_terr_rows = st["studio_terr_rows2"].as_u64().map_or(160, |v| v.clamp(16, 240) as usize);
         app.style_col_w = st["style_col_w"].as_f64().unwrap_or(0.0) as f32;
         app.style_prac_col_w = st["style_prac_col_w"].as_f64().unwrap_or(0.0) as f32;
         app.time_left = st["time_left"].as_bool().unwrap_or(false);
@@ -486,7 +486,7 @@ impl App {
             "studio_np": self.studio_np,
             "studio_vis": self.studio_vis,
             "studio_terr_n": self.studio_terr_n,
-            "studio_terr_rows": self.studio_terr_rows,
+            "studio_terr_rows2": self.studio_terr_rows,
             "style_col_w": self.style_col_w,
             "style_prac_col_w": self.style_prac_col_w,
             "time_left": self.time_left,
