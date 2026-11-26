@@ -343,6 +343,21 @@ impl App {
         if resp.clicked() || resp.drag_started() || wheel != 0.0 {
             self.wv_free = false;
         }
+        // looked elsewhere: the view stays while you look, then follows the song again, as soon as the song reaches a
+        // third of the way across it or a few seconds after you let go (not while paused)
+        if self.wv_free {
+            let now = ui.input(|i| i.time);
+            if self.paused || !active {
+                self.wv_free_t = now;
+            }
+            let away = now - self.wv_free_t;
+            let third = start + span / 3.0;
+            if away > 4.0 || (away > 0.25 && shown >= third && shown <= third + span * 0.05) {
+                self.wv_free = false;
+            } else {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+            }
+        }
         if zoom > 1.0 && !dragging && !self.wv_free {
             match (self.loop_a, self.loop_b) {
                 // looping a part that fits: the whole loop stays in view
@@ -507,11 +522,12 @@ impl App {
                 let r = ui
                     .interact(sr.expand2(Vec2::new(0.0, 2.0)), ui.id().with("wv_strip"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
-                    .tip("The whole song: click or drag to look at another part. Playback continues.");
+                    .tip("The whole song: click or drag to look at another part. It returns to the song after a few seconds.");
                 if let Some(pp) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
                     let t = ((pp.x - sr.min.x) / sr.width()).clamp(0.0, 1.0) * dur1;
                     self.wv_start = (t - span / 2.0).within(0.0, (dur1 - span).max(0.0));
                     self.wv_free = true;
+                    self.wv_free_t = ui.input(|i| i.time);
                 }
             }
             // (room for names on the waveform: bookmark flags along the top, saved loops in lanes along the foot)
@@ -663,7 +679,7 @@ impl App {
                 let r = ui
                     .interact(track.expand2(Vec2::new(0.0, 4.0)), ui.id().with("wv_scroll"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
-                    .tip("Drag to scroll through the song. Playback continues.");
+                    .tip("Drag to scroll through the song. It returns to the song after a few seconds.");
                 fill_rect(&p, track, pal().ink.gamma_multiply(0.15));
                 let w = (track.width() * span / dur1).max(14.0);
                 let x0 = track.min.x + (track.width() - w) * (start / (dur1 - span).max(0.001));
@@ -673,6 +689,7 @@ impl App {
                     let frac = ((pp.x - track.min.x - w / 2.0) / (track.width() - w).max(1.0)).clamp(0.0, 1.0);
                     self.wv_start = frac * (dur1 - span).max(0.0);
                     self.wv_free = true;
+                    self.wv_free_t = ui.input(|i| i.time);
                 }
             }
             // zoom buttons, over the waveform's corner (they take effect from the next frame)
@@ -815,6 +832,7 @@ impl App {
                         self.wv_zoom = (dur1 / sp).clamp(1.0, 400.0);
                         self.wv_start = a - (b - a) * 0.1;
                         self.wv_free = true;
+                        self.wv_free_t = ui.input(|i| i.time);
                     }
                     _ => {
                         self.wv_zoom = 1.0;

@@ -902,7 +902,8 @@ pub(crate) fn style_card(ui: &mut egui::Ui, kind: u8, name: &str, w: f32, on: bo
     } else if resp.hovered() {
         p.rect_stroke(r.expand(3.0), 8.0, Stroke::new(1.0_f32, pal().ink2));
     }
-    ptext(p, Pos2::new(cell.min.x + 2.0, r.max.y + name_h * 0.55), Align::Min, name, 1.9, if on || resp.hovered() { pal().ink } else { pal().ink2 });
+    // (smaller to fit a narrow card, never into the next one's name)
+    font::ptext_fit(p, Pos2::new(cell.min.x + 2.0, r.max.y + name_h * 0.55), Align::Min, name, 1.9, w - 4.0, if on || resp.hovered() { pal().ink } else { pal().ink2 });
     resp.clicked()
 }
 

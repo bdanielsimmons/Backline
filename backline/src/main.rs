@@ -959,8 +959,10 @@ struct App {
     /// the practice waveform's zoom (1 = the whole song) and the second its view starts at
     wv_zoom: f32,
     wv_start: f32,
-    /// you scrolled the zoomed view away from the playhead: it stays put until you click, zoom or FIT
+    /// you looked away from the playhead (the strip, the scrollbar, FIT): the view stays there a while, then follows again
     wv_free: bool,
+    /// when you last moved the view away (`ui` time; held while paused)
+    wv_free_t: f64,
     /// the practice waveform's height (1 = normal; you drag it), kept with your settings
     wv_h: f32,
     /// zoomed in, the view slides along with the song (the playhead a third of the way across); FOLLOW turns it off
@@ -2157,6 +2159,7 @@ impl App {
             wv_zoom: 1.0,
             wv_start: 0.0,
             wv_free: false,
+            wv_free_t: 0.0,
             wv_h: 1.0,
             wv_follow: true,
             wv_draw: 0,

@@ -713,23 +713,32 @@ impl App {
         step(ui, "1", "Style");
         let sc = crate::font::ui_scale();
         let gap = 16.0 * sc;
-        let w = ((ui.available_width() - 4.0 * gap - 8.0) / 5.0).clamp(110.0, 230.0 * sc);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            ui.add_space(3.0);
-            for (k, name) in [(0, "Classic"), (STYLE_STREAMING, "Streaming"), (STYLE_AMBIENT, "Ambient Color"), (STYLE_HARDWARE, "Hardware"), (STYLE_STUDIO, "Studio")] {
-                let on = st == k;
-                if crate::styles::style_card(ui, k, name, w, on) && !on {
-                    acts.push(match k {
-                        0 => Action::Classic,
-                        STYLE_AMBIENT => Action::Ambient,
-                        STYLE_STREAMING => Action::Style(false),
-                        STYLE_STUDIO => Action::Studio,
-                        _ => Action::Style(true),
-                    });
-                }
+        // as many to a row as fit at a readable size (a narrow page: two rows, never cut off at the side)
+        let styles = [(0, "Classic"), (STYLE_STREAMING, "Streaming"), (STYLE_AMBIENT, "Ambient Color"), (STYLE_HARDWARE, "Hardware"), (STYLE_STUDIO, "Studio")];
+        let room = ui.available_width() - 8.0;
+        let per = (((room + gap) / (120.0 * sc + gap)).floor() as usize).clamp(1, styles.len());
+        let w = ((room - (per - 1) as f32 * gap) / per as f32).min(230.0 * sc);
+        for (row, chunk) in styles.chunks(per).enumerate() {
+            if row > 0 {
+                ui.add_space(10.0 * sc);
             }
-        });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                ui.add_space(3.0);
+                for &(k, name) in chunk {
+                    let on = st == k;
+                    if crate::styles::style_card(ui, k, name, w, on) && !on {
+                        acts.push(match k {
+                            0 => Action::Classic,
+                            STYLE_AMBIENT => Action::Ambient,
+                            STYLE_STREAMING => Action::Style(false),
+                            STYLE_STUDIO => Action::Studio,
+                            _ => Action::Style(true),
+                        });
+                    }
+                }
+            });
+        }
         ui.add_space(14.0);
         let name = match st {
             STYLE_STREAMING => "Streaming's colors",
