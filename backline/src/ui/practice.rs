@@ -339,8 +339,12 @@ impl App {
         let span = dur1 / zoom;
         // zoomed: the view keeps up with the song (turning the page as it reaches the edge), unless you are dragging
         let dragging = self.sel_anchor.is_some() || self.marker_drag != 0 || self.seek_drag.is_some() || wheel != 0.0;
-        // clicking the waveform or zooming: the view follows the song again
-        if resp.clicked() || resp.drag_started() || wheel != 0.0 {
+        // clicking or dragging on a view you moved: it stays put (the time under the pointer is the one you clicked,
+        // not one in the view the song is at), then follows the song again as after looking; zooming, or clicking
+        // a view that follows: it follows the song again at once
+        if (resp.clicked() || resp.drag_started()) && self.wv_free {
+            self.wv_free_t = ui.input(|i| i.time);
+        } else if resp.clicked() || resp.drag_started() || wheel != 0.0 {
             self.wv_free = false;
         }
         // looked elsewhere: the view stays while you look, then follows the song again, as soon as the song reaches a
