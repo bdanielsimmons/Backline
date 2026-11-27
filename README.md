@@ -20,6 +20,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Hardware's Now Playing as a reel-to-reel tape deck
 - Studio style: every part a screen in a black body, LCD time, the song in dot type, lyrics and visuals on the screen
 - Styles: pick Streaming, Ambient Color or Hardware on the Skins page, each with its own colors
 - NOTES ON THE NECK in Ear Training: learn the note names on the fretboard, one string's landmarks at a time
@@ -29,7 +30,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Updates come over Sync from your other computer
 - One Skins page: every Backline look shown as its player, Winamp skins a switch away; Greyscale and 15 more looks
 - Backline's looks give every window one unbroken border
-- All Loops sorted into Recent, then each month, with how many songs under each
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
