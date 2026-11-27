@@ -1111,7 +1111,7 @@ impl App {
         let inner = Rect::from_min_max(card.min + Vec2::new(10.0, 26.0), card.max - Vec2::new(10.0, 8.0));
         let row_a = Rect::from_min_size(inner.min, Vec2::new(inner.width(), (inner.height() * 0.5).max(40.0)));
         let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-        let (bands, _, _) = self.viz_data(0);
+        let (bands, peaks, _) = self.viz_data(0);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
         if crate::studio::on() {
             // one screen: the time in segments, the song in dot type at its top right, the bars under it
@@ -1126,7 +1126,7 @@ impl App {
             }
             if self.mini_viz {
                 let vr = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 30.0), row_a.max - Vec2::new(8.0, 6.0));
-                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), 2.0, 2.0);
+                sd::bars(&p, vr, &crate::viz::resample(&bands, 24, 1.0), &crate::viz::resample(&peaks, 24, 1.0), 2.0, 2.0);
             }
         } else if hw {
             // all on the screen: the time big, the song small at its top right, the meter under it

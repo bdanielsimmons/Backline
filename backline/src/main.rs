@@ -4329,7 +4329,7 @@ impl eframe::App for App {
         // redraw)
         let wait = Duration::from_millis(if self.art_view && busy {
             16
-        } else if busy || self.band_on || self.mt.on || (seen && self.search_focus) {
+        } else if busy || self.band_on || self.mt.on || (seen && (self.search_focus || self.peaks.iter().any(|v| *v > 0.0))) {
             33
         } else if seen {
             250
@@ -4337,6 +4337,8 @@ impl eframe::App for App {
             1000
         });
         ctx.request_repaint_after(wait);
+        // (a test copy with BACKLINE_SCAN: this frame looked over for text cut off or drawn over)
+        crate::test_hooks::scan_layout(ctx);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

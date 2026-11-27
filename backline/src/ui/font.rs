@@ -567,6 +567,7 @@ fn draw_dots(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, col
         Align::Max => anchor.x - w,
     });
     let y = snap(anchor.y - 3.5 * px);
+    crate::test_hooks::note_text(p, Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 7.0 * px)), text);
     let clip = p.clip_rect();
     for c in text.chars() {
         let a = adv(c) * px;

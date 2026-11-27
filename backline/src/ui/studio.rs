@@ -282,102 +282,38 @@ pub(crate) fn blocks(p: &egui::Painter, r: Rect, f: f32) {
     p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, ink()));
 }
 
-/// A spectrum as LCD columns of blocks, the unlit blocks faintly there: one column per band.
-pub(crate) fn bars(p: &egui::Painter, r: Rect, bands: &[f32], gap: f32, block: f32) {
+/// A spectrum as LCD columns of blocks, the unlit blocks faintly there: one column per band. Over each, its cap as
+/// Classic draws it: a thin line a hair above the bar, pushed up with it and falling back at a steady pace (`peaks`).
+pub(crate) fn bars(p: &egui::Painter, r: Rect, bands: &[f32], peaks: &[f32], gap: f32, block: f32) {
     let n = bands.len().max(1);
     let w = (r.width() - gap * (n - 1) as f32) / n as f32;
-    let rows = ((r.height() + 2.0) / (block + 2.0)).floor().max(2.0) as usize;
-    let caps = bar_caps(p.ctx(), r, bands, rows);
-    let mut moving = false;
+    let step = block + 2.0;
+    let rows = ((r.height() + 2.0) / step).floor().max(2.0) as usize;
+    let full = rows as f32 * step - 2.0;
+    // (thinner than a block: a line on the small ones, a little thicker on Now Playing's big ones)
+    let thick = (block / 2.0).floor().max(1.0);
     for (i, v) in bands.iter().enumerate() {
         let x = r.min.x + i as f32 * (w + gap);
         let lit = (v.clamp(0.0, 1.0) * rows as f32).round() as usize;
-        // (the second layer: each bar's cap, a block floating a row above it - knocked up as the bar jumps, then
-        // hanging a moment and falling back onto it)
-        let cap = caps.get(i).map_or(lit + 1, |c| ((c * rows as f32).round() as usize).max(lit + 1));
-        moving |= cap > lit + 1;
         for s in 0..rows {
-            let y = r.max.y - (s as f32 + 1.0) * (block + 2.0) + 2.0;
-            let on = s < lit || (lit > 0 && s == cap);
-            p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, block)), 0.0, if on { ink() } else { ghost() });
+            let y = r.max.y - (s as f32 + 1.0) * step + 2.0;
+            p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, block)), 0.0, if s < lit { ink() } else { ghost() });
+        }
+        // the cap: never lower than the bar's top, with a 2 px gap between them
+        let bar_h = if lit > 0 { lit as f32 * step - 2.0 } else { 0.0 };
+        let peak_h = peaks.get(i).map_or(0.0, |k| k.clamp(0.0, 1.0) * full).round();
+        let lift = bar_h.max(peak_h);
+        if lift > 1.0 {
+            let bottom = (r.max.y - lift - 2.0).max(r.min.y + thick);
+            p.rect_filled(Rect::from_min_max(Pos2::new(x, bottom - thick), Pos2::new(x + w, bottom)), 0.0, ink());
         }
     }
-    if moving {
-        p.ctx().request_repaint_after(std::time::Duration::from_millis(16));
-    }
-}
-
-/// The caps over one set of bars (kept by where the bars are drawn), moved on to now: each sits a row above its bar,
-/// is thrown up when the bar rises fast, hangs a moment at the top, then falls back as a ball would. Their heights
-/// (0..1) in the bars' order.
-fn bar_caps(ctx: &egui::Context, r: Rect, bands: &[f32], rows: usize) -> Vec<f32> {
-    use std::sync::Mutex;
-    /// (height, speed up, how long it still hangs; the bar's last height)
-    type Caps = (f64, Vec<(f32, f32, f32, f32)>);
-    static ALL: Mutex<Vec<((i32, i32, i32), Caps)>> = Mutex::new(Vec::new());
-    let t = ctx.input(|i| i.time);
-    let key = (r.min.x as i32, r.min.y as i32, r.width() as i32);
-    let mut all = ALL.lock().unwrap_or_else(|e| e.into_inner());
-    let at = match all.iter().position(|(k, _)| *k == key) {
-        Some(i) => i,
-        None => {
-            if all.len() > 12 {
-                all.remove(0);
-            }
-            all.push((key, (t, Vec::new())));
-            all.len() - 1
-        }
-    };
-    let (last, caps) = &mut all[at].1;
-    let dt = ((t - *last) as f32).clamp(0.0, 0.1);
-    *last = t;
-    if caps.len() != bands.len() {
-        *caps = bands.iter().map(|&b| (b, 0.0, 0.0, b)).collect();
-    }
-    let row = 1.0 / rows as f32;
-    const GRAVITY: f32 = 4.5;
-    const HANG: f32 = 0.15;
-    for (c, &b) in caps.iter_mut().zip(bands) {
-        let b = b.clamp(0.0, 1.0);
-        let floor = b + row;
-        let rise = if dt > 0.0 { (b - c.3) / dt } else { 0.0 };
-        c.3 = b;
-        if c.0 <= floor {
-            // the bar under it pushes it: rising fast, it's thrown up past the bar
-            c.0 = floor;
-            // (at most about a tenth of the height: a bounce, not a throw)
-            if rise > 0.6 {
-                c.1 = c.1.max((rise * 0.15).min(0.8));
-            } else if c.1 < 0.0 {
-                c.1 = 0.0;
-            }
-        }
-        if c.1 > 0.0 {
-            c.0 += c.1 * dt;
-            c.1 -= GRAVITY * dt;
-            if c.1 <= 0.0 {
-                // at the top: hangs a moment
-                c.1 = 0.0;
-                c.2 = HANG;
-            }
-        } else if c.2 > 0.0 {
-            c.2 -= dt;
-        } else {
-            c.1 -= GRAVITY * dt;
-            c.0 += c.1 * dt;
-        }
-        if c.0 <= floor {
-            c.0 = floor;
-            c.1 = c.1.max(0.0);
-        }
-        c.0 = c.0.min(1.0);
-    }
-    caps.iter().map(|c| c.0).collect()
 }
 
 /// `text` scrolling right to left in dot type across `r` (whole and still when it fits).
 pub(crate) fn marquee(ui: &egui::Ui, r: Rect, text: &str, size: f32, col: Color32) {
     let p = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
+    crate::test_hooks::clip_ok(p.clip_rect());
     let w = dot_w(ui.ctx(), text, size);
     if w <= r.width() {
         dot(&p, Pos2::new(r.min.x, r.center().y), egui::Align2::LEFT_CENTER, text, size, col);
@@ -415,7 +351,7 @@ impl App {
         let p = ui.painter().clone();
         let id = ui.id().with("studio_deck");
         let tr = self.cur_track();
-        let (bands, _, _) = self.viz_data(0);
+        let (bands, peaks, _) = self.viz_data(0);
         let s = sc();
         // ---- the cover, the time, the song, the stream
         let cs = (r.height() * 0.32).clamp(56.0 * s, 92.0 * s);
@@ -465,7 +401,7 @@ impl App {
             let vh = (r.max.y - y - 8.0 - (26.0 * s + 46.0 * s)).clamp(24.0, 400.0);
             let vr = Rect::from_min_max(Pos2::new(r.min.x, y), Pos2::new(r.max.x, y + vh));
             let b32 = crate::viz::resample(&bands, 32, 1.0);
-            bars(&p, vr, &b32, 2.0, 3.0);
+            bars(&p, vr, &b32, &crate::viz::resample(&peaks, 32, 1.0), 2.0, 3.0);
             if self.cur.is_some() && !self.stopped && !self.paused {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
             }
@@ -799,9 +735,9 @@ impl App {
             }
         }
         // the spectrum along the foot
-        let (bands, _, _) = self.viz_data(1);
+        let (bands, peaks, _) = self.viz_data(1);
         let br = Rect::from_min_max(Pos2::new(x0, bars_top), r.max);
-        bars(&p, br, &crate::viz::resample(&bands, 32, 1.0), 3.0, 3.0);
+        bars(&p, br, &crate::viz::resample(&bands, 32, 1.0), &crate::viz::resample(&peaks, 32, 1.0), 3.0, 3.0);
         if self.cur.is_some() && !self.stopped && !self.paused {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
         }
@@ -952,8 +888,8 @@ impl App {
                 ui.interact(body, ui.id().with("studio_3d"), Sense::click()).context_menu(|ui| self.vis_menu(ui));
             }
             _ => {
-                let (bands, _, _) = self.viz_data(1);
-                bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), 6.0, 6.0);
+                let (bands, peaks, _) = self.viz_data(1);
+                bars(&p, body, &crate::viz::resample(&bands, 32, 1.0), &crate::viz::resample(&peaks, 32, 1.0), 6.0, 6.0);
             }
         }
         // the song in a card at the bottom left while the mouse moves, as every look shows it over its visuals

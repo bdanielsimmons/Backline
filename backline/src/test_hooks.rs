@@ -788,3 +788,153 @@ pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
         break;
     }
 }
+
+// ------------------------------------------------------------------ the layout scan
+/// BACKLINE_SCAN=1 (test copies): every half second, everything drawn is looked over for text cut off where it's
+/// clipped, text drawn over other text, and words running out of the box round them; each found goes in the log once
+/// as "layout: ..." (the sweep script collects them).
+pub(crate) fn scan_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BACKLINE_SCAN").is_some())
+}
+
+/// What the pixel font drew (as images, not text, so the scan can't see it otherwise): layer, clip, where, what.
+static DOTS: std::sync::Mutex<Vec<(egui::LayerId, Rect, Rect, String)>> = std::sync::Mutex::new(Vec::new());
+/// Clips that cut text on purpose (a line scrolling through its box).
+static OK_CLIPS: std::sync::Mutex<Vec<Rect>> = std::sync::Mutex::new(Vec::new());
+
+/// Pixel-font text drawn at `r` by painter `p` (only while scanning).
+pub(crate) fn note_text(p: &egui::Painter, r: Rect, text: &str) {
+    if scan_on() {
+        DOTS.lock().unwrap_or_else(|e| e.into_inner()).push((p.layer_id(), p.clip_rect(), r, text.to_string()));
+    }
+}
+
+/// A clip that cuts its text on purpose (a scrolling line): the scan lets it be.
+pub(crate) fn clip_ok(r: Rect) {
+    if scan_on() {
+        OK_CLIPS.lock().unwrap_or_else(|e| e.into_inner()).push(r);
+    }
+}
+
+struct Seen {
+    layer: egui::LayerId,
+    clip: Rect,
+    r: Rect,
+    text: String,
+}
+
+fn scan_walk(shape: &egui::Shape, clip: Rect, layer: egui::LayerId, texts: &mut Vec<Seen>, boxes: &mut Vec<(egui::LayerId, Rect)>) {
+    match shape {
+        egui::Shape::Vec(v) => {
+            for s in v {
+                scan_walk(s, clip, layer, texts, boxes);
+            }
+        }
+        egui::Shape::Text(t) => {
+            let text = t.galley.text().trim().to_string();
+            let col = t.override_text_color.unwrap_or_else(|| {
+                t.galley.job.sections.first().map(|s| s.format.color).filter(|c| *c != Color32::PLACEHOLDER).unwrap_or(t.fallback_color)
+            });
+            if text.is_empty() || t.angle != 0.0 || (col.a() as f32 * t.opacity_factor) < 90.0 {
+                return;
+            }
+            // (the letters, not the line's full height: a little in from top and bottom)
+            let r = shape.visual_bounding_rect();
+            let r = r.shrink2(Vec2::new(0.0, r.height() * 0.18));
+            texts.push(Seen { layer, clip, r, text });
+        }
+        egui::Shape::Rect(rs) if rs.stroke.width > 0.0 && rs.stroke.color.a() > 60 => boxes.push((layer, rs.rect)),
+        _ => {}
+    }
+}
+
+/// Look over this frame's drawing (BACKLINE_SCAN): text cut by its clip, text over text, words out of their box.
+pub(crate) fn scan_layout(ctx: &egui::Context) {
+    if !scan_on() {
+        return;
+    }
+    let dots: Vec<_> = std::mem::take(&mut *DOTS.lock().unwrap_or_else(|e| e.into_inner()));
+    let ok: Vec<Rect> = std::mem::take(&mut *OK_CLIPS.lock().unwrap_or_else(|e| e.into_inner()));
+    static LAST: std::sync::Mutex<f64> = std::sync::Mutex::new(0.0);
+    let now = ctx.input(|i| i.time);
+    {
+        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        // (once it's settled, every half second)
+        if now < 2.5 || now - *last < 0.5 {
+            return;
+        }
+        *last = now;
+    }
+    let screen = ctx.screen_rect();
+    let mut texts: Vec<Seen> = dots
+        .into_iter()
+        .filter(|d| !d.3.trim().is_empty())
+        .map(|(layer, clip, r, text)| Seen { layer, clip, r, text: text.trim().to_string() })
+        .collect();
+    let mut boxes: Vec<(egui::LayerId, Rect)> = Vec::new();
+    let layers: Vec<egui::LayerId> = ctx.memory(|m| m.layer_ids().collect());
+    ctx.graphics(|g| {
+        for l in layers {
+            if let Some(list) = g.get(l) {
+                for cs in list.all_entries() {
+                    scan_walk(&cs.shape, cs.clip_rect, l, &mut texts, &mut boxes);
+                }
+            }
+        }
+    });
+    let near = |a: Rect, b: Rect| (a.min - b.min).length() < 2.0 && (a.max - b.max).length() < 2.0;
+    let mut found: Vec<String> = Vec::new();
+    // (what shows of each: inside its clip and the window)
+    let vis: Vec<Rect> = texts.iter().map(|t| t.r.intersect(t.clip).intersect(screen)).collect();
+    for (i, t) in texts.iter().enumerate() {
+        let v = vis[i];
+        if v.width() <= 0.0 || v.height() < t.r.height() * 0.5 || t.r.width() < 6.0 {
+            continue;
+        }
+        // cut: the words run past the side of their clip (or the window), so part of them doesn't show
+        let clip = t.clip.intersect(screen);
+        let over = (t.r.max.x - clip.max.x).max(clip.min.x - t.r.min.x);
+        if over > 3.0 && !ok.iter().any(|o| near(*o, t.clip) || near(*o, clip)) {
+            found.push(format!("cut \"{}\" by {:.0} px at {:.0},{:.0}", t.text, over, t.r.min.x, t.r.min.y));
+        }
+        // over other words on the same layer (not the same words drawn twice a hair apart, for weight)
+        for (j, u) in texts.iter().enumerate().skip(i + 1) {
+            if u.layer != t.layer || (u.text == t.text && (u.r.min - t.r.min).length() < 3.0) {
+                continue;
+            }
+            let w = vis[j];
+            if w.width() <= 0.0 || w.height() <= 0.0 {
+                continue;
+            }
+            let x = v.intersect(w);
+            if x.width() > 3.0 && x.height() > 2.0 {
+                found.push(format!("over \"{}\" and \"{}\" at {:.0},{:.0}", t.text, u.text, x.min.x, x.min.y));
+            }
+        }
+        // out of its box: starts in a box (a button, a field, a tag) and runs out past its side
+        for (l, b) in &boxes {
+            if *l != t.layer || b.height() > 64.0 || b.width() < 12.0 {
+                continue;
+            }
+            let cy = t.r.center().y;
+            if cy < b.min.y + 2.0 || cy > b.max.y - 2.0 || t.r.height() > b.height() + 4.0 {
+                continue;
+            }
+            let right = t.r.min.x >= b.min.x - 2.0 && t.r.min.x < b.max.x - 4.0 && t.r.max.x > b.max.x + 2.0;
+            let left = t.r.max.x <= b.max.x + 2.0 && t.r.max.x > b.min.x + 4.0 && t.r.min.x < b.min.x - 2.0;
+            if right || left {
+                found.push(format!("out of its box \"{}\" at {:.0},{:.0} (box {:.0} wide)", t.text, t.r.min.x, t.r.min.y, b.width()));
+            }
+        }
+    }
+    static TOLD: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let mut told = TOLD.lock().unwrap_or_else(|e| e.into_inner());
+    for f in found {
+        // (each once: by what and roughly where)
+        if told.len() < 400 && !told.contains(&f) {
+            crate::api::log(&format!("layout: {}", f));
+            told.push(f);
+        }
+    }
+}
