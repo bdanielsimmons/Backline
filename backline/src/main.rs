@@ -199,6 +199,8 @@ mod views;
 mod visuals;
 #[path = "ui/terrain.rs"]
 mod terrain;
+#[path = "ui/wave.rs"]
+mod wave;
 #[path = "ui/viz.rs"]
 mod viz;
 #[path = "ui/winamp_ui.rs"]
@@ -1014,7 +1016,7 @@ app_state! {
     show_spec: bool = true,
     // ---- visuals (ui/visuals.rs)
     vis_gl: Arc<Mutex<visuals::Gl>> = Arc::new(Mutex::new(visuals::Gl::default())),
-    vis_preset: usize = visuals::find("Down the Drain"),
+    vis_preset: usize = visuals::find("3D: Terrain"),
     /// Visuals in Now Playing, in place of the cover.
     vis_np: bool,
     /// Automatic gain and beats for the visuals.
@@ -1030,7 +1032,6 @@ app_state! {
     vis_idle: u32 = 5,
     vis_idle_since: Instant = Instant::now(),
     vis_last: f64,
-    vis_travel: f32,
     vis_cache: Option<(u64, visuals::Frame, f32)>,
     vis_pipes: visuals::Pipes,
     vis_stars: visuals::Stars,

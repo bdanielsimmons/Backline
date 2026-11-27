@@ -111,8 +111,6 @@ struct Own {
     peaks: Vec<f32>,
     wave: Vec<f32>,
     agc: visuals::Agc,
-    travel: f32,
-    bass: f32,
     last: f64,
     pipes: visuals::Pipes,
     stars: visuals::Stars,
@@ -128,8 +126,6 @@ impl Own {
             peaks: Vec::new(),
             wave: Vec::new(),
             agc: Default::default(),
-            travel: 0.0,
-            bass: 0.0,
             last: 0.0,
             pipes: Default::default(),
             stars: Default::default(),
@@ -151,10 +147,8 @@ impl Own {
         crate::analyse(&mut self.bands, &mut self.peaks, &mut self.wave, &samples, rate, now.bars, now.gain);
         let dt = ((t - self.last) as f32).clamp(0.0, 0.1);
         self.last = t;
-        self.travel += dt * (0.4 + self.bass * 1.6);
-        let mut f = Frame::from_audio(t as f32, self.travel, &self.bands, &self.peaks, &self.wave);
+        let mut f = Frame::from_audio(t as f32, &self.bands, &self.peaks, &self.wave);
         self.agc.apply(&mut f, dt);
-        self.bass = f.bass;
         (f, dt)
     }
 }
@@ -214,7 +208,7 @@ fn ui(ctx: &egui::Context, own: &mut Own, now: &Now, pin: bool, seen: bool, t: f
         let body = ui.interact(r, id, Sense::click_and_drag());
         if seen {
             let (f, dt) = own.music(now, viz, t);
-            let preset = visuals::resolve(now.preset.min(PRESETS.len() - 1), f.t);
+            let preset = now.preset.min(PRESETS.len() - 1);
             let p = ui.painter().with_clip_rect(r);
             visuals::paint_preset(&p, r, SLOT, preset, f, dt, &own.gl, &mut own.pipes, &mut own.stars, || {
                 visuals::hear(viz, ctl, now.song, t)
