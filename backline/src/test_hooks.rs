@@ -74,7 +74,9 @@ impl App {
                 if let Some(p) = tour_song::ready() {
                     let t = sources::ext_for_file(&p).to_track();
                     app.srcmap.insert(t.id, Src::File(p));
-                    app.queue = Arc::new(vec![t]);
+                    // (BACKLINE_TWICE=1: the song queued twice, to hear one go into the next)
+                    let n = if std::env::var_os("BACKLINE_TWICE").is_some() { 2 } else { 1 };
+                    app.queue = Arc::new(vec![t; n]);
                     app.play_index(0);
                 }
                 app.wv_zoom = 6.0;

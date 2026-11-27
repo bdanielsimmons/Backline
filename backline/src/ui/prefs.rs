@@ -454,6 +454,18 @@ impl App {
                             }
                         });
 
+                        section_header(ui, "CROSSFADE");
+                        para(ui, "One song fades into the next as it ends.", pal().ink2);
+                        ui.horizontal_wrapped(|ui| {
+                            for s in [0u8, 2, 4, 6, 8, 12] {
+                                let label = if s == 0 { "OFF".to_string() } else { format!("{} SEC", s) };
+                                if retro_btn(ui, &label, self.xfade == s).clicked() {
+                                    self.xfade = s;
+                                    self.dirty = true;
+                                }
+                            }
+                        });
+
                         section_header(ui, "QUEUE");
                         if check_box(ui, "REMOVE QUEUED SONGS AFTER THEY PLAY", self.q_drop)
                             .tip("Play Next and Add to Queue songs only")

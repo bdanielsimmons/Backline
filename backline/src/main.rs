@@ -971,6 +971,10 @@ app_state! {
     prefer_lossless: bool = true,
     kbps: u32,
     prefetched: Option<(i64, Vec<u8>)>,
+    /// crossfade: seconds one song fades into the next as it ends (0: off)
+    xfade: u8,
+    /// the next song to play comes in over this many seconds (set as the crossfade starts it)
+    fade_next: f32,
     prefetching: i64,
     player: Player = Player::new(),
     // (a first run starts well below full: the tour's song is the first thing heard)
@@ -2758,7 +2762,12 @@ impl App {
         self.q_scroll = true;
         self.play_gen += 1;
         let g = self.play_gen;
-        self.player.send(Cmd::Stop);
+        // (a crossfade into the song downloaded ahead: the one playing isn't stopped, it fades out)
+        let fade = std::mem::take(&mut self.fade_next);
+        let fading = fade > 0.0 && self.prefetched.as_ref().is_some_and(|p| p.0 == t.id);
+        if !fading {
+            self.player.send(Cmd::Stop);
+        }
         self.status.clear();
         self.stopped = false;
         self.paused = false;
@@ -2784,7 +2793,7 @@ impl App {
                 self.start_wave(id, &bytes);
                 self.start_meta(id, &bytes);
                 self.start_beats(id, &bytes);
-                self.player.send(Cmd::Play(bytes));
+                self.player.send(if fading { Cmd::PlayFade(bytes, fade) } else { Cmd::Play(bytes) });
                 self.after_play();
                 self.set_kbps(n);
                 self.buffering = false;
@@ -3240,6 +3249,21 @@ impl eframe::App for App {
                 } else {
                     self.stopped = true;
                     self.set_err(e);
+                }
+            }
+            // crossfade: the next song comes in over the last seconds of this one - only as one song follows another
+            // by itself, once the next one is here, and never over a loop or a song on repeat
+            let looping = self.loop_on && self.loop_a.is_some() && self.loop_b.is_some();
+            if self.xfade > 0 && self.cur.is_some() && !self.stopped && !self.paused && !self.buffering && !ended {
+                let (dur, pos, secs) = (self.track_len(), self.pos(), self.xfade as f32);
+                if self.repeat != Repeat::One && !looping && dur > secs * 3.0 && pos > 1.0 && dur - pos <= secs {
+                    let next = self.next_index().filter(|&j| {
+                        self.queue.get(j).is_some_and(|t| self.prefetched.as_ref().is_some_and(|p| p.0 == t.id))
+                    });
+                    if let Some(j) = next {
+                        self.fade_next = (dur - pos).max(0.5);
+                        self.advance_to(j);
+                    }
                 }
             }
             if ended && !self.buffering && !self.stopped {

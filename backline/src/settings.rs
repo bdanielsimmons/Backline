@@ -27,6 +27,7 @@ macro_rules! plain_settings {
 }
 
 plain_settings! {
+    xfade: u8 => min(12),
     volume: f32 => clamp(0.0, 1.0),
     vis_idle: u32,
     spec_op: f32 => clamp(0.05, 0.8),

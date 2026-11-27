@@ -42,6 +42,9 @@ pub enum Cmd {
     /// replace the audio with another version of the same track (stem mix): keep the position,
     /// no count-in. (bytes, position in s, paused)
     Swap(Vec<u8>, f32, bool),
+    /// play these bytes as the next song, crossfading over `secs` from the one playing (it fades out on its own as
+    /// this one comes in)
+    PlayFade(Vec<u8>, f32),
     Pause,
     Resume,
     Seek(f32),
@@ -180,6 +183,9 @@ pub struct Ctl {
     b_ms: AtomicU32,
     speed: AtomicU32,
     pos_fr: AtomicU64,
+    /// the song playing (each new one gets the next number): during a crossfade only it moves the position, loops and
+    /// clicks; the one going out just plays out
+    song: AtomicU64,
     rate: AtomicU32,
     /// transpose in cents (100 = one semitone)
     semis: AtomicI32,
@@ -216,6 +222,7 @@ impl Ctl {
             b_ms: AtomicU32::new(0),
             speed: AtomicU32::new(100),
             pos_fr: AtomicU64::new(0),
+            song: AtomicU64::new(0),
             rate: AtomicU32::new(44100),
             semis: AtomicI32::new(0),
             chan: AtomicU32::new(0),
@@ -315,6 +322,8 @@ struct Looper<S: Source<Item = i16>> {
     next_beat: usize,
     sounding: Option<(bool, usize)>,
     click_val: f32,
+    /// its song's number (`Ctl::song`)
+    song: u64,
 }
 
 impl<S: Source<Item = i16>> Looper<S> {
@@ -323,7 +332,8 @@ impl<S: Source<Item = i16>> Looper<S> {
         let rate = inner.sample_rate().max(1);
         ctl.rate.store(rate, Ordering::Relaxed);
         ctl.pos_fr.store(0, Ordering::Relaxed);
-        Looper { inner, ctl, ch, rate, frame: 0, sub: 0, clicks: None, clicks_gen: u32::MAX, next_beat: 0, sounding: None, click_val: 0.0 }
+        let song = ctl.song.fetch_add(1, Ordering::Relaxed) + 1;
+        Looper { inner, ctl, ch, rate, frame: 0, sub: 0, clicks: None, clicks_gen: u32::MAX, next_beat: 0, sounding: None, click_val: 0.0, song }
     }
 
     /// The first beat at or after the current frame (after a seek, a loop jump or new clicks).
@@ -382,6 +392,10 @@ impl<S: Source<Item = i16>> Iterator for Looper<S> {
     type Item = i16;
 
     fn next(&mut self) -> Option<i16> {
+        // the song going out in a crossfade: it just plays out (the one coming in has the position, loop and clicks)
+        if self.ctl.song.load(Ordering::Relaxed) != self.song {
+            return self.inner.next();
+        }
         if self.sub == 0 && self.ctl.loop_on.load(Ordering::Relaxed) {
             let b = self.ctl.b_ms.load(Ordering::Relaxed) as u64 * self.rate as u64 / 1000;
             if self.frame == b {
@@ -1384,18 +1398,32 @@ impl Player {
             let mut user_paused = false;
             let mut last_wraps = 0u32;
             let mut song_no = 0u64;
+            // a crossfade: the song going out (its sink, when it began, how long, its volume) and the one coming in
+            let mut fading: Option<(Sink, std::time::Instant, f32, f32)> = None;
+            let mut fade_in: Option<(std::time::Instant, f32)> = None;
 
             loop {
-                match rx.recv_timeout(Duration::from_millis(50)) {
-                    Ok(cmd @ (Cmd::Play(_) | Cmd::Swap(..))) => {
-                        let (bytes, swap) = match cmd {
-                            Cmd::Play(b) => (b, None),
-                            Cmd::Swap(b, p, paused) => (b, Some((p, paused))),
+                let wait = if fading.is_some() || fade_in.is_some() { 15 } else { 50 };
+                match rx.recv_timeout(Duration::from_millis(wait)) {
+                    Ok(cmd @ (Cmd::Play(_) | Cmd::Swap(..) | Cmd::PlayFade(..))) => {
+                        let (bytes, swap, fade) = match cmd {
+                            Cmd::Play(b) => (b, None, 0.0),
+                            Cmd::Swap(b, p, paused) => (b, Some((p, paused)), 0.0),
+                            Cmd::PlayFade(b, secs) => (b, None, secs),
                             _ => continue,
                         };
-                        log(&format!("player: received {} bytes", bytes.len()));
+                        log(&format!("player: received {} bytes{}", bytes.len(), if fade > 0.0 { " (crossfade)" } else { "" }));
+                        if let Some((f, ..)) = fading.take() {
+                            f.stop();
+                        }
+                        fade_in = None;
                         if let Some(s) = sink.take() {
-                            s.stop();
+                            // crossfading: the song going out keeps playing, turned down as the new one comes in
+                            if fade > 0.0 && !user_paused {
+                                fading = Some((s, std::time::Instant::now(), fade, out(vol)));
+                            } else {
+                                s.stop();
+                            }
                         }
                         let sink_res = Sink::try_new(&handle);
                         let bytes = Arc::new(bytes);
@@ -1430,7 +1458,11 @@ impl Player {
                                 let chain = Chan::new(chain, ctl_t.clone());
                                 let beats = ctl_t.count_in.load(Ordering::Relaxed);
                                 let bpm = ctl_t.bpm10.load(Ordering::Relaxed) as f32 / 10.0;
-                                let counting = swap.is_none() && beats > 0 && bpm > 0.0;
+                                let counting = swap.is_none() && fade == 0.0 && beats > 0 && bpm > 0.0;
+                                if fading.is_some() {
+                                    s.set_volume(0.0);
+                                    fade_in = Some((std::time::Instant::now(), fade));
+                                }
                                 if counting {
                                     s.pause();
                                 }
@@ -1476,6 +1508,10 @@ impl Player {
                             if let Some(old) = sink.take() {
                                 old.stop();
                             }
+                            if let Some((f, ..)) = fading.take() {
+                                f.stop();
+                            }
+                            fade_in = None;
                             for slot in slots.iter_mut() {
                                 if let Some((m, _)) = slot.take() {
                                     m.stop();
@@ -1492,6 +1528,15 @@ impl Player {
                     },
                     Ok(Cmd::Pause) => {
                         user_paused = true;
+                        // (a crossfade ends at once: the song coming in at its own volume)
+                        if let Some((f, ..)) = fading.take() {
+                            f.stop();
+                        }
+                        if fade_in.take().is_some() {
+                            if let Some(s) = &sink {
+                                s.set_volume(out(vol));
+                            }
+                        }
                         if let Some(s) = &sink {
                             s.pause();
                         }
@@ -1575,6 +1620,10 @@ impl Player {
                     }
                     Ok(Cmd::Stop) => {
                         user_paused = false;
+                        if let Some((f, ..)) = fading.take() {
+                            f.stop();
+                        }
+                        fade_in = None;
                         if let Some(s) = sink.take() {
                             s.stop();
                         }
@@ -1593,6 +1642,25 @@ impl Player {
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
 
+                // a crossfade going on: equal power (the sum stays as loud), out with a cosine, in with a sine
+                if let Some((f, t0, secs, v0)) = fading.take() {
+                    let k = (t0.elapsed().as_secs_f32() / secs.max(0.05)).min(1.0);
+                    if k >= 1.0 || f.empty() {
+                        f.stop();
+                    } else {
+                        f.set_volume(v0 * (k * std::f32::consts::FRAC_PI_2).cos());
+                        fading = Some((f, t0, secs, v0));
+                    }
+                }
+                if let Some((t0, secs)) = fade_in {
+                    let k = (t0.elapsed().as_secs_f32() / secs.max(0.05)).min(1.0);
+                    if let Some(s) = &sink {
+                        s.set_volume(out(vol) * (k * std::f32::consts::FRAC_PI_2).sin());
+                    }
+                    if k >= 1.0 {
+                        fade_in = None;
+                    }
+                }
                 let w = ctl_t.wraps.load(Ordering::Relaxed);
                 if w != last_wraps {
                     last_wraps = w;
