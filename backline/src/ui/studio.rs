@@ -674,7 +674,7 @@ impl App {
         let line = Rect::from_min_max(Pos2::new(x0, r.min.y + 4.0), Pos2::new(r.max.x, r.min.y + 4.0 + big * s * 1.3));
         marquee(ui, line, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), big, ink());
         let mut y = line.max.y + 10.0;
-        let who = if tr.album.is_empty() { tr.artists_text() } else { format!("{} · {}", tr.artists_text(), tr.album) };
+        let who = tr.artist_album();
         px(&p, Pos2::new(x0, y), egui::Align2::LEFT_CENTER, &who.to_uppercase(), 10.0, dim());
         y += 22.0 * s;
         // what's known of it, each in a little box
@@ -706,30 +706,47 @@ impl App {
             x = br.max.x + 8.0;
         }
         y += 40.0 * s;
-        // what's next: every song after this one, as many as there's room for, the wheel scrolling them; a click plays one
+        // up next: the whole queue as every look's Up Next has it (the ones played dim, the one playing inverted), as
+        // many as there's room for; it opens on the song playing with the one before it above, the wheel scrolls back
+        // and on, a click plays one
         let bars_top = r.max.y - (right.height() * 0.3).clamp(52.0 * s, 200.0);
-        let from = self.cur.map_or(0, |c| c + 1);
-        let left = self.queue.len().saturating_sub(from);
-        if left > 0 {
+        let all = self.queue.len();
+        if all > 0 {
             p.line_segment([Pos2::new(x0, y), Pos2::new(r.max.x, y)], Stroke::new(1.0_f32, ink()));
             px(&p, Pos2::new(x0, y + 12.0 * s), egui::Align2::LEFT_CENTER, "UP NEXT", 9.0, dim());
             let list = Rect::from_min_max(Pos2::new(x0, y + 22.0 * s), Pos2::new(r.max.x, bars_top - 8.0 * s));
             if list.height() > 24.0 * s {
                 let rh = 26.0 * s;
+                let cur = self.cur;
+                // (a new song: back to it)
+                let seen_id = egui::Id::new("studio_next_on");
+                let on = cur.map_or(0, |c| c + 1);
+                let jump = ui.ctx().data(|d| d.get_temp::<usize>(seen_id)) != Some(on);
+                if jump {
+                    ui.ctx().data_mut(|d| d.insert_temp(seen_id, on));
+                }
                 let mut c = ui.new_child(egui::UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
-                egui::ScrollArea::vertical().id_salt("studio_next").auto_shrink([false, false]).show_rows(&mut c, rh, left, |ui, rows| {
+                let mut area = egui::ScrollArea::vertical().id_salt("studio_next").auto_shrink([false, false]);
+                if jump {
+                    area = area.vertical_scroll_offset(cur.map_or(0, |c| c.saturating_sub(1)) as f32 * rh);
+                }
+                area.show_rows(&mut c, rh, all, |ui, rows| {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
-                    for k in rows {
-                        let i = from + k;
+                    for i in rows {
                         let Some(n) = self.queue.get(i) else { continue };
                         let (row, h) = ui.allocate_exact_size(Vec2::new(ui.available_width(), rh), Sense::click());
                         let h = h.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
-                        if h.hovered() {
+                        let now = cur == Some(i);
+                        let played = cur.is_some_and(|c| i < c);
+                        if now {
+                            ui.painter().rect_filled(row, 0.0, ink());
+                        } else if h.hovered() {
                             ui.painter().rect_filled(row, 0.0, key_col());
                         }
+                        let col = if now { scr() } else if played { ink().gamma_multiply(0.42) } else { ink() };
                         let nr = Rect::from_min_max(Pos2::new(row.min.x + 4.0, row.min.y), Pos2::new(row.max.x - 64.0 * s, row.max.y));
-                        marquee(ui, nr, &format!("{} · {}", n.title.to_uppercase(), n.artists_text().to_uppercase()), 15.0, ink());
-                        dot(ui.painter(), Pos2::new(row.max.x - 4.0, row.center().y), egui::Align2::RIGHT_CENTER, &fmt_time(n.duration), 15.0, ink());
+                        marquee(ui, nr, &format!("{} · {}", n.title.to_uppercase(), n.artists_text().to_uppercase()), 15.0, col);
+                        dot(ui.painter(), Pos2::new(row.max.x - 4.0, row.center().y), egui::Align2::RIGHT_CENTER, &fmt_time(n.duration), 15.0, col);
                         if h.clicked() {
                             acts.push(Action::PlayIndex(i));
                         }
@@ -757,7 +774,7 @@ impl App {
         cover_switch(ui, cover, acts, "np");
         if let Some(tr) = self.cur_track() {
             let mq = Rect::from_min_size(Pos2::new(r.min.x, cover.max.y + 14.0), Vec2::new(lw, 22.0 * s));
-            marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 16.0, ink());
+            marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artist_album().to_uppercase()), 16.0, ink());
             let time = self.deck_time();
             let shown = if time.starts_with('-') { time } else { format!(" {}", time) };
             time_digits(&p, Pos2::new(r.min.x, mq.max.y + 26.0 * s), 34.0 * s, &shown, tr.duration);
@@ -1145,7 +1162,7 @@ impl App {
         let tx = cr.max.x + 14.0;
         let room = (card.max.x - tx - 10.0).max(20.0);
         marquee(&c, Rect::from_min_max(Pos2::new(tx, card.center().y - 26.0 * s), Pos2::new(tx + room, card.center().y - 2.0 * s)), &tr.title.to_uppercase(), 16.0, ink());
-        px(&p, Pos2::new(tx, card.center().y + 14.0 * s), egui::Align2::LEFT_CENTER, &tr.artists_text().to_uppercase(), 9.0, dim());
+        px(&p, Pos2::new(tx, card.center().y + 14.0 * s), egui::Align2::LEFT_CENTER, &tr.artist_album().to_uppercase(), 9.0, dim());
     }
 
     /// Practising in Now Playing: the cover, the song in dot type and the time in digits, then the practice layout every
@@ -1160,7 +1177,7 @@ impl App {
         cover_switch(ui, cover, acts, "np");
         if let Some(tr) = self.cur_track() {
             let mq = Rect::from_min_max(Pos2::new(cover.max.x + 14.0, head.min.y), Pos2::new(head.max.x - 230.0 * s, head.min.y + 24.0 * s));
-            marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 18.0, ink());
+            marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artist_album().to_uppercase()), 18.0, ink());
             let info = crate::meta::get(tr.id).unwrap_or_default();
             let mut parts: Vec<String> = Vec::new();
             if info.key.is_some() {

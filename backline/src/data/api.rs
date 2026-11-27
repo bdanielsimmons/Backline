@@ -171,6 +171,15 @@ impl Track {
         }
     }
 
+    /// The artist, then the album when it's known ("Artist · Album"): the line under the song in every Now Playing.
+    pub fn artist_album(&self) -> String {
+        if self.album.is_empty() {
+            self.artists_text()
+        } else {
+            format!("{} · {}", self.artists_text(), self.album)
+        }
+    }
+
     pub fn artists_text(&self) -> String {
         let names: Vec<&str> = self.artists.iter().map(|a| a.1.as_str()).collect();
         match names.len() {

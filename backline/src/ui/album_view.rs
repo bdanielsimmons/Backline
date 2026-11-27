@@ -142,7 +142,7 @@ impl App {
                 let cx = art_zone.center().x;
                 let y0 = art_zone.max.y - caption_h + 16.0 * cap_k;
                 let w = art_zone.width() - 40.0;
-                let sub = if tr.album.is_empty() { tr.artists_text() } else { format!("{} · {}", tr.artists_text(), tr.album) };
+                let sub = tr.artist_album();
                 let (tp, sp) = if st == STYLE_STREAMING { (4.4 * cap_k, 2.2 * cap_k) } else { (3.0 * cap_k, 2.0 * cap_k) };
                 let ink = if self.cap_dark { Color32::from_rgb(24, 24, 24) } else { OVER };
                 let tw = text_w(&tr.title, tp).min(w);
@@ -188,7 +188,7 @@ impl App {
                     let room = card.max.x - tx - 10.0;
                     let a8 = |c: Color32| c.gamma_multiply(show);
                     ptext_fit(&p, Pos2::new(tx, card.center().y - 11.0), Align::Min, &tr.title, 2.2, room, a8(OVER));
-                    ptext_fit(&p, Pos2::new(tx, card.center().y + 13.0), Align::Min, &tr.artists_text(), 1.6, room, a8(OVER.gamma_multiply(0.7)));
+                    ptext_fit(&p, Pos2::new(tx, card.center().y + 13.0), Align::Min, &tr.artist_album(), 1.6, room, a8(OVER.gamma_multiply(0.7)));
                 }
             }
         }
@@ -564,7 +564,7 @@ impl App {
                     if let Some(tr) = self.cur_track() {
                         ptext_fit(p, Pos2::new(cs.max.x + 14.0, cs.center().y - 10.0), Align::Min, &tr.title, 2.4, head.width() - 80.0, OVER);
                         ptext_fit(p, Pos2::new(cs.max.x + 14.6, cs.center().y - 10.0), Align::Min, &tr.title, 2.4, head.width() - 80.0, OVER);
-                        ptext_fit(p, Pos2::new(cs.max.x + 14.0, cs.center().y + 14.0), Align::Min, &tr.artists_text(), 1.7, head.width() - 80.0, OVER.gamma_multiply(0.7));
+                        ptext_fit(p, Pos2::new(cs.max.x + 14.0, cs.center().y + 14.0), Align::Min, &tr.artist_album(), 1.7, head.width() - 80.0, OVER.gamma_multiply(0.7));
                     }
                     Rect::from_min_max(Pos2::new(r.min.x, r.min.y + 84.0), r.max)
                 } else {
@@ -775,7 +775,7 @@ impl App {
             let name_w = (r.width() - 140.0 - w1 - w2 - 30.0).max(80.0);
             ptext_fit(&p, Pos2::new(tx, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, name_w, OVER);
             ptext_fit(&p, Pos2::new(tx + 0.6, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, name_w, OVER);
-            ptext_fit(&p, Pos2::new(tx, cs.min.y + 42.0), Align::Min, &tr.artists_text(), 1.7, name_w, OVER.gamma_multiply(0.7));
+            ptext_fit(&p, Pos2::new(tx, cs.min.y + 42.0), Align::Min, &tr.artist_album(), 1.7, name_w, OVER.gamma_multiply(0.7));
             // what's known of it, as tags
             let info = crate::meta::get(tr.id).unwrap_or_default();
             let mut tags: Vec<String> = Vec::new();

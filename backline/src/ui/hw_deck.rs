@@ -231,7 +231,7 @@ impl App {
         if let Some(t) = &tr {
             // (a long title or artist scrolls across the glass, as a deck's display does)
             crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(52.0)), Align::Min, &t.title, 1.3 * k, room, amber);
-            crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(70.0)), Align::Min, &t.artists_text(), 1.05 * k, room, amber.gamma_multiply(0.6));
+            crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(70.0)), Align::Min, &t.artist_album(), 1.05 * k, room, amber.gamma_multiply(0.6));
         } else {
             crate::styles::screen_text(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(60.0)), Align::Min, "No tape", 1.2 * k, room, amber.gamma_multiply(0.6));
         }

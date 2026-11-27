@@ -541,7 +541,7 @@ impl App {
             preset: self.vis_preset,
             song: t.as_ref().map_or(0, |t| t.id as u64),
             title: t.as_ref().map(|t| t.title.clone()).unwrap_or_default(),
-            artist: t.map(|t| t.artists_text()).unwrap_or_default(),
+            artist: t.map(|t| t.artist_album()).unwrap_or_default(),
             playing: self.cur.is_some() && !self.paused && !self.stopped && !self.buffering,
             going: self.cur.is_some() && !self.paused && !self.stopped,
             shuffle: self.shuffle,
