@@ -2331,12 +2331,12 @@ pub(crate) fn color_wash(p: &egui::Painter, r: Rect, top: Color32) {
 }
 
 impl App {
-    /// A Style's window buttons in the title strip of the window at `inner` (the column at the window's top right
-    /// corner, so they're always in the corner), right to left: quit, maximize, minimize, and the menu (skins,
+    /// A Style's window buttons in `band` (the strip over the column, the window's top right corner, so they're always
+    /// in the corner), centred in it from its right end leftwards: quit, maximize, minimize, and the menu (skins,
     /// preferences, help), as the deck has them in the other looks. Gives where they begin on the left.
-    pub(crate) fn stream_buttons(&mut self, ui: &mut egui::Ui, inner: Rect, acts: &mut Vec<Action>) -> f32 {
-        let s = 24.0;
-        let mut right = crate::title_right(inner);
+    pub(crate) fn stream_buttons(&mut self, ui: &mut egui::Ui, band: Rect, acts: &mut Vec<Action>) -> f32 {
+        let s = 24.0_f32.min(band.height() - 4.0);
+        let mut right = band.max.x;
         let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
         let max_tip = if self.fullscreen {
             "Exit full screen"
@@ -2347,7 +2347,7 @@ impl App {
         };
         let menu_id = ui.id().with("stream_menu");
         for (k, icon, tip) in [(0, "close", "Quit Backline"), (1, "max", max_tip), (2, "min", "Minimize"), (3, "menu", "Menu")] {
-            let r = crate::title_slot(inner, right, s, s);
+            let r = Rect::from_min_size(Pos2::new(right - s, band.center().y - s / 2.0), Vec2::splat(s));
             right = r.min.x - 4.0;
             let h = ui.interact(r, ui.id().with(("stream_btn", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             crate::quiet_h(ui.painter(), r, h.is_pointer_button_down_on(), h.hovered());

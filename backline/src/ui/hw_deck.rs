@@ -266,13 +266,15 @@ impl App {
         caps(p, m.p(dx + 20.0, foot_y + 14.0), egui::Align2::LEFT_CENTER, "STEREO TAPE DECK", m.v(6.0), m.v(1.4), FACE_INK.gamma_multiply(0.8), false);
         caps(p, m.p(dx + dw - 40.0, foot_y), egui::Align2::RIGHT_CENTER, "7½ IPS", m.v(8.0), m.v(1.4), FACE_INK, true);
         let lamp = m.p(dx + dw - 26.0, foot_y);
-        let lit = playing && !self.buffering;
+        // (it glows down when the song stops instead of going out at once)
+        let lit = crate::hw_amp::lamp(ui.ctx(), "deck", playing && !self.buffering);
         p.circle_filled(lamp, m.v(4.6), Color32::from_rgb(70, 66, 60));
         let on_stops = [(0.0, Color32::from_rgb(255, 190, 170)), (0.5, Color32::from_rgb(240, 60, 40)), (1.0, Color32::from_rgb(150, 20, 10))];
         let off_stops = [(0.0, Color32::from_rgb(150, 90, 80)), (0.5, Color32::from_rgb(100, 30, 24)), (1.0, Color32::from_rgb(60, 14, 10))];
-        ball(p, lamp, m.v(3.6), Vec2::new(-0.3, -0.3), if lit { &on_stops } else { &off_stops });
-        if lit {
-            p.circle_filled(lamp, m.v(7.0), Color32::from_rgba_unmultiplied(255, 60, 30, 24));
+        let stops: [(f32, Color32); 3] = std::array::from_fn(|k| (on_stops[k].0, off_stops[k].1.lerp_to_gamma(on_stops[k].1, lit)));
+        ball(p, lamp, m.v(3.6), Vec2::new(-0.3, -0.3), &stops);
+        if lit > 0.0 {
+            p.circle_filled(lamp, m.v(7.0), Color32::from_rgba_unmultiplied(255, 60, 30, (24.0 * lit) as u8));
         }
     }
 

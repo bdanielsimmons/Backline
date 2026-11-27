@@ -110,11 +110,11 @@ impl App {
             let b = m.r(314.0 + 14.0 + 248.0 * c as f32, 58.0, 236.0, 140.0);
             bezel(&p, m, b, 5.0);
             let win = Rect::from_min_max(b.min + Vec2::new(m.v(11.0), m.v(9.0)), b.max - Vec2::new(m.v(11.0), m.v(9.0)));
-            vu_face(&p, win, self.vu[c], name, now < self.hw_peak[c]);
+            vu_face(&p, win, self.vu[c], name, lamp(ui.ctx(), ("peak", c), now < self.hw_peak[c]));
         }
         // the jewel, lit while playing; STANDBY pauses
         let jc = pan_at(553.0, 46.0);
-        jewel(&p, jc, m.v(12.0), playing);
+        jewel(&p, jc, m.v(12.0), lamp(ui.ctx(), "jewel", playing));
         let tg = pan_at(553.0, 112.0);
         let th = ui
             .interact(Rect::from_center_size(tg, Vec2::new(m.v(30.0), m.v(40.0))), ui.id().with("hw_standby"), Sense::click())
@@ -197,7 +197,7 @@ impl App {
             };
             let h = ui.interact(row, ui.id().with(("hw_show", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             let on = showing == i as u8 && !prac;
-            push_button(&p, br, on, h.is_pointer_button_down_on());
+            push_button(&p, br, on, h.is_pointer_button_down_on(), lamp(ui.ctx(), ("show", i), on));
             let col = if on { INK } else { INK.gamma_multiply(if h.hovered() { 0.8 } else { 0.5 }) };
             caps(&p, Pos2::new(br.max.x + m.v(4.0), y), egui::Align2::LEFT_CENTER, name, m.v(7.0), m.v(1.0), col, true);
             if h.clicked() {
@@ -819,6 +819,29 @@ pub(crate) fn vgrad(p: &egui::Painter, r: Rect, top: Color32, bot: Color32) {
     p.add(mesh);
 }
 
+/// How lit a lamp is, 0 to 1 (each lamp its own `name`): it comes up quickly and glows down when it goes off, as a
+/// bulb does, instead of going out at once.
+pub(crate) fn lamp(ctx: &egui::Context, name: impl std::hash::Hash, on: bool) -> f32 {
+    let id = egui::Id::new(("hw_lamp", name));
+    let dt = ctx.input(|i| i.stable_dt).min(0.1);
+    let want = if on { 1.0 } else { 0.0 };
+    let mut v = ctx.data(|d| d.get_temp::<f32>(id)).unwrap_or(want);
+    let tau = if on { 0.04 } else { 0.28 };
+    v += (want - v) * (1.0 - (-dt / tau).exp());
+    if (want - v).abs() < 0.004 {
+        v = want;
+    } else {
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(id, v));
+    v
+}
+
+/// Lamp colours between off and lit (`glow` 0 to 1), stop by stop.
+fn glow_stops<const N: usize>(off: [(f32, Color32); N], on: [(f32, Color32); N], glow: f32) -> [(f32, Color32); N] {
+    std::array::from_fn(|k| (on[k].0, off[k].1.lerp_to_gamma(on[k].1, glow)))
+}
+
 /// A circle shaded like a ball or a lamp: `stops` (place 0..1 from the bright spot out, colour) round a spot at
 /// `hi` (a share of the radius, from the centre). Its rim fades out over one pixel, so the edge is smooth.
 pub(crate) fn ball(p: &egui::Painter, c: Pos2, r: f32, hi: Vec2, stops: &[(f32, Color32)]) {
@@ -937,7 +960,7 @@ pub(crate) fn bezel(p: &egui::Painter, m: Mu, r: Rect, rad: f32) {
 /// The cream VU meter: its face, the dB scale (placed by voltage, as a real VU's: -20 to +3, red from 0) over a
 /// percent scale, VU and the side's name, the small print, a peak light, the needle with its shadow, the pivot's cap,
 /// and the glass's glare. `amp` is the level as a share of 0 VU's.
-fn vu_face(p: &egui::Painter, win: Rect, amp: f32, name: &str, peak: bool) {
+fn vu_face(p: &egui::Painter, win: Rect, amp: f32, name: &str, peak: f32) {
     let k = (win.width() / 240.0).max(win.height() / 140.0);
     let f = |x: f32, y: f32| Pos2::new(win.center().x + (x - 120.0) * k, win.center().y + (y - 70.0) * k);
     let cp = p.with_clip_rect(win);
@@ -980,10 +1003,10 @@ fn vu_face(p: &egui::Painter, win: Rect, amp: f32, name: &str, peak: bool) {
     caps(&cp, f(231.0, 131.0), egui::Align2::RIGHT_CENTER, "VOLUME UNITS", t(5.6), t(0.6), FACE_SOFT, false);
     // the peak light
     let pk = f(222.0, 15.0);
-    if peak {
-        ball(&cp, pk, t(9.0), Vec2::ZERO, &[(0.0, Color32::from_rgba_premultiplied(120, 30, 18, 0)), (1.0, Color32::TRANSPARENT)]);
+    if peak > 0.0 {
+        ball(&cp, pk, t(9.0), Vec2::ZERO, &[(0.0, Color32::from_rgba_premultiplied(120, 30, 18, 0).gamma_multiply(peak)), (1.0, Color32::TRANSPARENT)]);
     }
-    cp.circle_filled(pk, t(4.2), if peak { Color32::from_rgb(255, 74, 51) } else { Color32::from_rgb(77, 18, 13) });
+    cp.circle_filled(pk, t(4.2), Color32::from_rgb(77, 18, 13).lerp_to_gamma(Color32::from_rgb(255, 74, 51), peak));
     cp.circle_stroke(pk, t(4.2), Stroke::new(t(0.8), Color32::from_rgb(42, 10, 6)));
     caps(&cp, f(222.0, 27.0), egui::Align2::CENTER_CENTER, "PEAK", t(5.6), t(0.6), FACE_SOFT, false);
     // the needle and its shadow
@@ -1189,17 +1212,27 @@ fn light_columns(p: &egui::Painter, r: Rect, bands: &[f32]) {
 }
 
 /// The red jewel light: faceted, in a chrome ring, glowing when `on`.
-fn jewel(p: &egui::Painter, c: Pos2, r: f32, on: bool) {
-    if on {
-        ball(p, c, r * 2.2, Vec2::ZERO, &[(0.0, Color32::from_rgba_premultiplied(150, 36, 18, 0)), (0.5, Color32::from_rgba_premultiplied(60, 12, 6, 0)), (1.0, Color32::TRANSPARENT)]);
+fn jewel(p: &egui::Painter, c: Pos2, r: f32, glow: f32) {
+    if glow > 0.0 {
+        ball(
+            p,
+            c,
+            r * 2.2,
+            Vec2::ZERO,
+            &[
+                (0.0, Color32::from_rgba_premultiplied(150, 36, 18, 0).gamma_multiply(glow)),
+                (0.5, Color32::from_rgba_premultiplied(60, 12, 6, 0).gamma_multiply(glow)),
+                (1.0, Color32::TRANSPARENT),
+            ],
+        );
     }
     p.circle_filled(c, r + r * 0.34, Color32::from_rgb(74, 74, 74));
     ball(p, c, r + r * 0.26, Vec2::new(-0.3, -0.4), &[(0.0, Color32::from_rgb(240, 242, 244)), (0.5, Color32::from_rgb(160, 165, 171)), (1.0, Color32::from_rgb(110, 114, 120))]);
-    let stops: [(f32, Color32); 4] = if on {
-        [(0.0, Color32::from_rgb(255, 216, 204)), (0.22, Color32::from_rgb(255, 90, 60)), (0.52, Color32::from_rgb(200, 28, 16)), (1.0, Color32::from_rgb(94, 8, 4))]
-    } else {
-        [(0.0, Color32::from_rgb(150, 90, 84)), (0.22, Color32::from_rgb(110, 30, 22)), (0.52, Color32::from_rgb(70, 12, 8)), (1.0, Color32::from_rgb(34, 4, 2))]
-    };
+    let stops = glow_stops(
+        [(0.0, Color32::from_rgb(150, 90, 84)), (0.22, Color32::from_rgb(110, 30, 22)), (0.52, Color32::from_rgb(70, 12, 8)), (1.0, Color32::from_rgb(34, 4, 2))],
+        [(0.0, Color32::from_rgb(255, 216, 204)), (0.22, Color32::from_rgb(255, 90, 60)), (0.52, Color32::from_rgb(200, 28, 16)), (1.0, Color32::from_rgb(94, 8, 4))],
+        glow,
+    );
     ball(p, c, r, Vec2::new(-0.28, -0.4), &stops);
     // the facets
     for k in 0..12 {
@@ -1275,20 +1308,18 @@ fn cream_knob(p: &egui::Painter, m: Mu, c: Pos2, v: f32) {
     p.line_segment([c + d * m.v(3.0), c + d * m.v(14.0)], Stroke::new(m.v(2.0), Color32::from_rgb(58, 42, 24)));
 }
 
-/// One DISPLAY push button: a small square key, its lamp lit when `on`.
-fn push_button(p: &egui::Painter, r: Rect, on: bool, down: bool) {
+/// One DISPLAY push button: a small square key, pressed in when `on`, its lamp as lit as `glow`.
+fn push_button(p: &egui::Painter, r: Rect, on: bool, down: bool, glow: f32) {
     p.rect_filled(r.translate(Vec2::new(0.0, 1.5)), 2.0, Color32::from_black_alpha(150));
     p.rect_filled(r.expand(0.5), 2.0, Color32::BLACK);
     let (t, b) = if on || down { (Color32::from_rgb(42, 40, 38), Color32::from_rgb(21, 20, 19)) } else { (Color32::from_rgb(59, 57, 54), Color32::from_rgb(27, 26, 25)) };
     vgrad(p, r, t, b);
     let c = r.center();
     let lr = r.width() * 0.24;
-    if on {
-        ball(p, c, lr * 2.6, Vec2::ZERO, &[(0.0, add(Color32::from_rgb(255, 181, 71), 0.55)), (1.0, Color32::TRANSPARENT)]);
-        p.circle_filled(c, lr, Color32::from_rgb(255, 181, 71));
-    } else {
-        p.circle_filled(c, lr, Color32::from_rgb(58, 36, 8));
+    if glow > 0.0 {
+        ball(p, c, lr * 2.6, Vec2::ZERO, &[(0.0, add(Color32::from_rgb(255, 181, 71), 0.55).gamma_multiply(glow)), (1.0, Color32::TRANSPARENT)]);
     }
+    p.circle_filled(c, lr, Color32::from_rgb(58, 36, 8).lerp_to_gamma(Color32::from_rgb(255, 181, 71), glow));
 }
 
 /// A list on a screen scrolled by the wheel over `over`: `want` (in rows) moved by the wheel, `at` easing after it
