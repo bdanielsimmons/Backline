@@ -654,25 +654,31 @@ impl App {
         }
         let on = retro_of(self.vis_preset);
         let mark = if on.is_some() { "* " } else { "  " };
+        // one list that scrolls: a click on a family folds its presets open under it (submenus popping out as the
+        // pointer passes got in the way of scrolling); the family showing opens to begin with
         crate::sub_menu(ui, &format!("{}{}", mark, RETRO), |ui| {
             crate::views::dim_line(ui, "Ported by Ryan Circelli", 1.0, crate::pal().ink2);
             let h = (ui.ctx().screen_rect().height() * 0.7).max(200.0);
-            egui::ScrollArea::vertical().id_salt("retro_families").max_height(h).show(ui, |ui| {
+            let cur_fam = on.map(|k| crate::retro::list()[k].group);
+            let open = self.retro_fam.or(cur_fam);
+            egui::ScrollArea::vertical().id_salt("retro_list").max_height(h).show(ui, |ui| {
                 for fam in crate::retro::families() {
-                    let cur = on.is_some_and(|k| crate::retro::list()[k].group == fam);
-                    crate::sub_menu(ui, &format!("{}{}", if cur { "* " } else { "  " }, fam), |ui| {
-                        let h = (ui.ctx().screen_rect().height() * 0.7).max(200.0);
-                        egui::ScrollArea::vertical().id_salt(("retro_presets", fam)).max_height(h).show(ui, |ui| {
-                            for (k, e) in crate::retro::list().iter().enumerate().filter(|(_, e)| e.group == fam) {
-                                let mark = if on == Some(k) { "* " } else { "  " };
-                                if crate::menu_item(ui, &format!("{}{}", mark, e.name)) {
-                                    self.vis_preset = PRESETS.len() + k;
-                                    self.dirty = true;
-                                    ui.close_menu();
-                                }
-                            }
-                        });
-                    });
+                    let is_open = open == Some(fam);
+                    if crate::menu_fold(ui, &format!("{}{}", if cur_fam == Some(fam) { "* " } else { "  " }, fam), is_open) {
+                        self.retro_fam = Some(if is_open { "" } else { fam });
+                    }
+                    if !is_open {
+                        continue;
+                    }
+                    for (k, e) in crate::retro::list().iter().enumerate().filter(|(_, e)| e.group == fam) {
+                        let mark = if on == Some(k) { "* " } else { "  " };
+                        if crate::menu_item(ui, &format!("      {}{}", mark, e.name)) {
+                            self.vis_preset = PRESETS.len() + k;
+                            self.retro_fam = None;
+                            self.dirty = true;
+                            ui.close_menu();
+                        }
+                    }
                 }
             });
         });

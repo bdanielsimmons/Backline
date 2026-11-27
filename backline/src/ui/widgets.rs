@@ -1028,6 +1028,28 @@ pub(crate) fn menu_item(ui: &mut egui::Ui, text: &str) -> bool {
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
+/// A row in a menu that folds its items open under it, for a long list where submenus popping out on hover would get
+/// in the way of scrolling: `menu_item`'s look with an arrow, pointing right while shut and down while open. True when
+/// clicked.
+pub(crate) fn menu_fold(ui: &mut egui::Ui, text: &str, open: bool) -> bool {
+    let sc = font::ui_scale();
+    // (as wide as the list, so the arrows line up)
+    let w = (text_w(text, 2.0) + 40.0 * sc).max(150.0 * sc).max(ui.available_width().min(600.0 * sc));
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 24.0 * sc), Sense::click());
+    if resp.hovered() {
+        fill_rect(ui.painter(), rect, pal().sel);
+    }
+    winamp_ui::as_title(|| ptext(ui.painter(), Pos2::new(rect.min.x + 10.0, rect.center().y), Align::Min, text, 2.0, pal().ink));
+    let (c, s) = (Pos2::new(rect.max.x - 10.0 * sc, rect.center().y), 4.0 * sc);
+    let pts = if open {
+        vec![c + Vec2::new(-s, -s * 0.6), c + Vec2::new(s, -s * 0.6), c + Vec2::new(0.0, s * 0.6)]
+    } else {
+        vec![c + Vec2::new(-s * 0.6, -s), c + Vec2::new(s * 0.6, 0.0), c + Vec2::new(-s * 0.6, s)]
+    };
+    ui.painter().add(egui::Shape::convex_polygon(pts, pal().ink, Stroke::NONE));
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+}
+
 /// A row in a menu that opens a submenu, looking like `menu_item` (the same text and highlight) with an arrow.
 /// egui's own submenu button does the opening; this draws over it.
 pub(crate) fn sub_menu(ui: &mut egui::Ui, text: &str, add_contents: impl FnOnce(&mut egui::Ui)) {

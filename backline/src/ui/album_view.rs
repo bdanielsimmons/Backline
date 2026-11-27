@@ -182,9 +182,11 @@ impl App {
             }
         }
 
-        // ---- the side panel: Lyrics, Up Next, About, Loops
-        if panel_on {
-            self.np_panel(ui, &p, panel, st_lyrics, hover, dt, pos, tex, acts);
+        // ---- the side panel: Lyrics, Up Next, About, Loops (over the visuals it fades with the controls when the mouse
+        // rests; the words of the lyrics stay)
+        let fade = if vis { show } else { 1.0 };
+        if panel_on && (fade > 0.0 || self.np_tab == 0) {
+            self.np_panel(ui, &p, panel, st_lyrics, hover, dt, pos, tex, acts, fade);
         }
 
         // ---- the switches at the top right: Lyrics, Up Next, Visuals
@@ -503,10 +505,19 @@ impl App {
         pos: f32,
         tex: Option<egui::TextureId>,
         acts: &mut Vec<Action>,
+        fade: f32,
     ) {
         // (a pane of glass behind the panel, the lyrics and the rest, in every look that has this panel; Studio and
-        // Hardware draw their own screens)
-        p.rect_filled(r.expand(10.0), 16.0, Color32::from_rgba_premultiplied(26, 26, 26, 26));
+        // Hardware draw their own screens. `fade`: how much of it shows over the visuals, the lyrics' words always)
+        let g = (26.0 * fade) as u8;
+        p.rect_filled(r.expand(10.0), 16.0, Color32::from_rgba_premultiplied(g, g, g, g));
+        let full_p = p;
+        let mut faded = p.clone();
+        faded.set_opacity(fade);
+        let p = &faded;
+        let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(r.expand(10.0)));
+        fu.set_opacity(fade);
+        let ui = if fade > 0.0 { &mut fu } else { ui };
         // the tabs
         let tabs = ["Lyrics", "Up Next", "About", "Loops"];
         let mut x = if st_lyrics { r.max.x - tabs.iter().map(|t| text_w(t, 1.7) + 22.0).sum::<f32>() } else { r.min.x + 4.0 };
@@ -531,6 +542,7 @@ impl App {
         let body = Rect::from_min_max(Pos2::new(r.min.x, r.min.y + 34.0), r.max);
         match self.np_tab {
             0 => {
+                let p = full_p;
                 let lr = if st_lyrics {
                     // Streaming: a small cover and the song at the top left, the lyrics huge under them
                     let head = Rect::from_min_size(r.min, Vec2::new(r.width() * 0.6, 64.0));

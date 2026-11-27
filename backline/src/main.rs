@@ -1021,6 +1021,8 @@ app_state! {
     vis_preset: usize = visuals::find("3D: Terrain"),
     /// The classic visuals' frames a second (0: WMP's own pace), ui/retro.rs.
     vis_fps: u8 = 60,
+    /// The family folded open in the visuals' Retro list ("": none; None: the one showing)
+    retro_fam: Option<&'static str>,
     /// Visuals in Now Playing, in place of the cover.
     vis_np: bool,
     /// Automatic gain and beats for the visuals.
