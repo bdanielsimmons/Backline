@@ -30,8 +30,6 @@ pub(crate) enum Kind {
     Stars,
     /// 3D (ui/terrain.rs): the terrain the music builds as the camera glides over it.
     Terrain,
-    /// 3D (ui/wave.rs): the wave, a sheet of light drifting across. Kept, but not offered (see `hidden`).
-    Wave,
 }
 
 /// A palette: what the engine's brightness 0..1 becomes, dark to light.
@@ -214,7 +212,6 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset { group: "Milk", name: "Tornado", kind: Kind::Gpu(TORNADO) },
     Preset { group: "Milk", name: "Smoke Rings", kind: Kind::Gpu(SMOKE) },
     // ---- 3D
-    Preset { group: "3D", name: "Wave", kind: Kind::Wave },
     Preset { group: "3D", name: "Terrain", kind: Kind::Terrain },
     // ---- screensavers
     Preset { group: "Screensavers", name: "3D Pipes", kind: Kind::Pipes },
@@ -246,31 +243,14 @@ pub(crate) fn find(name: &str) -> usize {
         .unwrap_or_else(|| by_name(if g == "3D" { "Terrain" } else { "Down the Drain" }))
 }
 
-/// Kept in the code but not offered: in no menu, and passed over by the arrows.
-pub(crate) fn hidden(i: usize) -> bool {
-    matches!(PRESETS[i.min(PRESETS.len() - 1)].kind, Kind::Wave)
-}
-
-/// What a saved choice shows: itself, or the Terrain in place of one not offered.
+/// What a saved choice shows (a preset no longer kept was already mapped by `find`).
 pub(crate) fn offered(i: usize) -> usize {
-    if hidden(i) {
-        find("3D: Terrain")
-    } else {
-        i.min(PRESETS.len() - 1)
-    }
+    i.min(PRESETS.len() - 1)
 }
 
-/// The preset `by` steps on from `i` (`PRESETS.len() - 1` steps back one), passing over those not offered.
+/// The preset `by` steps on from `i` (`PRESETS.len() - 1` steps back one).
 pub(crate) fn next_shown(i: usize, by: usize) -> usize {
-    let n = PRESETS.len();
-    let mut j = i.min(n - 1);
-    for _ in 0..n {
-        j = (j + by) % n;
-        if !hidden(j) {
-            return j;
-        }
-    }
-    i
+    (i.min(PRESETS.len() - 1) + by) % PRESETS.len()
 }
 
 /// How a preset is saved: "Group: Name" (several groups have a Random).
@@ -285,7 +265,7 @@ pub(crate) fn resolve(i: usize, t: f32) -> usize {
     let pool: Vec<usize> = (0..PRESETS.len())
         .filter(|&j| match PRESETS[j].kind {
             // (the terrain takes a while to build: never a twenty-second stop in a round)
-            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain | Kind::Wave => false,
+            Kind::Random(_) | Kind::Pipes | Kind::Stars | Kind::Terrain => false,
             _ => g.is_none_or(|g| PRESETS[j].group == g),
         })
         .collect();
@@ -617,7 +597,6 @@ pub(crate) struct Gl {
     slots: std::collections::HashMap<u8, Slot>,
     failed: bool,
     terrain: Option<Box<crate::terrain::Terrain>>,
-    wave: Option<Box<crate::wave::Wave>>,
 }
 
 /// A program: the shared vertex shader and `frag`, each after the GL version line (`frag` brings its own header).
@@ -798,20 +777,6 @@ pub(crate) fn paint_gpu(
     p.add(egui::PaintCallback { rect, callback: Arc::new(cb) });
 }
 
-/// The wave in `rect` (a plain visual instead if the graphics are too old for it).
-fn paint_wave(p: &egui::Painter, rect: Rect, slot: u8, f: Frame, t: f64, state: &Arc<Mutex<Gl>>) {
-    let state = state.clone();
-    let cb = egui_glow::CallbackFn::new(move |info, painter| {
-        if let Ok(mut g) = state.lock() {
-            let ok = unsafe { g.wave.get_or_insert_with(Default::default).paint(painter.gl(), &info, slot, t) };
-            if !ok {
-                unsafe { g.draw(painter.gl(), &info, slot, find("Down the Drain"), &f) };
-            }
-        }
-    });
-    p.add(egui::PaintCallback { rect, callback: Arc::new(cb) });
-}
-
 /// `preset` in `r`, into the slot's own pictures (as `paint_gpu`); `hear` says what the terrain hears, asked only by
 /// it.
 #[allow(clippy::too_many_arguments)]
@@ -822,7 +787,6 @@ pub(crate) fn paint_preset(
     preset: usize,
     f: Frame,
     dt: f32,
-    t: f64,
     gl: &Arc<Mutex<Gl>>,
     pipes: &mut Pipes,
     stars: &mut Stars,
@@ -831,7 +795,6 @@ pub(crate) fn paint_preset(
     match PRESETS[preset].kind {
         Kind::Gpu(..) | Kind::Engine(..) | Kind::Random(..) => paint_gpu(p, r, slot, preset, f, gl, None),
         Kind::Terrain => paint_gpu(p, r, slot, preset, f, gl, Some(Arc::new(hear()))),
-        Kind::Wave => paint_wave(p, r, slot, f, t, gl),
         Kind::Pipes => pipes.draw(p, r, dt, f.bass),
         Kind::Stars => stars.draw(p, r, dt, f.bass),
     }
@@ -1167,7 +1130,7 @@ impl App {
         let song = self.cur_track().map_or(0, |t| t.id as u64);
         let (viz, ctl) = (&self.player.viz, &self.player.ctl);
         let (pipes, stars) = (&mut self.vis_pipes, &mut self.vis_stars);
-        paint_preset(&p, r, slot, preset, f, dt, t, &self.vis_gl, pipes, stars, || hear(viz, ctl, song, t));
+        paint_preset(&p, r, slot, preset, f, dt, &self.vis_gl, pipes, stars, || hear(viz, ctl, song, t));
         ui.ctx().request_repaint();
     }
 
@@ -1182,7 +1145,7 @@ impl App {
         crate::views::dim_line(ui, &self.vis_name(), 1.6, crate::pal().ink);
         ui.separator();
         for g in GROUPS {
-            let only: Vec<usize> = (0..PRESETS.len()).filter(|&i| PRESETS[i].group == *g && !hidden(i)).collect();
+            let only: Vec<usize> = (0..PRESETS.len()).filter(|&i| PRESETS[i].group == *g).collect();
             if only.len() == 1 {
                 let i = only[0];
                 let mark = if i == self.vis_preset { "* " } else { "  " };
@@ -1196,7 +1159,7 @@ impl App {
             let title = group_title(g);
             let mark = if PRESETS[self.vis_preset].group == *g { "* " } else { "  " };
             crate::sub_menu(ui, &format!("{}{}", mark, title), |ui| {
-                for (i, p) in PRESETS.iter().enumerate().filter(|(i, p)| p.group == *g && !hidden(*i)) {
+                for (i, p) in PRESETS.iter().enumerate().filter(|(_, p)| p.group == *g) {
                     let mark = if i == self.vis_preset { "* " } else { "  " };
                     if crate::menu_item(ui, &format!("{}{}", mark, p.name)) {
                         self.vis_preset = i;

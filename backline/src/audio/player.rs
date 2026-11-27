@@ -11,6 +11,32 @@ use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// A stage of the sound's chain: the channels, rate and length passed on from the source it wraps; `frame` gives its
+/// frame length (`None`, or the inner one's), `seek` what else it does on a seek (`me` is the stage, `pos` where to).
+macro_rules! passes_on {
+    ($t:ident, frame |$f:ident| $fl:expr, seek |$s:ident, $pos:ident| $seek:block) => {
+        impl<S: Source<Item = i16>> Source for $t<S> {
+            fn current_frame_len(&self) -> Option<usize> {
+                let $f = self;
+                $fl
+            }
+            fn channels(&self) -> u16 {
+                self.inner.channels()
+            }
+            fn sample_rate(&self) -> u32 {
+                self.inner.sample_rate()
+            }
+            fn total_duration(&self) -> Option<Duration> {
+                self.inner.total_duration()
+            }
+            fn try_seek(&mut self, $pos: Duration) -> Result<(), SeekError> {
+                let $s = self;
+                $seek
+            }
+        }
+    };
+}
+
 pub enum Cmd {
     Play(Vec<u8>),
     /// replace the audio with another version of the same track (stem mix): keep the position,
@@ -388,28 +414,14 @@ impl<S: Source<Item = i16>> Iterator for Looper<S> {
     }
 }
 
-impl<S: Source<Item = i16>> Source for Looper<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        None
-    }
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.inner.try_seek(pos)?;
-        self.frame = (pos.as_secs_f64() * self.rate as f64) as u64;
-        self.sub = 0;
-        self.ctl.pos_fr.store(self.frame, Ordering::Relaxed);
-        self.find_next_beat();
-        Ok(())
-    }
-}
+passes_on!(Looper, frame |_me| None, seek |me, pos| {
+    me.inner.try_seek(pos)?;
+    me.frame = (pos.as_secs_f64() * me.rate as f64) as u64;
+    me.sub = 0;
+    me.ctl.pos_fr.store(me.frame, Ordering::Relaxed);
+    me.find_next_beat();
+    Ok(())
+});
 
 // ----------------------------------------------------------- slow-down (WSOLA)
 const SN: usize = 2048; // window length (frames)
@@ -628,25 +640,11 @@ impl<S: Source<Item = i16>> Iterator for Stretch<S> {
     }
 }
 
-impl<S: Source<Item = i16>> Source for Stretch<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        None
-    }
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.inner.try_seek(pos)?;
-        self.reset();
-        Ok(())
-    }
-}
+passes_on!(Stretch, frame |_me| None, seek |me, pos| {
+    me.inner.try_seek(pos)?;
+    me.reset();
+    Ok(())
+});
 
 /// Transpose: resamples the (tempo-corrected) audio so the pitch moves by `semis` cents.
 struct Resample<S: Source<Item = i16>> {
@@ -760,25 +758,11 @@ impl<S: Source<Item = i16>> Iterator for Resample<S> {
     }
 }
 
-impl<S: Source<Item = i16>> Source for Resample<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        None
-    }
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.inner.try_seek(pos)?;
-        self.reset();
-        Ok(())
-    }
-}
+passes_on!(Resample, frame |_me| None, seek |me, pos| {
+    me.inner.try_seek(pos)?;
+    me.reset();
+    Ok(())
+});
 
 /// Channel tools for hearing a part: left only, right only, mono, vocals/center removed, bass only.
 struct Chan<S: Source<Item = i16>> {
@@ -870,25 +854,11 @@ impl<S: Source<Item = i16>> Iterator for Chan<S> {
     }
 }
 
-impl<S: Source<Item = i16>> Source for Chan<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        None
-    }
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.pend = None;
-        self.z = [[0.0; 2]; 2];
-        self.inner.try_seek(pos)
-    }
-}
+passes_on!(Chan, frame |_me| None, seek |me, pos| {
+    me.pend = None;
+    me.z = [[0.0; 2]; 2];
+    me.inner.try_seek(pos)
+});
 
 /// Click track: `beats` clicks `interval` seconds apart (first one accented), mono 44.1 kHz.
 fn click_buf(beats: u32, interval: f32) -> Vec<i16> {
@@ -1056,26 +1026,12 @@ impl<S: Source<Item = i16>> Iterator for Equalizer<S> {
     }
 }
 
-impl<S: Source<Item = i16>> Source for Equalizer<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
+passes_on!(Equalizer, frame |me| me.inner.current_frame_len(), seek |me, pos| {
+    for ch in me.z.iter_mut() {
+    *ch = [[0.0; 2]; 10];
     }
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        for ch in self.z.iter_mut() {
-            *ch = [[0.0; 2]; 10];
-        }
-        self.inner.try_seek(pos)
-    }
-}
+    me.inner.try_seek(pos)
+});
 
 // ------------------------------------------------------------------ demo recording
 /// Recording a demo: the main track's samples are kept as they leave the effects (before the volume), and every
@@ -1243,23 +1199,9 @@ impl<S: Source<Item = i16>> Iterator for Tap<S> {
     }
 }
 
-impl<S: Source<Item = i16>> Source for Tap<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
-    }
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.inner.try_seek(pos)
-    }
-}
+passes_on!(Tap, frame |me| me.inner.current_frame_len(), seek |me, pos| {
+    me.inner.try_seek(pos)
+});
 
 /// Three soft rising notes.
 fn chime_buf() -> Vec<i16> {

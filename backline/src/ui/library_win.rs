@@ -1260,6 +1260,22 @@ impl App {
         if menu_item(ui, if self.pinned { "Always on Top  (on)" } else { "Always on Top" }) {
             acts.push(Action::TogglePin);
         }
+        // the sleep timer: fades out and stops (the minutes left while it runs)
+        let left = self.sleep_at.map(|t| t.saturating_duration_since(std::time::Instant::now()).as_secs().div_ceil(60));
+        let title = match left {
+            Some(m) => format!("Sleep Timer  ({} min left)", m),
+            None => "Sleep Timer".to_string(),
+        };
+        crate::sub_menu(ui, &title, |ui| {
+            for n in [0u32, 15, 30, 45, 60, 90] {
+                let mark = if self.sleep_mins == n && (n == 0) == self.sleep_at.is_none() { "* " } else { "  " };
+                let label = if n == 0 { "Off".to_string() } else { format!("{} min", n) };
+                if menu_item(ui, &format!("{}{}", mark, label)) {
+                    acts.push(Action::Sleep(n));
+                    ui.close_menu();
+                }
+            }
+        });
         if menu_item(ui, if self.mini { "Exit Mini Player" } else { "Mini Player" }) {
             acts.push(Action::ToggleMini);
         }
@@ -1417,10 +1433,6 @@ impl App {
         // a Style has no deck: the window's own buttons (its menu, minimize, maximize, quit) on the library's bar
         if crate::styles::styled() && !self.mini {
             self.stream_buttons(ui, acts);
-        }
-        // a skin's deck has no title line: its chips (NOW PLAYING, the guide, online...) sit on the library's
-        if self.wa_art.is_some() && !self.mini && !crate::winamp_ui::chrome_on() {
-            self.title_chips(ui, ui.max_rect(), acts);
         }
         // a skin worn: the places down a list at the side (as Spotify has them), the page beside it
         if self.wa_art.is_some() && !self.mini && crate::winamp_ui::chrome_on() {

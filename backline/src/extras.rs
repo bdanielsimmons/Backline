@@ -309,13 +309,11 @@ impl App {
         let _ = std::fs::create_dir_all(&dir);
         let path = free_path(&dir, &plan.name);
         self.exporting = true;
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
+        self.bg(move |_| {
             let fetch = || crate::fetch_audio(&api, plan.id, lossless, false, src.clone());
             let r = write_exports(&[(path.clone(), plan.stems)], plan.id, plan.a, plan.b, &fx, fetch)
                 .map(|_| path.display().to_string());
-            let _ = tx.send(Msg::Exported(r));
-            ctx.request_repaint();
+            Msg::Exported(r)
         });
     }
 
@@ -1060,11 +1058,7 @@ impl App {
         self.set_note(&format!("RENAMED: {} - {}", artist, title));
         // your own file: its tags too, so other players see the new names
         if let Some(path) = file {
-            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-            std::thread::spawn(move || {
-                let _ = tx.send(Msg::TagsSaved(write_tags(&path, &title, &artist, &album)));
-                ctx.request_repaint();
-            });
+            self.bg(move |_| Msg::TagsSaved(write_tags(&path, &title, &artist, &album)));
         }
     }
 
@@ -1443,11 +1437,7 @@ impl App {
             return;
         }
         let bytes = bytes.to_vec();
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::Meta(id, crate::meta::detect(id, bytes)));
-            ctx.request_repaint();
-        });
+        self.bg(move |_| Msg::Meta(id, crate::meta::detect(id, bytes)));
     }
 
     /// The song's beat, worked out in the background as it starts (from the audio already here, streamed or not),
@@ -1457,11 +1447,7 @@ impl App {
             return;
         }
         let bytes = bytes.to_vec();
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::BeatsBg(id, band::detect_beats(bytes)));
-            ctx.request_repaint();
-        });
+        self.bg(move |_| Msg::BeatsBg(id, band::detect_beats(bytes)));
     }
 
     pub(crate) fn start_wave(&mut self, id: i64, bytes: &[u8]) {
@@ -1685,11 +1671,7 @@ impl App {
         // a pack dropped on the window opens as a pack, not as music
         if let Some(i) = paths.iter().position(|p| crate::pack::is_pack(p)) {
             let p = paths.remove(i);
-            let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-            std::thread::spawn(move || {
-                let _ = tx.send(Msg::PackIn(crate::pack::open(&p)));
-                ctx.request_repaint();
-            });
+            self.bg(move |_| Msg::PackIn(crate::pack::open(&p)));
         }
         if paths.is_empty() {
             return;
@@ -1713,8 +1695,7 @@ impl App {
         }
         self.files_busy = true;
         FILES_STAGE.store(1, std::sync::atomic::Ordering::Relaxed);
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
+        self.bg(move |_| {
             let paths: Vec<PathBuf> = if folder {
                 rfd::FileDialog::new().set_title("Add a folder of music").pick_folder().into_iter().collect()
             } else {
@@ -1727,8 +1708,7 @@ impl App {
                     .unwrap_or_default()
             };
             let (files, folders, lists) = scan_paths(paths);
-            let _ = tx.send(Msg::Added(files, folders, lists));
-            ctx.request_repaint();
+            Msg::Added(files, folders, lists)
         });
     }
 
@@ -1900,8 +1880,8 @@ impl App {
         let safe: String = tune_name.chars().map(|c| if c.is_alphanumeric() || c == ' ' { c } else { '-' }).collect();
         let p_mix = dir.join(format!("{} {}.wav", stamp, safe));
         let p_you = dir.join(format!("{} {} (you alone).wav", stamp, safe));
-        if let Err(e) = std::fs::write(&p_mix, crate::tour::wav(&mixed, 44100, 2))
-            .and_then(|_| std::fs::write(&p_you, crate::tour::wav(&you, 44100, 1)))
+        if let Err(e) = std::fs::write(&p_mix, crate::band::wav_of(&mixed, 44100, 2))
+            .and_then(|_| std::fs::write(&p_you, crate::band::wav_of(&you, 44100, 1)))
         {
             self.set_note(&format!("COULDN'T SAVE THE TAKE: {}", e));
             return;

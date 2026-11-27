@@ -146,7 +146,7 @@ impl App {
                 let sy = y0 + if st == STYLE_STREAMING { 40.0 } else { 30.0 } * cap_k;
                 ptext_fit(&p, Pos2::new(cx, sy), Align::Center, &sub, sp, w, ink.gamma_multiply(0.75));
                 let cap_r = Rect::from_center_size(Pos2::new(cx, (y0 + sy) / 2.0), Vec2::new(tw + 30.0, sy - y0 + 40.0));
-                self.np_caption_menu(ui, cap_r, now);
+                self.np_caption_menu(ui, cap_r);
             } else if track.is_none() {
                 let t = now as f32;
                 let breath = ((t * std::f32::consts::TAU / 5.0).sin() + 1.0) / 2.0;
@@ -454,7 +454,7 @@ impl App {
     }
 
     /// The song's words under the cover: right-click for their size, colour and what's shown.
-    fn np_caption_menu(&mut self, ui: &mut egui::Ui, r: Rect, now: f64) {
+    fn np_caption_menu(&mut self, ui: &mut egui::Ui, r: Rect) {
         ui.interact(r, ui.id().with("caption"), Sense::click()).context_menu(|ui| {
             for (i, name) in ["SMALL", "MEDIUM", "LARGE"].iter().enumerate() {
                 let mark = if self.cap_size as usize == i { "> " } else { "   " };
@@ -476,7 +476,6 @@ impl App {
                 let mark = if self.cap_show as usize == i { "> " } else { "   " };
                 if menu_item(ui, &format!("{}SHOW: {}", mark, name)) {
                     self.cap_show = i as u8;
-                    self.cap_mode_at = now;
                     self.dirty = true;
                     ui.close_menu();
                 }
@@ -1044,7 +1043,6 @@ impl App {
         for (i, name) in ["Art and Info", "Info Only", "Nothing"].iter().enumerate() {
             if menu_item(ui, &format!("{}Show: {}", mark(self.cap_show as usize == i), name)) {
                 self.cap_show = i as u8;
-                self.cap_mode_at = ui.input(|i| i.time);
                 self.dirty = true;
                 ui.close_menu();
             }

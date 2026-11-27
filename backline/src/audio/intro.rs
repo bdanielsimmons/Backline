@@ -293,11 +293,11 @@ mod tests {
         let Ok(dir) = std::env::var("BACKLINE_CHIMES") else { return };
         for (name, s) in super::candidates() {
             let pcm: Vec<i16> = s.iter().map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16).collect();
-            std::fs::write(format!("{}/{}.wav", dir, name), crate::tour::wav(&pcm, super::RATE, 2)).unwrap();
+            std::fs::write(format!("{}/{}.wav", dir, name), crate::band::wav_of(&pcm, super::RATE, 2)).unwrap();
         }
         // and the old one, to compare
         let pcm: Vec<i16> = super::chime().iter().map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16).collect();
-        std::fs::write(format!("{}/0 current chime.wav", dir), crate::tour::wav(&pcm, super::RATE, 2)).unwrap();
+        std::fs::write(format!("{}/0 current chime.wav", dir), crate::band::wav_of(&pcm, super::RATE, 2)).unwrap();
     }
 
     #[test]

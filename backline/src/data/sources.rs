@@ -996,24 +996,7 @@ pub fn write_wav(path: &Path, ch: u16, rate: u32, data: &[i16]) -> Result<(), St
     if let Some(d) = path.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let len = (data.len() * 2) as u32;
-    let mut out: Vec<u8> = Vec::with_capacity(44 + len as usize);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&ch.to_le_bytes());
-    out.extend_from_slice(&rate.to_le_bytes());
-    out.extend_from_slice(&(rate * ch as u32 * 2).to_le_bytes());
-    out.extend_from_slice(&(ch * 2).to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&len.to_le_bytes());
-    for s in data {
-        out.extend_from_slice(&s.to_le_bytes());
-    }
-    std::fs::write(path, out).map_err(|e| e.to_string())
+    std::fs::write(path, crate::band::wav_of(data, rate, ch)).map_err(|e| e.to_string())
 }
 
 // ------------------------------------------------------------ tune lookup

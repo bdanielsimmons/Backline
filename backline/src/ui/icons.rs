@@ -9,12 +9,16 @@ pub(crate) const HEART: [&str; 6] = [".##.##.", "#######", "#######", ".#####.",
 pub(crate) const HEART_O: [&str; 6] = [".##.##.", "#..#..#", "#.....#", ".#...#.", "..#.#..", "...#..."];
 
 // --------------------------------------------------------------- pixel icons
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) const PREV: [&str; 7] = ["#.....#", "#....##", "#...###", "#..####", "#...###", "#....##", "#.....#"];
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) const NEXT: [&str; 7] = ["#.....#", "##....#", "###...#", "####..#", "###...#", "##....#", "#.....#"];
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) const PLAY: [&str; 7] = ["##.....", "####...", "######.", "#######", "######.", "####...", "##....."];
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) const PAUSE: [&str; 7] = ["###.###", "###.###", "###.###", "###.###", "###.###", "###.###", "###.###"];
 
 pub(crate) const STOP: [&str; 7] = [".......", ".#####.", ".#####.", ".#####.", ".#####.", ".#####.", "......."];

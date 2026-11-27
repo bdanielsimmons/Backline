@@ -287,11 +287,7 @@ impl App {
             return;
         }
         self.peer.busy = true;
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::PeerFiles(sync::peer_files()));
-            ctx.request_repaint();
-        });
+        self.bg(move |_| Msg::PeerFiles(sync::peer_files()));
     }
 
     /// Its songs came (or why not): which of them are here already.

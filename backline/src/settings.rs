@@ -317,6 +317,12 @@ impl App {
                 app.wear_skin(genskin::wear(&PALS[n]).map(|(p, art)| (s, p, art)), false);
             }
         }
+        // (a skin is always worn - the deck and the playlist are drawn from it: the one saved couldn't be put on,
+        // Backline's own look instead)
+        if app.wa_art.is_none() {
+            let s = app.gen_skin(0);
+            app.wear_skin(genskin::wear(&PALS[0]).map(|(p, art)| (s, p, art)), false);
+        }
         if let Some(list) = st["eq_mine"].as_array() {
             for v in list {
                 let name = v[0].as_str().unwrap_or_default().to_string();

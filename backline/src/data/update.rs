@@ -357,11 +357,7 @@ pub fn apply_staged_at_start() -> bool {
 impl App {
     pub(crate) fn start_update_check(&mut self) {
         self.upd_checked = Some(Instant::now());
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::UpdateFound(check()));
-            ctx.request_repaint();
-        });
+        self.bg(move |_| Msg::UpdateFound(check()));
     }
 
     /// Checks at start and every 6 hours. A downloaded update shows one bar at the top (click to restart); it also installs on the next launch.

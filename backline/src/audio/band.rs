@@ -1184,27 +1184,30 @@ pub fn line_sound(notes: &[Vec<i32>], gap: f32) -> Vec<i16> {
     mix.finish()
 }
 
+/// A 16-bit PCM WAV file's 44-byte header, for `bytes` of sound at `rate` with `ch` channels.
+pub fn wav_head(bytes: u32, rate: u32, ch: u16) -> Vec<u8> {
+    let mut h = Vec::with_capacity(44 + bytes as usize);
+    for part in [&b"RIFF"[..], &(36 + bytes).to_le_bytes(), b"WAVEfmt ", &16u32.to_le_bytes(), &1u16.to_le_bytes(), &ch.to_le_bytes()] {
+        h.extend_from_slice(part);
+    }
+    for part in [&rate.to_le_bytes()[..], &(rate * ch as u32 * 2).to_le_bytes(), &(ch * 2).to_le_bytes(), &16u16.to_le_bytes(), b"data", &bytes.to_le_bytes()] {
+        h.extend_from_slice(part);
+    }
+    h
+}
+
+/// A 16-bit PCM WAV file of `data` (`ch` channels, interleaved, at `rate`).
+pub fn wav_of(data: &[i16], rate: u32, ch: u16) -> Vec<u8> {
+    let mut v = wav_head((data.len() * 2) as u32, rate, ch);
+    for s in data {
+        v.extend_from_slice(&s.to_le_bytes());
+    }
+    v
+}
+
 /// A mono 16-bit WAV of `samples` (at the band's rate), for a backing track to keep.
 pub fn wav(samples: &[i16]) -> Vec<u8> {
-    let data = (samples.len() * 2) as u32;
-    let rate = RATE as u32;
-    let mut b = Vec::with_capacity(44 + data as usize);
-    b.extend_from_slice(b"RIFF");
-    b.extend_from_slice(&(36 + data).to_le_bytes());
-    b.extend_from_slice(b"WAVEfmt ");
-    b.extend_from_slice(&16u32.to_le_bytes());
-    b.extend_from_slice(&1u16.to_le_bytes());
-    b.extend_from_slice(&1u16.to_le_bytes());
-    b.extend_from_slice(&rate.to_le_bytes());
-    b.extend_from_slice(&(rate * 2).to_le_bytes());
-    b.extend_from_slice(&2u16.to_le_bytes());
-    b.extend_from_slice(&16u16.to_le_bytes());
-    b.extend_from_slice(b"data");
-    b.extend_from_slice(&data.to_le_bytes());
-    for s in samples {
-        b.extend_from_slice(&s.to_le_bytes());
-    }
-    b
+    wav_of(samples, RATE as u32, 1)
 }
 
 /// A song's beat: its usual length (seconds), where the first one falls, and every beat's time through the song -
@@ -1368,7 +1371,7 @@ mod tests {
             ("low note", vec![43]),
         ] {
             let s = chord_sound(&notes);
-            std::fs::write(format!("{}/{}.wav", dir, name), crate::tour::wav(&s, RATE as u32, 1)).unwrap();
+            std::fs::write(format!("{}/{}.wav", dir, name), crate::band::wav_of(&s, RATE as u32, 1)).unwrap();
         }
     }
 

@@ -335,29 +335,13 @@ fn decode_44k(bytes: Vec<u8>) -> Result<(Vec<f32>, Vec<f32>), String> {
     Ok((conv(&l), conv(&r)))
 }
 
+/// A stereo 44.1 kHz WAV's header, for `data_len` bytes of sound.
 fn wav_header(data_len: u32) -> Vec<u8> {
-    let mut h: Vec<u8> = Vec::with_capacity(44);
-    h.extend_from_slice(b"RIFF");
-    h.extend_from_slice(&(36 + data_len).to_le_bytes());
-    h.extend_from_slice(b"WAVEfmt ");
-    h.extend_from_slice(&16u32.to_le_bytes());
-    h.extend_from_slice(&1u16.to_le_bytes());
-    h.extend_from_slice(&2u16.to_le_bytes());
-    h.extend_from_slice(&44100u32.to_le_bytes());
-    h.extend_from_slice(&(44100u32 * 4).to_le_bytes());
-    h.extend_from_slice(&4u16.to_le_bytes());
-    h.extend_from_slice(&16u16.to_le_bytes());
-    h.extend_from_slice(b"data");
-    h.extend_from_slice(&data_len.to_le_bytes());
-    h
+    crate::band::wav_head(data_len, 44100, 2)
 }
 
 fn write_wav(path: &Path, data: &[i16]) -> Result<(), String> {
-    let mut out = wav_header((data.len() * 2) as u32);
-    out.reserve(data.len() * 2);
-    for s in data {
-        out.extend_from_slice(&s.to_le_bytes());
-    }
+    let out = crate::band::wav_of(data, 44100, 2);
     let tmp = path.with_extension("part");
     std::fs::write(&tmp, out).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())

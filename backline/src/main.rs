@@ -199,8 +199,6 @@ mod views;
 mod visuals;
 #[path = "ui/terrain.rs"]
 mod terrain;
-#[path = "ui/wave.rs"]
-mod wave;
 #[path = "ui/viz.rs"]
 mod viz;
 #[path = "ui/winamp_ui.rs"]
@@ -208,7 +206,7 @@ mod winamp_ui;
 
 use api::{cover_url, Api, Card, GoTo, Kind, Page, Track};
 use eframe::egui::{self, Align, Color32, Pos2, Rect, Rounding, Sense, Stroke, Vec2};
-use font::{ptext, ptext_fit, snap, spx, text_w, thick, wrap};
+use font::{ptext, ptext_fit, spx, text_w, thick, wrap};
 use icons::*;
 use app_look::*;
 use chrome::*;
@@ -607,7 +605,8 @@ enum Action {
     MoveQueue(usize, usize),
     /// the next of Backline's looks
     Skin,
-    Sleep,
+    /// the sleep timer: fade out and stop in this many minutes (0: off)
+    Sleep(u32),
     ToggleMini,
     TogglePin,
     ToggleEq,
@@ -663,8 +662,7 @@ enum Action {
     Section(Sec),
     AddFiles,
     AddFolder,
-    /// the old storage page (kept so its code still has a way in; nothing opens it now)
-    #[allow(dead_code)]
+    /// look through the watched folders again (FILES' + ADD menu)
     Rescan,
     ForgetFolder(usize),
     AddYt,
@@ -892,15 +890,34 @@ struct Lyrics {
 }
 
 // ----------------------------------------------------------------------- app
-struct App {
-    api: Api,
-    tx: Sender<Msg>,
-    rx: Receiver<Msg>,
-    ctx: egui::Context,
-    images: Images,
-    _font_tex: egui::TextureHandle,
+/// The app's state, each field with what it starts as (`= value`; none: its type's default - `false`, `0`, `None`,
+/// empty), so a field is written once; `App::start` makes it, given the six things `App::new` builds first.
+macro_rules! app_state {
+    (($($arg:ident: $aty:ty),*) $( $(#[$m:meta])* $f:ident: $t:ty $(= $v:expr)? ),* $(,)?) => {
+        struct App {
+            $( $(#[$m])* $f: $t, )*
+        }
+        impl App {
+            #[allow(clippy::too_many_arguments)]
+            fn start($($arg: $aty),*) -> App {
+                App { $( $f: app_state!(@v $($v)?), )* }
+            }
+        }
+    };
+    (@v) => { Default::default() };
+    (@v $v:expr) => { $v };
+}
 
-    auth: Auth,
+app_state! {
+    (api: Api, tx: Sender<Msg>, rx: Receiver<Msg>, ctx: egui::Context, images: Images, font_tex: egui::TextureHandle)
+    api: Api = api,
+    tx: Sender<Msg> = tx,
+    rx: Receiver<Msg> = rx,
+    ctx: egui::Context = ctx,
+    images: Images = images,
+    _font_tex: egui::TextureHandle = font_tex,
+
+    auth: Auth = Auth::LoggedOut,
     login_code: Option<(String, String)>,
     login_err: String,
 
@@ -917,7 +934,7 @@ struct App {
     #[allow(clippy::type_complexity)]
     mine_cache: Option<((usize, usize, u64, (bool, bool, bool), String, String), Arc<(Vec<Track>, usize, bool, usize)>)>,
     /// the window had the keyboard last frame (coming back to it looks the library over)
-    was_focused: bool,
+    was_focused: bool = true,
     /// a Winamp skin being fetched and put on (its name), for the little "putting it on" panel
     wa_loading: Option<String>,
     /// the picture being looked at big (link, title, an artist's?)
@@ -931,7 +948,7 @@ struct App {
     artist_pick: Option<Vec<(i64, String)>>,
     serial: u64,
     lib_gen: u64,
-    lib_tab: Tab,
+    lib_tab: Tab = Tab::Tracks,
     loading: bool,
     search: String,
     search_focus: bool,
@@ -942,7 +959,7 @@ struct App {
     status: String,
     status_err: bool,
 
-    queue: Arc<Vec<Track>>,
+    queue: Arc<Vec<Track>> = Arc::new(Vec::new()),
     /// Original (un-shuffled) order, kept while shuffle is on so it can be restored.
     orig_queue: Option<Vec<Track>>,
     cur: Option<usize>,
@@ -950,45 +967,46 @@ struct App {
     play_gen: u64,
     buffering: bool,
     paused: bool,
-    stopped: bool,
-    prefer_lossless: bool,
+    stopped: bool = true,
+    prefer_lossless: bool = true,
     kbps: u32,
     prefetched: Option<(i64, Vec<u8>)>,
     prefetching: i64,
-    player: Player,
-    volume: f32,
+    player: Player = Player::new(),
+    // (a first run starts well below full: the tour's song is the first thing heard)
+    volume: f32 = 0.6,
     shuffle: bool,
-    repeat: Repeat,
+    repeat: Repeat = Repeat::Off,
     seek_drag: Option<f32>,
     /// the practice waveform's zoom (1 = the whole song) and the second its view starts at
-    wv_zoom: f32,
+    wv_zoom: f32 = 1.0,
     wv_start: f32,
     /// you looked away from the playhead (the strip, the scrollbar, FIT): the view stays there a while, then follows again
     wv_free: bool,
     /// when you last moved the view away (`ui` time; held while paused)
     wv_free_t: f64,
     /// the practice waveform's height (1 = normal; you drag it), kept with your settings
-    wv_h: f32,
+    wv_h: f32 = 1.0,
     /// zoomed in, the view slides along with the song (the playhead a third of the way across); FOLLOW turns it off
-    wv_follow: bool,
+    wv_follow: bool = true,
     /// how the song is drawn: 0 bars, 1 coloured by sound (warm lows, cool highs), 2 LCD blocks
     wv_draw: u8,
     /// The waveform shows the song by pitch (the note view) instead of loudness.
     wv_notes: bool,
     /// The note view's map: the song, the stems it was made from (0: the whole song), the map once made.
-    notes: (i64, u8, Option<Arc<notes::NoteMap>>),
+    notes: (i64, u8, Option<Arc<notes::NoteMap>>) = (0, 0, None),
     notes_busy: bool,
     /// The map as pictures, 2048 columns each (made when first drawn).
     notes_tex: Vec<egui::TextureHandle>,
-    bands: Vec<f32>,
-    peaks: Vec<f32>,
+    bands: Vec<f32> = vec![0.0; 32],
+    peaks: Vec<f32> = vec![0.0; 32],
     audio_err_shown: bool,
 
     art_view: bool,
-    show_spec: bool,
+    show_spec: bool = true,
     // ---- visuals (ui/visuals.rs)
-    vis_gl: Arc<Mutex<visuals::Gl>>,
-    vis_preset: usize,
+    vis_gl: Arc<Mutex<visuals::Gl>> = Arc::new(Mutex::new(visuals::Gl::default())),
+    vis_preset: usize = visuals::find("Down the Drain"),
     /// Visuals in Now Playing, in place of the cover.
     vis_np: bool,
     /// Automatic gain and beats for the visuals.
@@ -1001,8 +1019,8 @@ struct App {
     /// the visuals' name last shown in Now Playing (a change shows it again)
     vis_seen: String,
     /// Minutes idle (music playing) before the screensaver; 0 off.
-    vis_idle: u32,
-    vis_idle_since: Instant,
+    vis_idle: u32 = 5,
+    vis_idle_since: Instant = Instant::now(),
     vis_last: f64,
     vis_travel: f32,
     vis_cache: Option<(u64, visuals::Frame, f32)>,
@@ -1013,12 +1031,12 @@ struct App {
     /// where that window was last (screen pixels: left, top, width, height), and whether it stays on top of other
     /// windows
     pop_px: Option<[i32; 4]>,
-    pop_pin: bool,
-    spec_op: f32,
-    spec_h: f32,
-    spec_w: f32,
+    pop_pin: bool = true,
+    spec_op: f32 = 0.2,
+    spec_h: f32 = 0.42,
+    spec_w: f32 = 0.6,
     /// the album view's visualizer in a box: 0 none, 1 a themed box, 2 a thin line
-    spec_frame: u8,
+    spec_frame: u8 = 1,
     /// with lyrics up, the visualizer stays as wide as the whole view (0: only under the cover, 1: full width)
     spec_lyr: u8,
     /// the visualizer settings panel, open on 0 (the player's screen) or 1 (the album view)
@@ -1048,15 +1066,14 @@ struct App {
     /// the worn Winamp skin's own pictures, drawn for the player and the equalizer
     wa_art: Option<winamp_ui::WaTex>,
     /// the album view cover's border (right-click the cover): 0 none, 1 subtle, 2 the skin's colour
-    art_border: u8,
+    art_border: u8 = 1,
     /// art view caption: size (0 small, 1 medium, 2 large) and soft black text on a light plate instead of soft white
-    cap_size: u8,
+    cap_size: u8 = 1,
     cap_dark: bool,
     /// what Now Playing shows of the song: 0 art and info, 1 info only, 2 nothing
     cap_show: u8,
     /// the song Now Playing's card last showed (a new one brings the card up); when the choice was changed
     cap_song: i64,
-    cap_mode_at: f64,
     /// the album view's background colours as shown, easing toward the new cover's
     bg_now: Option<[Color32; 2]>,
     /// the sound output chosen in Preferences (None = the system default), and the outputs last found
@@ -1069,26 +1086,26 @@ struct App {
     /// the queue panel open over the album view
     art_queue: bool,
     /// visualizer settings: [0] the small one in the player, [1] the one in the album view
-    viz: [viz::VizCfg; 2],
-    viz_wave: Vec<f32>,
-    show_lyrics: bool,
+    viz: [viz::VizCfg; 2] = [viz::VizCfg::player(), viz::VizCfg::art()],
+    viz_wave: Vec<f32> = vec![0.0; WAVE_N],
+    show_lyrics: bool = true,
     /// Now Playing: when the mouse last moved (its controls fade a few seconds after), the side panel's tab (0 lyrics,
     /// 1 up next, 2 about, 3 loops), the blurred cover behind it (and the cover it was made from), Hardware's VU levels
     np_move_at: f64,
     np_tab: u8,
     np_blur: Option<egui::TextureHandle>,
     np_blur_for: String,
-    vu: [f32; 2],
+    vu: [f32; 2] = [0.0; 2],
     /// Hardware's Now Playing (an amp): what shows under its panel (0 meters, 1 the analyzer as light, 2 lyrics), the
     /// stereo correlation and K-weighted loudness its meters
     /// read (eased), its three small meters' needles, until when each peak light stays lit, its tolex and cloth
     hw_show: u8,
-    hw_corr: f32,
+    hw_corr: f32 = 1.0,
     hw_ms: f32,
-    hw_need: [f32; 3],
-    hw_peak: [f64; 2],
+    hw_need: [f32; 3] = [0.0, -1.2, -40.0],
+    hw_peak: [f64; 2] = [0.0; 2],
     /// (the song's level so far, for 0 VU: its id, the sum of its loud moments' mean squares, how many)
-    hw_ref: (i64, f64, u32),
+    hw_ref: (i64, f64, u32) = (0, 0.0, 0),
     hw_tex: Option<[egui::TextureHandle; 2]>,
     /// Studio's Now Playing: what's on its screen (0 the cover and song, 1 lyrics, 2 up next, 3 about, 4 loops, 5
     /// visuals), which visuals (0 bars, 1 scope, 2 terrain), its cover printed in ink (the cover it's of, the picture,
@@ -1099,21 +1116,21 @@ struct App {
     /// a new cover dissolving in over the last in a Studio place: the two, and when it began
     studio_dith_anim: HashMap<&'static str, (std::sync::Arc<egui::ColorImage>, std::sync::Arc<egui::ColorImage>, f64)>,
     /// when Studio's covers were last switched between color and ink (the switch fades)
-    studio_cover_at: f64,
+    studio_cover_at: f64 = -10.0,
     /// Up Next goes to the song playing on its next frame (opened, or its tab clicked again)
     q_jump: bool,
     /// how wide Now Playing's keys at the foot's right came out (the transport keeps clear of them)
-    np_row_w: f32,
+    np_row_w: f32 = 330.0,
     /// the song playing was in sight in Up Next on its last frame
-    q_cur_seen: bool,
+    q_cur_seen: bool = true,
     /// when the last frame was drawn (clock time): a long gap (the computer asleep) goes in the log
     last_frame_wall: Option<std::time::SystemTime>,
     studio_dith_busy: HashMap<&'static str, (String, f64)>,
     studio_terr: Vec<Vec<f32>>,
     studio_terr_at: f64,
     /// Studio's terrain: bands across and rows deep (right-click it)
-    studio_terr_n: usize,
-    studio_terr_rows: usize,
+    studio_terr_n: usize = 160,
+    studio_terr_rows: usize = 160,
     /// Studio's terrain, right-click: the camera (0 still, 1 sway, 2 change angles), the mouse (0 nothing, 1 ripples,
     /// 2 look around, 3 both), and the ground rolling in slow waves
     studio_terr_cam: u8,
@@ -1125,9 +1142,9 @@ struct App {
     studio_terr_clock: f64,
     studio_terr_last: f64,
     studio_terr_pushed: u64,
-    studio_terr_look: [f32; 2],
+    studio_terr_look: [f32; 2] = [0.0; 2],
     studio_terr_waves: Vec<(f32, f32, f64, f64, f32)>,
-    studio_terr_mouse_at: (Pos2, f64),
+    studio_terr_mouse_at: (Pos2, f64) = (Pos2::ZERO, 0.0),
     /// the styles' right column, dragged wider or narrower (0: its own width), listening and practising
     style_col_w: f32,
     /// the styles' deck (Now Playing at the top of the column), dragged taller or shorter (0: its own height)
@@ -1136,7 +1153,7 @@ struct App {
     fullscreen: bool,
     /// fullscreen was turned on inside the album view, so leaving the view also leaves fullscreen
     fs_by_art: bool,
-    art_tilt: Vec2,
+    art_tilt: Vec2 = Vec2::ZERO,
     lyrics: Option<Lyrics>,
     lyric_scroll: f32,
     lyric_free: f32,
@@ -1152,13 +1169,13 @@ struct App {
     q_added: HashSet<u64>,
     q_next: u64,
     /// a song you queued leaves the queue once playing moves on past it (Preferences)
-    q_drop: bool,
+    q_drop: bool = true,
     /// MY TRACKS: the sources turned off (by SOURCES key)
     mine_off: Vec<String>,
     /// MY TRACKS shows the songs split into stems instead of the liked ones
     mine_stems: bool,
     /// the metronome's own volume (0..1), apart from the main volume
-    mt_vol: f32,
+    mt_vol: f32 = 0.8,
     sleep_at: Option<Instant>,
     sleep_mins: u32,
     mini: bool,
@@ -1168,29 +1185,29 @@ struct App {
     linked_upd_at: Option<Instant>,
     /// the full window's equalizer and playlist (show_eq, queue_hidden) while the mini player is on: the mini starts
     /// with both closed and opens its own, and leaving it brings these back
-    mini_saved: (bool, bool),
+    mini_saved: (bool, bool) = (false, false),
     /// the skin stack the mini window was last sized for: (equalizer, playlist) under the deck
-    mini_stack: (bool, bool),
+    mini_stack: (bool, bool) = (false, false),
     pinned: bool,
-    saved_size: Vec2,
+    saved_size: Vec2 = Vec2::ZERO,
     /// the window was maximized when the mini player came on
     saved_max: bool,
     /// the song is changing because the last one finished or was skipped (a queued copy then leaves the queue)
     advancing: bool,
     show_eq: bool,
-    eq_gains: [f32; 10],
+    eq_gains: [f32; 10] = [0.0; 10],
     /// the equalizer's preamp, in dB (-12 to +12)
     eq_pre: f32,
     eq_on: bool,
     dirty: bool,
-    last_save: Instant,
+    last_save: Instant = Instant::now(),
     last_title: String,
 
     practice: bool,
     loop_a: Option<f32>,
     loop_b: Option<f32>,
     loop_on: bool,
-    speed: u32,
+    speed: u32 = 100,
     loops: HashMap<i64, (f32, f32)>,
     /// a loop asked for on the song about to start (one picked on the LOOPS page): the only way a song starts
     /// looping; otherwise it starts without one, even with a loop left on it last time
@@ -1198,28 +1215,29 @@ struct App {
     menu_t: f32,
     /// the colour new bookmarks get: None for a random one each time
     mark_col: Option<[u8; 3]>,
+    // tracks are streamed, not kept; saving them to disk is switched on by hand
     keep_cache: bool,
     /// look over your YouTube and SoundCloud songs for ones to keep (at start, and after anything is added)
-    keep_sweep: bool,
-    cache_stats: (usize, u64),
-    cache_at: Instant,
+    keep_sweep: bool = true,
+    cache_stats: (usize, u64) = (0, 0),
+    cache_at: Instant = Instant::now(),
 
     // ---- sources, tunes, diary (see extras.rs / views.rs)
-    store: store::Store,
+    store: store::Store = store::Store::load(),
     store_dirty: bool,
-    store_saved: Instant,
+    store_saved: Instant = Instant::now(),
     /// SYNC: the code typed to link with another computer; songs brought in here this run (while linked, only these
     /// are kept on their own: ones that came in the sync download when they're played)
     sync_in: String,
     here: HashSet<i64>,
     /// DIARY: the notes being written, and the day they're for
-    diary_note: (String, String),
+    diary_note: (String, String) = (String::new(), String::new()),
     srcmap: HashMap<i64, Src>,
-    sec: Sec,
+    sec: Sec = Sec::Tidal,
     /// the list last open in each group (MUSIC / PRACTICE), to come back to it
-    last_music: Sec,
-    last_practice: Sec,
-    ed: Ed,
+    last_music: Sec = Sec::Tidal,
+    last_practice: Sec = Sec::Tunes,
+    ed: Ed = Ed::default(),
     files_busy: bool,
     yt_busy: bool,
     yt_msg: String,
@@ -1240,7 +1258,7 @@ struct App {
     /// when the last update check found you up to date (seconds since 1970; 0: not yet), for "Checked 2 mins ago"
     upd_at: u64,
     upd_state: u8,
-    last_active: Instant,
+    last_active: Instant = Instant::now(),
     show_help: bool,
     palette_open: bool,
     palette_q: String,
@@ -1251,7 +1269,7 @@ struct App {
     /// the diary's summary under the day: 0 the week, 1 the month, 2 the year
     diary_span: u8,
     /// reading time counts in the diary's charts and totals
-    diary_reading: bool,
+    diary_reading: bool = true,
     /// the saved loops: the words they're filtered by, how they're sorted (0 newest, 1 name, 2 time spent, 3 song),
     /// and only the starred ones
     loops_filter: String,
@@ -1261,15 +1279,15 @@ struct App {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     menu_keep: Option<Box<dyn std::any::Any>>,
     fs_cmd_at: Option<Instant>,
-    art_op: f32,
+    art_op: f32 = 0.9,
     show_prefs: bool,
     auto_restart: bool,
     /// the opening sound: 0 off, 1 Backline's chime, 2 the file below
-    intro: u8,
+    intro: u8 = 1,
     intro_file: Option<String>,
     /// which of Backline's opening sounds (intro::SOUNDS)
     intro_sound: u8,
-    binds: Vec<Option<egui::Key>>,
+    binds: Vec<Option<egui::Key>> = prefs::default_binds(),
     rebinding: Option<usize>,
     bind_note: String,
     /// the running tour: (0 general / 1 practice, step)
@@ -1279,7 +1297,7 @@ struct App {
     /// what was playing before the tour (it plays its own song), put back when it ends
     tour_play: Option<tour::TourPlay>,
     /// recording a demo of a tour (BACKLINE_DEMO), and the tour's song, the demo library's only track
-    demo_rec: Option<tour::DemoRec>,
+    demo_rec: Option<tour::DemoRec> = tour::demo_kind().map(tour::DemoRec::new),
     demo_track: Option<Track>,
     /// Windows' media controls, showing the song and whether it plays
     media: Option<media::Controls>,
@@ -1292,9 +1310,9 @@ struct App {
     /// the very first run: Backline's sleek look goes on once the window is up
     first_look: bool,
     /// the library's own zoom (ctrl + wheel or ctrl +/- over it)
-    lib_zoom: f32,
+    lib_zoom: f32 = 1.0,
     /// where the library is (ctrl +/- over it zoom it, not the app)
-    lib_rect: Rect,
+    lib_rect: Rect = Rect::NOTHING,
     help_tab: usize,
     /// (track id, cents from A440, confidence) from the tuning check
     tuning: Option<(i64, i32, f32)>,
@@ -1318,20 +1336,20 @@ struct App {
     /// ADD TO PLAYLIST, while it's open; what's typed to find a playlist; the side picked last (Tidal or Backline)
     pl_picker: Option<new_playlist::Picker>,
     pl_find: String,
-    pl_last_tidal: bool,
+    pl_last_tidal: bool = true,
     /// songs from the other computer: the copying, its list as shown here, a song whose file is there (asked about),
     /// what to do with such a song (0 ask, 1 play from there, 2 save a copy), whether ALWAYS is ticked, how many files
     /// were last shared with it, whether the last copy was only to play now, and FILES' sources (this computer's
     /// songs, that computer's: either or both)
-    copying: Arc<peer_files::Copying>,
-    peer: peer_files::PeerView,
+    copying: Arc<peer_files::Copying> = Arc::new(peer_files::Copying::default()),
+    peer: peer_files::PeerView = peer_files::PeerView::default(),
     peer_ask: Option<(Track, String)>,
     peer_play: u8,
     peer_always: bool,
-    shared_n: usize,
+    shared_n: usize = usize::MAX,
     copying_last_for_now: bool,
     files_there: bool,
-    files_here: bool,
+    files_here: bool = true,
     /// your own Tidal playlists (None until asked for), and whether they are being fetched
     tidal_lists: Option<Vec<(String, String)>>,
     /// the New Playlist panel, while open
@@ -1355,7 +1373,7 @@ struct App {
     look_for: String,
     look_tracks: Vec<(Track, u32)>,
     /// the tune's proper name, guessed from what LOOK UP found: (for which name, how many found, the guess)
-    name_guess: (String, usize, Option<String>),
+    name_guess: (String, usize, Option<String>) = (String::new(), 0, None),
     /// tunes whose guessed name you said KEEP to (their names as kept)
     name_kept: Vec<String>,
     f_tune: String,
@@ -1365,9 +1383,9 @@ struct App {
     show_form: bool,
 
     // ---- practice tools
-    wave: (i64, Option<Vec<u8>>),
+    wave: (i64, Option<Vec<u8>>) = (0, None),
     /// The playing song's fine outline (a low and high per millisecond), held only while it plays.
-    wave_fine: (i64, Option<Vec<[i8; 2]>>),
+    wave_fine: (i64, Option<Vec<[i8; 2]>>) = (0, None),
     /// how bright the song sounds, 50 times a second (`sources::wave_data`), for the waveform's coloured drawing
     wave_tone: Vec<u8>,
     /// the library hidden: just the player's column (with a skin, the window narrowed to it)
@@ -1377,17 +1395,17 @@ struct App {
     more: bool,
     /// stems: 0 idle, 1 downloading the tool, 2 splitting a track
     stem_busy: u8,
-    stem_on: [bool; 4],
+    stem_on: [bool; 4] = [true; 4],
     /// focus timer: 0 idle, 1 focus block, 2 break, 3 break over, 4 held (paused, or brought back after a restart)
     pomo: u8,
     /// held: the seconds left and which part it was (1 focus, 2 break)
     pomo_left: u64,
-    pomo_was: u8,
+    pomo_was: u8 = 1,
     pomo_end: Option<Instant>,
-    pomo_focus: u32,
-    pomo_break: u32,
-    pomo_cycles: u32,
-    pomo_n: u32,
+    pomo_focus: u32 = 25,
+    pomo_break: u32 = 5,
+    pomo_cycles: u32 = 4,
+    pomo_n: u32 = 1,
     pomo_flash: Option<Instant>,
     timer_open: bool,
     metro_open: bool,
@@ -1395,8 +1413,8 @@ struct App {
     count_in: u32,
     taps: Vec<Instant>,
     trainer: bool,
-    trainer_step: u32,
-    trainer_n: u32,
+    trainer_step: u32 = 5,
+    trainer_n: u32 = 4,
     passes: u32,
     last_wraps: u32,
     /// when the loop last went round (practice time counts only while it keeps doing so)
@@ -1406,17 +1424,17 @@ struct App {
     /// the pitch as typed in its box
     pitch_text: String,
     /// the A you play at (Hz: 440, 442, 432...), and what's typed for it and for the record's A
-    my_a: f32,
+    my_a: f32 = 440.0,
     my_a_text: String,
     rec_a_text: String,
     chan: u32,
     acc: f32,
-    acc_at: Instant,
-    last_cap: Instant,
+    acc_at: Instant = Instant::now(),
+    last_cap: Instant = Instant::now(),
     /// the queue kept with where you are last time (its address: the same queue isn't made again)
     last_q: usize,
     /// the song and stems NOTES last tried (one that couldn't be read isn't tried again each frame)
-    notes_tried: (i64, u8),
+    notes_tried: (i64, u8) = (0, 0),
     sec_name: String,
     pending_seek: Option<f32>,
     /// LOOPS shows every song with a loop (else just this week's)
@@ -1450,7 +1468,7 @@ struct App {
     share_pick: Option<(HashSet<i64>, HashSet<String>)>,
     /// PREFERENCES > SHARE WITH A FRIEND: the pieces left out of a pack (all in to begin with), and loops and playlists in it
     pack_off: Vec<String>,
-    pack_loops: bool,
+    pack_loops: bool = true,
     /// a pack being opened: its pieces, ticked or not
     pack_in: Option<pack::Opened>,
     /// the WHAT'S NEW panel's notes (open while Some), and the last version you saw them for
@@ -1498,11 +1516,11 @@ struct App {
     cf_root: Option<i32>,
     cf_fam: Option<usize>,
     /// BUILD YOUR OWN cluster: how many notes, each step (true = a semitone), the note it starts on
-    cb_size: u8,
-    cb_steps: [bool; 4],
+    cb_size: u8 = 3,
+    cb_steps: [bool; 4] = [true, false, true, false],
     cb_lo: i32,
-    chord_q: String,
-    an_frets: [Option<u8>; 6],
+    chord_q: String = "Dm7".to_string(),
+    an_frets: [Option<u8>; 6] = [None; 6],
     /// your grip waiting to be deleted (chord key, which), asked to confirm first
     grip_ask: Option<(String, usize)>,
     /// laying down a grip for this chord (key, name as shown), from the finder
@@ -1510,21 +1528,21 @@ struct App {
     /// the analyzer's SAVE GRIP AS panel: open, the name, and the funnel's root / kind / type
     gs_open: bool,
     gs_name: String,
-    gs_pick: (usize, usize, usize),
+    gs_pick: (usize, usize, usize) = (0, 2, 0),
     /// how chord names are written, the details panel, the neck's size, how strong the hover rings are
-    chord_sp: theory::Spelling,
+    chord_sp: theory::Spelling = theory::Spelling { slash: true, ..theory::Spelling::default() },
     chord_details: bool,
     /// the CLUSTERS tab: key, parent scale, notes in the cluster, string set, the degree on show
     cl_key: i32,
     cl_scale: usize,
     cl_view: u8,
-    cl_semi: bool,
-    cl_low: i32,
+    cl_semi: bool = true,
+    cl_low: i32 = 11,
     cl_bass: i32,
     /// FIXED CLUSTER's own bass, and FIXED BASS's own cluster (its lower note), so walking one tab leaves the other be
     fc_bass: i32,
-    fb_low: i32,
-    cl_changes: String,
+    fb_low: i32 = 11,
+    cl_changes: String = "Dm7b5 G7 Cmaj7 Gbm7b5 Fm7 Em7 Ebdim7 Dm7 G7 Cmaj7".to_string(),
     cl_chord: usize,
     /// CLUSTERS: the mode on show in SCALES; the voicing on the neck in BUILD and its name
     cl_mode: usize,
@@ -1537,31 +1555,31 @@ struct App {
     tr_set4: usize,
     tr_sel: usize,
     /// TRIADS > MAP: every note of the triad lit on the whole neck, under the shapes
-    tr_whole: bool,
-    tr_pos: u8,
-    tr_prog: String,
-    tr_bass: i32,
+    tr_whole: bool = true,
+    tr_pos: u8 = 1,
+    tr_prog: String = "1 4 5 1".to_string(),
+    tr_bass: i32 = 2,
     mv_page: u8,
     mv_move: usize,
     mv_dip: bool,
     mv_parent: usize,
-    mv_mode: usize,
+    mv_mode: usize = 1,
     mv_stack: u8,
     mv_motion: u8,
-    mv_pedal: bool,
+    mv_pedal: bool = true,
     mv_play: Option<(Instant, Vec<f32>)>,
     /// PROGRESSION LAB: the chord picked, SNAP (0 off, 1 8ths, 2 16ths, 3 triplets), TAP TIMING running, a line
     /// about it, playing (start, chord times), an edge being dragged (chord, its beats then, where the drag began,
     /// a beat's width), the Lab holding the metronome's sound for its clicks, the metronome on, and how a linked loop
     /// is heard (on its own, or the record's loop)
     lab_sel: usize,
-    lab_snap: u8,
+    lab_snap: u8 = 2,
     lab_run: Option<lab::LabRun>,
     lab_note: String,
     lab_play: Option<(Instant, Vec<f32>)>,
     lab_drag: Option<(usize, f32, f32, f32)>,
     lab_clicks: bool,
-    lab_metro: bool,
+    lab_metro: bool = true,
     lab_with_loop: bool,
     /// PLAY over the linked loop: the record plays and the page follows it
     lab_loop_play: bool,
@@ -1575,9 +1593,9 @@ struct App {
     lab_count: Option<Instant>,
     /// HEAR MY CHORDS over the record: on, when the pass laid down last starts (its first chord), and where the song
     /// was last frame (to notice a jump)
-    lab_loop_chords: bool,
+    lab_loop_chords: bool = true,
     /// MY CHORDS' volume (0..1; the song keeps the player's)
-    lab_vol: f32,
+    lab_vol: f32 = 1.0,
     /// THE CHORD BOOK (CHORDS > SHAPES, only when chord_book.txt is in Backline's folder): the book once read (None:
     /// no file), whether it has been read, and the string set and family open
     cb_book: Option<std::sync::Arc<crate::chord_book::Book>>,
@@ -1590,7 +1608,7 @@ struct App {
     cb_at: usize,
     cb_anim: Option<(Instant, [Option<u8>; 6])>,
     cb_auto: Option<Instant>,
-    cb_sound: bool,
+    cb_sound: bool = true,
     /// WALK hides the note names and degrees (a quiz: play it, say them, then show), and the step shown anyway
     cb_hide: bool,
     cb_shown: Option<usize>,
@@ -1610,7 +1628,7 @@ struct App {
     cb_cad_key: Option<i32>,
     cb_cad_minor: bool,
     cb_cad_start: usize,
-    cb_cad_pick: [usize; 2],
+    cb_cad_pick: [usize; 2] = [0, 0],
     cb_cad_step: usize,
     lab_pass: Option<Instant>,
     lab_last_pos: Option<(Instant, f32)>,
@@ -1625,11 +1643,11 @@ struct App {
     /// READING: key, position, rhythm level, bars, time (0 4/4, 1 3/4), tempo, the helps shown, the line, and a
     /// play-through (start, note times, only clicks?, length)
     rd_key: usize,
-    rd_pos: usize,
+    rd_pos: usize = 1,
     rd_level: usize,
-    rd_bars: usize,
+    rd_bars: usize = 1,
     rd_time: usize,
-    rd_bpm: u32,
+    rd_bpm: u32 = 70,
     rd_tab: bool,
     rd_names: bool,
     rd_map: bool,
@@ -1648,23 +1666,23 @@ struct App {
     rd_lesson: usize,
     rd_piece: usize,
     rd_part: usize,
-    rd_tempo_for: (usize, usize),
+    rd_tempo_for: (usize, usize) = (usize::MAX, 0),
     /// what is playing, to carry on at a new tempo: (part, other part, only clicks, from beat, count-in length, secs a beat)
     rd_ctx: Option<(crate::reading::Reading, Option<crate::reading::Reading>, bool, f32, f32, f32)>,
     rd_bpm_text: String,
     /// a duet shown as both staves
-    rd_both: bool,
+    rd_both: bool = true,
     /// how far the music is magnified
-    rd_zoom: f32,
+    rd_zoom: f32 = 1.0,
     /// which reading guide is open
     rd_guide: u8,
     /// the book's markings on the music (fingers, strings, pick strokes...)
-    rd_marks: bool,
+    rd_marks: bool = true,
     /// made-up lines: the position's fingering written over the notes
-    rd_fingering: bool,
-    cb_frets: [Option<u8>; 6],
+    rd_fingering: bool = true,
+    cb_frets: [Option<u8>; 6] = [None; 6],
     cb_name: String,
-    vc_family: u8,
+    vc_family: u8 = 4,
     vc_root: i32,
     vc_type: usize,
     vc_set: usize,
@@ -1673,13 +1691,13 @@ struct App {
     ln_tab: u8,
     /// PENTATONICS: key, major or minor, the box shown (5 = the whole neck), the blue note and in-between notes,
     /// labels (degrees, notes, fingers), the exercise, its string, and what it is played over
-    pn_root: i32,
+    pn_root: i32 = 9,
     pn_box: u8,
     pn_blue: bool,
     pn_between: bool,
     pn_label: u8,
     pn_ex: u8,
-    pn_string: u8,
+    pn_string: u8 = 5,
     /// which box counts as box 1 (0: the one with its root on the 6th string, first finger)
     /// NUMBERING, kept for each tab by where position 1's root sits (empty: the usual one)
     pn_num: String,
@@ -1692,20 +1710,21 @@ struct App {
     /// PENTATONICS & MORE: the family (0 pentatonic, 1 hexatonic, 2 diminished), the scale in it, notes per string
     pn_fam: u8,
     pn_scale: u8,
-    pn_nps: u8,
+    pn_nps: u8 = 2,
     /// SUPERIMPOSE: the chord (root, quality), suggestions or any shape, the suggestion picked, the shape and its
     /// root (from the chord's root), and what the line is played over
     si_root: i32,
     /// SUPERIMPOSE: the chord's kind and which chord (as in FIND A CHORD), and the scale it is heard in
     si_fam: u8,
-    si_chord: u8,
+    si_chord: u8 = 4,
     si_scale: u8,
     /// what a line is played over (LINES and SCALE HARMONY): nothing, a drone, the chord, the band
-    ln_over: u8,
-    hm_parent: u8,
-    hm_key: i32,
-    hm_stack: u8,
-    hm_deg: u8,
+    ln_over: u8 = 3,
+    // G melodic minor, its Bb maj7#5 picked
+    hm_parent: u8 = 1,
+    hm_key: i32 = 7,
+    hm_stack: u8 = 1,
+    hm_deg: u8 = 2,
     hm_solo: u8,
     hm_vamp: Vec<u8>,
     /// EAR: the drill, the question, this session
@@ -1721,15 +1740,15 @@ struct App {
     si_any: bool,
     si_pick: u8,
     si_kind: u8,
-    si_kroot: u8,
+    si_kroot: u8 = 7,
     /// TRIAD PAIRS: over a chord or through changes; a suggested pair or any two triads; the suggestion picked;
     /// the two triads picked (root, kind); the strings (0 anywhere, then the sets from the top down); the exercise;
     /// the changes (0 the open tune when there is one, then the set ones) and their key
     tp_mode: u8,
     tp_any: bool,
     tp_pick: u8,
-    tp_a: (i32, u8),
-    tp_b: (i32, u8),
+    tp_a: (i32, u8) = (2, 0),
+    tp_b: (i32, u8) = (4, 1),
     tp_strings: u8,
     tp_ex: u8,
     tp_prog: u8,
@@ -1737,7 +1756,7 @@ struct App {
     /// SCALE FINGERINGS: the scale (by name), key, system (0 five positions, else notes a string), the position
     /// shown (its count = the whole neck), labels, which shape is position 1 (255: the one rooted on the 5th
     /// string), the starred scales, and shifting through them all
-    pf_scale: String,
+    pf_scale: String = "Ionian (Major)".to_string(),
     pf_root: i32,
     pf_sys: u8,
     pf_pos: u8,
@@ -1752,19 +1771,19 @@ struct App {
     cm_tab: u8,
     cm_list: Option<Vec<(std::path::PathBuf, String)>>,
     /// when the transcriptions folder was last read
-    cm_list_at: Instant,
+    cm_list_at: Instant = Instant::now(),
     cm_moves: Vec<transcription::Move>,
     cm_moves_read: bool,
     cm_file: Option<std::path::PathBuf>,
     cm_loaded: Option<(std::path::PathBuf, Arc<transcription::Tune>)>,
     /// the moves spotted in the tune open (worked out once per tune)
     cm_found: Option<(std::path::PathBuf, Vec<(usize, (usize, usize), (usize, usize))>)>,
-    cm_bpm: u32,
-    cm_show: [bool; 5],
+    cm_bpm: u32 = 90,
+    cm_show: [bool; 5] = [true; 5],
     cm_play: Option<(Instant, f32, f32)>,
     cm_loop: bool,
     cm_from: usize,
-    cm_to: usize,
+    cm_to: usize = usize::MAX,
     cm_sel: Option<(usize, usize)>,
     cm_sel2: Option<(usize, usize)>,
     cm_kind: u8,
@@ -1773,7 +1792,7 @@ struct App {
     /// the move open under the list
     cm_open: Option<usize>,
     /// the moves spotted, marked over the bars (all kinds, or one); the one clicked
-    cm_marks: bool,
+    cm_marks: bool = true,
     cm_mark_kind: u8,
     cm_mark: Option<usize>,
     /// CHORD MELODIES: the beats being dragged over (from, to); the tune open has its chord names worked out
@@ -1796,7 +1815,7 @@ struct App {
     ar_src: u8,
     ar_root: i32,
     ar_scale: u8,
-    ar_deg: u8,
+    ar_deg: u8 = 1,
     ar_q: u8,
     ar_pos: u8,
     ar_ex: u8,
@@ -1826,20 +1845,20 @@ struct App {
     sl_kind: usize,
     sl_pat: usize,
     /// tempo, notes to a beat, round and round, and the line being played (for the diary's count)
-    ln_bpm: u32,
-    ln_sub: u8,
-    ln_loop: bool,
+    ln_bpm: u32 = 80,
+    ln_sub: u8 = 2,
+    ln_loop: bool = true,
     ln_playing: String,
     /// SCALES: the range and direction of its patterns
-    sc_oct: usize,
-    sc_dir: usize,
+    sc_oct: usize = 2,
+    sc_dir: usize = 2,
     /// the last sequence played, to go round again
     seq_last: Option<Vec<Vec<i32>>>,
     /// CHORDS > PROGRESSIONS: the family shown, key, minor, 7th chords, all twelve keys, one being typed
     prog_fam: usize,
     prog_key: i32,
     prog_minor: bool,
-    prog_7: bool,
+    prog_7: bool = true,
     /// the progression clicked, asking whether it goes on the lead sheet (group, row)
     prog_ask: Option<(usize, usize)>,
     prog_new: String,
@@ -1851,7 +1870,7 @@ struct App {
     edit_info: Option<(i64, String, String)>,
     /// EDIT INFO for a song of yours (a file, YouTube, SoundCloud): its album, and a file's name (renamed on disk when
     /// changed)
-    edit_extra: (String, String),
+    edit_extra: (String, String) = (String::new(), String::new()),
     /// DIARY: which page (0 diary, 1 routine, 2 listening, 3 masters); LISTENING on gospel
     diary_tab: u8,
     /// TUNES: yours (0) or the recommended ones (1), jazz or gospel; a recommended tune being looked at (its chart
@@ -1869,11 +1888,11 @@ struct App {
     takes_open: bool,
     take_ask: Option<i64>,
     /// key and BPM being typed in the edit info panel
-    edit_kb: (String, String),
+    edit_kb: (String, String) = (String::new(), String::new()),
     /// the Skins page's side: 0 Backline's own looks, 1 Winamp skins
     skins_side: u8,
-    neck_zoom: f32,
-    ghost_alpha: f32,
+    neck_zoom: f32 = 1.0,
+    ghost_alpha: f32 = 0.7,
     /// the analyzer's reading: the one picked (click), the one hovered
     an_pick: Option<String>,
     an_hover: Option<String>,
@@ -1895,12 +1914,12 @@ struct App {
     rec_devs: Vec<String>,
     /// the tune the take goes with (0 = free play, else the tune's index + 1); the band starts with it
     rec_tune: u32,
-    rec_band: bool,
+    rec_band: bool = true,
     /// the last take (its mixed version's id) and whether it has been listened to; KEEP / DELETE asked
     rec_last: Option<(i64, bool)>,
     rec_ask: bool,
     /// Diary: month shown (year, month; 0 = this month) and the day picked (days since 1970; 0 = today)
-    diary_ym: (i32, u32),
+    diary_ym: (i32, u32) = (0, 0),
     diary_sel: i64,
     /// DIARY: the picked day's times can be changed, and practice added by hand (what, minutes)
     diary_edit: bool,
@@ -1911,7 +1930,7 @@ struct App {
     /// page turning (when, which way, the page before)
     notes_q: String,
     notes_filter: Option<String>,
-    notes_mode: u8,
+    notes_mode: u8 = 1,
     notes_tags_all: bool,
     notes_flip: Option<(f64, i8, [String; 3])>,
     /// the diary calendar's page turning to another month: when, which way, the page it turns from
@@ -1920,19 +1939,19 @@ struct App {
     notes_fit: usize,
     /// DIARY: the notes box sliding to another day (when it started, whether to a later day, the old day's words)
     diary_flip: Option<(f64, bool, String)>,
-    diary_add: (String, String),
+    diary_add: (String, String) = (String::new(), String::new()),
     /// DIARY: the journal entry being changed (its place in the store's entries)
     entry_edit: Option<usize>,
-    mt: band::Metro,
-    mt_bpm: u32,
+    mt: band::Metro = band::Metro::default(),
+    mt_bpm: u32 = 100,
     mt_add: f32,
-    mt_step_at: Instant,
+    mt_step_at: Instant = Instant::now(),
     mt_sig: u64,
     mt_group: usize,
-    vol_before: f32,
+    vol_before: f32 = 0.7,
     look_style: u8,
     last_ppp: f32,
-    last_size: Vec2,
+    last_size: Vec2 = Vec2::ZERO,
     frames: u32,
     mt_vis: Option<(Instant, f32, usize)>,
     beat_failed: HashSet<i64>,
@@ -1940,8 +1959,8 @@ struct App {
     beat_known: HashMap<i64, Option<band::BeatInfo>>,
     beat_wait: Option<i64>,
     mt_gen: u32,
-    mt_pos: (f32, Instant),
-    mt_sync_at: Instant,
+    mt_pos: (f32, Instant) = (0.0, Instant::now()),
+    mt_sync_at: Instant = Instant::now(),
     /// locked to a song's beats: the song time its laid-out clicks run to (rebuilt before then)
     mt_lead_end: f32,
     beat: Option<(i64, f32, f32)>,
@@ -1950,28 +1969,28 @@ struct App {
     beat_busy: bool,
     band_on: bool,
     band_style: u8,
-    band_parts: [bool; 3],
+    band_parts: [bool; 3] = [true; 3],
     /// how loud each part plays (bass, chords, drums), 0 to 1.5
-    band_lv: [f32; 3],
+    band_lv: [f32; 3] = [1.0; 3],
     /// times through the chart before the band stops (0 = until you stop it)
     band_loops: u32,
     /// the band's parts as last rendered (for which chart, tempo and style), so a level change only remixes
     band_stems: Option<(u64, std::sync::Arc<[Vec<f32>; 3]>)>,
-    band_t0: Instant,
+    band_t0: Instant = Instant::now(),
     band_lead: f32,
-    band_bar: f32,
+    band_bar: f32 = 2.0,
     /// seconds a beat, and where each bar of band_order starts (in beats, the total last)
-    band_beat: f32,
+    band_beat: f32 = 0.5,
     band_starts: Vec<f32>,
     band_order: Vec<usize>,
     band_sig: u64,
     band_chart: String,
     pomo_sound: bool,
     /// the chime's own volume (0 to 1): the focus timer's and My Plan's
-    chime_vol: f32,
+    chime_vol: f32 = 0.7,
     /// the focus timer's extras (auto-start, long rest, music, diary) and its pills
     tm: tools::TimerMore,
-    lib_frac: f32,
+    lib_frac: f32 = 0.34,
     /// the chord finder's voicing group on show (drop 2, drop 3...)
     voicing_tab: u8,
     /// the stack's width with a skin worn, dragged (0: as wide as fits at a whole-pixel size)
@@ -1980,22 +1999,22 @@ struct App {
     prac_stack_w: f32,
     /// the places' list down the library's side, dragged (0: its own width)
     nav_w: f32,
-    stack_frac: f32,
+    stack_frac: f32 = 1.0,
     /// the Winamp stack's size: points per skin pixel (a whole number of screen pixels)
-    stack_k: f32,
+    stack_k: f32 = 2.0,
     /// the practice panel's height (drag the edge above it)
     prac_h: f32,
     /// Tidal can't be reached (no internet): when it was last tried (it is tried again now and then)
     net_down: bool,
-    net_try: Instant,
+    net_try: Instant = Instant::now(),
     /// the wait before the next try after the internet went: longer each time it fails (30 s up to 10 min)
-    net_wait: u64,
+    net_wait: u64 = 30,
     /// offline mode: you chose it - nothing goes out, only what is on this computer shows and plays
     go_offline: bool,
     /// how many liked songs were last kept on disk
     lib_saved_n: usize,
     /// how many liked songs are in, and since when (they are kept once the count stops changing)
-    lib_seen: (usize, Instant),
+    lib_seen: (usize, Instant) = (0, Instant::now()),
     /// the equalizer's height, dragged (None: it follows the player's size)
     eq_h_user: Option<f32>,
     /// the skinned deck's size in the player window (skin pixels to screen points; None: as large as fits)
@@ -2013,22 +2032,22 @@ struct App {
     /// thin outlines round a skin's real buttons while the pointer is over the player (off: the skin as drawn)
     wa_outline: bool,
     /// your Custom look's colors, and whether it's the look you wore last
-    custom: skin::CustomLook,
+    custom: skin::CustomLook = skin::CustomLook::default(),
     /// Ambient Color's colours now (from the last cover worked out), and the cover they were asked for
-    ambient: skin::CustomLook,
+    ambient: skin::CustomLook = skin::CustomLook::default(),
     amb_for: String,
     /// Ambient Color's backdrop: the cover's colours at its four corners
-    amb_tint: [Color32; 4],
+    amb_tint: [Color32; 4] = [Color32::from_rgb(60, 40, 30), Color32::from_rgb(70, 30, 50), Color32::from_rgb(40, 30, 40), Color32::from_rgb(60, 20, 50)],
     /// Streaming: the queue (the playlist) shown beside the library; off, the library has the whole window
     stream_queue: bool,
     /// the styles' mini players show a small visualizer (its switch at the mini player's top)
-    mini_viz: bool,
+    mini_viz: bool = true,
     /// the styles' decks show the time left rather than the time in (a click on the time)
     time_left: bool,
     /// the Classic look or Winamp skin worn last (id, name), to go back to from a style
     classic_worn: Option<(String, String)>,
     /// Ambient Color's backdrop fading from these colours, and when the fade began
-    amb_from: [Color32; 4],
+    amb_from: [Color32; 4] = [Color32::from_rgb(60, 40, 30); 4],
     amb_t0: f64,
     look_custom: bool,
     /// the Custom look's editor, while open
@@ -2058,14 +2077,14 @@ struct App {
     chart_tried: std::collections::HashSet<String>,
     /// tunes whose writer and year were looked up this session
     details_tried: std::collections::HashSet<String>,
-    chart_rn: bool,
+    chart_rn: bool = true,
     /// the lead sheet stays put (LOCKED) instead of following the song playing (the default)
     chart_lock: bool,
     ireal_in: String,
     /// a tune's page: its written-by / year / from / style boxes open
     tune_more: bool,
     look_q: String,
-    chart_cache: (String, chart::Chart),
+    chart_cache: (String, chart::Chart) = (String::new(), chart::Chart::default()),
 }
 
 /// Audio bytes for a track: a file on this computer, from the local cache if it's stored,
@@ -2145,800 +2164,8 @@ impl App {
         let ctx = cc.egui_ctx.clone();
         let req = spawn_image_pool(api.clone(), tx.clone(), ctx.clone());
         let thumbs = spawn_thumb_pool(api.clone(), tx.clone(), ctx.clone());
-        let mut app = App {
-            api,
-            tx,
-            rx,
-            ctx,
-            images: Images { map: HashMap::new(), requested: HashSet::new(), req, thumbs, avg: HashMap::new(), hold: HashMap::new() },
-            _font_tex: font_tex,
-            auth: Auth::LoggedOut,
-            login_code: None,
-            login_err: String::new(),
-            page: None,
-            lib_page: None,
-            lib_at: None,
-            lib_looking: false,
-            keeping: HashSet::new(),
-            mine_cache: None,
-            was_focused: true,
-            art_preview: None,
-            wa_loading: None,
-            back: Vec::new(),
-            fwd: Vec::new(),
-            credits: None,
-            artist_pick: None,
-            serial: 0,
-            lib_gen: 0,
-            lib_tab: Tab::Tracks,
-            loading: false,
-            search: String::new(),
-            search_focus: false,
-            search_bar: false,
-            pl_updating: None,
-            status: String::new(),
-            status_err: false,
-            queue: Arc::new(Vec::new()),
-            orig_queue: None,
-            cur: None,
-            q_scroll: false,
-            play_gen: 0,
-            buffering: false,
-            paused: false,
-            stopped: true,
-            prefer_lossless: true,
-            kbps: 0,
-            prefetched: None,
-            prefetching: 0,
-            player: Player::new(),
-            // (a first run starts well below full: the tour's song is the first thing heard)
-            volume: 0.6,
-            shuffle: false,
-            repeat: Repeat::Off,
-            seek_drag: None,
-            wv_zoom: 1.0,
-            wv_start: 0.0,
-            wv_free: false,
-            wv_free_t: 0.0,
-            wv_h: 1.0,
-            wv_follow: true,
-            wv_draw: 0,
-            wv_notes: false,
-            notes: (0, 0, None),
-            notes_busy: false,
-            notes_tex: Vec::new(),
-            bands: vec![0.0; 32],
-            peaks: vec![0.0; 32],
-            audio_err_shown: false,
-            art_view: false,
-            show_spec: true,
-            vis_gl: Arc::new(Mutex::new(visuals::Gl::default())),
-            vis_preset: visuals::find("Down the Drain"),
-            vis_np: false,
-            vis_agc: Default::default(),
-            vis_full: false,
-            vis_saver: false,
-            vis_was_fs: false,
-            vis_shown_at: 0.0,
-            vis_ui_at: 0.0,
-            vis_seen: String::new(),
-            vis_idle: 5,
-            vis_idle_since: Instant::now(),
-            vis_last: 0.0,
-            vis_travel: 0.0,
-            vis_cache: None,
-            vis_pipes: Default::default(),
-            vis_stars: Default::default(),
-            pop: None,
-            pop_px: None,
-            pop_pin: true,
-            spec_op: 0.2,
-            spec_h: 0.42,
-            spec_w: 0.6,
-            spec_frame: 1,
-            spec_lyr: 0,
-            viz_panel: None,
-            side: None,
-            hist_back: Vec::new(),
-            hist_fwd: Vec::new(),
-            hist_at: None,
-            wa_q: String::new(),
-            wa_list: Vec::new(),
-            wa_busy: false,
-            wa_end: false,
-            wa_worn: None,
-            wa_recent: Vec::new(),
-            wa_favs: Vec::new(),
-            wa_tab: 0,
-            wa_preview: None,
-            wa_art: None,
-            art_border: 1,
-            cap_size: 1,
-            cap_dark: false,
-            cap_show: 0,
-            cap_song: 0,
-            cap_mode_at: -10.0,
-            bg_now: None,
-            out_device: None,
-            sys_output: String::new(),
-            out_list: Vec::new(),
-            out_bt: Vec::new(),
-            art_queue: false,
-            viz: [viz::VizCfg::player(), viz::VizCfg::art()],
-            viz_wave: vec![0.0; WAVE_N],
-            show_lyrics: true,
-            np_move_at: 0.0,
-            np_tab: 0,
-            np_blur: None,
-            np_blur_for: String::new(),
-            vu: [0.0; 2],
-            hw_show: 0,
-            hw_corr: 1.0,
-            hw_ms: 0.0,
-            hw_need: [0.0, -1.2, -40.0],
-            hw_ref: (0, 0.0, 0),
-            hw_peak: [0.0; 2],
-            hw_tex: None,
-            studio_np: 0,
-            studio_vis: 0,
-            studio_dith: HashMap::new(),
-            studio_dith_anim: HashMap::new(),
-            studio_cover_at: -10.0,
-            q_jump: false,
-            np_row_w: 330.0,
-            q_cur_seen: true,
-            last_frame_wall: None,
-            studio_dith_busy: HashMap::new(),
-            studio_terr: Vec::new(),
-            studio_terr_at: 0.0,
-            studio_terr_n: 160,
-            studio_terr_rows: 160,
-            studio_terr_cam: 0,
-            studio_terr_mouse: 0,
-            studio_terr_swell: false,
-            studio_terr_clock: 0.0,
-            studio_terr_last: 0.0,
-            studio_terr_pushed: 0,
-            studio_terr_look: [0.0; 2],
-            studio_terr_waves: Vec::new(),
-            studio_terr_mouse_at: (Pos2::ZERO, 0.0),
-            style_col_w: 0.0,
-            style_deck_h: 0.0,
-            style_prac_col_w: 0.0,
-            fullscreen: false,
-            fs_by_art: false,
-            art_tilt: Vec2::ZERO,
-            lyrics: None,
-            lyric_scroll: 0.0,
-            lyric_free: 0.0,
-            liked: HashSet::new(),
-            q_drag: None,
-            q_manual: 0,
-            q_drop: true,
-            mine_off: Vec::new(),
-            mine_stems: false,
-            mt_vol: 0.8,
-            q_added: HashSet::new(),
-            q_next: 0,
-            sleep_at: None,
-            sleep_mins: 0,
-            mini: false,
-            mini_size_at: None,
-            linked_upd_at: None,
-            mini_saved: (false, false),
-            mini_stack: (false, false),
-            pinned: false,
-            saved_size: Vec2::ZERO,
-            saved_max: false,
-            advancing: false,
-            show_eq: false,
-            eq_gains: [0.0; 10],
-            eq_pre: 0.0,
-            eq_on: false,
-            dirty: false,
-            last_save: Instant::now(),
-            last_title: String::new(),
-            practice: false,
-            loop_a: None,
-            loop_b: None,
-            loop_on: false,
-            speed: 100,
-            loops: HashMap::new(),
-            loop_next: None,
-            menu_t: 0.0,
-            mark_col: None,
-            // tracks are streamed, not kept; saving them to disk is switched on by hand
-            keep_cache: false,
-            keep_sweep: true,
-            cache_stats: (0, 0),
-            cache_at: Instant::now(),
-            store: store::Store::load(),
-            store_dirty: false,
-            store_saved: Instant::now(),
-            sync_in: String::new(),
-            here: HashSet::new(),
-            diary_note: (String::new(), String::new()),
-            srcmap: HashMap::new(),
-            sec: Sec::Tidal,
-            last_music: Sec::Tidal,
-            last_practice: Sec::Tunes,
-            ed: Ed::default(),
-            files_busy: false,
-            yt_busy: false,
-            yt_msg: String::new(),
-            yt_in: String::new(),
-            sc_in: String::new(),
-            marker_drag: 0,
-            pan_off: 0.0,
-            pan_len: 0.0,
-            sc_msg: String::new(),
-            sc_busy: false,
-            sc_results: Vec::new(),
-            sc_sets: Vec::new(),
-            sc_cur: None,
-            list_ask: None,
-            upd: None,
-            upd_note: String::new(),
-            upd_at: 0,
-            upd_state: 0,
-            last_active: Instant::now(),
-            show_help: false,
-            palette_open: false,
-            palette_q: String::new(),
-            palette_all: false,
-            diary_song: None,
-            diary_span: 0,
-            diary_reading: true,
-            loops_filter: String::new(),
-            loops_sort: 0,
-            palette_sel: 0,
-            palette_frame: 0,
-            menu_keep: None,
-            fs_cmd_at: None,
-            art_op: 0.9,
-            show_prefs: false,
-            auto_restart: false,
-            intro: 1,
-            intro_file: None,
-            intro_sound: 0,
-            binds: prefs::default_binds(),
-            rebinding: None,
-            bind_note: String::new(),
-            tour: None,
-            tour_restore: None,
-            tour_play: None,
-            demo_rec: tour::demo_kind().map(tour::DemoRec::new),
-            demo_track: None,
-            media: None,
-            thumb: None,
-            thumb_tried: false,
-            tour_seen: false,
-            icon_names: false,
-            first_look: false,
-            lib_zoom: 1.0,
-            lib_rect: Rect::NOTHING,
-            help_tab: 0,
-            tuning: None,
-            tuning_busy: false,
-            upd_checked: None,
-            new_pl: String::new(),
-            pl_link: String::new(),
-            pl_importing: false,
-            pl_open: None,
-            queue_from: String::new(),
-            toast: None,
-            pl_dupe: None,
-            queue_ask: None,
-            queue_save: None,
-            pl_picker: None,
-            pl_find: String::new(),
-            pl_last_tidal: true,
-            copying: Arc::new(peer_files::Copying::default()),
-            peer: peer_files::PeerView::default(),
-            peer_ask: None,
-            peer_play: 0,
-            peer_always: false,
-            shared_n: usize::MAX,
-            copying_last_for_now: false,
-            files_there: false,
-            files_here: true,
-            tidal_lists: None,
-            new_pl_dlg: None,
-            tidal_lists_busy: false,
-            tidal_new_name: String::new(),
-            lib_filter: String::new(),
-            yt_results: Vec::new(),
-            yt_title: String::new(),
-            yt_cur: None,
-            offline: false,
-            new_tune: String::new(),
-            tune_open: None,
-            edit_ver: None,
-            del_arm: false,
-            pick: None,
-            look_busy: false,
-            look_for: String::new(),
-            look_tracks: Vec::new(),
-            name_guess: (String::new(), 0, None),
-            name_kept: Vec::new(),
-            f_tune: String::new(),
-            f_mins: String::new(),
-            f_bpm: String::new(),
-            f_note: String::new(),
-            show_form: false,
-            wave: (0, None),
-            wave_fine: (0, None),
-            wave_tone: Vec::new(),
-            lib_hidden: false,
-            lib_shown_w: None,
-            more: false,
-            stem_busy: 0,
-            stem_on: [true; 4],
-            pomo: 0,
-            pomo_left: 0,
-            pomo_was: 1,
-            pomo_end: None,
-            pomo_focus: 25,
-            pomo_break: 5,
-            pomo_cycles: 4,
-            pomo_n: 1,
-            pomo_flash: None,
-            timer_open: false,
-            metro_open: false,
-            bpm: 0,
-            count_in: 0,
-            taps: Vec::new(),
-            trainer: false,
-            trainer_step: 5,
-            trainer_n: 4,
-            passes: 0,
-            last_wraps: 0,
-            last_wrap_at: None,
-            semis: 0,
-            pitch_text: String::new(),
-            my_a: 440.0,
-            my_a_text: String::new(),
-            rec_a_text: String::new(),
-            chan: 0,
-            acc: 0.0,
-            acc_at: Instant::now(),
-            last_cap: Instant::now(),
-            last_q: 0,
-            notes_tried: (0, 0),
-            sec_name: String::new(),
-            pending_seek: None,
-            loops_all: false,
-            loops_show: 0,
-            loops_pick: None,
-            clip_edit: None,
-            mark_edit: None,
-            edit_in_practice: false,
-            clip_name: String::new(),
-            clip_note: String::new(),
-            clip_group: String::new(),
-            loop_ask: None,
-            grp_edit: None,
-            grp_name: String::new(),
-            grp_ask: None,
-            grp_new: String::new(),
-            loops_mode: 0,
-            share_view: None,
-            share_pick: None,
-            pack_off: Vec::new(),
-            pack_loops: true,
-            pack_in: None,
-            news: None,
-            seen_build: 0,
-            grp_adding: false,
-            grp_open: None,
-            sel_anchor: None,
-            exporting: false,
-            export_open: false,
-            export_pick: 0,
-            export_whole: false,
-            export_dir: None,
-            export_last: None,
-            rtab: 0,
-            chart_tr: 0,
-            chart_sel: None,
-            chart_drag: None,
-            chart_edit: false,
-            bar_edit: None,
-            chords_tab: 0,
-            cb_pop: false,
-            cb_pop_rect: None,
-            cb_in_window: false,
-            path_on: false,
-            nav_off: 0.0,
-            path_title: String::new(),
-            vc_step: 0,
-            cf_root: None,
-            cf_fam: None,
-            cb_size: 3,
-            cb_steps: [true, false, true, false],
-            cb_lo: 0,
-            chord_q: "Dm7".to_string(),
-            an_frets: [None; 6],
-            grip_ask: None,
-            grip_for: None,
-            gs_open: false,
-            gs_name: String::new(),
-            gs_pick: (0, 2, 0),
-            chord_sp: theory::Spelling { slash: true, ..theory::Spelling::default() },
-            chord_details: false,
-            cl_key: 0,
-            cl_scale: 0,
-            cl_view: 0,
-            cl_semi: true,
-            cl_low: 11,
-            cl_bass: 0,
-            fc_bass: 0,
-            fb_low: 11,
-            cl_changes: "Dm7b5 G7 Cmaj7 Gbm7b5 Fm7 Em7 Ebdim7 Dm7 G7 Cmaj7".to_string(),
-            cl_chord: 0,
-            cl_mode: 0,
-            tr_page: 0,
-            tr_root: 0,
-            tr_q: 0,
-            tr_set: 0,
-            tr_set4: 0,
-            tr_sel: 0,
-            tr_whole: true,
-            tr_pos: 1,
-            tr_prog: "1 4 5 1".to_string(),
-            tr_bass: 2,
-            mv_page: 0,
-            mv_move: 0,
-            mv_dip: false,
-            mv_parent: 0,
-            mv_mode: 1,
-            mv_stack: 0,
-            mv_motion: 0,
-            mv_pedal: true,
-            mv_play: None,
-            lab_sel: 0,
-            lab_snap: 2,
-            lab_run: None,
-            lab_note: String::new(),
-            lab_play: None,
-            lab_drag: None,
-            lab_clicks: false,
-            lab_metro: true,
-            lab_with_loop: false,
-            lab_loop_play: false,
-            lab_repeat: false,
-            lab_tempo_taps: Vec::new(),
-            lab_tab: 0,
-            lab_count: None,
-            lab_loop_chords: true,
-            lab_vol: 1.0,
-            cb_book: None,
-            cb_tried: false,
-            cb_set: 0,
-            cb_fam: 0,
-            cb_view: 0,
-            cb_at: 0,
-            cb_anim: None,
-            cb_auto: None,
-            cb_sound: true,
-            cb_hide: false,
-            cb_order: 0,
-            cb_shown: None,
-            cb_try: None,
-            cb_demo: 0,
-            cb_more_rules: false,
-            cb_stars: None,
-            cb_cad_key: None,
-            cb_cad_minor: false,
-            cb_cad_start: 0,
-            cb_cad_pick: [0, 0],
-            cb_cad_step: 0,
-            lab_pass: None,
-            lab_last_pos: None,
-            lab_line_drag: None,
-            lab_seen: None,
-            lab_undo: Vec::new(),
-            lab_was: None,
-            vc_page: 0,
-            rd_key: 0,
-            rd_pos: 1,
-            rd_level: 0,
-            rd_bars: 1,
-            rd_time: 0,
-            rd_bpm: 70,
-            rd_tab: false,
-            rd_names: false,
-            rd_map: false,
-            rd_line: None,
-            rd_play: None,
-            rd_active: None,
-            rd_acc: 0.0,
-            rd_mode: 0,
-            rd_book_loaded: false,
-            rd_book: Vec::new(),
-            rd_errs: Vec::new(),
-            rd_lesson: 0,
-            rd_piece: 0,
-            rd_part: 0,
-            rd_tempo_for: (usize::MAX, 0),
-            rd_ctx: None,
-            rd_bpm_text: String::new(),
-            rd_both: true,
-            rd_zoom: 1.0,
-            rd_guide: 0,
-            rd_marks: true,
-            rd_fingering: true,
-            cb_frets: [None; 6],
-            cb_name: String::new(),
-            vc_family: 4,
-            vc_root: 0,
-            vc_type: 0,
-            vc_set: 0,
-            pass_pair: 0,
-            ln_tab: 0,
-            pn_root: 9,
-            pn_box: 0,
-            pn_blue: false,
-            pn_between: false,
-            pn_label: 0,
-            pn_ex: 0,
-            pn_string: 5,
-            pn_num: String::new(),
-            pf_fam: String::new(),
-            pf_range: 0,
-            pf_num: String::new(),
-            ar_num: String::new(),
-            pn_fam: 0,
-            pn_scale: 0,
-            pn_nps: 2,
-            si_root: 0,
-            si_fam: 0,
-            si_chord: 4,
-            si_scale: 0,
-            // G melodic minor, its Bb maj7#5 picked
-            hm_parent: 1,
-            ln_over: 3,
-            hm_key: 7,
-            hm_stack: 1,
-            hm_deg: 2,
-            hm_solo: 0,
-            hm_vamp: Vec::new(),
-            ear: Default::default(),
-            nn: Default::default(),
-            nn_inline: false,
-            at: Default::default(),
-            plan: Default::default(),
-            si_any: false,
-            si_pick: 0,
-            si_kind: 0,
-            si_kroot: 7,
-            tp_mode: 0,
-            tp_any: false,
-            tp_pick: 0,
-            tp_a: (2, 0),
-            tp_b: (4, 1),
-            tp_strings: 0,
-            tp_ex: 0,
-            tp_prog: 0,
-            tp_key: 0,
-            pf_scale: "Ionian (Major)".to_string(),
-            pf_root: 0,
-            pf_sys: 0,
-            pf_pos: 0,
-            pf_label: 0,
-            pf_stars: Vec::new(),
-            pf_play: 0,
-            cm_tab: 0,
-            cm_list: None,
-            cm_list_at: Instant::now(),
-            cm_moves: Vec::new(),
-            cm_moves_read: false,
-            cm_file: None,
-            cm_loaded: None,
-            cm_found: None,
-            cm_bpm: 90,
-            cm_show: [true; 5],
-            cm_play: None,
-            cm_loop: false,
-            cm_from: 0,
-            cm_to: usize::MAX,
-            cm_sel: None,
-            cm_sel2: None,
-            cm_kind: 0,
-            cm_star_only: false,
-            cm_shift: 0,
-            cm_open: None,
-            cm_marks: true,
-            cm_mark_kind: 0,
-            cm_mark: None,
-            cm_drag: None,
-            cm_named: false,
-            ct_cell: 0,
-            loop_ident: None,
-            loop_saved: None,
-            cm_hidden: Vec::new(),
-            cm_mplay: None,
-            cm_cursor: None,
-            ar_src: 0,
-            ar_root: 0,
-            ar_scale: 0,
-            ar_deg: 1,
-            ar_q: 0,
-            ar_pos: 0,
-            ar_ex: 0,
-            ar_tune: 0,
-            cm_step: None,
-            ln_backing: None,
-            ln_prog: None,
-            ln_at: 0,
-            ln_root: 0,
-            ln_back: false,
-            ln_shuffle: 0,
-            ln_bpm_text: String::new(),
-            ln_sub_text: String::new(),
-            ln_about: false,
-            ln_how: false,
-            sl_div: 0,
-            sl_kind: 0,
-            sl_pat: 0,
-            ln_bpm: 80,
-            ln_sub: 2,
-            ln_loop: true,
-            ln_playing: String::new(),
-            sc_oct: 2,
-            sc_dir: 2,
-            seq_last: None,
-            prog_fam: 0,
-            prog_key: 0,
-            prog_minor: false,
-            prog_7: true,
-            prog_ask: None,
-            prog_new: String::new(),
-            prac_chart: None,
-            seq_play: None,
-            skins_side: 0,
-            edit_info: None,
-            edit_kb: (String::new(), String::new()),
-            edit_extra: (String::new(), String::new()),
-            diary_tab: 0,
-            tunes_tab: 0,
-            tunes_gospel: false,
-            listen_guitar: false,
-            preview_tune: None,
-            listen_gospel: false,
-            trainer_keys: false,
-            keys_done: 0,
-            takes_open: false,
-            take_ask: None,
-            neck_zoom: 1.0,
-            ghost_alpha: 0.7,
-            an_pick: None,
-            an_hover: None,
-            shape_cache: HashMap::new(),
-            chart_busy: false,
-            chart_sugg: Vec::new(),
-            chart_q: String::new(),
-            live_q: String::new(),
-            live: None,
-            chart_live: false,
-            chart_pick: None,
-            mtab: 0,
-            rec_buf: None,
-            rec_t0: None,
-            rec_dev: None,
-            rec_devs: Vec::new(),
-            rec_tune: 0,
-            rec_band: true,
-            rec_last: None,
-            rec_ask: false,
-            diary_ym: (0, 0),
-            diary_sel: 0,
-            diary_edit: false,
-            diary_all: 0,
-            notes_q: String::new(),
-            notes_filter: None,
-            notes_mode: 1,
-            notes_tags_all: false,
-            notes_flip: None,
-            diary_cal_flip: None,
-            notes_fit: 0,
-            diary_flip: None,
-            diary_add: (String::new(), String::new()),
-            entry_edit: None,
-            mt: band::Metro::default(),
-            mt_bpm: 100,
-            mt_add: 0.0,
-            mt_step_at: Instant::now(),
-            mt_sig: 0,
-            mt_group: 0,
-            vol_before: 0.7,
-            look_style: 0,
-            last_ppp: 0.0,
-            last_size: Vec2::ZERO,
-            frames: 0,
-            mt_vis: None,
-            beat_failed: HashSet::new(),
-            beat_known: HashMap::new(),
-            beat_grid: None,
-            beat_wait: None,
-            mt_gen: 0,
-            mt_pos: (0.0, Instant::now()),
-            mt_sync_at: Instant::now(),
-            mt_lead_end: 0.0,
-            beat: None,
-            beat_busy: false,
-            band_on: false,
-            band_style: 0,
-            band_parts: [true; 3],
-            band_lv: [1.0; 3],
-            band_loops: 0,
-            band_stems: None,
-            band_t0: Instant::now(),
-            band_lead: 0.0,
-            band_bar: 2.0,
-            band_beat: 0.5,
-            band_starts: Vec::new(),
-            band_order: Vec::new(),
-            band_sig: 0,
-            band_chart: String::new(),
-            pomo_sound: false,
-            chime_vol: 0.7,
-            tm: Default::default(),
-            lib_frac: 0.34,
-            voicing_tab: 0,
-            stack_w: 0.0,
-            prac_stack_w: 0.0,
-            nav_w: 0.0,
-            stack_k: 2.0,
-            stack_frac: 1.0,
-            prac_h: 0.0,
-            net_down: false,
-            net_try: Instant::now(),
-            net_wait: 30,
-            go_offline: false,
-            lib_saved_n: 0,
-            lib_seen: (0, Instant::now()),
-            eq_h_user: None,
-            deck_zoom: None,
-            eq_zoom: None,
-            deck_free: false,
-            eq_naming: false,
-            wa_map_until: 0.0,
-            wa_guide: false,
-            wa_outline: false,
-            custom: skin::CustomLook::default(),
-            ambient: skin::CustomLook::default(),
-            amb_for: String::new(),
-            amb_tint: [Color32::from_rgb(60, 40, 30), Color32::from_rgb(70, 30, 50), Color32::from_rgb(40, 30, 40), Color32::from_rgb(60, 20, 50)],
-            stream_queue: false,
-            mini_viz: true,
-            time_left: false,
-            classic_worn: None,
-            amb_from: [Color32::from_rgb(60, 40, 30); 4],
-            amb_t0: 0.0,
-            look_custom: false,
-            look_edit: None,
-            style_edit: None,
-            deco_now: None,
-            queue_hidden: false,
-            wa_pl_top: 0.0,
-            pl_font: 0,
-            eq_auto: false,
-            eq_songs: HashMap::new(),
-            eq_mine: Vec::new(),
-            eq_name: String::new(),
-            balance: 0,
-            ebuf: String::new(),
-            ebuf_id: 0,
-            chart_tried: Default::default(),
-            details_tried: Default::default(),
-            chart_rn: true,
-            chart_lock: false,
-            ireal_in: String::new(),
-            tune_more: false,
-            look_q: String::new(),
-            chart_cache: (String::new(), chart::Chart::default()),
-        };
+        let images = Images { map: HashMap::new(), requested: HashSet::new(), req, thumbs, avg: HashMap::new(), hold: HashMap::new() };
+        let mut app = App::start(api, tx, rx, ctx, images, font_tex);
         meta::load(&app.store.meta);
         app.init_store();
         app.liked.extend(app.store.hearts.iter().map(|e| e.id));
@@ -3224,14 +2451,20 @@ impl App {
             return;
         }
         self.tidal_lists_busy = true;
+        self.bg(move |api| Msg::TidalLists(api.own_playlists()));
+    }
+
+    // ------------------------------------------------------------- loading
+    /// Work done away from the frame: `f` runs on a thread of its own, with the API at hand, and the message it makes
+    /// comes back (the window woken for it).
+    pub(crate) fn bg(&self, f: impl FnOnce(&Api) -> Msg + Send + 'static) {
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
-            let _ = tx.send(Msg::TidalLists(api.own_playlists()));
+            let _ = tx.send(f(&api));
             ctx.request_repaint();
         });
     }
 
-    // ------------------------------------------------------------- loading
     fn load(&mut self, push: bool, f: impl FnOnce(&Api) -> Result<Page, String> + Send + 'static) {
         self.loading = true;
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
@@ -3258,11 +2491,7 @@ impl App {
         }
         self.lib_looking = true;
         self.lib_at = Some(Instant::now());
-        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::LibraryHead(api.library_head()));
-            ctx.request_repaint();
-        });
+        self.bg(move |api| Msg::LibraryHead(api.library_head()));
     }
 
     /// What the look found, put in every copy of the library page (shown, kept, back, forward) without a reload: the
@@ -3364,11 +2593,9 @@ impl App {
         }
         self.lyrics = Some(Lyrics { id, status: 0, lines: Vec::new(), synced: false });
         self.lyric_scroll = 0.0;
-        let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-        std::thread::spawn(move || {
+        self.bg(move |api| {
             let r = api.lyrics(id);
-            let _ = tx.send(Msg::Lyrics(id, r));
-            ctx.request_repaint();
+            Msg::Lyrics(id, r)
         });
     }
 
@@ -3597,14 +2824,6 @@ impl App {
         } else {
             None
         }
-    }
-
-    fn next_track(&self) -> Option<Track> {
-        if self.repeat == Repeat::One {
-            return self.cur_track();
-        }
-        let cur = self.cur?;
-        self.queue.get(cur + 1).cloned().or_else(|| if self.repeat == Repeat::All { self.queue.first().cloned() } else { None })
     }
 
     fn prefetch_next(&mut self, _playing_id: i64) {

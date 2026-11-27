@@ -216,7 +216,7 @@ fn ui(ctx: &egui::Context, own: &mut Own, now: &Now, pin: bool, seen: bool, t: f
             let (f, dt) = own.music(now, viz, t);
             let preset = visuals::resolve(now.preset.min(PRESETS.len() - 1), f.t);
             let p = ui.painter().with_clip_rect(r);
-            visuals::paint_preset(&p, r, SLOT, preset, f, dt, t, &own.gl, &mut own.pipes, &mut own.stars, || {
+            visuals::paint_preset(&p, r, SLOT, preset, f, dt, &own.gl, &mut own.pipes, &mut own.stars, || {
                 visuals::hear(viz, ctl, now.song, t)
             });
         }

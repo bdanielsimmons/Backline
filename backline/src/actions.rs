@@ -63,19 +63,15 @@ impl App {
                 self.ctx.data_mut(|d| d.insert_temp(egui::Id::new(("bio_open", id)), open));
             }
             Action::SaveCard(c, on) => {
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |api| {
                     let r = api.save_card(&c, on);
-                    let _ = tx.send(Msg::CardSaved(c, on, r));
-                    ctx.request_repaint();
+                    Msg::CardSaved(c, on, r)
                 });
             }
             Action::Follow(id, on) => {
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |api| {
                     let r = api.follow_artist(&id, on);
-                    let _ = tx.send(Msg::Followed(id, on, r));
-                    ctx.request_repaint();
+                    Msg::Followed(id, on, r)
                 });
             }
             Action::GoTo(id, to) => {
@@ -85,11 +81,7 @@ impl App {
             Action::PickArtist(list) => self.artist_pick = Some(list),
             Action::Credits(id, label) => {
                 self.credits = Some((label, None));
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Credits(api.credits(id)));
-                    ctx.request_repaint();
-                });
+                self.bg(move |api| Msg::Credits(api.credits(id)));
             }
             // one history for the whole library: every tab, page, tune and side page (history.rs)
             Action::Back => self.hist_go(true),
@@ -215,19 +207,13 @@ impl App {
                     self.wa_end = false;
                 }
                 let (q, from) = (self.wa_q.clone(), if more { self.wa_list.len() } else { 0 });
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::WaList(winamp::list(&q, from), more));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::WaList(winamp::list(&q, from), more));
             }
             Action::WaApply(s) => {
                 self.wa_loading = Some(s.name.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |_| {
                     let r = winamp::fetch(&s).and_then(|b| winamp::load(&b)).map(|(p, art)| (s, p, art));
-                    let _ = tx.send(Msg::WaSkin(r));
-                    ctx.request_repaint();
+                    Msg::WaSkin(r)
                 });
             }
             Action::WaForget(md5) => {
@@ -246,14 +232,12 @@ impl App {
             }
             Action::Intro(m) => match m {
                 3 => {
-                    let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
+                    self.bg(move |_| {
                         let f = rfd::FileDialog::new()
                             .set_title("A short sound for when Backline opens")
                             .add_filter("Audio", &sources::AUDIO_EXT)
                             .pick_file();
-                        let _ = tx.send(Msg::IntroFile(f.map(|p| p.to_string_lossy().to_string())));
-                        ctx.request_repaint();
+                        Msg::IntroFile(f.map(|p| p.to_string_lossy().to_string()))
                     });
                 }
                 4 => self.play_intro(),
@@ -360,11 +344,9 @@ impl App {
                 }
             }
             Action::QueueCard(c, next) => {
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |api| {
                     let r = api.open(&c).map(|p| p.tracks);
-                    let _ = tx.send(Msg::CardTracks(c.title.clone(), r, next));
-                    ctx.request_repaint();
+                    Msg::CardTracks(c.title.clone(), r, next)
                 });
             }
             Action::QueueTracks(name, tracks, next) => {
@@ -636,10 +618,7 @@ impl App {
                 let next = if backline_look(self.wa_worn.as_ref()) && !self.look_custom { SKIN.load(Ordering::Relaxed) + 1 } else { 0 };
                 self.wear_look(next);
             }
-            Action::Sleep => {
-                const STEPS: [u32; 6] = [0, 15, 30, 45, 60, 90];
-                let cur = STEPS.iter().position(|m| *m == self.sleep_mins).unwrap_or(0);
-                let n = STEPS[(cur + 1) % STEPS.len()];
+            Action::Sleep(n) => {
                 self.sleep_mins = n;
                 if n == 0 {
                     self.sleep_at = None;
@@ -924,21 +903,17 @@ impl App {
                 self.chart_busy = true;
                 self.preview_tune = Some(name.clone());
                 self.set_note(&format!("LOOKING UP {}", name.to_uppercase()));
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |_| {
                     let r = sources::find_chart(&name);
-                    let _ = tx.send(Msg::Chart(name, r));
-                    ctx.request_repaint();
+                    Msg::Chart(name, r)
                 });
             }
             Action::PlayRecord(artist, album) => {
                 let key = format!("{} - {}", artist, album);
                 self.set_note(&format!("FINDING {}", key.to_uppercase()));
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |api| {
                     let r = api.find_album(&artist, &album);
-                    let _ = tx.send(Msg::RecordFound(key, r));
-                    ctx.request_repaint();
+                    Msg::RecordFound(key, r)
                 });
             }
             Action::AddRecommended(name) => {
@@ -1041,11 +1016,9 @@ impl App {
                     self.yt_busy = true;
                     self.yt_msg = "READING THE PLAYLIST...".to_string();
                     let url = sources::yt_list_url(&self.yt_in);
-                    let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
+                    self.bg(move |_| {
                         let r = sources::yt_list(&url);
-                        let _ = tx.send(Msg::YtList(url, r));
-                        ctx.request_repaint();
+                        Msg::YtList(url, r)
                     });
                     return;
                 }
@@ -1059,11 +1032,7 @@ impl App {
                 }
                 self.yt_busy = true;
                 self.yt_msg = "READING THE VIDEO...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::YtAdded(sources::yt_info(&vid)));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::YtAdded(sources::yt_info(&vid)));
             }
             Action::ScGo => {
                 if self.sc_busy {
@@ -1080,11 +1049,9 @@ impl App {
                 self.sc_busy = true;
                 self.sc_cur = if q.starts_with("http") { Some(q.clone()) } else { None };
                 self.sc_msg = "LOOKING...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |_| {
                     let r = if q.starts_with("http") { sources::sc_list(&q) } else { sources::sc_search(&q) };
-                    let _ = tx.send(Msg::Sc(r));
-                    ctx.request_repaint();
+                    Msg::Sc(r)
                 });
             }
             Action::ScSets => {
@@ -1102,11 +1069,7 @@ impl App {
                 }
                 self.sc_busy = true;
                 self.sc_msg = "LOOKING FOR PLAYLISTS...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::ScSets(sources::sc_sets(&q)));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::ScSets(sources::sc_sets(&q)));
             }
             Action::CopyName(name) => {
                 self.ctx.output_mut(|o| o.copied_text = name.clone());
@@ -1179,11 +1142,9 @@ impl App {
                 self.open_new_playlist(d);
             }
             Action::TidalListRemove(uuid, id, nth) => {
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |api| {
                     let r = api.playlist_remove(&uuid, id, nth);
-                    let _ = tx.send(Msg::TidalListRemoved(uuid, id, nth, r));
-                    ctx.request_repaint();
+                    Msg::TidalListRemoved(uuid, id, nth, r)
                 });
             }
             Action::ShareExport => self.share_view = Some((false, self.store.share())),
@@ -1258,11 +1219,7 @@ impl App {
                 }
             }
             Action::News => {
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::News(crate::update::notes(5)));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::News(crate::update::notes(5)));
             }
             Action::ShareTake => {
                 if let Some((true, s)) = self.share_view.take() {
@@ -1367,11 +1324,9 @@ impl App {
                 if !quiet {
                     self.toast("Checking for new songs...");
                 }
-                let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |api| {
                     let r = crate::playlist_link::update(&api, &url, &seen, &have, |_| {});
-                    let _ = tx.send(Msg::PlaylistUpdated(pi, url, quiet, r));
-                    ctx.request_repaint();
+                    Msg::PlaylistUpdated(pi, url, quiet, r)
                 });
             }
             Action::PlaylistImport(url) => {
@@ -1441,11 +1396,9 @@ impl App {
                 // one of your Tidal playlists, renamed
                 if let Some(uuid) = d.tidal_edit.clone() {
                     let name = d.name.trim().to_string();
-                    let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
-                    std::thread::spawn(move || {
+                    self.bg(move |api| {
                         let r = api.playlist_rename(&uuid, &name);
-                        let _ = tx.send(Msg::TidalListRenamed(uuid, name, r));
-                        ctx.request_repaint();
+                        Msg::TidalListRenamed(uuid, name, r)
                     });
                     return;
                 }
@@ -1691,11 +1644,7 @@ impl App {
                 }
                 self.yt_busy = true;
                 self.yt_msg = "DOWNLOADING YT-DLP...".to_string();
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::YtTool(sources::ytdlp_download()));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::YtTool(sources::ytdlp_download()));
             }
             Action::RemoveExt(id) => {
                 let file = self.store.files.iter().any(|e| e.id == id);
@@ -1747,11 +1696,9 @@ impl App {
                 if name.is_empty() || !self.details_tried.insert(name.to_lowercase()) {
                     return;
                 }
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |_| {
                     let w = sources::lookup_work(&name, artist.as_deref());
-                    let _ = tx.send(Msg::TuneDetails(name, w));
-                    ctx.request_repaint();
+                    Msg::TuneDetails(name, w)
                 });
             }
             Action::NewTune => {
@@ -1860,11 +1807,7 @@ impl App {
                 self.chart_busy = true;
                 self.chart_sugg.clear();
                 let query = alt.unwrap_or_else(|| name.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Chart(name, sources::find_chart(&query)));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::Chart(name, sources::find_chart(&query)));
             }
             Action::LiveChart(title, alt) => {
                 if self.chart_busy {
@@ -1875,11 +1818,7 @@ impl App {
                 self.live = None;
                 self.chart_sugg.clear();
                 let query = alt.unwrap_or_else(|| title.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::Live(title, sources::find_chart(&query)));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::Live(title, sources::find_chart(&query)));
             }
             Action::SaveLive => {
                 let (Some(t), Some((chart, key, composer))) = (self.cur_track(), self.live.clone()) else { return };
@@ -2276,11 +2215,7 @@ impl App {
                     return;
                 }
                 self.stem_busy = 1;
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(Msg::StemTool(stems::download_tool()));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| Msg::StemTool(stems::download_tool()));
             }
             Action::StemSplit => {
                 if self.stem_busy != 0 {
@@ -2297,16 +2232,14 @@ impl App {
                 // again for the split
                 let src = self.srcmap.get(&t.id).cloned();
                 let (lossless, api) = (self.prefer_lossless, self.api.clone());
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
+                self.bg(move |_| {
                     api::log(&format!("stems: split {} asked for", id));
                     let r = crate::fetch_audio(&api, id, lossless, false, src).and_then(|b| {
                         api::log(&format!("stems: {} bytes of audio, splitting", b.len()));
                         stems::separate(b, id)
                     });
                     api::log(&format!("stems: {} -> {:?}", id, r));
-                    let _ = tx.send(Msg::Stems(id, r));
-                    ctx.request_repaint();
+                    Msg::Stems(id, r)
                 });
             }
             Action::StemCancel => stems::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed),

@@ -924,11 +924,7 @@ impl App {
                     if self.upd.as_ref().is_none_or(|u| u.build < info.build) {
                         self.upd = Some(info.clone());
                         self.upd_state = 1;
-                        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                        std::thread::spawn(move || {
-                            let _ = tx.send(Msg::UpdateStaged(crate::update::stage(&info)));
-                            ctx.request_repaint();
-                        });
+                        self.bg(move |_| Msg::UpdateStaged(crate::update::stage(&info)));
                     }
                 }
                 Ok(None) => {

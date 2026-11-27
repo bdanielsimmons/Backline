@@ -449,6 +449,7 @@ pub(crate) fn window_deco(ui: &egui::Ui, inner: Rect, title: &str) {
     fill_rect(p, inner, pal().panel);
 }
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) const SEGS: [(f32, f32, f32, f32); 7] = [
     (1.0, 0.0, 6.0, 2.0),  // a
     (6.0, 1.0, 2.0, 6.0),  // b
@@ -459,6 +460,7 @@ pub(crate) const SEGS: [(f32, f32, f32, f32); 7] = [
     (1.0, 6.0, 6.0, 2.0),  // g
 ];
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) fn seg_mask(d: u32) -> [u8; 7] {
     match d {
         0 => [1, 1, 1, 1, 1, 1, 0],
@@ -475,6 +477,7 @@ pub(crate) fn seg_mask(d: u32) -> [u8; 7] {
 }
 
 /// Seven-segment LCD digit with faint unlit segments.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) fn seg_digit(p: &egui::Painter, o: Pos2, k: f32, d: u32, lit: bool) {
     let m = seg_mask(d);
     for (i, (x, y, w, h)) in SEGS.iter().enumerate() {
@@ -487,6 +490,7 @@ pub(crate) fn seg_digit(p: &egui::Painter, o: Pos2, k: f32, d: u32, lit: bool) {
 }
 
 /// Filled disc built from square pixels of size `u` (pixel-art circle).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) fn pix_disc(p: &egui::Painter, c: Pos2, r: f32, u: f32, col: Color32) {
     let n = (r / u).round() as i32;
     for k in -n..n {
@@ -504,6 +508,7 @@ pub(crate) fn pix_disc(p: &egui::Painter, c: Pos2, r: f32, u: f32, col: Color32)
 }
 
 /// Round transport button drawn in big pixels, with a pixel icon and a pixel shine.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // (the phone app's)
 pub(crate) fn round_btn(ui: &egui::Ui, center: Pos2, radius: f32, icon: &[&str], px: f32, id: &str) -> egui::Response {
     let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
     let resp = ui.interact(rect, ui.id().with(id), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);

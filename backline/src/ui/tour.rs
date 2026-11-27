@@ -96,13 +96,6 @@ const BASIC: &[Step] = &[
         ..BASE
     },
     Step {
-        key: "SPEEDBTN",
-        title: "SPEED",
-        text: "The song now plays at 70%, with the pitch unchanged. Click for the next speed, or right-click to choose any.",
-        speed: 70,
-        ..BASE
-    },
-    Step {
         key: "EQUALIZER",
         title: "THE EQUALIZER",
         text: "The BASS preset is on, so the low end comes up. AUTO remembers an EQ for each song.",
@@ -361,11 +354,7 @@ impl App {
         match crate::tour_song::ready() {
             Some(path) => self.tour_put_on(path),
             None => {
-                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-                std::thread::spawn(move || {
-                    let _ = tx.send(crate::Msg::TourSong(crate::tour_song::fetch()));
-                    ctx.request_repaint();
-                });
+                self.bg(move |_| crate::Msg::TourSong(crate::tour_song::fetch()));
             }
         }
     }
@@ -913,7 +902,7 @@ impl DemoRec {
         let offset = 0.0;
         if let Some(r) = crate::player::rec_take() {
             let secs = self.frames as f64 / FPS;
-            let _ = std::fs::write(&audio, wav(&mix(&r, self.start, secs), MIX_RATE, 2));
+            let _ = std::fs::write(&audio, crate::band::wav_of(&mix(&r, self.start, secs), MIX_RATE, 2));
         }
         let ok = std::process::Command::new(Self::ffmpeg_exe())
             .args(["-y", "-loglevel", "error", "-i"])
@@ -974,28 +963,6 @@ pub(crate) fn mix(r: &crate::player::RecBuf, start: std::time::Instant, secs: f6
         }
     }
     acc.into_iter().map(|v| v.clamp(-32768, 32767) as i16).collect()
-}
-
-/// A 16-bit PCM WAV file.
-pub(crate) fn wav(data: &[i16], rate: u32, ch: u16) -> Vec<u8> {
-    let mut v = Vec::with_capacity(44 + data.len() * 2);
-    let bytes = (data.len() * 2) as u32;
-    v.extend_from_slice(b"RIFF");
-    v.extend_from_slice(&(36 + bytes).to_le_bytes());
-    v.extend_from_slice(b"WAVEfmt ");
-    v.extend_from_slice(&16u32.to_le_bytes());
-    v.extend_from_slice(&1u16.to_le_bytes());
-    v.extend_from_slice(&ch.to_le_bytes());
-    v.extend_from_slice(&rate.to_le_bytes());
-    v.extend_from_slice(&(rate * ch as u32 * 2).to_le_bytes());
-    v.extend_from_slice(&(ch * 2).to_le_bytes());
-    v.extend_from_slice(&16u16.to_le_bytes());
-    v.extend_from_slice(b"data");
-    v.extend_from_slice(&bytes.to_le_bytes());
-    for s in data {
-        v.extend_from_slice(&s.to_le_bytes());
-    }
-    v
 }
 
 impl App {
