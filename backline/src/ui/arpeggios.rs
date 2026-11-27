@@ -163,7 +163,7 @@ pub(crate) fn tune_line(changes: &[String], kind: usize) -> Vec<(String, i32, Ve
 impl App {
     /// ARPEGGIOS: a chord's notes inside its scale, in the scale's positions, seen and played; and through a tune.
     pub(crate) fn arpeggios(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "A chord's own notes, picked out of the scale around it. They sit in the same positions as SCALES. See the shape inside the scale, grip the chord and play the arpeggio every way round. Then run them through a tune.", pal().ink2);
+        para(ui, "A chord's own notes inside the scale around it, in the same positions as SCALES. Grip the chord, play the arpeggio every way round, then run it through a tune.", pal().ink2);
         if let Some(i) =
             crate::choice_line(ui, "ar_src", "FROM", &["THE CHORDS OF A SCALE", "ANY CHORD"], self.ar_src as usize, 300.0)
         {
@@ -413,7 +413,7 @@ impl App {
     /// each starting near where the last ended.
     fn arpeggio_tune(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         section_header(ui, "THROUGH A TUNE");
-        para(ui, "Guide tones first, then the arpeggios, chord by chord. Each guide tone is the 3rd or 7th, whichever is nearest. Through a ii-V-I, the 7th falls a half step to the next 3rd, and the 3rd stays put as the next 7th. Each arpeggio starts near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
+        para(ui, "Guide tones (the nearest 3rd or 7th), then arpeggios, chord by chord. Through a ii-V-I the 7th falls a half step to the next 3rd, and the 3rd holds as the next 7th.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         if changes.is_empty() {
             return;
@@ -441,7 +441,7 @@ impl App {
                 ui,
                 acts,
                 "PLAY",
-                "Plays at the band's tempo, with each chord under its first note.",
+                "Play at band tempo",
                 "arptune",
                 || {
                     line.iter()

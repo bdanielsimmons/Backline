@@ -353,7 +353,7 @@ impl App {
         let xb = ui
             .interact(xr, ui.id().with("eq_close"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Close the equalizer.");
+            .tip("Close");
         if flat {
             crate::winamp_ui::bar_button(ui.painter(), xr, true, xb.is_pointer_button_down_on());
         } else {
@@ -408,7 +408,7 @@ impl App {
                 changed = true;
             }
             if retro_btn_w(ui, "AUTO", 64.0, self.eq_auto)
-                .tip("Remembers the EQ for each song and restores it when it plays.")
+                .tip("Remember EQ per song")
                 .clicked()
             {
                 self.eq_auto = !self.eq_auto;
@@ -480,7 +480,7 @@ impl App {
         for i in 0..10 {
             let cx = bands.min.x + col_w * (i as f32 + 0.5);
             let col = Rect::from_min_max(Pos2::new(cx - col_w / 2.0, rect.min.y), Pos2::new(cx + col_w / 2.0, rect.max.y));
-            let r = ui.interact(col, ui.id().with(("eq_band", i)), Sense::click_and_drag()).tip("Drag to set, double-click to reset (+/- 12 dB)");
+            let r = ui.interact(col, ui.id().with(("eq_band", i)), Sense::click_and_drag()).tip("Drag to set · Double-click to reset");
             if r.dragged() || r.clicked() {
                 if let Some(pp) = r.interact_pointer_pos() {
                     let f = ((pp.y - top) / (bot - top)).clamp(0.0, 1.0);
@@ -636,12 +636,12 @@ impl App {
                 // the ways to change it, under it (they wrap on a narrow page, never off the edge)
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    if retro_btn(ui, "Change Skin", false).tip("All skins: Backline's own looks and Winamp skins.").clicked() {
+                    if retro_btn(ui, "Change Skin", false).tip("Looks and Winamp skins").clicked() {
                         acts.push(Action::WaOpen);
                     }
                     // (Ambient Color's colours come from the album: nothing to pick)
                     if style_kind != Some(crate::skin::STYLE_AMBIENT) {
-                        let tip = if style { "Pick this style's colors yourself." } else { "Make a look of your own: pick its colors." };
+                        let tip = if style { "Custom colors for this style" } else { "Custom colors" };
                         if retro_btn(ui, "Your Own Colors", false).tip(tip).clicked() {
                             acts.push(Action::EditLook);
                         }
@@ -658,10 +658,10 @@ impl App {
             title_line(ui, "BACKLINE", 3.0, pal().ink);
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "PREFERENCES", false).tip("Updates, sound output, startup sound, zoom and shortcuts.").clicked() {
+                if retro_btn(ui, "PREFERENCES", false).tip("Updates, audio, zoom and shortcuts").clicked() {
                     acts.push(Action::TogglePrefs);
                 }
-                if retro_btn(ui, "WHAT'S NEW", false).tip("Changes in this version and recent ones.").clicked() {
+                if retro_btn(ui, "WHAT'S NEW", false).tip("Release notes").clicked() {
                     acts.push(Action::News);
                 }
                 if retro_btn(ui, "HELP AND TOURS", false).tip("Help and tours  (F1)").clicked() {
@@ -674,7 +674,7 @@ impl App {
             ui.horizontal(|ui| {
                 if self.offline {
                     if retro_btn(ui, "LOG IN TO TIDAL", false)
-                        .tip("Add your Tidal account. Everything else works without it.")
+                        .tip("Log in to Tidal")
                         .clicked()
                     {
                         acts.push(Action::Offline(false));
@@ -807,7 +807,7 @@ impl App {
             STYLE_AMBIENT => {
                 crate::views::label(ui, "FEEL", 80.0);
                 let feel = crate::skin::AMB_FEEL.load(Ordering::Relaxed) as usize;
-                let tips: Vec<String> = ["Dark: the album's colors, deep and quiet", "Deep: the album's colors, richer", "Light: pale colors, dark writing"]
+                let tips: Vec<String> = ["Dark album colors", "Rich album colors", "Pale colors, dark text"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect();
@@ -823,7 +823,7 @@ impl App {
                 }
             }
             _ => {
-                let tips = ["Backline's own looks, and your own colors.".to_string(), "Skins made for Winamp.".to_string()];
+                let tips = ["Built-in looks and custom colors".to_string(), "Winamp skins".to_string()];
                 if let Some(k) = crate::widgets::segments_tips(ui, &["Backline", "Winamp"], self.skins_side as usize, &tips) {
                     self.skins_side = k as u8;
                     if k == 1 && self.wa_list.is_empty() && !self.wa_busy {
@@ -850,7 +850,7 @@ impl App {
         let cur = SKIN.load(Ordering::Relaxed) % LOOKS.len();
         para(
             ui,
-            if ours { "Backline's own looks. Click one to wear it." } else { "You're wearing a Winamp skin. Click a look to wear it instead." },
+            if ours { "Built-in looks." } else { "A Winamp skin is on. Pick a look to switch." },
             pal().ink2,
         );
         ui.add_space(6.0);
@@ -877,7 +877,7 @@ impl App {
                             let on = ours && !custom && worn.as_ref().is_some_and(|w| w.0 == crate::looks::LOOK_MD5) && n == cur;
                             let tex = crate::looks::look_deck(ui.ctx(), n);
                             let name = crate::winamp_ui::display_case(SKIN_NAMES[n]);
-                            if look_card(ui, tex, LOOKS[n].panel, &name, cw, on, &format!("{}. Click to wear it.", name)) && !on {
+                            if look_card(ui, tex, LOOKS[n].panel, &name, cw, on, &name) && !on {
                                 acts.push(Action::Look(n));
                             }
                         }
@@ -891,13 +891,13 @@ impl App {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 let tex = crate::looks::custom_deck(ui.ctx(), &self.custom);
-                let tip = "Your own colors: pick a background, an accent, and the display and text if you like.";
+                let tip = "Custom colors";
                 if look_card(ui, tex, self.custom.background, "Custom", cw, custom, tip) {
                     acts.push(Action::EditLook);
                 }
                 ui.vertical(|ui| {
                     ui.set_width((seen - cw - gap).within(0.0, 360.0 * sc));
-                    para(ui, "Pick your own colors. The rest of the look follows them, so it stays easy to read.", pal().ink2);
+                    para(ui, "Pick a background and accent. The rest follows.", pal().ink2);
                     if retro_btn(ui, "Choose Colors", false).tip(tip).clicked() {
                         acts.push(Action::EditLook);
                     }
@@ -912,7 +912,7 @@ impl App {
     /// screenshots. A click shows the skin big first (`wa_preview_panel`); WEAR IT puts it on.
     pub(crate) fn winamp_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let sc = crate::font::ui_scale();
-        para(ui, "Skins made for Winamp, from the Winamp Skin Museum. Click one to preview it.", pal().ink2);
+        para(ui, "Winamp skins from the Winamp Skin Museum.", pal().ink2);
         self.wa_wearing(ui, acts);
         ui.add_space(8.0);
         let tabs = [
@@ -957,10 +957,10 @@ impl App {
                 ui.add_space(gap);
             }
             match tab {
-                1 if list.is_empty() => para(ui, "No favorites yet. Click the star on any skin.", pal().ink2),
+                1 if list.is_empty() => para(ui, "No favorites yet. Star a skin to add it.", pal().ink2),
                 2 if list.is_empty() => para(ui, "No recent skins yet.", pal().ink2),
                 0 if self.wa_busy => para(ui, "Loading skins...", pal().ink2),
-                0 if list.is_empty() => para(ui, "No skins found. Try another word, or clear the search for the museum's best.", pal().ink2),
+                0 if list.is_empty() => para(ui, "No skins found. Clear the search for top skins.", pal().ink2),
                 0 if !self.wa_end => {
                     // the end of the grid in sight: the next page comes
                     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
@@ -1029,12 +1029,12 @@ impl App {
                         crate::font::ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &name, 2.4, nw - 8.0, pal().ink);
                     });
                     if retro_btn(ui, if fav { "In Favorites" } else { "Add to Favorites" }, fav)
-                        .tip(if fav { "In your favorites. Click to remove." } else { "Add to favorites" })
+                        .tip(if fav { "Remove from favorites" } else { "Add to favorites" })
                         .clicked()
                     {
                         acts.push(Action::WaFav(md5.clone(), name.clone()));
                     }
-                    if retro_btn(ui, "Backline Look", false).tip("Back to Backline's own look.").clicked() {
+                    if retro_btn(ui, "Backline Look", false).tip("Switch back to the Backline look").clicked() {
                         acts.push(if self.look_custom {
                             Action::EditLook
                         } else {
@@ -1070,7 +1070,7 @@ impl App {
         }
         if clear_w > 0.0 {
             let cr = Rect::from_center_size(Pos2::new(pill.max.x - 12.0 - clear_w / 2.0, pill.center().y), Vec2::splat(22.0 * sc));
-            let x = ui.interact(cr, ui.id().with("wa_clear"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Clear the search");
+            let x = ui.interact(cr, ui.id().with("wa_clear"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Clear search");
             crate::vicon::named(ui.painter(), cr.shrink(4.0 * sc), "close", if x.hovered() { pal().ink } else { pal().ink2 });
             if x.clicked() {
                 self.wa_q.clear();
@@ -1123,13 +1123,13 @@ impl App {
             p.circle_filled(star.center(), star.width() / 2.0, Color32::from_black_alpha(200));
             star_mark(&p, star.center(), 8.5 * sc, if fav { Some(pal().bar_txt) } else { None }, if fav { pal().bar_txt } else { Color32::from_gray(235) });
         }
-        let sr = sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if fav { "In your favorites. Click to remove." } else { "Add to favorites" });
+        let sr = sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if fav { "Remove from favorites" } else { "Add to favorites" });
         if sr.clicked() {
             acts.push(Action::WaFav(s.md5.clone(), s.name.clone()));
         }
         let label = crate::font::fit(&s.name, 1.5, cw);
         crate::font::ptext(&p, Pos2::new(cell.min.x + 2.0, cell.max.y - name_h / 2.0 + 2.0), Align::Min, &label, 1.5, if on { pal().ink } else { pal().ink2 });
-        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("{}. Click to preview.", s.name));
+        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(&s.name);
         if r.clicked() && !sr.hovered() {
             self.wa_preview = Some(s.clone());
         }
@@ -1189,7 +1189,7 @@ impl App {
             }
             ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, if worn { "WEARING IT" } else { "WEAR IT" }, true).tip("Put this skin on  (Enter)").clicked() {
+                if retro_btn(ui, if worn { "WEARING IT" } else { "WEAR IT" }, true).tip("Wear skin  (Enter)").clicked() {
                     wear = true;
                 }
                 if retro_btn(ui, if fav { "In Favorites" } else { "Add to Favorites" }, fav).clicked() {
@@ -1201,7 +1201,7 @@ impl App {
                 if at.is_some_and(|k| k + 1 < list.len()) && retro_btn(ui, "Next", false).tip("Next skin  (Right)").clicked() {
                     step = 1;
                 }
-                if retro_btn(ui, "Close", false).tip("Esc").clicked() {
+                if retro_btn(ui, "Close", false).tip("Close  (Esc)").clicked() {
                     close = true;
                 }
             });
@@ -1748,9 +1748,9 @@ impl App {
                 .interact(cell, ui.id().with(("mode", k)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .tip(if k == 0 {
-                    "Listen: no loop, no slow-down."
+                    "Listen"
                 } else {
-                    "Practice: loop, slow down, the band and your tools.  (P)"
+                    "Practice: loop, slow down, band  (P)"
                 });
             let studio = crate::studio::on();
             if studio {
@@ -1803,8 +1803,8 @@ impl App {
         let mut y = gem.max.y + 10.0;
         if practice_tools() {
             for (k, (icon, on, tip)) in [
-                ("headphones", !self.practice, "Listen: no loop, no slow-down."),
-                ("wave", self.practice, "Practice: loop, slow down, the band and your tools.  (P)"),
+                ("headphones", !self.practice, "Listen"),
+                ("wave", self.practice, "Practice: loop, slow down, band  (P)"),
             ]
             .into_iter()
             .enumerate()
@@ -1862,20 +1862,20 @@ impl App {
             "globe",
             !off,
             if self.go_offline {
-                "Offline. Only what's on this computer plays. Click to go online.".into()
+                "Go online".into()
             } else if self.net_down {
-                "No internet right now. Click to stay offline.".into()
+                "No internet connection · Stay offline".into()
             } else {
-                "Online. Click to go offline.".into()
+                "Go offline".into()
             },
             1,
         )];
         if practice_tools() {
-            items.push(("focus", self.lib_hidden, "Hide the library: just the player and your tools.".into(), 2));
+            items.push(("focus", self.lib_hidden, if self.lib_hidden { "Show library" } else { "Hide library" }.into(), 2));
         }
-        items.push(("mini", false, "Mini player.".into(), 4));
+        items.push(("mini", false, "Mini player".into(), 4));
         items.push(("pin", self.pinned, "Always on top".into(), 5));
-        items.push(("guide", self.wa_guide, "Label this skin's buttons.".into(), 6));
+        items.push(("guide", self.wa_guide, "Label skin buttons".into(), 6));
         items
     }
 
@@ -2000,9 +2000,9 @@ impl App {
                 let col = if ok { pal().ink } else { pal().dim.gamma_multiply(0.6) };
                 let icon: &[&str] = if back { &IC_BACK } else { &IC_FWD };
                 let r = icon_btn_w(ui, icon, false, col, 38.0).tip(if back {
-                    "Back  (mouse back button)"
+                    "Back  (Mouse back)"
                 } else {
-                    "Forward  (mouse forward button)"
+                    "Forward  (Mouse forward)"
                 });
                 if r.clicked() && ok {
                     acts.push(if back { Action::Back } else { Action::Forward });
@@ -2012,11 +2012,11 @@ impl App {
             if !side && tabs {
                 let in_practice = self.sec.practice();
                 let tip = if in_practice {
-                    "Your tunes."
+                    "Tunes"
                 } else if self.offline {
-                    "Your files."
+                    "Files"
                 } else {
-                    "Tidal home."
+                    "Tidal home"
                 };
                 if ibtn(ui, &IC_HOME, "HOME", false).tip(tip).clicked() {
                     if in_practice {
@@ -2182,7 +2182,7 @@ impl App {
                         Sec::Tidal if self.offline => {
                             ui.add_space(10.0);
                             title_line(ui, "TIDAL", 3.0, pal().ink);
-                            para(ui, "You are using Backline without Tidal. Your files, YouTube, SoundCloud and every practice tool still work. Log in to search and play Tidal's catalog, with your liked songs, playlists and artists.", pal().ink2);
+                            para(ui, "Not logged in to Tidal. Files, YouTube, SoundCloud and the practice tools still work.", pal().ink2);
                             if retro_btn(ui, "LOG IN WITH TIDAL", false).clicked() {
                                 acts.push(Action::Offline(false));
                                 acts.push(Action::StartLogin);
@@ -2220,7 +2220,7 @@ impl App {
                                         );
                                         if o.enter
                                             || retro_btn(ui, "+ NEW PLAYLIST", false)
-                                                .tip("Create a playlist on Tidal")
+                                                .tip("New Tidal playlist")
                                                 .clicked()
                                         {
                                             let name = std::mem::take(&mut self.tidal_new_name).trim().to_string();
@@ -2323,14 +2323,14 @@ impl App {
         let mut right = crate::title_right(inner);
         let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
         let max_tip = if self.fullscreen {
-            "Exit Full Screen"
+            "Exit full screen"
         } else if max {
             "Restore"
         } else {
             "Maximize"
         };
         let menu_id = ui.id().with("stream_menu");
-        for (k, icon, tip) in [(0, "close", "Quit Backline"), (1, "max", max_tip), (2, "min", "Minimize"), (3, "menu", "Options: skins, preferences and help.")] {
+        for (k, icon, tip) in [(0, "close", "Quit Backline"), (1, "max", max_tip), (2, "min", "Minimize"), (3, "menu", "Menu")] {
             let r = crate::title_slot(inner, right, s, s);
             right = r.min.x - 4.0;
             let h = ui.interact(r, ui.id().with(("stream_btn", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);

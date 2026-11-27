@@ -100,10 +100,10 @@ impl App {
     pub(crate) fn mode_strip(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let cur = self.mode();
         let tips = [
-            ("LIBRARY", 82.0, Cmd::ModeLibrary, "Library, player and queue side by side"),
-            ("PLAYER", 74.0, Cmd::ModePlayer, "The player and the queue"),
-            ("ALBUM", 68.0, Cmd::ModeAlbum, "Big cover, lyrics and the visualizer"),
-            ("MINI", 56.0, Cmd::ModeMini, "A small player window"),
+            ("LIBRARY", 82.0, Cmd::ModeLibrary, "Library, player and queue"),
+            ("PLAYER", 74.0, Cmd::ModePlayer, "Player and queue"),
+            ("ALBUM", 68.0, Cmd::ModeAlbum, "Cover, lyrics and visualizer"),
+            ("MINI", 56.0, Cmd::ModeMini, "Mini player"),
         ];
         ui.horizontal_wrapped(|ui| {
             for (i, (name, w, cmd, tip)) in tips.iter().enumerate() {
@@ -322,7 +322,7 @@ impl App {
                     );
                     ui.add_space(6.0);
                     if rows.is_empty() {
-                        crate::para(ui, "Nothing matches. Try a shorter word.", pal().ink2);
+                        crate::para(ui, "No matches.", pal().ink2);
                     }
                     let show = rows.len().min(10);
                     // keep the selected row in view

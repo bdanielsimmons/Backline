@@ -86,7 +86,7 @@ fn tour_tab(ui: &mut egui::Ui, pick: &mut Option<u8>) {
         }
     }
     ui.add_space(8.0);
-    para(ui, "Prefer to read? The other tabs say the same things.", pal().ink2);
+    para(ui, "The other tabs cover the same ground.", pal().ink2);
 }
 
 fn start_tab(ui: &mut egui::Ui) {
@@ -145,7 +145,7 @@ fn start_tab(ui: &mut egui::Ui) {
 }
 
 fn keys_tab(ui: &mut egui::Ui, binds: &[Option<egui::Key>], open_prefs: &mut bool) {
-    para(ui, "Shortcuts work whenever you are not typing in a text box. You can change them in PREFERENCES.", pal().ink2);
+    para(ui, "Shortcuts work when not typing in a text box. Change them in PREFERENCES.", pal().ink2);
     para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette. Type a command and press ENTER. The keys 1 2 3 4 switch between LIBRARY, PLAYER, ALBUM and MINI.", pal().ink);
     if retro_btn(ui, "CHANGE SHORTCUTS", false).clicked() {
         *open_prefs = true;
@@ -202,7 +202,7 @@ fn about_tab(ui: &mut egui::Ui) {
         format!("Backline {} (local build)", crate::version())
     };
     para(ui, &v, pal().ink);
-    para(ui, "Backline checks for updates automatically. It installs them the next time you open it, or when you click the bar at the top.", pal().ink2);
+    para(ui, "Updates install on next launch, or from the bar at the top.", pal().ink2);
     section_header(ui, "WHO MADE IT");
     para(ui, "Built by Daniel Simmons.", pal().ink);
     section_header(ui, "WHY IT EXISTS");
@@ -222,7 +222,7 @@ fn about_tab(ui: &mut egui::Ui) {
     );
     section_header(ui, "YOUR DATA");
     para(ui, &crate::api::config_dir().display().to_string(), pal().ink2);
-    para(ui, "The file library.json holds your tunes, loops, playlists and diary. Back it up to keep them safe.", pal().ink2);
+    para(ui, "library.json holds tunes, loops, playlists and diary. Back it up to keep them safe.", pal().ink2);
     section_header(ui, "DISCLAIMER");
     para(
         ui,

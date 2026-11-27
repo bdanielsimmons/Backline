@@ -558,15 +558,15 @@ pub(crate) fn note_card(ui: &mut egui::Ui, d: i64, day: &store::Day, px: f32, fi
     draw_notes(&p.with_clip_rect(rr), o, w - 2.0 * pad, &laid, slide.1, hit.map(|h| h.0), find);
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let resp = if star_hot {
-        resp.tip(if day.star { "Starred. Click to unstar." } else { "Star this day." })
+        resp.tip(if day.star { "Unstar" } else { "Star this day" })
     } else if let Some(u) = &url {
         resp.tip(u)
     } else if let Some(t) = &tag {
-        resp.tip(format!("Every day with {}.", t))
+        resp.tip(format!("Days with {}", t))
     } else if let Some(i) = tune {
-        resp.tip(format!("Open {}.", tunes[i]))
+        resp.tip(format!("Open {}", tunes[i]))
     } else {
-        resp.tip("Open this day.")
+        resp.tip("Open day")
     };
     if !resp.clicked() {
         return None;
@@ -603,7 +603,7 @@ impl App {
             }
             ui.add_space(10.0);
             if check_box(ui, "INCLUDE READING", self.diary_reading)
-                .tip("Include sight-reading time in these charts and totals.")
+                .tip("Include sight-reading time")
                 .clicked()
             {
                 self.diary_reading = !self.diary_reading;
@@ -695,11 +695,11 @@ impl App {
         let name = v.as_ref().map(|v| format!("{} - {}", v.artist, v.title)).unwrap_or_else(|| "A SONG".to_string());
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
-            if crate::ibtn(ui, &crate::IC_BACK, "SONGS", false).tip("Back to this day's songs.").clicked() {
+            if crate::ibtn(ui, &crate::IC_BACK, "SONGS", false).tip("Back to songs").clicked() {
                 self.diary_song = None;
             }
             if let Some(v) = v.clone() {
-                if retro_btn(ui, "PLAY", false).tip("Play the song.").clicked() {
+                if retro_btn(ui, "PLAY", false).tip("Play song").clicked() {
                     acts.push(Action::PlaySaved(v, None));
                 }
             }
@@ -744,7 +744,7 @@ impl App {
             let right = if *s == 0 { String::new() } else { mins_text(*s) };
             if let Some(r) = list_row(ui, k, None, || label.clone(), || right.clone(), RowState::Normal, false, false) {
                 if let Some(v) = v.clone() {
-                    if r.tip("Play this loop.").clicked() {
+                    if r.tip("Play loop").clicked() {
                         acts.push(Action::PlaySaved(v, Some((*a, *b))));
                     }
                 }
@@ -798,7 +798,7 @@ impl App {
     /// click opens one, its star stars it, a tag on it shows that tag's days, a tune named on it opens the tune's page).
     pub(crate) fn all_notes_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let px = if crate::winamp_ui::chrome_on() { 1.7 } else { 2.0 };
-        let back = ui.horizontal(|ui| retro_btn(ui, "< BACK", false).tip("Back to the diary (Esc).").clicked()).inner;
+        let back = ui.horizontal(|ui| retro_btn(ui, "< BACK", false).tip("Back to Diary  (Esc)").clicked()).inner;
         let esc = !self.fullscreen && !self.art_view && self.ed.id == 0 && !self.panel_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if back || esc {
             self.diary_all = 0;
@@ -824,11 +824,11 @@ impl App {
         let mut pick: Option<Option<String>> = None;
         ui.horizontal_wrapped(|ui| {
             let cur = self.notes_filter.clone();
-            if retro_btn(ui, "ALL", cur.is_none()).tip("Every day with notes.").clicked() {
+            if retro_btn(ui, "ALL", cur.is_none()).tip("All days with notes").clicked() {
                 pick = Some(None);
             }
             let on = cur.as_deref() == Some("*");
-            let r = retro_btn(ui, &format!("    STARRED {}", starred), on).tip("The days you starred.");
+            let r = retro_btn(ui, &format!("    STARRED {}", starred), on).tip("Starred days");
             star(ui.painter(), Pos2::new(r.rect.min.x + 15.0, r.rect.center().y), 6.0, true, GOLD);
             if r.clicked() {
                 pick = Some(if on { None } else { Some("*".to_string()) });
@@ -838,13 +838,13 @@ impl App {
                 if !self.notes_tags_all && k >= 5 && !on {
                     continue;
                 }
-                if retro_btn(ui, &format!("{} {}", g, n), on).tip(format!("Every day with {}.", g)).clicked() {
+                if retro_btn(ui, &format!("{} {}", g, n), on).tip(format!("Days with {}", g)).clicked() {
                     pick = Some(if on { None } else { Some(g.clone()) });
                 }
             }
             if tags.len() > 5 {
                 let (label, tip) = if self.notes_tags_all {
-                    ("LESS", "Only the tags you use most.".to_string())
+                    ("LESS", "Most-used tags only".to_string())
                 } else {
                     ("...", format!("{} more tags", tags.len() - 5))
                 };
@@ -899,7 +899,7 @@ impl App {
         let mut go: Option<(i64, i8)> = None;
         ui.horizontal_wrapped(|ui| {
             for (k, name) in ["YEAR", "MONTH", "DAY"].iter().enumerate() {
-                let tip = ["A year at a time.", "A month at a time.", "A day at a time."][k];
+                let tip = ["By year", "By month", "By day"][k];
                 if retro_btn(ui, name, mode == k as u8).tip(tip).clicked() {
                     self.notes_mode = k as u8;
                     self.diary_all = SKIM;
@@ -917,18 +917,18 @@ impl App {
                     let (pr, presp) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::click());
                     let (s, shown, _) = page_turn(&self.notes_flip, now, &words);
                     paint_page(ui.painter(), pr, s.max(0.02), &shown);
-                    let tip = ["Show this year's months.", "Show this month's days.", "Open this day in the diary."][mode as usize];
+                    let tip = ["Show months", "Show days", "Open in Diary"][mode as usize];
                     if presp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked() {
                         deeper = true;
                     }
                 }
                 let to = period_step(self.diary_sel, mode, dir);
-                let tip = format!("{}: {}", if dir < 0 { "Earlier" } else { "Later" }, period_name(&key(to)));
+                let tip = format!("{}: {}", if dir < 0 { "Previous" } else { "Next" }, period_name(&key(to)));
                 if retro_btn_w(ui, label, 34.0, false).tip(tip).clicked() {
                     go = Some((to, dir));
                 }
             }
-            if key(today) != cur && retro_btn(ui, "TODAY", false).tip("Back to today.").clicked() {
+            if key(today) != cur && retro_btn(ui, "TODAY", false).tip("Go to today").clicked() {
                 go = Some((today, if today < self.diary_sel { -1 } else { 1 }));
             }
         });
@@ -986,16 +986,16 @@ impl App {
             let mut jump: Option<(i64, i8)> = None;
             ui.horizontal_wrapped(|ui| {
                 if let Some(d) = near_old {
-                    if retro_btn(ui, &format!("< {}", period_name(&store::date_str(d))), false).tip("Older notes.").clicked() {
+                    if retro_btn(ui, &format!("< {}", period_name(&store::date_str(d))), false).tip("Older notes").clicked() {
                         jump = Some((d, -1));
                     }
                 }
                 if let Some(d) = near_new {
-                    if retro_btn(ui, &format!("{} >", period_name(&store::date_str(d))), false).tip("Newer notes.").clicked() {
+                    if retro_btn(ui, &format!("{} >", period_name(&store::date_str(d))), false).tip("Newer notes").clicked() {
                         jump = Some((d, 1));
                     }
                 }
-                if mode == 2 && retro_btn(ui, "WRITE ONE", false).tip("Open this day in the diary, to write its notes.").clicked() {
+                if mode == 2 && retro_btn(ui, "WRITE ONE", false).tip("Write notes for this day").clicked() {
                     self.open_diary_day(self.diary_sel, acts);
                 }
             });
@@ -1021,7 +1021,7 @@ impl App {
                         let tw = ptext(ui.painter(), Pos2::new(hr.min.x + 4.0, hr.center().y), Align::Min, MONTH_NAMES[m - 1], 1.4, if hot { pal().ink } else { pal().ink2 });
                         ptext(ui.painter(), Pos2::new(hr.min.x + tw + 14.0, hr.center().y), Align::Min, &format!("{} {}", n, if n == 1 { "DAY" } else { "DAYS" }), 1.0, pal().dim);
                     });
-                    if hresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Show this month.").clicked() {
+                    if hresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Show month").clicked() {
                         month_open = Some(d);
                     }
                     last_month = k;
@@ -1033,7 +1033,7 @@ impl App {
         }
         if mode != 2 && in_p.len() > limit {
             ui.add_space(4.0);
-            if retro_btn(ui, "SHOW MORE", false).tip("Older notes.").clicked() {
+            if retro_btn(ui, "SHOW MORE", false).tip("Show older notes").clicked() {
                 self.diary_all = limit + SKIM;
             }
         }
@@ -1086,7 +1086,7 @@ impl App {
             let (lr, _) = ui.allocate_exact_size(Vec2::new(90.0, bh()), Sense::hover());
             ptext(ui.painter(), Pos2::new(lr.min.x + 4.0, lr.center().y), Align::Min, "YOUR TAGS", 1.0, pal().dim);
             for g in &fits {
-                if retro_btn(ui, g, false).tip("Use this tag.").clicked() {
+                if retro_btn(ui, g, false).tip("Use tag").clicked() {
                     pick = Some(g.clone());
                 }
             }
@@ -1154,7 +1154,7 @@ impl App {
         let (mut jump, mut turn, mut tooled) = (None, None, false);
         ui.horizontal_wrapped(|ui| {
             if !noted.is_empty() {
-                for (label, up, tip) in [("<", false, "Previous day with notes."), (">", true, "Next day with notes.")] {
+                for (label, up, tip) in [("<", false, "Previous day with notes"), (">", true, "Next day with notes")] {
                     let to = note_step(&noted, self.diary_sel, up);
                     let r = ui
                         .scope(|ui| {
@@ -1168,14 +1168,14 @@ impl App {
                         (jump, turn) = (to, Some(up));
                     }
                 }
-                if retro_btn(ui, "ALL NOTES", false).tip("Search your notes, by year, month or day.").clicked() {
+                if retro_btn(ui, "ALL NOTES", false).tip("Search notes").clicked() {
                     self.diary_all = SKIM;
                 }
             }
             // a star for the day (once it has notes)
             let starred = self.store.days.iter().find(|d| d.date == note_date).filter(|d| !d.note.trim().is_empty()).map(|d| d.star);
             if let Some(on) = starred {
-                if star_btn(ui, on).tip(if on { "Starred. Click to unstar." } else { "Star this day." }).clicked() {
+                if star_btn(ui, on).tip(if on { "Unstar" } else { "Star this day" }).clicked() {
                     if let Some(d) = self.store.days.iter_mut().find(|d| d.date == note_date) {
                         d.star = !on;
                         self.store_dirty = true;
@@ -1256,7 +1256,7 @@ impl App {
         let tw = ((w - 2.0 * 6.0) / 3.0).floor().max(60.0);
         let (sr, sresp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::hover());
         sresp.on_hover_text(format!(
-            "Practiced on {} of the last 7 days. All time: {}.",
+            "Practiced {} of the last 7 days · All time: {}",
             practised,
             mins_text(total).to_lowercase()
         ));
@@ -1289,7 +1289,7 @@ impl App {
         let now = ui.input(|i| i.time);
         let (mut to, mut notes) = (None::<((i32, u32), i8)>, false);
         ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 66.0), egui::Layout::left_to_right(Align::Center), |ui| {
-            if retro_btn_w(ui, "<", 34.0, false).tip("Previous month.").clicked() {
+            if retro_btn_w(ui, "<", 34.0, false).tip("Previous month").clicked() {
                 to = Some((if m == 1 { (y - 1, 12) } else { (y, m - 1) }, -1));
             }
             let (pr, presp) = ui.allocate_exact_size(Vec2::new(128.0, 66.0), Sense::click());
@@ -1298,13 +1298,13 @@ impl App {
             if turning {
                 ui.ctx().request_repaint();
             }
-            if presp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("This month's notes.").clicked() {
+            if presp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Show month's notes").clicked() {
                 notes = true;
             }
-            if retro_btn_w(ui, ">", 34.0, false).tip("Next month.").clicked() {
+            if retro_btn_w(ui, ">", 34.0, false).tip("Next month").clicked() {
                 to = Some((if m == 12 { (y + 1, 1) } else { (y, m + 1) }, 1));
             }
-            if retro_btn(ui, "TODAY", false).tip("Jump to today.").clicked() {
+            if retro_btn(ui, "TODAY", false).tip("Go to today").clicked() {
                 self.diary_sel = today;
                 to = Some(((cy, cm), if (cy, cm) < (y, m) { -1 } else { 1 }));
             }
@@ -1410,7 +1410,7 @@ impl App {
         let tot: u32 = rows_d.iter().map(|r| r.1).sum();
         // the day's times changed, or added by hand
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "EDIT TIMES", self.diary_edit).tip("Edit this day's times, or add practice done away from the computer.").clicked() {
+            if retro_btn(ui, "EDIT TIMES", self.diary_edit).tip("Edit times or add practice").clicked() {
                 self.diary_edit = !self.diary_edit;
             }
         });
@@ -1418,7 +1418,7 @@ impl App {
             let mut change: Option<(String, i64)> = None;
             for (name, s) in &rows_d {
                 ui.horizontal(|ui| {
-                    if retro_btn(ui, "X", false).tip("Remove from this day.").clicked() {
+                    if retro_btn(ui, "X", false).tip("Remove").clicked() {
                         change = Some((name.clone(), -(*s as i64)));
                     }
                     if retro_btn(ui, "-5", false).clicked() {
@@ -1437,7 +1437,7 @@ impl App {
                 add |= field(ui, &mut self.ed, crate::tools::F_DIARY_ADD_NAME, &mut self.diary_add.0, r, "what you practiced", false).enter;
                 let (r, _) = ui.allocate_exact_size(Vec2::new(60.0, bh()), Sense::hover());
                 add |= field(ui, &mut self.ed, crate::tools::F_DIARY_ADD_MIN, &mut self.diary_add.1, r, "min", false).enter;
-                add |= retro_btn(ui, "ADD", false).tip("Add this many minutes to the day.").clicked();
+                add |= retro_btn(ui, "ADD", false).tip("Add minutes").clicked();
             });
             if add {
                 let name = self.diary_add.0.trim().to_string();
@@ -1537,7 +1537,7 @@ impl App {
                     false,
                 );
                 if let Some(r) = r {
-                    if r.tip("The loops you worked on, and for how long.").clicked() {
+                    if r.tip("Show loops practiced").clicked() {
                         self.diary_song = Some((date.clone(), *id));
                     }
                 }
@@ -1568,7 +1568,7 @@ impl App {
                 }
             });
         } else if retro_btn(ui, &format!("LOG PRACTICE FOR {}", date), false)
-            .tip("Write down what you worked on. It works for past days too.")
+            .tip("Log practice for this day")
             .clicked()
         {
             self.show_form = true;
@@ -1579,10 +1579,10 @@ impl App {
         for (i, e) in self.store.entries.iter().enumerate().rev().filter(|(_, e)| e.date == date) {
             any = true;
             ui.horizontal(|ui| {
-                if retro_btn(ui, "EDIT", self.entry_edit == Some(i)).tip("Change this entry.").clicked() {
+                if retro_btn(ui, "EDIT", self.entry_edit == Some(i)).tip("Edit entry").clicked() {
                     pick = Some((i, false));
                 }
-                if retro_btn(ui, "X", false).tip("Delete this entry.").clicked() {
+                if retro_btn(ui, "X", false).tip("Delete entry").clicked() {
                     pick = Some((i, true));
                 }
             });
@@ -1616,7 +1616,7 @@ impl App {
             None => {}
         }
         if !any && self.store.entries.is_empty() {
-            para(ui, "Practice time is tracked automatically while you work on a loop in PRACTICE. To write down what you worked on and the tempo you reached, pick a day above and press LOG PRACTICE.", pal().ink2);
+            para(ui, "Time spent looping in PRACTICE is tracked automatically. LOG PRACTICE adds notes and a tempo to a day.", pal().ink2);
         }
         ui.add_space(20.0);
     }

@@ -468,7 +468,7 @@ impl App {
         panel(ctx, "look_edit", 560.0, |ui| {
             title_line(ui, "CUSTOM LOOK", 3.0, pal().ink);
             ui.add_space(2.0);
-            para(ui, "Pick your colors. The rest is worked out from them, so everything stays readable.", pal().ink2);
+            para(ui, "Pick the colors. The rest follows and stays readable.", pal().ink2);
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 crate::views::label(ui, "Start From", 100.0);
@@ -540,7 +540,7 @@ impl App {
                     // the display and the writing can go back to being worked out
                     if (role == 1 && look.display.is_some()) || (role == 3 && look.text.is_some()) {
                         ui.add_space(6.0);
-                        auto = retro_btn(ui, "Auto", false).tip("Pick it automatically from the background.").clicked();
+                        auto = retro_btn(ui, "Auto", false).tip("Match the background").clicked();
                     }
                 });
                 if auto {

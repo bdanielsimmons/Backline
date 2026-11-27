@@ -350,12 +350,12 @@ impl App {
                 ui,
                 acts,
                 "PLAY",
-                "Play the line. Click a note in the score to hear it.",
+                "Play line · Click a note to hear it",
                 "line",
                 || notes.iter().map(|m| vec![*m]).collect(),
                 gap,
             );
-            if retro_btn(ui, "LOOP", self.ln_loop).tip("Repeat until you stop it.").clicked() {
+            if retro_btn(ui, "LOOP", self.ln_loop).tip("Repeat until stopped").clicked() {
                 self.ln_loop = !self.ln_loop;
             }
             ui.add_space(10.0);
@@ -544,7 +544,7 @@ impl App {
             }
             let label = ["SHUFFLE", "SHUFFLE: THIS CHAPTER", "SHUFFLE: FAVORITES"][self.ln_shuffle.min(2) as usize];
             let b = retro_btn(ui, label, false)
-                .tip("Pick a random pattern. Right-click to shuffle from the whole book, this chapter or your favorites.");
+                .tip("Random pattern · Right-click for more");
             if b.clicked() {
                 let pool: Vec<usize> = match self.ln_shuffle {
                     1 => (0..n).filter(|k| book[*k].chap == chap).collect(),
@@ -582,7 +582,7 @@ impl App {
                 self.ln_root = i as i32;
             }
             if retro_btn(ui, "BACKWARDS", self.ln_back)
-                .tip("Play the same notes in reverse, so the pattern comes down.")
+                .tip("Play in reverse (descending)")
                 .clicked()
             {
                 self.ln_back = !self.ln_back;
@@ -630,7 +630,7 @@ impl App {
             }
         }
         if fold_row(ui, "HOW THESE PATTERNS WORK", &mut self.ln_how) {
-            para(ui, "Each pattern plays one small shape on every note of a base. The base is a row of notes that climb by one interval (a minor 3rd, a whole step, a 4th and so on). The shape is a layout and a sequence. The layout is the frets it uses, drawn above each pattern with the base note filled. The sequence is the order you play them in: [1, 3, 2, 1] means lowest, highest, middle, lowest. Chapters group the patterns by the notes they use, so a whole chapter shares a sound. BASE MOVES picks the interval the base climbs by. Each pattern is written going up from C, and BACKWARDS brings it down.", pal().ink2);
+            para(ui, "Each pattern plays one shape on every note of a base, a row of notes climbing by one interval (BASE MOVES). The layout above shows the frets, base note filled; the sequence gives the order, so [1, 3, 2, 1] is lowest, highest, middle, lowest.", pal().ink2);
         }
         // favorites
         let stars: Vec<usize> = (0..n).filter(|i| self.store.lines_stars.contains(&format!("book:{}", i))).collect();
@@ -640,13 +640,13 @@ impl App {
         }
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "SHOW FILE", false)
-                .tip("Show the pattern book file in its folder, to copy or share it.")
+                .tip("Show file in folder")
                 .clicked()
             {
                 lines::show_book_file();
             }
             if retro_btn(ui, "REPLACE PATTERN BOOK...", false)
-                .tip("Replace this book with another pattern book file.")
+                .tip("Replace pattern book")
                 .clicked()
             {
                 if let Some(path) = rfd::FileDialog::new().add_filter("Pattern book", &["txt"]).pick_file() {
@@ -707,10 +707,10 @@ impl App {
             if let Some(i) = dropdown(ui, "sl_start", "START ON", &starts, self.ln_root.clamp(0, 11) as usize, 0.0) {
                 self.ln_root = i as i32;
             }
-            if retro_btn(ui, "BACKWARDS", self.ln_back).tip("Play the same notes in reverse.").clicked() {
+            if retro_btn(ui, "BACKWARDS", self.ln_back).tip("Play in reverse").clicked() {
                 self.ln_back = !self.ln_back;
             }
-            let more = retro_btn_w(ui, "...", 34.0, false).tip("Add a pattern book.");
+            let more = retro_btn_w(ui, "...", 34.0, false).tip("Add pattern book");
             let pop = ui.id().with("sl_more");
             if more.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(pop));
@@ -739,7 +739,7 @@ impl App {
                 self.sl_pat = (self.sl_pat + 1) % n;
             }
             ui.add_space(10.0);
-            if retro_btn(ui, "SHUFFLE", false).tip("Pick a random line: any division, any way of adding notes.").clicked() {
+            if retro_btn(ui, "SHUFFLE", false).tip("Random line").clicked() {
                 let r = rand_u64();
                 self.sl_div = (r % lines::DIVISIONS.len() as u64) as usize;
                 let s = lines::DIVISIONS[self.sl_div].1;
@@ -764,7 +764,7 @@ impl App {
         line_neck(ui, &notes, None, lit);
         line_score(ui, acts, &notes, self.ln_sub as usize, false, lit, None);
         if fold_row(ui, "HOW THESE LINES WORK", &mut self.ln_how) {
-            para(ui, &format!("{} Slonimsky calls the notes of the division the principal tones. He builds lines by adding notes to each one the same way: between it and the next (interpolation), below it (infrapolation) or above the next one (ultrapolation). This line: {} The same shape is played from every principal tone. Learn it slowly, then move it to all twelve notes.", dabout, lines::KINDS[self.sl_kind].1), pal().ink2);
+            para(ui, &format!("{} Each principal tone gets the same added notes: between it and the next (interpolation), below it (infrapolation) or above the next (ultrapolation). This line: {}", dabout, lines::KINDS[self.sl_kind].1), pal().ink2);
         }
     }
 
@@ -799,7 +799,7 @@ impl App {
         let mine = g == sets.len();
         let (about, progs): (&str, Vec<String>) = if mine {
             (
-                "Type your own progression in Roman numerals. Examples: I VI II V I, II bII7 I, I #I° II V I, VII°5 III7 VI. Upper case numerals take the key's own chord. Add m, 7, °, °5 (half-diminished) or + to change it. A b or # before or after the numeral moves the root.",
+                "Type a progression in Roman numerals, such as I VI II V I, I #I° II V I or VII°5 III7 VI. A numeral takes the key's chord; add m, 7, °, °5 (half-diminished) or + to change it, and b or # to move the root.",
                 self.store.my_progs.clone(),
             )
         } else {
@@ -854,7 +854,7 @@ impl App {
             let title = format!("{} IN {}", prog, theory::note_name(key, sharps));
             ui.horizontal_wrapped(|ui| {
                 let picked = self.prac_chart.as_ref().is_some_and(|c| c.0 == title || c.0 == format!("{} - ALL 12 KEYS", prog));
-                let b = retro_btn_w(ui, nums, 230.0, picked).tip("Put it on the lead sheet for the band. Right-click for more.");
+                let b = retro_btn_w(ui, nums, 230.0, picked).tip("Put on lead sheet · Right-click for more");
                 if b.clicked() {
                     self.prog_ask = if self.prog_ask == Some((g, i)) { None } else { Some((g, i)) };
                 }
@@ -900,7 +900,7 @@ impl App {
                 });
                 let voiced: Vec<Vec<i32>> =
                     chords.iter().filter_map(|c| theory::chord_notes(c)).map(|c| crate::chords::piano_voicing(&c)).collect();
-                self.seq_button(ui, acts, "HEAR", "Hear each chord in turn.", &tag, || voiced.clone(), 1.0);
+                self.seq_button(ui, acts, "HEAR", "Play the chords", &tag, || voiced.clone(), 1.0);
                 // the chords on one line (a long one ends in ... rather than wrapping a chord onto a line of its own)
                 let room = (ui.available_width() - if mine { 36.0 } else { 0.0 }).max(60.0);
                 let (r, _) = ui.allocate_exact_size(Vec2::new(room, bh()), Sense::hover());
@@ -927,7 +927,7 @@ impl App {
                     if retro_btn(ui, "YES", false).clicked() {
                         self.prog_to_sheet(acts, prog, false);
                     }
-                    if retro_btn(ui, "ALL 12 KEYS", false).tip("Every key, round the cycle of 4ths.").clicked() {
+                    if retro_btn(ui, "ALL 12 KEYS", false).tip("Every key, cycle of 4ths").clicked() {
                         self.prog_to_sheet(acts, prog, true);
                     }
                     if retro_btn(ui, "NO", false).clicked() {
@@ -1017,7 +1017,7 @@ fn pattern_about(line: &lines::BookLine, shift: i32) -> Vec<String> {
         Some(s) => {
             let lcm = (1..=12).map(|n| n * s).find(|m| m % 12 == 0).unwrap_or(12);
             out.push(format!(
-                "THE BASE climbs by a {} ({} half steps): {}. Kept going, it lands back on {} after {} notes and {} octave{}. That is an equal division of the octave, the ground Slonimsky builds on.",
+                "THE BASE climbs by a {} ({} half steps): {}. It returns to {} after {} notes and {} octave{}, an equal division of the octave.",
                 line.sec_name.to_lowercase(),
                 s,
                 base_names.join(" "),
@@ -1028,7 +1028,7 @@ fn pattern_about(line: &lines::BookLine, shift: i32) -> Vec<String> {
             ));
         }
         None => out.push(format!(
-            "THE BASE is not an equal division. It is the {} itself ({}), so each shape starts on one of its notes.",
+            "THE BASE is the {} itself ({}), not an equal division.",
             line.chap_name.to_lowercase(),
             base_names.join(" ")
         )),
@@ -1050,7 +1050,7 @@ fn pattern_about(line: &lines::BookLine, shift: i32) -> Vec<String> {
         }
     };
     out.push(format!(
-        "THE SEQUENCE [{}] is the order: {}. Then the same shape, in the same order, moves to the next base note.",
+        "THE SEQUENCE [{}] is the order: {}, then on to the next base note.",
         line.seq.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "),
         line.seq.iter().map(|s| pos(*s)).collect::<Vec<_>>().join(", then ")
     ));
@@ -1088,7 +1088,7 @@ fn pattern_about(line: &lines::BookLine, shift: i32) -> Vec<String> {
     };
     out.push(format!("THE NOTES it uses: {} ({}). {}", used.join(" "), lines::formula(&content), fit));
     out.push(
-        "TO PRACTICE: play it slowly and evenly with LOOP on until the shape is automatic. Then try BACKWARDS, then START ON other notes. The shape never changes, only where it starts."
+        "TO PRACTICE: slowly and evenly with LOOP on until automatic, then BACKWARDS, then other START ON notes."
             .to_string(),
     );
     out

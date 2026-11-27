@@ -745,7 +745,7 @@ impl App {
             ptext(&p, Pos2::new(r.max.x, cs.min.y + 26.0), Align::Max, &total, 1.4, OVER.gamma_multiply(0.7));
             ptext(&p, Pos2::new(r.max.x - w2 - 8.0, cs.min.y + 22.0), Align::Max, &now_t, 3.4, OVER);
             let tr_r = Rect::from_min_max(Pos2::new(r.max.x - w2 - w1 - 12.0, cs.min.y), Pos2::new(r.max.x, cs.min.y + 44.0));
-            if ui.interact(tr_r, ui.id().with("np_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+            if ui.interact(tr_r, ui.id().with("np_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
                 self.time_left = !self.time_left;
                 self.dirty = true;
             }
@@ -832,7 +832,7 @@ impl App {
             ptext(&p, at, align, &t, 1.7, over);
             if align == Align::Max {
                 let tr = Rect::from_min_max(Pos2::new(x0 - 4.0, at.y - 10.0), Pos2::new(at.x + 4.0, at.y + 10.0));
-                if ui.interact(tr, ui.id().with("np_time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+                if ui.interact(tr, ui.id().with("np_time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
                     self.time_left = !self.time_left;
                     self.dirty = true;
                 }
@@ -888,16 +888,16 @@ impl App {
         if bare(ui, "prev", false, false, "Previous", x0 - 1.5 * gap) {
             acts.push(Action::Prev);
         }
-        if bare(ui, if playing { "pause" } else { "play" }, false, true, if playing { "Pause  (SPACE)" } else { "Play  (SPACE)" }, x0 - 0.5 * gap + 4.0) {
+        if bare(ui, if playing { "pause" } else { "play" }, false, true, if playing { "Pause  (Space)" } else { "Play  (Space)" }, x0 - 0.5 * gap + 4.0) {
             acts.push(Action::Toggle);
         }
         if bare(ui, "skip", false, false, "Next", x0 + 0.5 * gap + 8.0) {
             acts.push(Action::Next);
         }
         let rep_tip = match self.repeat {
-            Repeat::Off => "Repeat: off  (click for all)",
-            Repeat::All => "Repeat: all  (click for one)",
-            Repeat::One => "Repeat: one  (click for off)",
+            Repeat::Off => "Repeat: off",
+            Repeat::All => "Repeat: all",
+            Repeat::One => "Repeat: one",
         };
         if !slim && bare(ui, "loop", self.repeat != Repeat::Off, false, rep_tip, x0 + 1.5 * gap + 8.0) {
             acts.push(Action::Repeat);
@@ -945,10 +945,10 @@ impl App {
         let used = ui
             .allocate_new_ui(egui::UiBuilder::new().max_rect(row), |ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if retro_btn(ui, "CLOSE", false).tip("Back to the library  (ESC)").clicked() {
+                if retro_btn(ui, "CLOSE", false).tip("Library  (Esc)").clicked() {
                     acts.push(Action::ToggleArt);
                 }
-                let more = foot_icon(ui, "more", over, "More: the visualizer, the visuals, what's shown, full screen...");
+                let more = foot_icon(ui, "more", over, "More");
                 let id = ui.id().with("np_more");
                 if more.clicked() {
                     ui.memory_mut(|m| m.toggle_popup(id));
@@ -960,19 +960,19 @@ impl App {
                 // (the visuals in a window of their own, or back: in every look)
                 if crate::popout::CAN {
                     let out = self.pop.is_some();
-                    let tip = if out { "Put the visuals back" } else { "Pop out the visuals into their own window" };
+                    let tip = if out { "Put visuals back" } else { "Pop out visuals" };
                     let pb = foot_icon(ui, "mini", if out { pal().accent } else { over }, tip);
                     if pb.clicked() {
                         self.pop_toggle();
                     }
                 }
-                let ob = foot_icon(ui, "headphones", over, "Sound output: speakers, headphones or Bluetooth");
+                let ob = foot_icon(ui, "headphones", over, "Output device");
                 self.output_popup(ui, &ob, acts);
-                if practice_tools() && retro_btn(ui, "PRACTICE", self.practice).tip("Practice mode: the waveform, loops and speed  (P)").clicked() {
+                if practice_tools() && retro_btn(ui, "PRACTICE", self.practice).tip("Practice mode  (P)").clicked() {
                     acts.push(Action::TogglePractice);
                 }
                 let spd = retro_btn(ui, &crate::tools::speed_label(self.speed), self.speed != 100)
-                    .tip("Playback speed (pitch unchanged). Click to cycle, right-click to pick or type one  (UP and DOWN keys)");
+                    .tip("Speed  (Up/Down) · Right-click for more");
                 if spd.clicked() {
                     acts.push(Action::Speed(crate::tools::next_speed(self.speed)));
                 }

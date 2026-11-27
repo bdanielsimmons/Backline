@@ -66,7 +66,7 @@ impl App {
                         pal().ink2,
                     );
                 });
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Add with this name.").clicked() {
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Add with this name").clicked() {
                     self.new_tune = n.clone();
                     TUNE_ASKED.with(|a| a.borrow_mut().clear());
                     acts.push(Action::NewTune);
@@ -124,7 +124,7 @@ impl App {
     /// TUNES > RECOMMENDED: the tunes that get called, by kind (jazz or gospel). Click one to see its chart on the
     /// lead sheet - it only becomes one of yours with + MY TUNES.
     pub(crate) fn recommended_tunes(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "The tunes called at sessions, sorted by kind. Knowing a mix of kinds keeps you ready for anything. Click one to see its chart on the right, and press + MY TUNES to add it.", pal().ink2);
+        para(ui, "Tunes often called at sessions, by kind. Select one to see its chart; + MY TUNES adds it.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "JAZZ", !self.tunes_gospel).clicked() {
                 self.tunes_gospel = false;
@@ -142,20 +142,20 @@ impl App {
                 let on = showing.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name));
                 ui.horizontal_wrapped(|ui| {
                     if retro_btn(ui, &crate::font::as_label(name), on)
-                        .tip(format!("{}. Shows its chart on the lead sheet.", who))
+                        .tip(format!("{} · Show chart", who))
                         .clicked()
                     {
                         acts.push(Action::PreviewTune(name.to_string()));
                     }
                     if mine {
                         label(ui, "IN YOUR TUNES", 0.0);
-                    } else if retro_btn(ui, "+ MY TUNES", false).tip("Add it to your repertoire.").clicked() {
+                    } else if retro_btn(ui, "+ MY TUNES", false).tip("Add to repertoire").clicked() {
                         acts.push(Action::AddRecommended(name.to_string()));
                     }
                     if self.store.routine_set.get(*kind).is_some_and(|s| s.eq_ignore_ascii_case(name)) {
                         label(ui, "IN YOUR SET", 0.0);
                     } else if retro_btn(ui, "MY SET", false)
-                        .tip("Set as your tune for this kind in DIARY > ROUTINE.")
+                        .tip("Use for this kind in Routine")
                         .clicked()
                     {
                         acts.push(Action::SetTune(kind.to_string(), name.to_string()));
@@ -204,7 +204,7 @@ impl App {
             let o = field(ui, &mut self.ed, F_NEW_TUNE, &mut self.new_tune, rect, "Add a tune, or paste an iReal link", false);
             let go = o.enter
                 || retro_btn_w(ui, "ADD", 70.0, false)
-                    .tip("Type a tune's name, or paste an iReal Pro link or playlist: every song in it becomes a tune with its chart.")
+                    .tip("Add tune · Accepts iReal Pro links and playlists")
                     .clicked();
             if go && self.new_tune.trim().to_ascii_lowercase().starts_with("ireal") {
                 // an iReal link: imported, not added as a name
@@ -227,7 +227,7 @@ impl App {
         self.tune_suggestions(ui, acts);
         ui.add_space(4.0);
         if self.store.tunes.is_empty() {
-            para(ui, "Your repertoire, with the recordings you study for each tune. To add a recording, right-click a song in any list and choose ADD TO A TUNE. Or play it and press ADD CURRENT inside a tune.", pal().ink2);
+            para(ui, "Repertoire, with recordings to study for each tune. Add one with ADD TO A TUNE on any song's right-click menu, or ADD CURRENT inside a tune.", pal().ink2);
         }
         // your tunes under the kind each is (a blues, rhythm changes, a ballad...): the kind it has in your set, else
         // the kind the session lists give it, else OTHER; the ones in your set marked
@@ -340,12 +340,12 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.add_space(76.0);
             label(ui, &format!("Did you mean: {}?", guess), 0.0);
-            if retro_btn(ui, "RENAME", false).tip("Give the tune this name, everywhere it is used.").clicked() {
+            if retro_btn(ui, "RENAME", false).tip("Rename tune everywhere").clicked() {
                 self.store.rename_tune(&name, &guess);
                 self.look_for = guess.clone();
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "KEEP", false).tip("Keep the name as it is.").clicked() {
+            if retro_btn(ui, "KEEP", false).tip("Keep current name").clicked() {
                 self.name_kept.push(name.clone());
                 self.dirty = true;
             }
@@ -362,7 +362,7 @@ impl App {
             if retro_btn(ui, "< TUNES", false).clicked() {
                 acts.push(Action::OpenTune(None));
             }
-            if retro_btn(ui, "CHART", false).tip("Open its chord changes and the band on the Chart page.").clicked() {
+            if retro_btn(ui, "CHART", false).tip("Open chart").clicked() {
                 acts.push(Action::OpenChart);
             }
         });
@@ -429,11 +429,11 @@ impl App {
                 let (_, m, dd) = store::civil_from_days(*d);
                 let when = format!("{} {} {}", store::weekday(*d), &MONTH_NAMES[m as usize - 1][..3], dd);
                 let r = list_row(ui, k, None, || format!("{}   {}", when, line), String::new, RowState::Normal, false, false);
-                if r.is_some_and(|r| r.tip("Open this day in the diary.").clicked()) {
+                if r.is_some_and(|r| r.tip("Open in Diary").clicked()) {
                     open = Some(*d);
                 }
             }
-            if named.len() > 4 && retro_btn(ui, &format!("ALL {} IN THE DIARY", named.len()), false).tip("Every day that names this tune.").clicked() {
+            if named.len() > 4 && retro_btn(ui, &format!("ALL {} IN THE DIARY", named.len()), false).tip("All days naming this tune").clicked() {
                 self.open_notes(None, &name, acts);
             }
             if let Some(d) = open {
@@ -458,7 +458,7 @@ impl App {
             let (r, _) = ui.allocate_exact_size(Vec2::new(room.min(text_w(&line, 2.0) + 12.0), bh()), Sense::hover());
             ptext_fit(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &line, 2.0, room - 8.0, pal().ink2);
             if retro_btn(ui, if self.tune_more { "HIDE DETAILS" } else { "DETAILS" }, self.tune_more)
-                .tip("Edit the composer, year, origin and style.")
+                .tip("Edit composer, year, origin and style")
                 .clicked()
             {
                 self.tune_more = !self.tune_more;
@@ -497,15 +497,15 @@ impl App {
                 acts.push(Action::PlayTune(i, true));
             }
             if crate::ibtn(ui, &crate::IC_SEARCH, if self.look_busy { "SEARCHING..." } else { "LOOK UP" }, self.look_busy)
-                .tip("Finds the composer and the most popular recordings on Tidal. Searches only when you press it.")
+                .tip("Find composer and top recordings on Tidal")
                 .clicked()
             {
                 acts.push(Action::LookUp(i));
             }
-            if retro_btn(ui, "ADD CURRENT", false).tip("Add the recording that is playing now.").clicked() {
+            if retro_btn(ui, "ADD CURRENT", false).tip("Add the recording now playing").clicked() {
                 acts.push(Action::AddCurrentToTune(i));
             }
-            let more = retro_btn_w(ui, "...", 34.0, false).tip("More options: LOOK UP style, play-alongs, remove tune.");
+            let more = retro_btn_w(ui, "...", 34.0, false).tip("More options");
             let pop = ui.id().with("tune_more_menu");
             if more.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(pop));
@@ -566,7 +566,7 @@ impl App {
         if nvers == 0 {
             para(
                 ui,
-                "No recordings yet. Play a recording and press ADD CURRENT, or right-click any song and choose ADD TO A TUNE.",
+                "No recordings yet. Add one with ADD CURRENT, or ADD TO A TUNE on any song's right-click menu.",
                 pal().ink2,
             );
         }
@@ -684,7 +684,7 @@ impl App {
                     cache::has(t.id),
                 );
                 if let Some(r) = r {
-                    let r = r.tip(format!("From the album {}.", t.album));
+                    let r = r.tip(format!("Album: {}", t.album));
                     if r.clicked() {
                         acts.push(Action::Play(found.clone(), k));
                     }

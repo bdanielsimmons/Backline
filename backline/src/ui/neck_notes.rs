@@ -389,14 +389,14 @@ impl App {
             }
         }
         if check_box(ui, "EVERY FRET", self.store.neck.every)
-            .tip("Every fret from 0 to 12, not only the landmarks (a string's other frets join on their own once its landmarks are quick)")
+            .tip("All frets 0-12")
             .clicked()
         {
             self.store.neck.every = !self.store.neck.every;
             self.store_dirty = true;
             self.nn_next();
         }
-        if check_box(ui, "SOUND", !self.store.neck.mute).tip("Hear the note once you've named it").clicked() {
+        if check_box(ui, "SOUND", !self.store.neck.mute).tip("Play the note after answering").clicked() {
             self.store.neck.mute = !self.store.neck.mute;
             self.store_dirty = true;
         }
@@ -461,7 +461,7 @@ impl App {
             }
             para(ui, &said, pal().ink2);
             ui.add_space(8.0);
-            if retro_btn(ui, "AGAIN", false).tip("Another 40 (Enter)").clicked() || enter {
+            if retro_btn(ui, "AGAIN", false).tip("Another 40  (Enter)").clicked() || enter {
                 self.nn_again();
             }
             ui.add_space(14.0);
@@ -497,7 +497,7 @@ impl App {
             ui.add_space(6.0);
             let mut got = enter || typed.is_some_and(|pc: i32| pc.rem_euclid(12) == pc_at(s, f));
             ui.horizontal(|ui| {
-                if retro_btn(ui, "GOT IT", false).tip("Say it out loud, then on to the next (Enter, or type its name)").clicked() {
+                if retro_btn(ui, "GOT IT", false).tip("Next note  (Enter)").clicked() {
                     got = true;
                 }
                 ui.add_space(8.0);
@@ -557,7 +557,7 @@ impl App {
                 crate::font::keep_caps(|| ptext(p, Pos2::new(x, ar.center().y), Align::Min, &text, 3.0, if ok { ok_col() } else { bad_col() }));
             }
         }
-        let hint = if given.is_some() { rule(s, f) } else { "Type the letter (Shift + letter for a sharp, Ctrl + letter for a flat), or click it below.".to_string() };
+        let hint = if given.is_some() { rule(s, f) } else { "Type the letter (Shift for sharp, Ctrl for flat) or click below.".to_string() };
         para(ui, &hint, pal().ink2);
         // the notes to click
         ui.add_space(4.0);
@@ -589,7 +589,7 @@ impl App {
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if retro_btn(ui, "LEARN THEM", false).tip("The names of the notes in play on the neck, with the rules that give them (no questions)").clicked() {
+            if retro_btn(ui, "LEARN THEM", false).tip("Show note names and rules").clicked() {
                 self.nn.learn = true;
             }
         });

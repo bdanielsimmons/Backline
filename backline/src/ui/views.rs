@@ -330,7 +330,7 @@ impl App {
         let picked = crate::menu_list_w(ui, "practice_go", &face, &items, sel, &heads, pages_w());
         let _ = ui
             .interact(Rect::from_min_size(at, Vec2::new(pages_w(), bh())), ui.id().with("practice_go_tip"), Sense::hover())
-            .tip("The page you're on. Click to go to any practice page.");
+            .tip("Go to page");
         if let Some(i) = picked {
             self.go_apply(gos[i], acts);
         }
@@ -616,7 +616,7 @@ impl App {
             let w = (ui.available_width() - if self.lib_filter.is_empty() { 8.0 } else { 44.0 }).max(80.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let _ = field(ui, &mut self.ed, crate::tools::F_LIB_FILTER, &mut self.lib_filter, rect, hint, false);
-            if !self.lib_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear the filter.").clicked() {
+            if !self.lib_filter.is_empty() && retro_btn_w(ui, "X", 30.0, false).tip("Clear filter").clicked() {
                 self.lib_filter.clear();
             }
         });
@@ -639,7 +639,7 @@ impl App {
             let n_on = crate::SOURCES.iter().filter(|(k, _)| !self.mine_off.iter().any(|o| o == k)).count();
             let what = if n_on == crate::SOURCES.len() { "all".to_string() } else { format!("{} of {}", n_on, crate::SOURCES.len()) };
             let src = retro_btn(ui, &crate::font::as_label(&format!("Sources: {}", what)), n_on < crate::SOURCES.len())
-                .tip("Choose which sources to show: Tidal, files, SoundCloud, YouTube.");
+                .tip("Sources to show");
             let pop = ui.id().with("mine_sources");
             if src.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(pop));
@@ -660,7 +660,7 @@ impl App {
             });
             ui.add_space(8.0);
             if crate::check_box(ui, "WITH STEMS", self.mine_stems)
-                .tip("Only the songs already split into drums, bass, vocals and the rest, liked or not.")
+                .tip("Only songs split into stems")
                 .clicked()
             {
                 self.mine_stems = !self.mine_stems;
@@ -687,7 +687,7 @@ impl App {
             dim_line(ui, &format!("{} MORE SPLIT SONGS SHOW HERE ONCE YOU PLAY THEM AGAIN", unnamed), 1.0, pal().dim);
         }
         if self.mine_stems && all == 0 {
-            para(ui, "No songs split yet. Play a song, open PRACTICE > STEMS and press SPLIT THIS TRACK.", pal().ink2);
+            para(ui, "No songs split yet. Split one in PRACTICE > STEMS.", pal().ink2);
             return;
         }
         if self.go_offline {
@@ -698,7 +698,7 @@ impl App {
             dim_line(ui, "YOUR TIDAL LIKES SHOW ONCE TIDAL > MY LIBRARY HAS LOADED", 1.0, pal().dim);
         }
         if all == 0 {
-            para(ui, "No songs yet. Click the heart on any song from Tidal, your files, SoundCloud or YouTube to add it here.", pal().ink2);
+            para(ui, "No songs yet. Like a song from any source to add it here.", pal().ink2);
             return;
         }
         self.filter_box(ui, "Filter by title, artist or album");
@@ -840,7 +840,7 @@ impl App {
         };
         let r_chart = place(48.0);
         let r_queue = place(48.0);
-        if chip(ui, r_chart, "CHART", self.rtab == 1, "c_rchart").tip("The chord changes of the open tune.").clicked() {
+        if chip(ui, r_chart, "CHART", self.rtab == 1, "c_rchart").tip("Lead sheet").clicked() {
             acts.push(Action::RightTab(1));
         }
         if chip(ui, r_queue, "QUEUE", self.rtab == 0, "c_rqueue").clicked() {
@@ -1076,7 +1076,7 @@ impl App {
             me.list_ask = None;
         };
         ui.add_space(6.0);
-        if crate::ibtn(ui, &crate::IC_BACK, "PLAYLISTS", false).tip("Back to your playlists.").clicked() {
+        if crate::ibtn(ui, &crate::IC_BACK, "PLAYLISTS", false).tip("Back to playlists").clicked() {
             back(self);
             return;
         }
@@ -1098,12 +1098,12 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             crate::set_list_link(&url);
             play_buttons(ui, &tracks, acts, false);
-            if retro_btn(ui, "REFRESH", false).tip("Reload the playlist to get newly added songs.").clicked() {
+            if retro_btn(ui, "REFRESH", false).tip("Reload playlist").clicked() {
                 self.read_list_again(kind, &url, acts);
             }
             if self.list_ask.as_deref() != Some(url.as_str())
                 && retro_btn(ui, "REMOVE PLAYLIST...", false)
-                    .tip("Remove it from your playlists. Songs you saved stay.")
+                    .tip("Remove playlist · Saved songs stay")
                     .clicked()
             {
                 self.list_ask = Some(url.clone());
@@ -1150,13 +1150,13 @@ impl App {
             // SOURCE: this computer's songs, the linked computer's, or both in one list
             ui.horizontal_wrapped(|ui| {
                 label(ui, "SOURCE", 0.0);
-                if crate::check_box(ui, "THIS COMPUTER", self.files_here).tip("The songs on this computer.").clicked() {
+                if crate::check_box(ui, "THIS COMPUTER", self.files_here).tip("Songs on this computer").clicked() {
                     // (one of the two always stays on)
                     self.files_here = !self.files_here || !self.files_there;
                 }
                 ui.add_space(6.0);
                 if crate::check_box(ui, &name.to_uppercase(), self.files_there)
-                    .tip(format!("The songs in Backline on {}, to copy the ones you want.", name))
+                    .tip(format!("Songs on {}", name))
                     .clicked()
                 {
                     self.files_there = !self.files_there || !self.files_here;
@@ -1176,7 +1176,7 @@ impl App {
         // how many, then one ADD with its choices under it (the count short, so they share a line)
         ui.horizontal_wrapped(|ui| {
             label(ui, &format!("{} {}", n, if n == 1 { "file" } else { "files" }), 0.0);
-            let add = retro_btn(ui, "+ ADD", false).tip("Add files or a folder, or rescan your folders. Nothing is copied: they play from where they are.");
+            let add = retro_btn(ui, "+ ADD", false).tip("Add files, a folder, or rescan");
             let pop = ui.id().with("files_add");
             if add.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(pop));
@@ -1206,8 +1206,8 @@ impl App {
         }
         if self.store.files.is_empty() && !self.files_busy {
             ui.add_space(6.0);
-            let tail = if practice_tools() { " Loops, speed and sections all work on them." } else { "" };
-            para(ui, &format!("Drag audio files or folders onto this window, or use + ADD. Nothing is copied: files stay where they are.{}", tail), pal().ink2);
+            let tail = if practice_tools() { " Loops and speed work on them." } else { "" };
+            para(ui, &format!("Drop audio files or folders here, or use + ADD. They stay where they are.{}", tail), pal().ink2);
         }
         if !self.store.folders.is_empty() {
             section_header(ui, "WATCHED FOLDERS (CLICK TO STOP)");
@@ -1244,7 +1244,7 @@ impl App {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(text_w(said, 2.0) + 12.0, bh()), Sense::hover());
             ptext(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, said, 2.0, if have { pal().ink } else { pal().red });
             if retro_btn(ui, if have { "UPDATE YT-DLP" } else { "GET YT-DLP" }, !have)
-                .tip("Downloads the free yt-dlp tool from its official GitHub page.")
+                .tip("Download yt-dlp from GitHub")
                 .clicked()
             {
                 acts.push(Action::GetYtDlp);
@@ -1283,9 +1283,9 @@ impl App {
         }
         self.saved_lists(ui, acts, "yt");
         if self.store.yt.is_empty() {
-            para(ui, "One-time setup: press GET YT-DLP. Then paste a link and press ADD.", pal().ink2);
+            para(ui, "Press GET YT-DLP once, then paste a link and press ADD.", pal().ink2);
             if practice_tools() {
-                para(ui, "Play-alongs, lessons, live takes: anything you want to loop and slow down.", pal().ink2);
+                para(ui, "Play-alongs, lessons and live takes to loop and slow down.", pal().ink2);
             }
             para(
                 ui,
@@ -1314,7 +1314,7 @@ impl App {
         if !have {
             ui.horizontal_wrapped(|ui| {
                 label(ui, "ONE-TIME SETUP", 150.0);
-                if retro_btn(ui, "GET YT-DLP", true).tip("Downloads the free yt-dlp tool, which also handles SoundCloud.").clicked()
+                if retro_btn(ui, "GET YT-DLP", true).tip("Download yt-dlp (needed for SoundCloud)").clicked()
                 {
                     acts.push(Action::GetYtDlp);
                 }
@@ -1333,7 +1333,7 @@ impl App {
         });
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "USER PLAYLISTS", false)
-                .tip("Lists all public playlists of a user. Type their SoundCloud name or profile link above first.")
+                .tip("Public playlists of the user typed above")
                 .clicked()
             {
                 acts.push(Action::ScSets);
@@ -1343,7 +1343,7 @@ impl App {
             let n = sources::SC_BROWSER.load(Ordering::Relaxed) as usize;
             label(ui, "SIGN-IN FROM", 130.0);
             if retro_btn_w(ui, sources::SC_BROWSERS[n], 110.0, n > 0)
-                .tip("Uses the SoundCloud sign-in of a browser on this PC, for private playlists and Go+. Click to change. Firefox works best.")
+                .tip("Browser signed in to SoundCloud · Firefox works best")
                 .clicked()
             {
                 acts.push(Action::ScBrowser);
@@ -1354,7 +1354,7 @@ impl App {
             para(ui, &self.sc_msg.clone(), col);
         }
         if self.sc_results.is_empty() && self.store.sc.is_empty() {
-            para(ui, "Paste your likes link or a playlist link and press GO. Your likes link is soundcloud.com/YOU/likes. Public lists show right here; click a track to play it.", pal().ink2);
+            para(ui, "Paste a playlist or likes link (soundcloud.com/NAME/likes) and press GO.", pal().ink2);
             para(ui, "Without a sign-in, private and Go+ tracks may play as previews or not at all. Using SoundCloud this way may go against its terms. Practice use is at your own discretion.", pal().dim);
         }
         // a playlist open: its own page
@@ -1461,7 +1461,7 @@ impl App {
                                 let whole = format!("Continue: {}{}", title, who);
                                 let label = crate::font::fit(&whole, 2.0, w - 20.0);
                                 if retro_btn(ui, &label, true)
-                                    .tip(format!("{}. Play it again from {}, where it was.", whole, at))
+                                    .tip(format!("{} · From {}", whole, at))
                                     .clicked()
                                 {
                                     go_on = true;
@@ -1503,7 +1503,7 @@ impl App {
                 egui::Frame::none().fill(pal().app_bg).stroke(egui::Stroke::new(2.0_f32, pal().edge)).inner_margin(16.0).show(ui, |ui| {
                     ui.set_width(440.0_f32.min(screen.width() - 40.0));
                     title_line(ui, "OPEN A PACK", 3.0, pal().ink);
-                    para(ui, "Check what to import. Each item goes where it belongs and turns on its part of Backline.", pal().ink2);
+                    para(ui, "Choose what to import. Each item unlocks its part of the app.", pal().ink2);
                     ui.add_space(4.0);
                     for part in p.parts.iter_mut() {
                         let label = if part.replaces { format!("{}  (REPLACES YOURS)", part.label) } else { part.label.clone() };
@@ -1512,7 +1512,7 @@ impl App {
                         }
                     }
                     if p.share.is_some() {
-                        para(ui, "LOOPS & PLAYLISTS: you pick which ones next. They're added to yours, nothing is replaced.", pal().ink2);
+                        para(ui, "Loops & playlists are picked next. They're added, never replaced.", pal().ink2);
                     }
                     if p.parts.iter().any(|x| x.replaces && x.on) {
                         para(ui, "A checked item marked REPLACES YOURS replaces the one you have.", pal().red);
@@ -1618,10 +1618,10 @@ impl App {
                             if retro_btn(ui, "EVERYTHING", false).clicked() {
                                 pick = (all_songs.clone(), all_lists.clone());
                             }
-                            if retro_btn(ui, "ALL LOOPS", false).tip("Every loop, no playlists.").clicked() {
+                            if retro_btn(ui, "ALL LOOPS", false).tip("Loops only").clicked() {
                                 pick = (all_songs.clone(), std::collections::HashSet::new());
                             }
-                            if retro_btn(ui, "ALL PLAYLISTS", false).tip("Every playlist, no loops.").clicked() {
+                            if retro_btn(ui, "ALL PLAYLISTS", false).tip("Playlists only").clicked() {
                                 pick = (std::collections::HashSet::new(), all_lists.clone());
                             }
                             if retro_btn(ui, "NONE", false).clicked() {
@@ -1712,13 +1712,13 @@ impl App {
     fn share_buttons(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "EXPORT LOOPS & PLAYLISTS...", false)
-                .tip("Saves every loop and playlist to one file. Email it or put it on a USB stick or OneDrive, then import it on the other computer.")
+                .tip("Save loops and playlists to a file")
                 .clicked()
             {
                 acts.push(Action::ShareExport);
             }
             if retro_btn(ui, "IMPORT...", false)
-                .tip("Imports a file from another computer. It adds the loops and playlists you don't have and leaves yours unchanged.")
+                .tip("Import from a file · Adds, never replaces")
                 .clicked()
             {
                 acts.push(Action::ShareImport);
@@ -1741,7 +1741,7 @@ impl App {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let o = field(ui, &mut self.ed, F_NEW_PL, &mut self.new_pl, rect, "New playlist name", false);
             // the New Playlist panel: a name, a picture, in Backline or on Tidal
-            if o.enter || retro_btn_w(ui, "NEW", 70.0, false).tip("Create a playlist").clicked() {
+            if o.enter || retro_btn_w(ui, "NEW", 70.0, false).tip("New playlist").clicked() {
                 acts.push(Action::PlaylistNew(None));
             }
         });
@@ -1752,7 +1752,7 @@ impl App {
             let o = field(ui, &mut self.ed, F_PL_LINK, &mut self.pl_link, rect, "Apple Music or Spotify playlist link", false);
             let busy = self.pl_importing;
             let go = retro_btn_w(ui, if busy { "FINDING..." } else { "FIND SONGS" }, 102.0, false)
-                .tip("Paste an Apple Music or Spotify playlist link. Backline finds its songs on Tidal (or YouTube without Tidal) and makes a playlist.")
+                .tip("Find the songs on Tidal or YouTube")
                 .clicked();
             if (o.enter || go) && !busy {
                 acts.push(Action::PlaylistImport(self.pl_link.trim().to_string()));
@@ -1761,14 +1761,14 @@ impl App {
         self.share_buttons(ui, acts);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "SAVE QUEUE AS PLAYLIST", false)
-                .tip("Save the queue as a playlist, named after its source (a radio, a mix). You can rename it.")
+                .tip("Save queue as playlist")
                 .clicked()
             {
                 acts.push(Action::PlaylistFromQueue);
             }
         });
         if self.store.playlists.is_empty() {
-            para(ui, "Right-click any song and choose ADD TO PLAYLIST. Playlists live on this PC only, and one list can mix every source.", pal().ink2);
+            para(ui, "Right-click a song and choose ADD TO PLAYLIST. Playlists are saved on this PC.", pal().ink2);
         }
         ui.add_space(4.0);
         // your playlists, filtered by name as you type
@@ -1823,14 +1823,14 @@ impl App {
             if retro_btn(ui, "< ALL PLAYLISTS", false).clicked() {
                 acts.push(Action::PlaylistOpen(None));
             }
-            if retro_btn(ui, "RENAME / EDIT", false).tip("Its name, description and cover").clicked() {
+            if retro_btn(ui, "RENAME / EDIT", false).tip("Name, description and cover").clicked() {
                 acts.push(Action::PlaylistEdit(pi));
             }
             // brought in from a link: songs added there since come in (checked by itself once a day when it's opened)
             if !self.store.playlists[pi].link.is_empty() {
                 let busy = self.pl_updating == Some(pi);
                 if retro_btn(ui, if busy { "CHECKING..." } else { "CHECK FOR NEW SONGS" }, false)
-                    .tip("Get the songs added to the original playlist since you imported it")
+                    .tip("Get new songs from the original playlist")
                     .clicked()
                     && !busy
                 {
@@ -1847,7 +1847,7 @@ impl App {
                 && items.iter().all(|v| v.kind == "tidal")
                 && self.api.has_token()
                 && !self.offline
-                && retro_btn(ui, "SAVE TO TIDAL", false).tip("Make this playlist on your Tidal account too.").clicked()
+                && retro_btn(ui, "SAVE TO TIDAL", false).tip("Copy playlist to Tidal").clicked()
             {
                 acts.push(Action::PlaylistNewFrom(name.clone(), items.iter().map(|v| v.to_track()).collect(), true));
             }
@@ -1880,7 +1880,7 @@ impl App {
         title_line(ui, &format!("{} tracks (right-click one to move or remove it)", items.len()), 2.0, pal().ink2);
         ui.add_space(4.0);
         if items.is_empty() {
-            para(ui, "Empty. Right-click any song and choose ADD TO A BACKLINE PLAYLIST.", pal().ink2);
+            para(ui, "Empty. Right-click a song and choose ADD TO PLAYLIST.", pal().ink2);
             return;
         }
         let order = crate::tracks::sort_order(items.len(), |i, c| {

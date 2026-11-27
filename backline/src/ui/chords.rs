@@ -142,7 +142,7 @@ impl App {
                 "or type any chord, like Dm7, G7#9 or Fmaj7/A",
                 false,
             );
-            if retro_btn_w(ui, "STRUM", 80.0, false).tip("Hear it").clicked() {
+            if retro_btn_w(ui, "STRUM", 80.0, false).tip("Strum").clicked() {
                 if let Some(c) = theory::chord_notes(&self.chord_q) {
                     acts.push(Action::PlayNotes(piano_voicing(&c)));
                 }
@@ -150,7 +150,7 @@ impl App {
         });
         let Some(c) = theory::chord_notes(self.chord_q.trim()) else {
             ui.add_space(8.0);
-            para(ui, "Pick a root, a type and a chord, or enter one. It shows on the neck and the piano, with its shapes and the scales that fit.", pal().ink2);
+            para(ui, "Pick or type a chord to see its shapes, neck, piano and scales.", pal().ink2);
             return;
         };
         // (a test copy can open scrolled down: BACKLINE_SCROLL=points)
@@ -251,7 +251,7 @@ impl App {
                             let (d, col) = degree_in(m, root, &pcs);
                             (d.to_string(), col)
                         });
-                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hear this shape");
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play shape");
                         if resp.clicked() {
                             let notes: Vec<i32> = s
                                 .frets
@@ -267,7 +267,7 @@ impl App {
             }
             // the voicing groups: every inversion of the chord's four notes, string set by string set
             self.voicing_browser(ui, acts, &c);
-            if retro_btn(ui, "+ ADD MY OWN GRIP", false).tip("Place it on the neck in CHORD ANALYZER, then save it here.").clicked()
+            if retro_btn(ui, "+ ADD MY OWN GRIP", false).tip("Add a grip in Chord Analyzer").clicked()
             {
                 self.grip_for = Some((grip_key(&q), q.clone()));
                 self.an_frets = [None; 6];
@@ -289,13 +289,13 @@ impl App {
     }
 
     fn chord_analyze(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Click notes on the neck and the chord is named as you go. Use one note per string; left of the nut is the open string. Click a note again to remove it. Each note plays as you place it.", pal().ink2);
+        para(ui, "Click notes on the neck to name the chord, one per string. Left of the nut is open; click a note again to remove it.", pal().ink2);
         // laying down a grip for a chord from the finder
         if let Some((key, name)) = self.grip_for.clone() {
             ui.horizontal_wrapped(|ui| {
                 crate::views::label(ui, &format!("YOUR GRIP FOR {}:", name.to_uppercase()), 200.0);
                 let ready = self.an_frets.iter().flatten().count() >= 2;
-                if retro_btn(ui, "SAVE IT", false).tip("Save the grip on the neck under this chord.").clicked() && ready {
+                if retro_btn(ui, "SAVE IT", false).tip("Save as my grip for this chord").clicked() && ready {
                     self.store.custom_grips.entry(key.clone()).or_default().push(self.an_frets);
                     self.store_dirty = true;
                     self.grip_for = None;
@@ -373,7 +373,7 @@ impl App {
         });
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "STRUM", false).tip("Hear the chord, low string to high").clicked() && !notes.is_empty() {
+            if retro_btn(ui, "STRUM", false).tip("Strum").clicked() && !notes.is_empty() {
                 acts.push(Action::PlayNotes(notes.clone()));
             }
             if retro_btn(ui, "CLEAR", false).clicked() {
@@ -385,7 +385,7 @@ impl App {
             let lo = frets.iter().min().copied();
             let hi = frets.iter().max().copied();
             for (label, d, tip) in
-                [("< MOVE", -1i32, "Move the whole shape down a fret"), ("MOVE >", 1, "Move the whole shape up a fret")]
+                [("< MOVE", -1i32, "Shape down a fret"), ("MOVE >", 1, "Shape up a fret")]
             {
                 let can = match (lo, hi) {
                     (Some(l), Some(h)) => (d < 0 && l > 0) || (d > 0 && h < 15),
@@ -400,7 +400,7 @@ impl App {
                     acts.push(Action::PlayNotes(moved));
                 }
             }
-            if retro_btn(ui, "SAVE GRIP AS", self.gs_open).tip("Save this grip under a chord name you type or pick.").clicked() {
+            if retro_btn(ui, "SAVE GRIP AS", self.gs_open).tip("Save grip under a chord name").clicked() {
                 self.gs_open = !self.gs_open;
                 // start from what the analyzer thinks it is
                 if self.gs_open {
@@ -439,16 +439,16 @@ impl App {
                 ui,
                 &mut sp.symbols,
                 "- \u{0394} \u{00b0} +",
-                "Jazz symbols: - minor, \u{0394} major 7, \u{00b0} diminished, + augmented. Off: m, maj, dim, aug.",
+                "Jazz symbols -, \u{0394}, \u{00b0}, + instead of m, maj, dim, aug",
             );
-            toggle(ui, &mut sp.sharps, "#", "Use sharps for roots. Off: flats.");
-            toggle(ui, &mut sp.slash, "SLASH", "Show a non-root bass as a slash chord, like C/E.");
-            toggle(ui, &mut sp.detailed, "DETAILED", "Show omitted notes, like C7(no5).");
+            toggle(ui, &mut sp.sharps, "#", "Sharp roots instead of flats");
+            toggle(ui, &mut sp.slash, "SLASH", "Show non-root bass as a slash chord, like C/E");
+            toggle(ui, &mut sp.detailed, "DETAILED", "Show omitted notes, like C7(no5)");
             toggle(
                 ui,
                 &mut self.chord_details,
                 "DETAILS",
-                "Show each chord's notes, which ones you play, and any warnings.",
+                "Show chord tones, played notes and warnings",
             );
         });
         let sp = self.chord_sp;
@@ -484,9 +484,9 @@ impl App {
                         }
                         let picked = self.an_pick.as_deref() == Some(key.as_str());
                         retro_btn(ui, &name, s.exact || picked).tip(if s.exact {
-                            "These notes make this chord"
+                            "Exact match"
                         } else {
-                            "These notes are part of this chord. The faint rings show the rest."
+                            "Partial match · Faint rings show the missing notes"
                         })
                     })
                     .inner;
@@ -522,7 +522,7 @@ impl App {
                 && !mine
                 && self.grip_for.is_none()
                 && retro_btn(ui, &format!("+ ADD AS MY GRIP FOR {}", s.name(sp)), false)
-                    .tip("Save the grip on the neck under this chord. It shows as MINE; right-click it to delete.")
+                    .tip("Save as my grip for this chord")
                     .clicked()
             {
                 self.store.custom_grips.entry(key).or_default().push(self.an_frets);
@@ -591,7 +591,7 @@ impl App {
         match from_chart.filter(|c| !c.1.is_empty()) {
             Some(c) => c,
             None => {
-                para(ui, "Open a tune with a chart in TUNES, or type some changes here.", pal().ink2);
+                para(ui, "Open a tune with a chart in Tunes, or type changes here.", pal().ink2);
                 let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 6.0, bh()), Sense::hover());
                 let _ = field(ui, &mut self.ed, crate::tools::F_CL_CHANGES, &mut self.cl_changes, r, "Dm7b5 G7 Cmaj7", false);
                 ("TYPED CHANGES".to_string(), self.cl_changes.split_whitespace().map(|s| s.to_string()).collect())
@@ -653,14 +653,14 @@ impl App {
     ) -> (usize, &'static [usize], &'static [usize], u8) {
         const FAMILIES: [&str; 8] = ["TRIADS", "SPREAD TRIADS", "SHELLS", "CLOSE", "DROP 2", "DROP 3", "DROP 2&4", "3RDS & 7THS"];
         const ABOUT: [&str; 8] = [
-            "Three notes on three neighboring strings. Learn all three inversions (root, 3rd or 5th in the bass) on every string set. Then you can find any major or minor chord anywhere on the neck.",
-            "A triad with its middle note dropped an octave, so it skips a string. Wide and open, like a pianist's two hands.",
-            "Root, 3rd and 7th: the notes that say what a chord is. The bread and butter of comping, with the root on the 6th or 5th string.",
-            "All four notes as close as they go. Lovely on piano, a stretch on guitar. That is why drop voicings exist.",
-            "A close voicing with its second highest note dropped an octave. Four neighboring strings, easy to grip. These are the most used jazz chord shapes there are.",
-            "A close voicing with its third highest note dropped an octave. The bass sits on the 6th or 5th string, with a string skipped. A big, full sound for chord melody and comping.",
-            "The second and fourth highest notes dropped an octave. Wide and open across two string groups.",
-            "Just the 3rd and 7th: the notes that say major, minor or dominant. Through a ii-V-I, the 7th falls a half step to the next 3rd and the 3rd stays put as the next 7th. The hand hardly moves. Use it for light comping; it is the bones of every line.",
+            "Three notes on adjacent strings, in all three inversions on every string set.",
+            "A triad with its middle note dropped an octave, skipping a string. Wide and open.",
+            "Root, 3rd and 7th, root on the 6th or 5th string. The core comping voicing.",
+            "All four notes as close as possible. A stretch on guitar, hence drop voicings.",
+            "Drop 2: second-highest note down an octave. Four adjacent strings; the core jazz grips.",
+            "Drop 3: third-highest note down an octave. Bass on the 6th or 5th string, one string skipped.",
+            "Drop 2&4: second and fourth highest notes down an octave. Wide, across two string groups.",
+            "Guide tones: 3rd and 7th only. Through a ii-V-I, each 7th falls a half step to the next 3rd.",
         ];
         if (self.vc_family as usize) < first {
             self.vc_family = first as u8;
@@ -810,7 +810,7 @@ impl App {
                 ui,
                 acts,
                 "PLAY ALL",
-                "Each inversion, up the neck",
+                "Play each inversion up the neck",
                 "inv",
                 || up.iter().map(grip_notes).collect(),
                 0.9,
@@ -906,7 +906,7 @@ impl App {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::click());
                 ui.painter().rect_filled(r, 1.0, INV_COLS[gi % 4]);
                 let (bass, top) = label.split_once("  ").unwrap_or((label.as_str(), ""));
-                if retro_btn(ui, &format!("{}, {}", bass, top), false).tip("Hear it").clicked() || resp.clicked() {
+                if retro_btn(ui, &format!("{}, {}", bass, top), false).tip("Play voicing").clicked() || resp.clicked() {
                     acts.push(Action::PlayNotes(grip_notes(g)));
                 }
                 ui.add_space(10.0);
@@ -924,7 +924,7 @@ impl App {
         drop: &[usize],
         reach: u8,
     ) {
-        para(ui, "Every chord of the tune in this voicing, on these strings. Each grip is the nearest one to the last, the way you would comp it. Play along, then try it without looking.", pal().ink2);
+        para(ui, "The tune's changes in this voicing on these strings, each grip nearest the last.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         let walk = Self::led_grips(&changes, fam, strings, drop, reach);
         if walk.is_empty() {
@@ -937,7 +937,7 @@ impl App {
                 ui,
                 acts,
                 "COMP IT",
-                "Two beats a chord, at the band's tempo",
+                "Two beats per chord at band tempo",
                 "walk",
                 || walk.iter().map(|w| grip_notes(&w.1)).collect(),
                 120.0 / bpm,
@@ -1000,7 +1000,7 @@ impl App {
     /// PASSING CHORDS: the ways into each chord of a tune - its V7, its ii-V, the tritone sub, a diminished chord, a
     /// half step either side, the backdoor - each played from the chord before, in the voicing and strings you pick.
     fn passing(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "A passing chord leads into the next chord of the tune. Pick two chords in a row, then try each approach. Use the voicing and strings you want to work on.", pal().ink2);
+        para(ui, "Passing chords into the next chord of the tune. Pick a change, then try each approach.", pal().ink2);
         let (fam, strings, drop, reach) = self.voicing_picker(ui, false);
         let (title, changes) = self.practice_changes(ui);
         let mut pairs: Vec<(String, String)> = Vec::new();
@@ -1035,7 +1035,7 @@ impl App {
                     ui,
                     acts,
                     "HEAR IT",
-                    "From the previous chord, through the passing chord, into the next",
+                    "Play the change with the passing chord",
                     &tag,
                     || grips.iter().map(|g| grip_notes(&g.1)).collect(),
                     gap,
@@ -1134,11 +1134,11 @@ impl App {
                     (d.to_string(), col)
                 });
                 let tip = if own.is_some() {
-                    "Your grip. Click to hear it, right-click to delete it."
+                    "My grip · Right-click to delete"
                 } else if to_neck {
-                    "Click to hear it. Double-click to place it on the neck."
+                    "Play · Double-click to put on the neck"
                 } else {
-                    "Hear this shape"
+                    "Play shape"
                 };
                 if let Some(i) = own {
                     // your own: a gold outline and a tag
@@ -1262,7 +1262,7 @@ impl App {
             let name = self.gs_name.trim().to_string();
             let ready = !name.is_empty() && self.an_frets.iter().flatten().count() >= 2;
             let known = theory::chord_notes(&name).is_some();
-            if retro_btn(ui, "SAVE", false).tip("Save the grip under this chord. It shows as MINE.").clicked() && ready {
+            if retro_btn(ui, "SAVE", false).tip("Save as my grip for this chord").clicked() && ready {
                 let key = grip_key(&name);
                 let list = self.store.custom_grips.entry(key).or_default();
                 if !list.contains(&self.an_frets) {

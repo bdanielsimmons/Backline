@@ -327,13 +327,13 @@ pub(crate) enum Tool {
 
 /// Each tool and what it does, for its button.
 pub(crate) const TOOLS: [(Tool, &str); 7] = [
-    (Tool::Heading, "Heading: starts a section."),
-    (Tool::Bold, "Bold (Ctrl+B)."),
-    (Tool::Underline, "Underline (Ctrl+U)."),
-    (Tool::List, "List: a dot at the start of each line."),
-    (Tool::Link, "Link (Ctrl+K): paste the web address over https://."),
-    (Tool::Tag, "Tag: mark the day with a word, as #comping or #ear (your tags come up as you type)."),
-    (Tool::Line, "A line between sections."),
+    (Tool::Heading, "Heading"),
+    (Tool::Bold, "Bold  (Ctrl+B)"),
+    (Tool::Underline, "Underline  (Ctrl+U)"),
+    (Tool::List, "Bulleted list"),
+    (Tool::Link, "Link  (Ctrl+K)"),
+    (Tool::Tag, "Tag, like #comping"),
+    (Tool::Line, "Divider"),
 ];
 
 /// A tool used on `text` with the selection `sel` (chars; the caret alone when both ends are the same): the new text,

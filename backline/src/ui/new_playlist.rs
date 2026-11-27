@@ -367,10 +367,10 @@ impl App {
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 let just = if m == 1 { "MY 1 SONG".to_string() } else { format!("MY {} SONGS", m) };
-                if retro_btn(ui, &just, true).tip("Just the songs you added yourself.").clicked() {
+                if retro_btn(ui, &just, true).tip("Only songs added by hand").clicked() {
                     mine = true;
                 }
-                if retro_btn(ui, &format!("ALL {} SONGS", crate::commas(a)), false).tip("The whole queue.").clicked() {
+                if retro_btn(ui, &format!("ALL {} SONGS", crate::commas(a)), false).tip("Whole queue").clicked() {
                     all = true;
                 }
                 if retro_btn_w(ui, "CANCEL", 96.0, false).clicked() {
@@ -423,7 +423,7 @@ impl App {
                 para(ui, &not_found(&d.missing), pal().dim);
             }
             if renaming {
-                para(ui, "On your Tidal account.", pal().ink2);
+                para(ui, "On Tidal.", pal().ink2);
             }
             ui.add_space(8.0);
             ui.horizontal_top(|ui| {
@@ -486,11 +486,11 @@ impl App {
                     if tidal_ok && d.edit.is_none() && !renaming {
                         ui.add_space(8.0);
                         ui.horizontal_wrapped(|ui| {
-                            if retro_btn(ui, "IN BACKLINE", !d.tidal).tip("Saved on this computer; can mix all sources.").clicked()
+                            if retro_btn(ui, "IN BACKLINE", !d.tidal).tip("On this computer · Mixes all sources").clicked()
                             {
                                 d.tidal = false;
                             }
-                            if retro_btn(ui, "ON TIDAL", d.tidal).tip("Saved to your Tidal account.").clicked() {
+                            if retro_btn(ui, "ON TIDAL", d.tidal).tip("Saved to Tidal").clicked() {
                                 d.tidal = true;
                             }
                         });

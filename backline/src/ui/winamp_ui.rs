@@ -136,7 +136,7 @@ impl App {
             let gh = ui
                 .interact(grip, ui.id().with("deck_grip"), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-                .tip("Drag to resize the player, or use Ctrl + mouse wheel. Double-click to fit the window.");
+                .tip("Resize  (Ctrl+Wheel) · Double-click to fit");
             if gh.double_clicked() {
                 self.deck_zoom = None;
                 self.dirty = true;
@@ -217,7 +217,7 @@ impl App {
                 && ui
                     .interact(at(234.0), tid.with("mini"), Sense::click())
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .tip("Switch to the mini player.")
+                    .tip("Mini player")
                     .clicked()
             {
                 acts.push(Action::ToggleMini);
@@ -291,7 +291,7 @@ impl App {
             }
             h
         };
-        let opt = tb(ui, "opt", 6.0, (0.0, 0.0), "Options: skins, preferences and help.");
+        let opt = tb(ui, "opt", 6.0, (0.0, 0.0), "Options");
         let opt_menu = id.with("opt_menu");
         if opt.clicked() {
             ui.memory_mut(|m| m.toggle_popup(opt_menu));
@@ -316,7 +316,7 @@ impl App {
         // (the square: maximize and restore, as a window's; full screen is in the options menu and F11)
         let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
         let tip = if self.fullscreen {
-            "Exit Full Screen"
+            "Exit full screen"
         } else if max {
             "Restore"
         } else {
@@ -335,7 +335,7 @@ impl App {
             let items: [(&str, f32, f32, f32, bool, &str); 5] = [
                 ("o", 304.0, 3.0, 8.0, false, "Options"),
                 ("a", 312.0, 11.0, 7.0, self.pinned, "Always on top"),
-                ("i", 320.0, 18.0, 7.0, false, "Song info (credits)"),
+                ("i", 320.0, 18.0, 7.0, false, "Credits"),
                 ("d", 328.0, 25.0, 8.0, zoomed, "Double size"),
                 ("v", 336.0, 33.0, 7.0, false, "Visualizer settings"),
             ];
@@ -394,7 +394,7 @@ impl App {
                 }
             }
         }
-        if ui.interact(pl.r(36.0, 26.0, 63.0, 13.0), id.with("time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+        if ui.interact(pl.r(36.0, 26.0, 63.0, 13.0), id.with("time_left"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Time left / elapsed").clicked() {
             self.time_left = !self.time_left;
             self.dirty = true;
         }
@@ -455,7 +455,7 @@ impl App {
         // the visualizer, in the skin's own colours (2 = top of the bars ... 17 = bottom, 23 = peaks);
         // click it for bars / wave / both, right-click for all its settings
         let vz = hit(ui, "viz", pl.r(24.0, 43.0, 76.0, 16.0), false)
-            .tip("Visualizer. Click for bars, wave or both; right-click for settings.");
+            .tip("Visualizer · Right-click for settings");
         if vz.clicked() {
             self.viz[0].mode = (self.viz[0].mode + 1) % 3;
             self.dirty = true;
@@ -500,7 +500,7 @@ impl App {
         let frame = (self.volume * (frames("volume") - 1.0)).round();
         t.spr(&p, "volume", (0.0, frame * 15.0, 68.0, 13.0), vr);
         let vh = hit(ui, "volume", vr, true)
-            .tip(format!("Volume {}%. Right-click for the sound output.", (self.volume * 100.0).round()));
+            .tip(format!("Volume {}% · Right-click for output", (self.volume * 100.0).round()));
         // the knob: the skin's own, or one made to fit where it has none (or one that can't be seen)
         t.knob(&p, t.vol_knob, "volume", pl.r(107.0 + self.volume * 54.0, 58.0, 14.0, 11.0), vh.dragged(), vr);
         if vh.dragged() || vh.clicked() {
@@ -551,9 +551,9 @@ impl App {
             t.spr_flip(&p, bal, (9.0, bframe * 15.0, 38.0, 13.0), br, self.balance < 0);
         }
         let bh = hit(ui, "balance", br, true).tip(match self.balance {
-            0 => "Balance: center. Drag to change it, double-click to center.".to_string(),
-            b if b < 0 => format!("Balance: {}% left. Double-click to center.", -b),
-            b => format!("Balance: {}% right. Double-click to center.", b),
+            0 => "Balance: center".to_string(),
+            b if b < 0 => format!("Balance: {}% left · Double-click to center", -b),
+            b => format!("Balance: {}% right · Double-click to center", b),
         });
         t.knob(&p, t.bal_knob, bal, pl.r(177.0 + (self.balance + 100) as f32 / 200.0 * 24.0, 58.0, 14.0, 11.0), bh.dragged(), br);
         if bh.hovered() || bh.dragged() {
@@ -588,7 +588,7 @@ impl App {
         }
         // PL: shows or hides the playlist (the queue)
         let plr = pl.r(242.0, 58.0, 23.0, 12.0);
-        let plh = hit(ui, "pl", plr, false).tip(if self.queue_hidden { "Show the queue." } else { "Hide the queue." });
+        let plh = hit(ui, "pl", plr, false).tip(if self.queue_hidden { "Show queue" } else { "Hide queue" });
         let pl_src = match (!self.queue_hidden, plh.is_pointer_button_down_on()) {
             (false, false) => (23.0, 61.0),
             (true, false) => (23.0, 73.0),
@@ -610,7 +610,7 @@ impl App {
         // the seek bar
         let pr = pl.r(16.0, 72.0, 248.0, 10.0);
         t.spr(&p, "posbar", (0.0, 0.0, 248.0, 10.0), pr);
-        let ph = hit(ui, "seek", pr, true).tip("Drag or click to seek.");
+        let ph = hit(ui, "seek", pr, true).tip("Seek");
         if active && dur > 0.0 {
             let f = (pos / dur).clamp(0.0, 1.0);
             let src = if ph.dragged() { (278.0, 0.0, 29.0, 10.0) } else { (248.0, 0.0, 29.0, 10.0) };
@@ -685,9 +685,9 @@ impl App {
         }
         let rp = pl.r(210.0, 89.0, 28.0, 15.0);
         let rph = hit(ui, "repeat", rp, false).tip(match self.repeat {
-            Repeat::Off => "Repeat: off. Click to repeat all.",
-            Repeat::All => "Repeat: all. Click for repeat one.",
-            _ => "Repeat: one. Click to turn it off.",
+            Repeat::Off => "Repeat: off",
+            Repeat::All => "Repeat: all",
+            _ => "Repeat: one",
         });
         let ry = if self.repeat != Repeat::Off { 30.0 } else { 0.0 } + if rph.is_pointer_button_down_on() { 15.0 } else { 0.0 };
         if !t.spr(&p, "shufrep", (0.0, ry, 28.0, 15.0), rp) {
@@ -807,7 +807,7 @@ impl App {
             }
             pl
         } else {
-            let (pl, z) = sized_place(ui, area, self.eq_zoom, id.with("size"), "the equalizer");
+            let (pl, z) = sized_place(ui, area, self.eq_zoom, id.with("size"), "equalizer");
             if let Some(z) = z {
                 self.eq_zoom = z;
                 self.dirty = true;
@@ -846,7 +846,7 @@ impl App {
         let on_h = ui
             .interact(on_r, id.with("on"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Turn the equalizer on or off.");
+            .tip("Equalizer on/off");
         let on_src = if self.eq_on { (69.0, 119.0) } else { (10.0, 119.0) };
         if !t.spr(&p, "eqmain", (on_src.0, on_src.1, 26.0, 12.0), on_r) {
             plate(&p, on_r.shrink(pl.s), "ON", self.eq_on);
@@ -860,7 +860,7 @@ impl App {
         let au = ui
             .interact(au_r, id.with("auto"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("AUTO remembers the EQ for each song and restores it when it plays.");
+            .tip("Remember EQ per song");
         if !t.spr(&p, "eqmain", (if self.eq_auto { 95.0 } else { 36.0 }, 119.0, 32.0, 12.0), au_r) {
             plate(&p, au_r.shrink(pl.s), "AUTO", self.eq_auto);
         }
@@ -936,7 +936,7 @@ impl App {
         };
         let pr = pl.r(21.0, 38.0, 14.0, 63.0);
         let ph = ui.interact(pr, id.with("preamp"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(
-            format!("Preamp: {:+} dB. It sets the level before the bands. Double-click to reset.", self.eq_pre.round() as i32),
+            format!("Preamp: {:+} dB · Double-click to reset", self.eq_pre.round() as i32),
         );
         if ph.dragged() || ph.clicked() {
             if let Some(pp) = ph.interact_pointer_pos() {
@@ -962,7 +962,7 @@ impl App {
             let h = ui
                 .interact(r, id.with(("band", i)), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip(format!("{} Hz: {:+} dB. Double-click to reset.", HZ[i], self.eq_gains[i].round() as i32));
+                .tip(format!("{} Hz: {:+} dB · Double-click to reset", HZ[i], self.eq_gains[i].round() as i32));
             if h.dragged() || h.clicked() {
                 if let Some(pp) = h.interact_pointer_pos() {
                     let f = ((pp.y - r.min.y - 5.5 * pl.s) / (51.0 * pl.s)).clamp(0.0, 1.0);
@@ -1050,7 +1050,7 @@ pub(crate) fn sized_place(
     let gh = ui
         .interact(grip, id, Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-        .tip(format!("Drag to resize {}, or use Ctrl + mouse wheel. Double-click to fit the window.", what));
+        .tip(format!("Resize {}  (Ctrl+Wheel) · Double-click to fit", what));
     if gh.double_clicked() {
         out = Some(None);
     } else if gh.dragged() {
@@ -1368,21 +1368,21 @@ impl App {
         let add = ui
             .interact(bl(14.0), id.with("add"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Add files.");
+            .tip("Add files");
         if add.clicked() {
             acts.push(Action::AddFiles);
         }
         let rem = ui
             .interact(bl(43.0), id.with("rem"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Clear the queue.");
+            .tip("Clear queue");
         if rem.clicked() {
             acts.push(Action::ClearQueue);
         }
         let sel = ui
             .interact(bl(72.0), id.with("sel"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Shuffle the queue.");
+            .tip("Shuffle queue");
         if sel.clicked() {
             acts.push(Action::QueueOp(0));
         }
@@ -1390,7 +1390,7 @@ impl App {
         let misc = ui
             .interact(bl(101.0), id.with("misc"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Playlists, sorting and the playlist font.");
+            .tip("Playlists, sorting, font");
         let misc_menu = id.with("misc_menu");
         if misc.clicked() {
             ui.memory_mut(|m| m.toggle_popup(misc_menu));
@@ -1437,7 +1437,7 @@ impl App {
             } else {
                 Rect::from_min_size(Pos2::new(outer.max.x - x * k, outer.min.y + 3.0 * k), Vec2::new(9.0, 9.0) * k)
             };
-            let h = ui.interact(r, id.with(name), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hide the queue.");
+            let h = ui.interact(r, id.with(name), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Hide queue");
             if flat {
                 crate::winamp_ui::bar_button(&p, r, name == "pl_close", h.is_pointer_button_down_on());
             }
@@ -1460,7 +1460,7 @@ impl App {
         let lb = ui
             .interact(list_btn, id.with("list_btn"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("The lead sheet");
+            .tip("Chart");
         if lb.clicked() {
             self.open_chart();
         }
@@ -1549,7 +1549,7 @@ pub(crate) fn skin_menu(ui: &mut egui::Ui, acts: &mut Vec<Action>, worn: Option<
                 let on = museum.is_some() && worn.is_some_and(|w| &w.0 == md5);
                 ui.horizontal(|ui| {
                     // X takes it off the list
-                    if retro_btn_w(ui, "X", 24.0, false).tip("Remove from this list").clicked() {
+                    if retro_btn_w(ui, "X", 24.0, false).tip("Remove from recent").clicked() {
                         acts.push(Action::WaForget(md5.clone()));
                     }
                     if menu_item(ui, &format!("{}{}", if on { "> " } else { "  " }, name.to_uppercase())) {

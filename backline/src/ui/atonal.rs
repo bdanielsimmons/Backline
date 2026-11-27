@@ -200,7 +200,7 @@ fn fact(ui: &mut egui::Ui, name: &str, text: &str, col: Color32) {
 
 impl App {
     pub(crate) fn atonal(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Atonal lines, as Dennis Sandole taught them. YOUR LINES are copied from your own lesson pages; GENERATED LINES are built from his rules: alternate triads from a scale, two tetrachords joined into a synthetic scale, interval cycles. Under each line: its intervals, its cells, the scales that contain it and its syllables.", pal().ink2);
+        para(ui, "Atonal lines after Dennis Sandole. YOUR LINES come from lesson pages; GENERATED LINES follow his rules (alternate triads, joined tetrachords, interval cycles), each with its intervals, cells, parent scales and syllables.", pal().ink2);
         if let Some(i) =
             crate::choice_line(ui, "at_view", "LINES", &["YOUR LINES", "GENERATED LINES"], self.at.view as usize, 220.0)
         {
@@ -249,12 +249,12 @@ impl App {
         }
         let empty = self.at.file.as_ref().is_none_or(|f| f.lines.is_empty());
         if empty {
-            para(ui, "No lines of your own yet. Drop a file of lines on the window to add them. They're kept in atonal_lines.json in Backline's folder, on this computer only, and never ship with Backline.", pal().ink2);
+            para(ui, "No atonal lines yet. Drop a file of lines on the window; it stays on this computer (atonal_lines.json).", pal().ink2);
             // where the file goes, on a button (the path itself is too long for the page)
             let path = file_path();
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
-                if retro_btn(ui, "OPEN BACKLINE'S FOLDER", false).tip(format!("Your lines go in atonal_lines.json here, on this computer only. Drop a file of lines on the window to add it.
+                if retro_btn(ui, "OPEN BACKLINE'S FOLDER", false).tip(format!("Open folder (atonal_lines.json)
 {}", path.display())).clicked() {
                     if let Some(d) = path.parent() {
                         #[cfg(windows)]
@@ -358,22 +358,22 @@ impl App {
             lcd_box(ui, &format!("NOTE {} OF {}", i + 1, n), 110.0, pal().ink);
             lcd_box(ui, &note_label(note.midi), 60.0, if note.unsure { crate::ear::acc_col() } else { pal().ink });
             ui.add_space(6.0);
-            if retro_btn_w(ui, "-", 28.0, false).tip("A half step down.").clicked() {
+            if retro_btn_w(ui, "-", 28.0, false).tip("Half step down").clicked() {
                 set = Some(note.midi - 1);
             }
-            if retro_btn_w(ui, "+", 28.0, false).tip("A half step up.").clicked() {
+            if retro_btn_w(ui, "+", 28.0, false).tip("Half step up").clicked() {
                 set = Some(note.midi + 1);
             }
             ui.add_space(6.0);
             if note.unsure
-                && retro_btn(ui, "CONFIRM", false).tip("Keep the note and clear its unsure mark.").clicked()
+                && retro_btn(ui, "CONFIRM", false).tip("Keep note, clear unsure mark").clicked()
             {
                 sure = true;
             }
-            if retro_btn(ui, "DELETE", false).tip("Remove this note from the line.").clicked() {
+            if retro_btn(ui, "DELETE", false).tip("Delete note").clicked() {
                 delete = true;
             }
-            if retro_btn(ui, "ADD A NOTE", false).tip("Insert a copy of this note after it, then move it into place.").clicked() {
+            if retro_btn(ui, "ADD A NOTE", false).tip("Insert a copy after this note").clicked() {
                 add = true;
             }
             if retro_btn(ui, "DONE", false).clicked() {
@@ -539,7 +539,7 @@ impl App {
             self.at.finger = i as u8 + 1;
         }
         let Some(pos) = position_of(start, self.at.finger.clamp(1, 4)) else {
-            para(ui, "That finger can't reach this place: pick another finger or another place.", pal().ink2);
+            para(ui, "That finger can't reach here. Pick another finger or place.", pal().ink2);
             return;
         };
         let (_, spots, moved) = finger_from(sounding, start, pos);

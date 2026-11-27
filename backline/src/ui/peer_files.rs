@@ -395,7 +395,7 @@ impl App {
             format!("{} songs on {}, {}", list.len(), name, size_text(total))
         };
         title_line(ui, &head, 2.0, pal().ink2);
-        para(ui, "Click songs to pick them, then press COPY HERE. They go in your Music folder and your files. Right-click a song to play it from the other computer.", pal().ink2);
+        para(ui, "Pick songs, then press COPY HERE. Right-click a song to play it from the other computer.", pal().ink2);
         // the songs, filtered as you type
         let filter = self.lib_filter.trim().to_string();
         let order: Vec<usize> = if filter.is_empty() {
@@ -411,7 +411,7 @@ impl App {
             } else {
                 format!("COPY {} HERE ({})", picked.len(), size_text(picked_size))
             };
-            if retro_btn(ui, &go, !picked.is_empty()).tip("Copies the songs you picked to this computer, in the background.").clicked()
+            if retro_btn(ui, &go, !picked.is_empty()).tip("Copy picked songs to this computer").clicked()
                 && !picked.is_empty()
             {
                 let jobs = picked.iter().map(|f| Job { file: (*f).clone(), keep: true, play: None }).collect();
@@ -425,13 +425,13 @@ impl App {
                 .filter(|&(here, k)| !here && !self.peer.here.contains(&list[k].path))
                 .map(|(_, k)| list[k].path.clone())
                 .collect();
-            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(format!("Pick every song from {} in the filtered list, except ones already on this computer.", name)).clicked() {
+            if !shown.is_empty() && retro_btn(ui, "PICK ALL SHOWN", false).tip(format!("All shown from {}, except songs already here", name)).clicked() {
                 self.peer.sel.extend(shown);
             }
             if !self.peer.sel.is_empty() && retro_btn(ui, "CLEAR", false).clicked() {
                 self.peer.sel.clear();
             }
-            if retro_btn(ui, "REFRESH", false).tip(format!("Ask {} for its songs again.", name)).clicked() {
+            if retro_btn(ui, "REFRESH", false).tip(format!("Reload songs from {}", name)).clicked() {
                 refresh = true;
             }
         });
@@ -508,13 +508,13 @@ impl App {
             ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
                 if retro_btn_w(ui, &format!("Play from {}", name), 220.0, true)
-                    .tip("Plays it over the network. Nothing is added to your files.")
+                    .tip("Stream over the network")
                     .clicked()
                 {
                     pick = Some(false);
                 }
                 if retro_btn_w(ui, "Save a Copy Here", 170.0, false)
-                    .tip("Copies it into your Music folder and your files. Your playlists play it from here after that.")
+                    .tip("Copy to this computer")
                     .clicked()
                 {
                     pick = Some(true);
@@ -523,7 +523,7 @@ impl App {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if crate::check_box(ui, "ALWAYS DO THIS", always)
-                    .tip("Don't ask again. You can change it in PREFERENCES > LINKED DEVICES.")
+                    .tip("Don't ask again · Change in Preferences > Linked Devices")
                     .clicked()
                 {
                     always = !always;

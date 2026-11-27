@@ -802,7 +802,7 @@ impl App {
                 ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5_f32, pal().ink));
             }
             let resp = ui.interact(r, ui.id().with(("plan_day_sq", d)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-            if resp.tip(format!("{}: {} min of the plan. Click to open the day in the diary (notes, times).", store::date_str(d), m)).clicked() {
+            if resp.tip(format!("{}: {} min · Open in Diary", store::date_str(d), m)).clicked() {
                 open = Some(d);
             }
         }
@@ -824,7 +824,7 @@ impl App {
             let (r, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
             let out = crate::views::field(ui, &mut self.ed, id, &mut self.plan.keeper_new, r, "a keeper: the lick, phrase or solo bit, and where it's from", false);
             add = out.enter;
-            if retro_btn(ui, "ADD", false).tip("Keep it. It comes back in Review until you can play it cold.").clicked() {
+            if retro_btn(ui, "ADD", false).tip("Add to Review until played cold").clicked() {
                 add = true;
             }
         });
@@ -858,10 +858,10 @@ impl App {
             };
             text_block(ui, &format!("{}{}", k.text, state), 2.0, if k.seen == today { pal().ink2 } else { pal().ink }, 6.0);
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "PLAYED IT COLD", k.played.contains(&today)).tip("From memory, first go, no peeking.").clicked() {
+                if retro_btn(ui, "PLAYED IT COLD", k.played.contains(&today)).tip("Played from memory, first try").clicked() {
                     hit = Some((i, true));
                 }
-                if retro_btn(ui, "NOT YET", false).tip("It comes back tomorrow.").clicked() {
+                if retro_btn(ui, "NOT YET", false).tip("Review again tomorrow").clicked() {
                     hit = Some((i, false));
                 }
             });
@@ -960,7 +960,7 @@ impl App {
                 ui,
                 acts,
                 if arp { "PLAY THE ARPEGGIOS" } else { "PLAY THE GUIDE TONES" },
-                "Through the changes at the band's tempo, with each chord under its first note. Sing along, then play along.",
+                "Play through the changes at band tempo",
                 "plangt",
                 || {
                     line.iter()
@@ -1063,7 +1063,7 @@ impl App {
         };
         ui.horizontal_wrapped(|ui| {
             crate::views::dim_line(ui, &status, 1.0, pal().ink2);
-            if retro_btn(ui, "RELOAD", false).tip("Reload the plan file. It also reloads automatically when the file changes.").clicked() {
+            if retro_btn(ui, "RELOAD", false).tip("Reload plan").clicked() {
                 self.plan.seen = None;
             }
             ui.add_space(12.0);
@@ -1090,13 +1090,13 @@ impl App {
             self.plan.look = w - now_w.within(1, n);
         }
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "<", false).tip("Previous week.").clicked() && shown > 1 {
+            if retro_btn(ui, "<", false).tip("Previous week").clicked() && shown > 1 {
                 self.plan.look -= 1;
             }
             if retro_btn(ui, "THIS WEEK", self.plan.look == 0).clicked() {
                 self.plan.look = 0;
             }
-            if retro_btn(ui, ">", false).tip("Next week.").clicked() && shown < n {
+            if retro_btn(ui, ">", false).tip("Next week").clicked() && shown < n {
                 self.plan.look += 1;
             }
         });
@@ -1149,7 +1149,7 @@ impl App {
                 format!("COLD {} DAY{}", k.played.len(), if k.played.len() == 1 { "" } else { "S" })
             };
             ui.horizontal(|ui| {
-                if retro_btn(ui, "X", false).tip("Remove.").clicked() {
+                if retro_btn(ui, "X", false).tip("Remove").clicked() {
                     gone = Some(i);
                 }
                 let (r, _) = ui.allocate_exact_size(Vec2::new(text_w("COLD 9 DAYS", 1.4) + 14.0, 22.0), Sense::hover());
@@ -1271,31 +1271,31 @@ impl App {
         ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &mmss(secs), 6.0, if running { pal().ink } else { pal().ink2 });
         let mut act: Option<u8> = None;
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, if running { "PAUSE" } else { "START" }, running).tip("Start or pause the timer  (Space)").clicked() {
+            if retro_btn(ui, if running { "PAUSE" } else { "START" }, running).tip("Start or pause timer  (Space)").clicked() {
                 act = Some(0);
             }
-            if retro_btn(ui, "BACK", false).tip("Previous block.").clicked() {
+            if retro_btn(ui, "BACK", false).tip("Previous block").clicked() {
                 act = Some(1);
             }
-            if retro_btn(ui, "SKIP", false).tip("Next block, without marking this one done.").clicked() {
+            if retro_btn(ui, "SKIP", false).tip("Skip to next block").clicked() {
                 act = Some(2);
             }
-            if retro_btn(ui, "DONE", done.contains(&(cur as u8))).tip("Mark this block done and go to the next.").clicked() {
+            if retro_btn(ui, "DONE", done.contains(&(cur as u8))).tip("Mark done and go to next block").clicked() {
                 act = Some(3);
             }
             if retro_btn(ui, "+1 MIN", false).clicked() {
                 act = Some(4);
             }
-            if retro_btn(ui, "RESTART", false).tip("Start this block over.").clicked() {
+            if retro_btn(ui, "RESTART", false).tip("Restart block").clicked() {
                 act = Some(5);
             }
-            if retro_btn(ui, "AUTO NEXT", self.plan.auto).tip("When a block ends, start the next one automatically.").clicked() {
+            if retro_btn(ui, "AUTO NEXT", self.plan.auto).tip("Start next block automatically").clicked() {
                 act = Some(6);
             }
             // (a block done on a page of its own: open it; NOTES ON THE NECK is right in the block)
             if let Some(d) = b.open.strip_prefix("ear:").filter(|k| *k != "neck").and_then(|k| crate::ear::DRILLS.iter().position(|d| d.key == k)) {
                 ui.add_space(10.0);
-                if retro_btn(ui, &format!("OPEN {}", crate::ear::DRILLS[d].name), false).tip("Open it in EAR TRAINING (the timer keeps going)").clicked() {
+                if retro_btn(ui, &format!("OPEN {}", crate::ear::DRILLS[d].name), false).tip("Open in Ear Training · Timer keeps running").clicked() {
                     self.ear = crate::ear::Ear { drill: d, ..Default::default() };
                     acts.push(Action::Section(Sec::Ear));
                 }
@@ -1381,13 +1381,13 @@ impl App {
         };
         let mut step: i32 = 0;
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, back, false).tip("Behind? Go back one, and the plan carries on from there.").clicked() {
+            if retro_btn(ui, back, false).tip("Move plan back one").clicked() {
                 step = -1;
             }
-            if retro_btn(ui, fwd, false).tip("Ahead? Move on one, and the plan carries on from there.").clicked() {
+            if retro_btn(ui, fwd, false).tip("Move plan ahead one").clicked() {
                 step = 1;
             }
-            if off != 0 && retro_btn(ui, "BACK ON PLAN", false).tip("Back to where the plan has you today.").clicked() {
+            if off != 0 && retro_btn(ui, "BACK ON PLAN", false).tip("Back to today's place in the plan").clicked() {
                 step = -off;
             }
             if off != 0 {

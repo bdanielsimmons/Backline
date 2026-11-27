@@ -248,7 +248,7 @@ impl App {
     /// PENTATONICS & MORE: the positions of a small scale in any key - pentatonics, hexatonics (triad pairs among
     /// them), the diminished scales - with labels, the spices, and exercises to play over the scale's chord.
     pub(crate) fn pentatonics(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Small scales and how they lie on the neck, in any key. Learn one position at a time: where its roots are and which finger plays them. Then see how the positions join up the neck. Pick what to play over and hear what each one does.", pal().ink2);
+        para(ui, "Small scales on the neck, in any key. One position at a time with its roots and fingers, then how the positions connect.", pal().ink2);
         let sharps = lines::key_sharps(self.pn_root);
         if let Some(pc) = Self::note_row(ui, "KEY", self.pn_root, sharps) {
             self.pn_root = pc;
@@ -337,11 +337,11 @@ impl App {
                 crate::views::form_label(ui, "ADD");
                 ui.vertical(|ui| {
                 let blue = if major_pent { "BLUE NOTE (\u{266D}3)" } else { "BLUE NOTE (\u{266D}5)" };
-                if crate::check_box(ui, blue, self.pn_blue).tip("The blues scale: the pentatonic with the blue note added").clicked() {
+                if crate::check_box(ui, blue, self.pn_blue).tip("Add the blue note (blues scale)").clicked() {
                     self.pn_blue = !self.pn_blue;
                 }
                 if crate::check_box(ui, "PASSING TONES", self.pn_between)
-                    .tip("Adds a note between the box's two on each string: from the scale if one fits, else chromatic. They are passing tones, so resolve them.")
+                    .tip("Add passing tones between box notes")
                     .clicked()
                 {
                     self.pn_between = !self.pn_between;
@@ -703,7 +703,7 @@ impl App {
     /// SUPERIMPOSE: a shape over a chord - the usual choices for it, or any shape you pick - with each note marked
     /// a chord tone, a tension or a note to avoid, on the neck and the piano, and played over the chord.
     pub(crate) fn superimpose(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Play a shape from another root over the chord. It can be a pentatonic, a triad or an arpeggio. Each note shows what it is over the chord: a chord tone, a tension (color), or a note to avoid landing on.", pal().ink2);
+        para(ui, "A pentatonic, triad or arpeggio from another root over the chord. Each note is marked chord tone, tension or avoid.", pal().ink2);
         let (root, suffix, chord_name, chord) = self.si_chord_pick(ui);
         let sharps = lines::key_sharps(root);
         // the chord's notes as they are (for naming each note over it: #11, \u{266D}13...)
@@ -1060,7 +1060,7 @@ impl App {
     /// SCALE FINGERINGS: any scale's positions across the neck - five CAGED positions, or 2, 3 or 4 notes a string -
     /// one at a time or all at once, played, or shifted through one after another.
     pub(crate) fn fingerings(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Every position of a scale, in any key. See one at a time with its fingering, or the whole neck with each position in its own color. Then play it: one position up and down, every position in turn, or in intervals and groups from every note. Keep going until you can move anywhere in it.", pal().ink2);
+        para(ui, "Every position of a scale, in any key, one at a time or the whole neck. Play one position, every position in turn, or intervals and groups.", pal().ink2);
         let sharps = lines::key_sharps(self.pf_root);
         if let Some(pc) = Self::note_row(ui, "KEY", self.pf_root, sharps) {
             self.pf_root = pc;
@@ -1357,7 +1357,7 @@ impl App {
     /// scale and starting near where the last one ended - the way he ran them through Giant Steps and Countdown.
     fn coltrane_tune(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         section_header(ui, "COLTRANE CELLS THROUGH A TUNE");
-        para(ui, "One cell per chord, two beats each, from the chord's own scale. Each cell starts near where the last one ended. Hear it, then play it over the changes yourself.", pal().ink2);
+        para(ui, "One cell per chord, two beats each, from the chord's own scale. Each starts near where the last one ended.", pal().ink2);
         let (title, changes) = self.practice_changes(ui);
         if changes.is_empty() {
             return;
@@ -1380,7 +1380,7 @@ impl App {
                 ui,
                 acts,
                 "PLAY",
-                "Eighth notes at the band's tempo, with the chord under each cell",
+                "Play cells at band tempo",
                 "coltrane",
                 || {
                     cells

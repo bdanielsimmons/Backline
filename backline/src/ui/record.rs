@@ -11,7 +11,7 @@ impl App {
         if !on && self.rec_devs.is_empty() {
             self.rec_devs = record::input_devices();
         }
-        para(ui, "Record yourself over the band, a loop or a song. Each take is saved with its tune. Listen back at the end of the week, the way you would study a record. Monitor yourself through your audio interface, not through Backline.", pal().ink2);
+        para(ui, "Record over the band, a loop or a song; each take is saved with its tune. Monitor through the audio interface.", pal().ink2);
         // ---- the input, the tune it goes with, the band
         crate::views::centered_row(ui, "rec_0", |ui| {
             if self.rec_devs.is_empty() {
@@ -33,7 +33,7 @@ impl App {
             if let Some(i) = dropdown(ui, "rec_tune", "TUNE", &tunes, sel, 0.0) {
                 self.rec_tune = i as u32;
             }
-            if retro_btn(ui, "WITH THE BAND", self.rec_band).tip("The band plays the tune's chart when you press REC.").clicked()
+            if retro_btn(ui, "WITH THE BAND", self.rec_band).tip("Band plays the chart while recording").clicked()
             {
                 self.rec_band = !self.rec_band;
             }
@@ -63,7 +63,7 @@ impl App {
             );
             if resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .tip(if on { "Stop recording." } else { "Start recording." })
+                .tip(if on { "Stop recording" } else { "Record" })
                 .clicked()
             {
                 acts.push(Action::RecToggle);
@@ -163,14 +163,14 @@ impl App {
                         fmt_time(t.secs),
                         if t.tag.is_empty() { String::new() } else { format!("   {}", t.tag.to_uppercase()) }
                     );
-                    if retro_btn(ui, &label, playing == Some(t.id)).tip("Play it back, with the loop and speed tools.").clicked()
+                    if retro_btn(ui, &label, playing == Some(t.id)).tip("Play take").clicked()
                     {
                         acts.push(Action::RecPlay(t.id, false));
                     }
                 });
             }
             ui.horizontal_wrapped(|ui| {
-                if retro_btn(ui, "ALL TAKES", self.takes_open).tip("Play, tag or delete every take.").clicked() {
+                if retro_btn(ui, "ALL TAKES", self.takes_open).tip("All takes").clicked() {
                     acts.push(Action::TakesPanel(!self.takes_open));
                 }
             });
@@ -187,7 +187,7 @@ impl App {
         let playing = self.cur_track().map(|t| t.id);
         crate::credits::panel(ctx, "takes", 640.0, |ui| {
             title_line(ui, "YOUR TAKES", 3.0, pal().ink);
-            para(ui, "Your takes by tune, newest first. Click a take to hear it with the backing. Click YOU ALONE to hear only you. Type any tag you like, such as solo, comping or keeper.", pal().ink2);
+            para(ui, "Takes by tune, newest first. YOU ALONE plays just your part; tag takes any way you like.", pal().ink2);
             // the order: by tune, newest first inside each
             let mut order: Vec<usize> = (0..self.store.takes.len()).collect();
             order.sort_by(|a, b| {
@@ -207,12 +207,12 @@ impl App {
                     }
                     ui.horizontal_wrapped(|ui| {
                         if retro_btn(ui, &format!("{}  {}", stamp, fmt_time(secs)), playing == Some(id))
-                            .tip("Play it back.")
+                            .tip("Play take")
                             .clicked()
                         {
                             acts.push(Action::RecPlay(id, false));
                         }
-                        if dry_ok && retro_btn(ui, "YOU ALONE", false).tip("Just you, without the band.").clicked() {
+                        if dry_ok && retro_btn(ui, "YOU ALONE", false).tip("Without the band").clicked() {
                             acts.push(Action::RecPlay(id, true));
                         }
                         let (r, _) = ui.allocate_exact_size(Vec2::new(160.0, bh()), Sense::hover());

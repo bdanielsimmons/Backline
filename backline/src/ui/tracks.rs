@@ -96,7 +96,7 @@ pub(crate) fn list_row(
             fill_rect(p, Rect::from_min_max(Pos2::new(bx, cy + 4.0 - h), Pos2::new(bx + 2.0, cy + 4.0)), fg2);
         }
         ui.interact(mr, ui.id().with(("stems_mark", idx, rect.min.y as i32)), Sense::hover())
-            .tip("Stems ready: turn drums, bass, vocals and the rest on or off.");
+            .tip("Stems ready");
         rw += 16.0;
     }
     // a heart, when the caller asked for one
@@ -653,7 +653,7 @@ pub(crate) fn art_switch(ui: &egui::Ui, p: &egui::Painter, c: Pos2, h: f32, key:
     let ihit = ui.interact(ir, ui.id().with(key), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let col = if ihit.hovered() { pal().ink } else if on { pal().accent } else { pal().accent.gamma_multiply(0.45) };
     picture_icon(p, ir.center(), col);
-    if ihit.tip(if on { "Covers on. Click to hide them." } else { "Covers off. Click to show them." }).clicked() {
+    if ihit.tip(if on { "Hide covers" } else { "Show covers" }).clicked() {
         ROW_ARTS.store(!on, Ordering::Relaxed);
         COLS_CHANGED.store(true, Ordering::Relaxed);
     }
@@ -684,6 +684,8 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     // order), an arrow beside the one sorted by
     let sorted = sort_now();
     let mut heads: Vec<(u8, Rect)> = Vec::new();
+    // (beside the sorted one's arrow, an x that puts the list back in its own order)
+    let mut clear_at: Option<Pos2> = None;
     let mut heading = |col: u8, at: Pos2, align: Align, name: &str, room: f32| {
         ui_text(p, at, align, name, 2.0, room, head);
         let tw = font::keep_caps(|| text_w(name, 2.0)).min(room);
@@ -693,6 +695,9 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
             let ax = if align == Align::Max { x0 - 9.0 } else { x1 + 9.0 };
             let (tip, a, b) = if desc { (cy + 3.0, cy - 3.0, cy - 3.0) } else { (cy - 3.0, cy + 3.0, cy + 3.0) };
             p.add(egui::Shape::convex_polygon(vec![Pos2::new(ax, tip), Pos2::new(ax + 4.0, a), Pos2::new(ax - 4.0, b)], head, Stroke::NONE));
+            if tw + 34.0 <= room || align == Align::Max {
+                clear_at = Some(Pos2::new(if align == Align::Max { x0 - 25.0 } else { x1 + 26.0 }, cy));
+            }
         }
         heads.push((col, Rect::from_min_max(Pos2::new(x0 - 4.0, rect.min.y), Pos2::new(x1 + 16.0, rect.max.y))));
     };
@@ -719,12 +724,24 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
     }
     for (col, hr) in heads {
         let tip = match sorted {
-            Some((c, false)) if c == col => "Sorted by this. Click for the other way round".to_string(),
-            Some((c, true)) if c == col => "Sorted by this, the other way round. Click for the list's own order".to_string(),
-            _ => format!("Sort by {}", SORT_NAMES[col as usize].to_lowercase()),
+            Some((c, false)) if c == col => "Reverse order".to_string(),
+            Some((c, true)) if c == col => "Original order".to_string(),
+            _ => format!("Sort by {}", SORT_NAMES[col as usize]),
         };
         if ui.interact(hr, ui.id().with(("col_sort", col)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked() {
             sort_click(col);
+        }
+    }
+    if let Some(c) = clear_at {
+        let hit = Rect::from_center_size(c, Vec2::new(16.0, rect.height()));
+        let r = ui.interact(hit, ui.id().with("col_sort_clear"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let col = if r.hovered() { pal().ink } else { head.gamma_multiply(0.75) };
+        let s = 3.5;
+        p.line_segment([c + Vec2::new(-s, -s), c + Vec2::new(s, s)], Stroke::new(1.5_f32, col));
+        p.line_segment([c + Vec2::new(-s, s), c + Vec2::new(s, -s)], Stroke::new(1.5_f32, col));
+        if r.tip("Original order").clicked() {
+            SORT.store(0, Ordering::Relaxed);
+            COLS_CHANGED.store(true, Ordering::Relaxed);
         }
     }
     // drag the line between two columns to share the room differently
@@ -749,7 +766,7 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
             COLS_CHANGED.store(true, Ordering::Relaxed);
         }
     }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click to choose columns.").context_menu(|ui| {
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click for columns").context_menu(|ui| {
         for (i, name) in COL_NAMES.iter().enumerate() {
             let mark = if col_on(i) { "[x] " } else { "[ ] " };
             if menu_item(ui, &format!("{}{}", mark, name)) {
@@ -765,7 +782,7 @@ pub(crate) fn col_header(ui: &mut egui::Ui, numbered: bool, art: bool) {
         ui.separator();
         crate::views::dim_line(ui, "SORT BY", 1.0, pal().ink2);
         let cur = sort_now();
-        if menu_item(ui, if cur.is_none() { "> THE LIST'S OWN ORDER" } else { "   THE LIST'S OWN ORDER" }) {
+        if menu_item(ui, if cur.is_none() { "> ORIGINAL ORDER" } else { "   ORIGINAL ORDER" }) {
             SORT.store(0, Ordering::Relaxed);
             COLS_CHANGED.store(true, Ordering::Relaxed);
         }
@@ -870,7 +887,7 @@ pub(crate) fn tracks_list(
             acts.push(Action::ToggleLike(t.clone()));
         }
         if let Some(r) = r {
-            let r = if gone { r.on_hover_text("No longer available on Tidal.") } else { r };
+            let r = if gone { r.on_hover_text("No longer on Tidal") } else { r };
             if r.clicked() && !gone {
                 // (in the order shown: sorted, the next song is the next one down)
                 if shown.is_empty() {
@@ -1163,17 +1180,17 @@ pub(crate) fn play_buttons_save(ui: &mut egui::Ui, tracks: &[Track], acts: &mut 
         if ibtn(ui, &IC_SHUF, "SHUFFLE", false).clicked() {
             acts.push(Action::PlayShuffled(tracks.to_vec()));
         }
-        if retro_btn(ui, "PLAY ALL NEXT", false).tip("Plays all of these right after the current song.").clicked() {
+        if retro_btn(ui, "PLAY ALL NEXT", false).tip("Play all after the current song").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), true));
         }
-        if retro_btn(ui, "ADD ALL TO QUEUE", false).tip("Adds all of these to the end of the queue.").clicked() {
+        if retro_btn(ui, "ADD ALL TO QUEUE", false).tip("Add all to the end of the queue").clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
-        if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Reload your library from Tidal.").clicked() {
+        if refresh && ibtn(ui, &IC_REP, "REFRESH", false).tip("Reload library from Tidal").clicked() {
             acts.push(Action::RefreshLibrary);
         }
         if let Some(name) = save {
-            let b = retro_btn(ui, "SAVE AS PLAYLIST...", false).tip("Keep these songs as a playlist, on Tidal or in Backline.");
+            let b = retro_btn(ui, "SAVE AS PLAYLIST...", false).tip("On Tidal or in Backline");
             let id = ui.id().with("list_save");
             if b.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(id));
@@ -1223,7 +1240,7 @@ pub(crate) fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Act
             acts.push(Action::PlayShuffled(tracks.to_vec()));
         }
         // (all of them: one song goes in from its own right-click menu)
-        let all_n = format!("Add all {} to the queue", commas(tracks.len()));
+        let all_n = format!("Add all {} to queue", commas(tracks.len()));
         if icon(ui, "queue", &all_n).clicked() {
             acts.push(Action::QueueTracks("THIS LIST".into(), tracks.to_vec(), false));
         }
@@ -1239,7 +1256,7 @@ pub(crate) fn play_icons(ui: &mut egui::Ui, tracks: &[Track], acts: &mut Vec<Act
             ui.painter().circle_stroke(c, rad, s);
             ui.painter().line_segment([c - Vec2::new(rad * 0.5, 0.0), c + Vec2::new(rad * 0.5, 0.0)], s);
             ui.painter().line_segment([c - Vec2::new(0.0, rad * 0.5), c + Vec2::new(0.0, rad * 0.5)], s);
-            let resp = resp.tip("Save as a playlist, on Tidal or in Backline");
+            let resp = resp.tip("Save as playlist");
             let id = ui.id().with("list_save");
             if resp.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(id));
@@ -1356,11 +1373,11 @@ pub(crate) fn page_view(
                     }
                     match state {
                         1 if gap > 0 => why.push(format!(
-                            "Tidal counts {}: the other {} are videos or entries it can't play, so they're left out.",
+                            "Tidal counts {}; {} videos or unplayable items are left out.",
                             commas(page.total),
                             commas(gap)
                         )),
-                        2 if gap > 0 => why.push(format!("{} more couldn't be loaded just now. Refresh tries again.", commas(gap))),
+                        2 if gap > 0 => why.push(format!("{} more couldn't load. Refresh to retry.", commas(gap))),
                         _ => {}
                     }
                     if !why.is_empty() {
@@ -1386,7 +1403,7 @@ pub(crate) fn page_view(
                 title_line(ui, name, 3.0, pal().ink);
                 ui.add_space(4.0);
                 // the same library load brings these, so the same REFRESH
-                if ibtn(ui, &IC_REP, "REFRESH", false).tip("Load your library from Tidal again.").clicked() {
+                if ibtn(ui, &IC_REP, "REFRESH", false).tip("Reload library from Tidal").clicked() {
                     acts.push(Action::RefreshLibrary);
                 }
                 ui.add_space(6.0);
@@ -1445,7 +1462,7 @@ pub(crate) fn page_view(
             inset(ui.painter(), cr, pal().edge);
             paint_page_art(ui, images, &page.image, cr.shrink(2.0), false);
             if !page.image.is_empty()
-                && cresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Show the picture big.").clicked()
+                && cresp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("View full size").clicked()
             {
                 acts.push(Action::ArtPreview(page.image.clone(), page.title.clone(), page.artist));
             }
@@ -1463,7 +1480,7 @@ pub(crate) fn page_view(
                             let y = r.rect.max.y - 1.0;
                             ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(1.0_f32, pal().ink2));
                         }
-                        if r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Go to the artist.").clicked() {
+                        if r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Go to artist").clicked() {
                             acts.push(Action::Open(by.clone()));
                         }
                     }
@@ -1478,18 +1495,18 @@ pub(crate) fn page_view(
                 }
                 // one of your own Tidal playlists: rename it
                 if let Some(c) = page.card.as_ref().filter(|c| c.kind == Kind::Playlist && page.saved.is_none()) {
-                    if retro_btn(ui, "RENAME", false).tip("Give this playlist a new name on Tidal.").clicked() {
+                    if retro_btn(ui, "RENAME", false).tip("Rename on Tidal").clicked() {
                         acts.push(Action::TidalListRename(c.id.clone(), page.title.clone()));
                     }
                 }
                 // an album or someone else's playlist: keep it in your Tidal albums / playlists
                 if let (Some(c), Some(saved)) = (&page.card, page.saved) {
                     let (on_txt, off_txt, tip) = if c.kind == Kind::Album {
-                        ("IN MY ALBUMS", "+ ADD TO MY ALBUMS", "Keep this album in your albums on Tidal.")
+                        ("IN MY ALBUMS", "+ ADD TO MY ALBUMS", "Save to Tidal library")
                     } else {
-                        ("IN MY PLAYLISTS", "+ ADD TO MY PLAYLISTS", "Keep this playlist in your playlists on Tidal.")
+                        ("IN MY PLAYLISTS", "+ ADD TO MY PLAYLISTS", "Save to Tidal library")
                     };
-                    let tip = if saved { "In your Tidal library. Click to remove it." } else { tip };
+                    let tip = if saved { "Remove from Tidal library" } else { tip };
                     if retro_btn(ui, if saved { on_txt } else { off_txt }, saved).tip(tip).clicked() {
                         acts.push(Action::SaveCard(c.clone(), !saved));
                     }
@@ -1497,13 +1514,13 @@ pub(crate) fn page_view(
                 if page.artist && !page.artist_id.is_empty() {
                     ui.horizontal(|ui| {
                         let tip =
-                            if page.following { "You follow them on Tidal. Click to unfollow." } else { "Follow them on Tidal." };
+                            if page.following { "Unfollow" } else { "Follow artist" };
                         if retro_btn(ui, if page.following { "FOLLOWING" } else { "+ FOLLOW" }, page.following).tip(tip).clicked()
                         {
                             acts.push(Action::Follow(page.artist_id.clone(), !page.following));
                         }
                         if let Some(r) = &page.radio {
-                            if retro_btn(ui, "RADIO", false).tip("Artist radio: similar music.").clicked() {
+                            if retro_btn(ui, "RADIO", false).tip("Artist radio").clicked() {
                                 acts.push(Action::Open(r.clone()));
                             }
                         }

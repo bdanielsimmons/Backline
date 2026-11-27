@@ -74,7 +74,7 @@ impl App {
 
     /// TRIAD PAIRS.
     pub(crate) fn triad_pairs(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Two triads that share no notes, played one after the other. Six notes that sound like the two chords, not like a scale. Pick a chord to see the pairs that fit it, or run a pair through each chord of the changes.", pal().ink2);
+        para(ui, "Two triads with no common notes, six notes in all. Pick a chord for pairs that fit, or run a pair through the changes.", pal().ink2);
         if let Some(i) =
             crate::choice_line(ui, "tp_mode", "OVER", &["A CHORD", "THE CHANGES"], (self.tp_mode as usize).min(1), 200.0)
         {

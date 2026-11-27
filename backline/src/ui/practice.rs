@@ -275,7 +275,7 @@ impl App {
             let g = ui
                 .interact(grip, ui.id().with("wv_height"), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeVertical)
-                .tip("Drag to resize the waveform. Double-click to reset.");
+                .tip("Resize · Double-click to reset");
             if g.dragged() {
                 let base = wave_h / self.wv_h.clamp(0.6, 4.0);
                 self.wv_h = (self.wv_h + g.drag_delta().y / base.max(1.0)).clamp(0.6, 4.0);
@@ -294,7 +294,7 @@ impl App {
         }
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to jump. Drag with the right mouse button (or shift + drag) to make a loop; shift + drag inside a loop slides it. Ctrl + drag A or B to move it. Alt + click to add or remove a bookmark. Right-click for more.");
+            .tip("Click: jump · Right-drag: loop · Alt+click: bookmark · Right-click: more");
         if amp && studio {
             // (Studio: a screen within the screen, a fine line of ink round it)
             ui.painter().rect_filled(bar, 0.0, crate::studio::key_col());
@@ -522,7 +522,7 @@ impl App {
                 let r = ui
                     .interact(sr.expand2(Vec2::new(0.0, 2.0)), ui.id().with("wv_strip"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
-                    .tip("The whole song. Click or drag to view another part; the view returns to the playhead after a few seconds.");
+                    .tip("Song overview · Click or drag to look around");
                 if let Some(pp) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
                     let t = ((pp.x - sr.min.x) / sr.width()).clamp(0.0, 1.0) * dur1;
                     self.wv_start = (t - span / 2.0).within(0.0, (dur1 - span).max(0.0));
@@ -599,7 +599,7 @@ impl App {
                         let lab = crate::font::fit(&name, 0.8, r.width() - 9.0);
                         ptext(&p.with_clip_rect(r), Pos2::new(r.min.x + 5.0, r.center().y), Align::Min, &lab, 0.8, ink);
                     }
-                    bands.push((r, i, format!("{}  {} - {}. Click to loop it.", name, fmt_t(sc.a), fmt_t(sc.b))));
+                    bands.push((r, i, format!("{}  {} - {} · Click to loop", name, fmt_t(sc.a), fmt_t(sc.b))));
                 }
             }
             for (r, i, tip) in bands {
@@ -679,7 +679,7 @@ impl App {
                 let r = ui
                     .interact(track.expand2(Vec2::new(0.0, 4.0)), ui.id().with("wv_scroll"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::Grab)
-                    .tip("Drag to scroll through the song. The view returns to the playhead after a few seconds.");
+                    .tip("Scroll through the song");
                 fill_rect(&p, track, pal().ink.gamma_multiply(0.15));
                 let w = (track.width() * span / dur1).max(14.0);
                 let x0 = track.min.x + (track.width() - w) * (start / (dur1 - span).max(0.001));
@@ -704,7 +704,7 @@ impl App {
             if let Some(id) = tid.filter(|id| !self.is_demo(*id)) {
                 let w4 = chip_w("+ MARK");
                 let mb = crate::chip(ui, chip_at(w1 + w2 + w3 + 9.0, w4), "+ MARK", false, "wv_mark").tip(
-                    "Add a bookmark at the playhead  (K, or Alt + click the waveform). Right-click to pick the bookmark color.",
+                    "Add bookmark  (K) · Right-click for color",
                 );
                 if mb.clicked() {
                     self.add_mark(id, shown);
@@ -802,11 +802,11 @@ impl App {
                     }
                 }
             }
-            if crate::chip(ui, chip_at(0.0, w1), "-", false, "wv_out").tip("Zoom out.").clicked() {
+            if crate::chip(ui, chip_at(0.0, w1), "-", false, "wv_out").tip("Zoom out").clicked() {
                 zoom_by(self, 0.5);
             }
             if crate::chip(ui, chip_at(w1 + 3.0, w2), "+", false, "wv_in")
-                .tip("Zoom in at the playhead, or use the mouse wheel on the waveform.")
+                .tip("Zoom in · Or scroll on the waveform")
                 .clicked()
             {
                 zoom_by(self, 2.0);
@@ -814,14 +814,14 @@ impl App {
             // the note view, on or off
             let nx = w1 + w2 + w3 + 12.0 + chip_w("+ MARK");
             if crate::chip(ui, chip_at(nx, chip_w("NOTES")), "NOTES", self.wv_notes, "wv_notes")
-                .tip("Shows the song by pitch instead of loudness: brighter means louder at that note. The lowest bright bar is usually the note; fainter copies above it are its overtones. On a split song it uses only the stems you have on, so a solo or bass line stands out. Hover over it to see the note's name.")
+                .tip("Pitch view")
                 .clicked()
             {
                 self.wv_notes = !self.wv_notes;
                 self.dirty = true;
             }
             if crate::chip(ui, chip_at(nx + chip_w("NOTES") + 3.0, chip_w("FOLLOW")), "FOLLOW", self.wv_follow, "wv_follow")
-                .tip("Zoomed in, the song slides along under the playhead so you always see what's coming. Off: a page at a time.")
+                .tip("Follow playhead · Off: page by page")
                 .clicked()
             {
                 self.wv_follow = !self.wv_follow;
@@ -829,7 +829,7 @@ impl App {
                 self.dirty = true;
             }
             // FIT: the loop with a little either side; again (or with no loop) the whole song
-            let fit_tip = if both { "Fit the loop. Again: the whole song." } else { "Show the whole song again." };
+            let fit_tip = if both { "Fit loop · Again for the whole song" } else { "Fit song" };
             if (self.wv_zoom > 1.0 || both) && crate::chip(ui, chip_at(w1 + w2 + 6.0, w3), "FIT", false, "wv_fit").tip(fit_tip).clicked() {
                 match (self.loop_a, self.loop_b) {
                     (Some(a), Some(b)) if !(span <= (b - a) * 1.3 && a >= start && b <= start + span) => {
@@ -1042,7 +1042,7 @@ impl App {
         // three rows, each centred: A and B; the loop's buttons and moving about; the speed
         centered_row(ui, "ab_row", |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            if retro_btn_w(ui, "A", 34.0, false).tip("Set loop start  ([ key)").clicked() && active {
+            if retro_btn_w(ui, "A", 34.0, false).tip("Set loop start  ([)").clicked() && active {
                 acts.push(Action::SetAAt(pos));
             }
             self.num_step(
@@ -1052,10 +1052,10 @@ impl App {
                 78.0,
                 Knob::LoopA,
                 a_txt,
-                "Nudge earlier or later, or click and type a time like 1:23.5.",
+                "Nudge loop start · Or type a time, like 1:23.5",
             );
             divider(ui);
-            if retro_btn_w(ui, "B", 34.0, false).tip("Set loop end  (] key)").clicked() && active {
+            if retro_btn_w(ui, "B", 34.0, false).tip("Set loop end  (])").clicked() && active {
                 acts.push(Action::SetBAt(pos));
             }
             self.num_step(
@@ -1065,38 +1065,38 @@ impl App {
                 78.0,
                 Knob::LoopB,
                 b_txt,
-                "Nudge earlier or later, or click and type a time like 2:05.",
+                "Nudge loop end · Or type a time, like 2:05",
             );
         });
         ui.add_space(6.0);
         centered_row(ui, "loop_btns", |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let ink = pal().ink;
-            if crate::icon_btn_w(ui, &crate::IC_REW, false, ink, 34.0).tip("Back two seconds  (, key)").clicked() {
+            if crate::icon_btn_w(ui, &crate::IC_REW, false, ink, 34.0).tip("Back 2 seconds  (,)").clicked() {
                 acts.push(Action::SeekRel(-2.0));
             }
             if crate::icon_btn_w(ui, &crate::IC_PREV, false, ink, 34.0)
-                .tip("Restart from the loop start (or track start)  (. key)")
+                .tip("Restart loop  (.)")
                 .clicked()
             {
                 acts.push(Action::Seek(self.loop_a.unwrap_or(0.0)));
             }
             divider(ui);
-            if crate::icon_btn_w(ui, &crate::IC_REP, self.loop_on && both, ink, 34.0).tip("Loop on / off  (\\ key)").clicked() {
+            if crate::icon_btn_w(ui, &crate::IC_REP, self.loop_on && both, ink, 34.0).tip("Loop on/off  (\\)").clicked() {
                 acts.push(Action::LoopToggle);
             }
-            if crate::icon_btn_w(ui, &crate::IC_X, false, ink, 34.0).tip("Clear the loop.").clicked() {
+            if crate::icon_btn_w(ui, &crate::IC_X, false, ink, 34.0).tip("Clear loop").clicked() {
                 acts.push(Action::LoopClear);
             }
             divider(ui);
             // the whole loop on to the next phrase, or back to the one before (same length)
-            if crate::icon_btn_w(ui, &crate::IC_BACK, false, ink, 34.0).tip("Shift the loop back by its own length.").clicked()
+            if crate::icon_btn_w(ui, &crate::IC_BACK, false, ink, 34.0).tip("Shift loop back").clicked()
                 && both
             {
                 acts.push(Action::ShiftLoop(false));
             }
             if crate::icon_btn_w(ui, &crate::IC_FWD, false, ink, 34.0)
-                .tip("Shift the loop forward by its own length, to the next phrase.")
+                .tip("Shift loop forward")
                 .clicked()
                 && both
             {
@@ -1112,7 +1112,7 @@ impl App {
             ui.spacing_mut().item_spacing.x = 6.0;
             label(ui, "SPEED", 0.0);
             // the usual speeds in a drop-down, and - / + for 1% at a time (click the number to type any, 25 to 250)
-            let sp = retro_btn_w(ui, "v", 34.0, false).tip("Pick a speed.");
+            let sp = retro_btn_w(ui, "v", 34.0, false).tip("Speed presets");
             let menu = ui.id().with("speed_menu");
             if sp.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(menu));
@@ -1133,7 +1133,7 @@ impl App {
                 64.0,
                 Knob::Speed,
                 format!("{}%", self.speed),
-                "1% slower or faster, or click and type any speed from 25 to 250.",
+                "1% slower · Or type a speed, 25 to 250%",
             );
         });
         row_mark(ui, "SPEEDROW", speed_top);
@@ -1164,7 +1164,7 @@ impl App {
             if o.enter {
                 acts.push(Action::SaveSection);
             }
-            if crate::ibtn(ui, &crate::IC_BOOK, "SAVE LOOP", false).tip("Save this A-B loop with the track.").clicked() {
+            if crate::ibtn(ui, &crate::IC_BOOK, "SAVE LOOP", false).tip("Save A-B loop to this track").clicked() {
                 acts.push(Action::SaveSection);
             }
         });
@@ -1255,9 +1255,9 @@ impl App {
                         && self.loop_a.is_some_and(|x| (x - s.a).abs() < 0.05)
                         && self.loop_b.is_some_and(|x| (x - s.b).abs() < 0.05);
                     let tip = if s.note.is_empty() {
-                        format!("{} to {}. Right-click to rename, add a note, group or delete.", fmt_t(s.a), fmt_t(s.b))
+                        format!("{} - {} · Right-click for more", fmt_t(s.a), fmt_t(s.b))
                     } else {
-                        format!("{} to {}. Right-click to rename, edit the note, group or delete.", fmt_t(s.a), fmt_t(s.b))
+                        format!("{} - {} · Right-click to edit note", fmt_t(s.a), fmt_t(s.b))
                     };
                     let r = retro_btn_w(ui, &s.name, w, on).tip(tip);
                     if r.clicked() {
@@ -1356,7 +1356,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.add_space(12.0);
             for g in &groups {
-                if retro_btn(ui, &crate::font::as_label(g), *g == self.clip_group).tip("Put it in this group.").clicked() {
+                if retro_btn(ui, &crate::font::as_label(g), *g == self.clip_group).tip("Move to this group").clicked() {
                     self.clip_group = g.clone();
                 }
             }
@@ -1390,7 +1390,7 @@ impl App {
         centered_row(ui, "marks_add", |ui| {
             if retro_btn(ui, &format!("+ BOOKMARK AT {}", fmt_t(now)), false)
                 .tip(format!(
-                    "Add a bookmark at the playhead  ({}, or Alt + click the waveform)",
+                    "Add bookmark  ({}) · Or Alt+click the waveform",
                     self.key_text(crate::prefs::Cmd::Bookmark)
                 ))
                 .clicked()
@@ -1398,7 +1398,7 @@ impl App {
                 self.add_mark(id, now);
             }
             let n = self.store.marks.get(&id).map_or(0, |l| l.len());
-            if n > 0 && retro_btn(ui, "REMOVE ALL", false).tip("Remove all bookmarks from this song.").clicked() {
+            if n > 0 && retro_btn(ui, "REMOVE ALL", false).tip("Remove all bookmarks").clicked() {
                 self.store.marks.remove(&id);
                 self.store_dirty = true;
             }
@@ -1406,7 +1406,7 @@ impl App {
         ui.add_space(4.0);
         let n = self.store.marks.get(&id).map_or(0, |l| l.len());
         if n == 0 {
-            para(ui, "No bookmarks yet. Mark the places you come back to: the solo, the key change, the bar you keep missing.", pal().ink2);
+            para(ui, "No bookmarks yet. Mark the spots you come back to, like the solo or a tricky bar.", pal().ink2);
             return;
         }
         let mut drop = None;
@@ -1421,7 +1421,7 @@ impl App {
                 ui.painter().rect_filled(sw.shrink2(Vec2::new(2.0, 4.0)), 2.0, col);
                 ptext(ui.painter(), sw.center(), Align::Center, &(k + 1).to_string(), 1.0, egui::Color32::from_gray(12));
                 let note_item = if m.note.is_empty() { "Add a note..." } else { "Edit the note..." };
-                sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click to add a note or change the color.").context_menu(|ui| {
+                sr.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Right-click for note and color").context_menu(|ui| {
                     if menu_item(ui, note_item) {
                         write = true;
                         ui.close_menu();
@@ -1431,7 +1431,7 @@ impl App {
                         ui.close_menu();
                     }
                 });
-                let tb = retro_btn_w(ui, &fmt_t(m.t), 70.0, false).tip("Jump here. Right-click to add a note or remove it.");
+                let tb = retro_btn_w(ui, &fmt_t(m.t), 70.0, false).tip("Jump here · Right-click for more");
                 if tb.clicked() {
                     acts.push(Action::Seek(m.t));
                 }
@@ -1454,7 +1454,7 @@ impl App {
                         self.store_dirty = true;
                     }
                 }
-                if retro_btn_w(ui, "X", 28.0, false).tip("Remove this bookmark.").clicked() {
+                if retro_btn_w(ui, "X", 28.0, false).tip("Remove bookmark").clicked() {
                     drop = Some(k);
                 }
             });
@@ -1501,7 +1501,7 @@ impl App {
                     let ci = if self.count_in == 0 { "OFF".to_string() } else { format!("{} BEATS", self.count_in) };
                     if retro_btn_w(ui, &ci, 92.0, self.count_in > 0)
                         .tip(
-                            "Clicks before every pass of the loop, at the song's tempo. Off, 2 or 4 beats, with or without the trainer.",
+                            "Count-off before each pass · Click to cycle",
                         )
                         .clicked()
                     {
@@ -1518,9 +1518,9 @@ impl App {
                         46.0,
                         Knob::Bpm,
                         s,
-                        "The song's tempo, detected automatically. If it's wrong, adjust it or type it.",
+                        "Song tempo (detected) · Or type it",
                     );
-                    if retro_btn_w(ui, "TAP", 52.0, false).tip("Tap along with the music to find the tempo.").clicked() {
+                    if retro_btn_w(ui, "TAP", 52.0, false).tip("Tap tempo").clicked() {
                         acts.push(Action::TapTempo);
                     }
                 });
@@ -1528,7 +1528,7 @@ impl App {
                 centered_row(ui, "trainer_1", |ui| {
                     label(ui, "TRAIN", 56.0);
                     if retro_btn_w(ui, if self.trainer { "ON" } else { "OFF" }, 56.0, self.trainer)
-                        .tip("Plays the loop a set number of times, then speeds up by a set percent.")
+                        .tip("Speed trainer")
                         .clicked()
                     {
                         acts.push(Action::Trainer);
@@ -1542,11 +1542,11 @@ impl App {
                 });
                 centered_row(ui, "trainer_2", |ui| {
                     label(ui, "THEN", 60.0);
-                    if retro_btn(ui, "FASTER", !self.trainer_keys).tip("After the passes, the speed goes up.").clicked() {
+                    if retro_btn(ui, "FASTER", !self.trainer_keys).tip("Speed up after each set").clicked() {
                         acts.push(Action::TrainerKeys(false));
                     }
                     if retro_btn(ui, "UP A 4TH - 12 KEYS", self.trainer_keys)
-                        .tip("After the passes, the loop moves up a 4th. Learn a lick from the record in every key, by ear.")
+                        .tip("Move up a 4th after each set, through all 12 keys")
                         .clicked()
                     {
                         acts.push(Action::TrainerKeys(true));
@@ -1561,7 +1561,7 @@ impl App {
                         44.0,
                         Knob::Loops,
                         self.trainer_n.to_string(),
-                        "Passes to play before each step. Or type it.",
+                        "Passes per step",
                     );
                     label(ui, "LOOPS", 56.0);
                     self.num_step(
@@ -1571,14 +1571,14 @@ impl App {
                         52.0,
                         Knob::Step,
                         format!("+{}%", self.trainer_step),
-                        "How much faster each step is. Or type it.",
+                        "Speed increase per step",
                     );
                 });
                 dim_centered(ui, "STARTS AT THE SPEED SET ABOVE AND STOPS AT 100%");
                 ui.add_space(8.0);
                 centered_row(ui, "trainer_4", |ui| {
                     if retro_btn_w(ui, if self.lib_hidden { "SHOW LIBRARY" } else { "HIDE LIBRARY" }, 130.0, self.lib_hidden)
-                        .tip("Hides the library, leaving just the player and these tools.")
+                        .tip("Show or hide the library")
                         .clicked()
                     {
                         acts.push(Action::ToggleLibrary);
@@ -1589,13 +1589,13 @@ impl App {
                 centered_row(ui, "pitch_0", |ui| {
                                         label(ui, "PITCH", 56.0);
                                         if retro_btn_w(ui, "-", 28.0, false)
-                                            .tip("Lower the pitch a semitone. The speed stays.")
+                                            .tip("Down a semitone")
                                             .clicked()
                                         {
                                             acts.push(Action::Transpose(-100));
                                         }
                                         if retro_btn_w(ui, "-10c", 44.0, false)
-                                            .tip("Lower the pitch 10 cents, a tenth of a semitone. For records not tuned to A440.")
+                                            .tip("Down 10 cents")
                                             .clicked()
                                         {
                                             acts.push(Action::Transpose(-10));
@@ -1625,12 +1625,12 @@ impl App {
                                             self.ed.id = 0;
                                         }
                                         if retro_btn_w(ui, "+10c", 44.0, false)
-                                            .tip("Raise the pitch 10 cents.")
+                                            .tip("Up 10 cents")
                                             .clicked()
                                         {
                                             acts.push(Action::Transpose(10));
                                         }
-                                        if retro_btn_w(ui, "+", 28.0, false).tip("Raise the pitch a semitone. The speed stays.").clicked() {
+                                        if retro_btn_w(ui, "+", 28.0, false).tip("Up a semitone").clicked() {
                                             acts.push(Action::Transpose(100));
                                         }
                                     });
@@ -1669,7 +1669,7 @@ impl App {
                         "FIND"
                     };
                     if retro_btn_w(ui, find, if find == "FIND" { 60.0 } else { 130.0 }, false)
-                        .tip("Listens to the record and finds the A it's tuned to. If you know it (A = 452), type it in the box instead.")
+                        .tip("Detect the record's tuning · Or type it, like 452")
                         .clicked()
                     {
                         acts.push(Action::FindTuning);
@@ -1695,7 +1695,7 @@ impl App {
                             let c = crate::meta::cents_between(a, self.my_a).round() as i32;
                             let txt = if c == 0 { "IN TUNE".to_string() } else { format!("MATCH ({:+}c)", c) };
                             let tip = format!(
-                                "Moves the record from A = {} to your A = {}: {:+} cents. The speed stays.",
+                                "Shift A = {} to A = {}  ({:+} cents)",
                                 hz(a),
                                 hz(self.my_a),
                                 c
@@ -1705,7 +1705,7 @@ impl App {
                             }
                         }
                         None => {
-                            retro_btn_w(ui, "MATCH", 80.0, false).tip("Find the record's A, or type it, first.");
+                            retro_btn_w(ui, "MATCH", 80.0, false).tip("Find or type the record's A first");
                         }
                     }
                 });
@@ -1723,12 +1723,12 @@ impl App {
                 ui.add_space(4.0);
                 // back to the record's pitch, the ear mode and saving it
                 centered_row(ui, "pitch_1", |ui| {
-                                        if self.semis != 0 && retro_btn_w(ui, "0", 28.0, false).tip("Reset to the original pitch.").clicked() {
+                                        if self.semis != 0 && retro_btn_w(ui, "0", 28.0, false).tip("Reset pitch").clicked() {
                                             acts.push(Action::Transpose(-self.semis));
                                         }
                                         ui.add_space(8.0);
                                         if retro_btn_w(ui, CHAN_NAMES[self.chan as usize % 6], 100.0, self.chan != 0)
-                                            .tip("Ear mode. LEFT or RIGHT CHANNEL plays just that side in both ears. Old jazz records often put the bass or piano on one side, while modern mixes barely differ. NO CENTER removes vocals, and BASS ONLY keeps the low end.")
+                                            .tip("Ear mode · Click to cycle (No center removes vocals)")
                                             .clicked()
                                         {
                                             acts.push(Action::Chan);
@@ -1751,14 +1751,14 @@ impl App {
                 } else if tid.is_some_and(|id| self.is_demo(id)) {
                     // the tour's song shows the button you would see on any song not split yet
                     if retro_btn_w(ui, "SPLIT THIS TRACK", 190.0, false)
-                        .tip("Splits the track into drums, bass, vocals and other. Not during the tour.")
+                        .tip("Split into drums, bass, vocals and other")
                         .clicked()
                     {
                         self.set_note("NOT DURING THE TOUR");
                     }
                 } else if !stems::tool_ready() {
                     if retro_btn_w(ui, "GET STEMS TOOL (170 MB)", 230.0, false)
-                        .tip("A one-time download of the tool that splits drums, bass, vocals and the rest. It runs on this PC.")
+                        .tip("One-time download · Splits songs on this PC")
                         .clicked()
                     {
                         acts.push(Action::StemGet);
@@ -1766,7 +1766,7 @@ impl App {
                 } else if tid.is_some_and(stems::have_stems) {
                     for (i, name) in stems::NAMES.iter().enumerate() {
                         let r = stem_btn(ui, i, self.stem_on[i])
-                            .tip(format!("{}. Click to mute or unmute, right-click to solo.", name));
+                            .tip(format!("{} · Click: mute · Right-click: solo", name));
                         if r.clicked() {
                             acts.push(Action::StemToggle(i));
                         }
@@ -1789,7 +1789,7 @@ impl App {
                 } else {
                     let len = self.track_len();
                     if retro_btn_w(ui, "SPLIT THIS TRACK", 190.0, false)
-                        .tip("Splits the track into drums, bass, vocals and other, on this PC. The stems are saved.")
+                        .tip("Split into drums, bass, vocals and other")
                         .clicked()
                     {
                         acts.push(Action::StemSplit);
@@ -1810,14 +1810,14 @@ impl App {
                     let sure = ui.ctx().data(|d| d.get_temp::<(i64, f64)>(sure_key)).is_some_and(|(i, t)| i == id && now - t < 4.0);
                     centered_row(ui, "stems_files", |ui| {
                         if retro_btn_w(ui, "OPEN FOLDER", 130.0, false)
-                            .tip("Shows this song's four stem files (drums, bass, vocals, other) on your computer.")
+                            .tip("Show stem files")
                             .clicked()
                         {
                             acts.push(Action::StemOpen(id));
                         }
                         let text = if sure { "CLICK AGAIN TO DELETE" } else { "DELETE THESE STEMS" };
                         if retro_btn_w(ui, text, 210.0, sure)
-                            .tip("Deletes this song's stems to free space. The song itself stays. You can split it again any time.")
+                            .tip("Delete stems to free space (the song stays)")
                             .clicked()
                         {
                             if sure {

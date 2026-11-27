@@ -375,11 +375,11 @@ impl App {
             para(
                 ui,
                 if tidal {
-                    "Saved on this computer only; Tidal's info is not changed. Clear both boxes to use Tidal's again."
+                    "Saved on this computer only. Clear both boxes to use Tidal's again."
                 } else if is_file {
-                    "The new names show everywhere in Backline. They are also written into the file, so other players see them. A new file name renames the file on disk. Key and BPM stay in Backline."
+                    "Also written into the file's tags. A new file name renames the file on disk."
                 } else {
-                    "The new names show in your lists, playlists, tunes and the queue. Tidal's own album and search pages keep Tidal's names."
+                    "Shows in lists, playlists, tunes and the queue. Tidal's own pages keep Tidal's names."
                 },
                 pal().ink2,
             );

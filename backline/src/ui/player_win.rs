@@ -98,7 +98,7 @@ impl App {
         let spr = ui
             .interact(sp, ui.id().with("spectrum"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click to switch between bars, waveform or both. Right-click for settings.");
+            .tip("Visualizer style · Right-click for settings");
         if spr.clicked() {
             self.viz[0].mode = (self.viz[0].mode + 1) % 3;
             self.dirty = true;
@@ -121,7 +121,7 @@ impl App {
             let t = (*t).clone();
             let tr = ui.interact(tb, ui.id().with("title_menu"), Sense::click());
             let liked = self.liked.contains(&t.id);
-            tr.tip("Right-click for the album, artist, radio, credits, My Tracks and playlists.").context_menu(|ui| {
+            tr.tip("Right-click for album, artist, radio and more").context_menu(|ui| {
                 crate::song_items(ui, acts, &t, liked, true);
             });
         }
@@ -149,7 +149,7 @@ impl App {
 
         // ---- tempo and key (the stream's kbps and kHz show on hover)
         let info = track.as_ref().and_then(|t| meta::get(t.id)).filter(|_| active).unwrap_or_default();
-        let from = if info.tidal { "from Tidal" } else { "estimated from the audio" };
+        let from = if info.tidal { "from Tidal" } else { "estimated" };
         let stream = |s: String| if active && !s.is_empty() { format!("\nStream: {}", s) } else { String::new() };
         // (stream quality lives on the title bar now, so tempo and key share the row)
         let kb = rc(112.0, 34.0, 66.0, 12.0);
@@ -167,7 +167,7 @@ impl App {
         let kh_txt = if info.key.is_some() { meta::key_text(&info) } else { "KEY --".to_string() };
         ptext_fit(p, kh.center(), Align::Center, &kh_txt, px_sm, kh.width() - 6.0, pal().ink);
         let kh_tip = match info.key {
-            Some(k) => format!("Key: {}, {}\nThe number is its Camelot code, used for mixing.", meta::key_long(k), from),
+            Some(k) => format!("Key: {}, {}\nNumber = Camelot code", meta::key_long(k), from),
             None => "Key: detected on first play".to_string(),
         };
         ui.interact(kh, ui.id().with("key"), Sense::hover())
@@ -263,7 +263,7 @@ impl App {
         let spr = ui
             .interact(spd, ui.id().with("speed"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Speed (pitch unchanged). Click for the next speed, or right-click to choose or type one  (UP and DOWN keys)");
+            .tip("Speed  (Up/Down) · Right-click for more");
         raised_h(p, spd, self.speed != 100 || spr.is_pointer_button_down_on(), spr.hovered());
         ptext_fit(p, spd.center(), Align::Center, &crate::tools::speed_label(self.speed), px_sm, spd.width() - 4.0, pal().ink);
         if spr.clicked() {
@@ -276,7 +276,7 @@ impl App {
         let slr = ui
             .interact(slp, ui.id().with("sleep"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Sleep timer. Click for 15, 30, 45, 60 or 90 minutes, or off. The music fades out at the end.");
+            .tip("Sleep timer");
         raised_h(p, slp, sleeping.is_some() || slr.is_pointer_button_down_on(), slr.hovered());
         match sleeping {
             Some(m) => {
@@ -292,7 +292,7 @@ impl App {
         let obr = ui
             .interact(ob, ui.id().with("outputs"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Sound output: speakers, headphones or Bluetooth");
+            .tip("Output device");
         raised_h(p, ob, self.out_device.is_some() || obr.is_pointer_button_down_on(), obr.hovered());
         icon_in(p, ob, &IC_OUT, pal().ink);
         self.output_popup(ui, &obr, acts);
@@ -374,7 +374,7 @@ impl App {
         let shr = ui
             .interact(sh, ui.id().with("shuf"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip(if self.shuffle { "Shuffle is on" } else { "Shuffle" });
+            .tip(if self.shuffle { "Shuffle: on" } else { "Shuffle: off" });
         raised_h(p, sh, self.shuffle || shr.is_pointer_button_down_on(), shr.hovered() && !self.shuffle);
         icon_in(p, sh, &IC_SHUF, if self.shuffle { pal().red } else { pal().ink });
         if shr.clicked() {
@@ -382,9 +382,9 @@ impl App {
         }
         let rp = rc(176.0, 103.0, 30.0, 14.0);
         let rep_tip = match self.repeat {
-            Repeat::Off => "Repeat is off",
-            Repeat::All => "Repeat all",
-            Repeat::One => "Repeat one",
+            Repeat::Off => "Repeat: off",
+            Repeat::All => "Repeat: all",
+            Repeat::One => "Repeat: one",
         };
         let rpr =
             ui.interact(rp, ui.id().with("rep"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(rep_tip);
@@ -434,7 +434,7 @@ impl App {
         let strip_r = ui
             .interact(strip, ui.id().with("strip"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Open the folder where tracks are saved.");
+            .tip("Open tracks folder");
         inset(p, strip, pal().display);
         let (dtxt, dcol): (String, Color32) = match &track {
             None => (format!("TRACKS ARE SAVED TO: {}", cache::dir().display()), pal().ink2),
@@ -662,7 +662,7 @@ impl App {
                 if retro_btn(ui, "CLEAR QUEUE", false).clicked() {
                     acts.push(Action::ClearQueue);
                 }
-                if retro_btn(ui, "SAVE AS PLAYLIST", false).tip("Save the queue as a playlist in LISTS.").clicked() {
+                if retro_btn(ui, "SAVE AS PLAYLIST", false).tip("Save queue as a playlist").clicked() {
                     acts.push(Action::PlaylistFromQueue);
                 }
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(340.0), bh()), Sense::hover());
@@ -768,14 +768,14 @@ impl App {
                     }
                 }
                 "MINI" => {
-                    if chip(ui, r, "MINI", false, "c_mini").tip("Switch to the mini player.").clicked() {
+                    if chip(ui, r, "MINI", false, "c_mini").tip("Mini player").clicked() {
                         acts.push(Action::ToggleMini);
                     }
                 }
                 "PRACTICE" => {
                     tour::mark("CHIP", r);
                     if chip(ui, r, "PRACTICE", self.practice, "c_prac")
-                        .tip("For transcribing: loop a section and slow it down.")
+                        .tip("Practice mode: loop and slow down")
                         .clicked()
                         && !self.practice
                     {
@@ -783,7 +783,7 @@ impl App {
                     }
                 }
                 "LISTEN" => {
-                    if chip(ui, r, "LISTEN", !self.practice, "c_lis").tip("Listen: no loop, no pitch change.").clicked()
+                    if chip(ui, r, "LISTEN", !self.practice, "c_lis").tip("Listen mode").clicked()
                         && self.practice
                     {
                         acts.push(Action::TogglePractice);
@@ -791,7 +791,7 @@ impl App {
                 }
                 "FOCUS" => {
                     if chip(ui, r, "LIBRARY", !self.lib_hidden, "c_focus")
-                        .tip("Show or hide the library (the player and your tools stay).")
+                        .tip("Show or hide the library")
                         .clicked()
                     {
                         acts.push(Action::ToggleLibrary);
@@ -800,11 +800,11 @@ impl App {
                 "OFFLINE" => {
                     if chip(ui, r, net_txt, off, "c_offline")
                         .tip(if self.go_offline {
-                            "Offline. Only what's on this computer plays. Click to go online."
+                            "Offline: local tracks only · Click to go online"
                         } else if self.net_down {
-                            "No internet right now. Click to stay offline."
+                            "No internet · Click to stay offline"
                         } else {
-                            "Online. Click to go offline."
+                            "Online · Click to go offline"
                         })
                         .clicked()
                     {
@@ -813,9 +813,9 @@ impl App {
                 }
                 "GUIDE" => {
                     let gc = chip(ui, r, "", self.wa_guide, "c_map").tip(if self.wa_guide {
-                        "Button guide is on. Click to hide it."
+                        "Hide button labels"
                     } else {
-                        "Show labels on this skin's buttons."
+                        "Show button labels"
                     });
                     guide_icon(ui.painter(), r, if self.wa_guide { pal().display } else { pal().ink });
                     if gc.clicked() {
@@ -825,7 +825,7 @@ impl App {
                 }
                 _ => {
                     if chip(ui, r, "NOW PLAYING", false, "c_art")
-                        .tip("Now Playing: cover, lyrics and visualizer  (A)")
+                        .tip("Now Playing  (A)")
                         .clicked()
                     {
                         acts.push(Action::ToggleArt);

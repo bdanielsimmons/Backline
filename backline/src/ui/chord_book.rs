@@ -527,28 +527,28 @@ impl App {
             const SHOWN: [u8; 5] = [4, 0, 1, 3, 2];
             let cur = SHOWN.iter().position(|v| *v == self.cb_view.min(4)).unwrap_or(1);
             let tips = [
-                "Map: every string set and family at a glance",
-                "Cards: every voicing as a card",
-                "Walk: step from voicing to voicing and see the voices move",
+                "Map: all string sets and families",
+                "Cards: every voicing",
+                "Walk: voice leading, voicing to voicing",
                 "2-5-1: the voicings through a 2-5-1",
-                "How It Works: how the voicings are made",
+                "How It Works",
             ];
             if let Some(v) = crate::icon_switch(ui, &["map", "cards", "walk", "=2-5-1", "book"], cur, &tips) {
                 self.cb_view = SHOWN[v];
                 self.cb_auto = None;
                 self.dirty = true;
             }
-            if !fam.video.is_empty() && crate::line_icon_btn(ui, "video", "The video lesson for this family, on YouTube").clicked() {
+            if !fam.video.is_empty() && crate::line_icon_btn(ui, "video", "Video lesson on YouTube").clicked() {
                 crate::views::open_link(&format!("https://www.youtube.com/watch?v={}", fam.video));
             }
             // in a window of its own (to keep it beside the chart and the song; the main window goes back to where it
             // was), or back in (Pop In: the main window on the Chord Book again)
             if self.cb_in_window {
-                if !crate::app_bar() && retro_btn(ui, "Pop In", false).tip("Back into the main window").clicked() {
+                if !crate::app_bar() && retro_btn(ui, "Pop In", false).tip("Return to main window").clicked() {
                     self.cb_pop = false;
                     self.dirty = true;
                 }
-            } else if crate::line_icon_btn(ui, "mini", "Pop out into its own window").clicked() {
+            } else if crate::line_icon_btn(ui, "mini", "Pop out").clicked() {
                 self.cb_pop = true;
                 self.dirty = true;
                 if self.can_go(true) {
@@ -558,14 +558,14 @@ impl App {
             // how the walk works: hear each voicing, hide the names
             if self.cb_view == 1 || self.cb_view == 3 {
                 ui.add_space(8.0);
-                if crate::check_box(ui, "SOUND", self.cb_sound).tip("Hear each voicing as you walk to it").clicked() {
+                if crate::check_box(ui, "SOUND", self.cb_sound).tip("Play each voicing as you step").clicked() {
                     self.cb_sound = !self.cb_sound;
                     self.dirty = true;
                 }
             }
             if self.cb_view == 1 {
                 if crate::check_box(ui, "HIDE NAMES", self.cb_hide)
-                    .tip("Hide the chord name, the notes and the degrees: play it, say them, then SHOW NAMES")
+                    .tip("Quiz: hide names and degrees")
                     .clicked()
                 {
                     self.cb_hide = !self.cb_hide;
@@ -671,7 +671,7 @@ impl App {
         ui.add_space(12.0);
         para(ui, "The Chord Book is open in its own window.", pal().ink2);
         ui.add_space(6.0);
-        if retro_btn(ui, "Pop In", false).tip("Back into the main window").clicked() {
+        if retro_btn(ui, "Pop In", false).tip("Return to main window").clicked() {
             self.cb_pop = false;
             self.dirty = true;
         }
@@ -806,11 +806,11 @@ impl App {
                     card_text(ui, w, "These notes don't fit the strings in this order.", crate::chords::CL_SEMI);
                     ui.horizontal(|ui| {
                         ui.add_space(4.0);
-                        let tip = if starred { "Starred, at the top of CARDS. Click to unstar" } else { "Star it to keep it at the top of CARDS" };
+                        let tip = if starred { "Unstar" } else { "Star to pin at the top of Cards" };
                         if crate::views::star_btn(ui, starred).tip(tip).clicked() {
                             clicked.set(Some(CardAsk::Star));
                         }
-                        if retro_btn(ui, "WALK FROM HERE", false).tip("Open it in WALK: see the voices move from here").clicked() {
+                        if retro_btn(ui, "WALK FROM HERE", false).tip("Open in Walk").clicked() {
                             clicked.set(Some(CardAsk::Walk));
                         }
                     });
@@ -1083,7 +1083,7 @@ impl App {
                     crate::font::keep_caps(|| ptext(ui.painter(), Pos2::new(rr.min.x, rr.center().y), Align::Min, &r.name, 2.2, pal().accent));
                 }
                 let back = if hidden { "BACK TO THE WALK".to_string() } else { format!("BACK TO {}", c.symbol) };
-                let tip = format!("Back to your place in the walk ({} of {n})  (Esc)", i + 1);
+                let tip = format!("Back to the walk, {} of {n}  (Esc)", i + 1);
                 if retro_btn(ui, &back, false).tip(&tip).clicked() {
                     ask.back = true;
                 }
@@ -1092,7 +1092,7 @@ impl App {
                 // (when the walk has this voicing too: go there)
                 if let Some(h) = r.his.filter(|h| *h != i) {
                     ui.add_space(8.0);
-                    if retro_btn(ui, "IN THE WALK", false).tip("This voicing is in the walk: go there").clicked() {
+                    if retro_btn(ui, "IN THE WALK", false).tip("Go to this voicing in the walk").clicked() {
                         ask.go = Some(h);
                     }
                 }
@@ -1101,8 +1101,8 @@ impl App {
                     if let Some((si, fi, at)) = Self::cb_find(w.book, &r.strings, w.fam, &r.pcs) {
                         let name = &w.book.sets[si].name;
                         let (label, tip) = match at {
-                            Some(_) => (format!("GO TO {name}"), format!("The same voicing on the {name} strings")),
-                            None => (format!("OPEN {name}"), format!("This family on the {name} strings (this exact voicing isn't in it)")),
+                            Some(_) => (format!("GO TO {name}"), format!("Same voicing on the {name} strings")),
+                            None => (format!("OPEN {name}"), format!("This family on the {name} strings · Voicing not included")),
                         };
                         if retro_btn(ui, &label, false).tip(&tip).clicked() {
                             ask.jump = Some((si, fi, at));
@@ -1115,12 +1115,12 @@ impl App {
                 let mut full = String::new();
                 if let Some(j) = st.from {
                     short.push(format!("Faint: {}", f.cards[j].symbol));
-                    full += &format!("The faint dots are the chord it came from, {}.", f.cards[j].symbol);
+                    full += &format!("Faint dots: {}, the chord it came from.", f.cards[j].symbol);
                 }
                 if anchor_g.is_some() {
                     let a = Self::cb_anchor_name(f, anchor);
                     short.push(format!("Fainter: {a}"));
-                    full += &format!(" The fainter ones are {}, {}, the grip it grew out of.", a, f.cards[anchor].symbol);
+                    full += &format!(" Fainter dots: {}, {}, the source grip.", a, f.cards[anchor].symbol);
                 }
                 dim_line(ui, &short.join("   ·   "), full.trim());
             }
@@ -1144,8 +1144,8 @@ impl App {
         let shown_grip = trying.and_then(|r| r.grip).or(st.grip);
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui| {
             let steps = [
-                ("PREVIOUS", "LEFT", "Previous chord along the line  (Left)", i.checked_sub(1)),
-                ("NEXT", "RIGHT", "Next chord along the line  (Right)", (i + 1 < n).then_some(i + 1)),
+                ("PREVIOUS", "LEFT", "Previous chord  (Left)", i.checked_sub(1)),
+                ("NEXT", "RIGHT", "Next chord  (Right)", (i + 1 < n).then_some(i + 1)),
             ];
             for (label, key, tip, to) in steps {
                 ui.vertical(|ui| {
@@ -1168,7 +1168,7 @@ impl App {
             // (a rule being tried moves from the walk's voicing; a passing chord goes into it)
             let into = trying.is_some_and(|r| r.kind == "Passing chord");
             let from_g = if trying.is_some() { st.grip } else { st.from.and_then(|j| f.walk.steps[j].grip) };
-            let tip = if into { "The passing chord, then this chord" } else { "The voicing it came from, then this one" };
+            let tip = if into { "Play passing chord into this chord" } else { "Play previous voicing into this one" };
             if retro_btn(ui, "HEAR THE MOVE", false).tip(tip).clicked() {
                 let pair = if into { (shown_grip, st.grip) } else { (from_g, shown_grip) };
                 if let (Some(a), Some(b)) = pair {
@@ -1176,16 +1176,16 @@ impl App {
                 }
             }
             let auto = self.cb_auto.is_some();
-            if retro_btn(ui, if auto { "STOP" } else { "AUTO" }, auto).tip("Walk automatically, one voicing every few seconds").clicked() {
+            if retro_btn(ui, if auto { "STOP" } else { "AUTO" }, auto).tip("Auto-advance every few seconds").clicked() {
                 self.cb_auto = if auto { None } else { Some(Instant::now()) };
             }
             ui.add_space(14.0);
             ui.vertical(|ui| {
                 let on = w.stars[i];
                 let tip = if on {
-                    "Starred, at the top of CARDS. Click to unstar  (S)"
+                    "Unstar  (S)"
                 } else {
-                    "Star this chord to keep it at the top of CARDS  (S)"
+                    "Star to pin at the top of Cards  (S)"
                 };
                 let b = crate::views::star_btn(ui, on).tip(tip);
                 if b.clicked() {
@@ -1196,7 +1196,7 @@ impl App {
             });
             if hidden {
                 ui.add_space(14.0);
-                if retro_btn(ui, "SHOW NAMES", false).tip("Check what you said").clicked() {
+                if retro_btn(ui, "SHOW NAMES", false).tip("Reveal names").clicked() {
                     self.cb_shown = Some(i);
                 }
             }
@@ -1269,14 +1269,14 @@ impl App {
                     for k in group {
                         let r = &rules[k];
                         let label = if hidden { r.over.clone() } else { r.name.clone() };
-                        let mut tip = if hidden { "Try it on the neck".to_string() } else { format!("{}: try it on the neck", r.over) };
+                        let mut tip = if hidden { "Try on the neck".to_string() } else { format!("{}: try on the neck", r.over) };
                         if r.given {
-                            tip += ". The landing as written in the lesson";
+                            tip += " · Landing as written";
                         } else if r.stated {
-                            tip += ". The lesson resolves it here";
+                            tip += " · Lesson's resolution";
                         }
                         if r.from_book {
-                            tip += ". A grip from the book";
+                            tip += " · Grip from the book";
                         }
                         if retro_btn(ui, &label, self.cb_try == Some((i, k))).tip(&tip).clicked() {
                             ask.try_k = Some(k);
@@ -1293,10 +1293,10 @@ impl App {
                 "Down a 5th, or down a half step as a tritone sub, major or minor.".to_string()
             };
             let mut full = format!(
-                "{short} Each voice moves to the nearest note of the new chord, on the same strings: the 7th falls a half step to the 3rd, and the 3rd holds as the 7th."
+                "{short} Voice-led on the same strings: the 7th falls to the 3rd, the 3rd holds as the 7th."
             );
             if said > 0 {
-                full += " LESSON: where the lesson resolves it, with its landing chord when it gives one. ALSO: the other homes, worked out from this grip.";
+                full += " Lesson: the book's resolutions. Also: others from this grip.";
             }
             dim_line(ui, &short, &full);
             ui.add_space(6.0);
@@ -1308,7 +1308,7 @@ impl App {
                 for k in n_res..n_res + n_pass {
                     let r = &rules[k];
                     let label = if hidden { r.over.clone() } else { r.name.clone() };
-                    let tip = if hidden { "Try it on the neck".to_string() } else { format!("{}: try it on the neck", r.over) };
+                    let tip = if hidden { "Try on the neck".to_string() } else { format!("{}: try on the neck", r.over) };
                     if retro_btn(ui, &label, self.cb_try == Some((i, k))).tip(&tip).clicked() {
                         ask.try_k = Some(k);
                     }
@@ -1317,7 +1317,7 @@ impl App {
             dim_line(
                 ui,
                 "Chords that lead into this one.",
-                "Chords to play just before this one, on the same strings. A half step above or below: the same grip slides in. V7, V7 altered and the tritone sub: the dominant that resolves here, its 7th falling to this chord's 3rd. Dim below: a diminished 7th a half step under the root, most voices a half step away. Dim on the root: the root holds while the others move around it. HEAR THE MOVE plays the one you're trying, then this chord.",
+                "Half step: same grip slides in · V7, alt, tritone sub: 7th to 3rd · Dim below: dim7 under the root · Dim on root: root holds",
             );
             ui.add_space(6.0);
         }
@@ -1337,14 +1337,14 @@ impl App {
                 let k = k + n_res + n_pass;
                 ui.horizontal(|ui| {
                     let label = if hidden { "TRY".to_string() } else { r.name.clone() };
-                    if retro_btn_w(ui, &label, 170.0, self.cb_try == Some((i, k))).tip("Try it on the neck").clicked() {
+                    if retro_btn_w(ui, &label, 170.0, self.cb_try == Some((i, k))).tip("Try on the neck").clicked() {
                         ask.try_k = Some(k);
                     }
                     ui.add_space(6.0);
                     // the rule, then what it does on one quiet line (all of it under the pointer)
                     let how = if hidden { hide_notes(&r.how) } else { r.how.clone() };
                     let mut full = if hidden { how.clone() } else { format!("{} Over {root}: {}.", r.how, r.over) };
-                    full += if r.in_scale { " In the scale." } else { " Borrowed from outside the scale." };
+                    full += if r.in_scale { " In the scale." } else { " Outside the scale." };
                     let mut kind = r.kind.to_string();
                     if !r.in_scale {
                         kind += "  ·  borrowed";
@@ -1364,7 +1364,7 @@ impl App {
             if others.len() > n_core {
                 let label = if self.cb_more_rules { "FEWER RULES".to_string() } else { format!("MORE RULES ({})", others.len() - n_core) };
                 if retro_btn(ui, &label, false)
-                    .tip("The rule of the fifth and fourth, the tritone, string transference, planing, the same notes in other grips, and other one-note changes")
+                    .tip("Transformations: 5th/4th, tritone, string transference, planing")
                     .clicked()
                 {
                     self.cb_more_rules = !self.cb_more_rules;
@@ -1383,7 +1383,7 @@ impl App {
             section_header(ui, "FROM HERE");
             for (k, how) in &near {
                 ui.horizontal(|ui| {
-                    if retro_btn_w(ui, &f.cards[*k].symbol, 200.0, false).tip("Walk there").clicked() {
+                    if retro_btn_w(ui, &f.cards[*k].symbol, 200.0, false).tip("Go to this voicing").clicked() {
                         ask.go = Some(*k);
                     }
                     ui.add_space(6.0);
@@ -1480,20 +1480,20 @@ impl App {
                 redo = true;
             }
             ui.add_space(8.0);
-            if crate::check_box(ui, "MINOR", self.cb_cad_minor).tip("A 2-5-1 into a minor chord (ii-V-i)").clicked() {
+            if crate::check_box(ui, "MINOR", self.cb_cad_minor).tip("Minor 2-5-1 (ii-V-i)").clicked() {
                 self.cb_cad_minor = !self.cb_cad_minor;
                 redo = true;
             }
             ui.add_space(8.0);
             inline_label(ui, "THE 2 STARTS ON");
             for k in 0..4 {
-                if retro_btn_w(ui, &(k + 1).to_string(), 34.0, self.cb_cad_start == k).tip("Another grip for the 2 (one of the minor family's first four)").clicked() {
+                if retro_btn_w(ui, &(k + 1).to_string(), 34.0, self.cb_cad_start == k).tip("Starting grip for the 2").clicked() {
                     self.cb_cad_start = k;
                     redo = true;
                 }
             }
             ui.add_space(8.0);
-            if retro_btn(ui, "PLAY IT", false).tip("The three chords, one after another").clicked() {
+            if retro_btn(ui, "PLAY IT", false).tip("Play the 2-5-1").clicked() {
                 let all: Vec<Vec<i32>> = cad.steps.iter().filter_map(|s| s.grip.map(|g| grip_pitches(&g))).collect();
                 acts.push(Action::PlaySequenceAt(all, 1.2, "cb_cadence".into()));
             }
@@ -1509,7 +1509,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for (j, s) in cad.steps.iter().enumerate() {
                 let num = ["2", "5", "1"][j];
-                if retro_btn_w(ui, &format!("{num}  {}", s.name), 170.0, j == k).tip(&format!("From the {} family", s.family)).clicked() {
+                if retro_btn_w(ui, &format!("{num}  {}", s.name), 170.0, j == k).tip(&format!("{} family", s.family)).clicked() {
                     go = Some(j);
                 }
             }
@@ -1532,7 +1532,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 inline_label(ui, "OTHER CHOICES");
                 for (c, name) in st.choices.iter().enumerate() {
-                    if retro_btn(ui, name, self.cb_cad_pick[k - 1] == c).tip("Swap in this grip (smoothest first)").clicked() {
+                    if retro_btn(ui, name, self.cb_cad_pick[k - 1] == c).tip("Use this grip · Smoothest first").clicked() {
                         self.cb_cad_pick[k - 1] = c;
                         if k == 1 {
                             // (a new 5 means a new nearest 1)
@@ -1585,7 +1585,7 @@ impl App {
                     let col = if si == self.cb_set { pal().accent } else { pal().ink };
                     ptext(ui.painter(), Pos2::new(r.min.x + 4.0, r.center().y), Align::Min, &s.name, 1.8, col);
                     if !s.label.is_empty() {
-                        resp.on_hover_text(format!("The {} strings", s.label));
+                        resp.on_hover_text(format!("{} strings", s.label));
                     }
                     for c in 0..MAP_COLS.len() {
                         let fams: Vec<usize> = (0..s.families.len()).filter(|&fi| cb_column(&s.families[fi].name) == Some(c)).collect();
@@ -1668,7 +1668,7 @@ impl App {
                 }
             }
             ui.add_space(12.0);
-            if retro_btn(ui, "RELOAD THE BOOK", false).tip("Reload chord_book.txt after editing it").clicked() {
+            if retro_btn(ui, "RELOAD THE BOOK", false).tip("Reload chord_book.txt").clicked() {
                 self.cb_tried = false;
             }
             ui.add_space(20.0);
@@ -1756,7 +1756,7 @@ impl App {
                             go = Some(j);
                         }
                     }
-                    if retro_btn(ui, "PLAY THE CHAIN", false).tip("All five, one after another").clicked() {
+                    if retro_btn(ui, "PLAY THE CHAIN", false).tip("Play the chain").clicked() {
                         let all: Vec<Vec<i32>> = w.steps.iter().filter_map(|s| s.grip.map(|g| grip_pitches(&g))).collect();
                         acts.push(Action::PlaySequenceAt(all, 1.1, "cb_chain".into()));
                     }
@@ -1923,7 +1923,7 @@ impl App {
                     sym
                 };
                 let tip = match f.walk.steps[k].how.as_str() {
-                    "" => "Where the walk starts".to_string(),
+                    "" => "Start of the walk".to_string(),
                     h if blank => hide_notes(h),
                     h => h.to_string(),
                 };
@@ -1935,7 +1935,7 @@ impl App {
             // the chord it came from, when that isn't the step before it on this path (a jump back in his order)
             if let Some(j) = parent.filter(|j| !line.contains(j)) {
                 ui.add_space(10.0);
-                if retro_btn(ui, &format!("CAME FROM {}", f.cards[j].symbol), false).tip("The chord this one moved from").clicked() {
+                if retro_btn(ui, &format!("CAME FROM {}", f.cards[j].symbol), false).tip("Go to the chord it moved from").clicked() {
                     go = Some(j);
                 }
             }
@@ -1945,7 +1945,7 @@ impl App {
                 let label = if hidden { format!("ALSO NEAR {}", from.to_uppercase()) } else { format!("ALSO NEAR {}", f.cards[j].symbol) };
                 let how = if hidden { hide_notes(&f.walk.steps[i].also_how) } else { f.walk.steps[i].also_how.clone() };
                 let tip = format!(
-                    "Fewer notes change from this chord, on the path from {}: {how} The lesson puts this one with its own station, so the path above is the one to learn.",
+                    "Closer voice leading, on the path from {}: {how}",
                     from.to_lowercase()
                 );
                 ui.add_space(10.0);
@@ -2008,9 +2008,9 @@ impl App {
                     let g = f.groups.iter().find(|(_, r)| r.contains(&s)).map(|(t, _)| t.as_str()).unwrap_or("");
                     format!("Go to: {g}")
                 } else if f.walk.paths && f.walk.order == cb::Order::Lesson {
-                    format!("Go to where the walk turns to station {}. NEXT then walks the chords built from it", m + 1)
+                    format!("Go to station {} in lesson order · Next walks its chords", m + 1)
                 } else if f.walk.paths {
-                    format!("Go to station {}. NEXT then walks the chords built from it", m + 1)
+                    format!("Go to station {} · Next walks its chords", m + 1)
                 } else {
                     format!("Go to station {}", m + 1)
                 };
@@ -2025,7 +2025,7 @@ impl App {
             keycap(ui.painter(), kr.center() - Vec2::new(12.0, 0.0), "DOWN");
             keycap(ui.painter(), kr.center() + Vec2::new(12.0, 0.0), "UP");
             let what = if f.walk.inversions { "station" } else { "part" };
-            let _ = resp.tip(format!("Up: next {what}. Down: previous {what}."));
+            let _ = resp.tip(format!("Next {what}  (Up) · Previous {what}  (Down)"));
         });
         go
     }
@@ -2375,7 +2375,7 @@ impl App {
             }
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(
-            "Each voice's line through the order (bass blue, tenor green, alto orange, top red; big dots moved). The arrow comes from the chord this one moved from; S1-S4 are the stations. Click a column to go there.",
+            "Bass blue, tenor green, alto orange, top red · Click a column to go there",
         );
         if resp.clicked() {
             if let Some(pos) = resp.interact_pointer_pos() {
@@ -2461,7 +2461,7 @@ fn cb_window_bar(ui: &mut egui::Ui) -> bool {
     let label = "POP IN";
     let tw = crate::font::keep_caps(|| crate::font::text_w(label, 1.2)) + 18.0;
     let r = Rect::from_center_size(Pos2::new(bar.max.x - 2.0 * bw - 8.0 - tw / 2.0, bar.center().y), Vec2::new(tw, 22.0));
-    let b = ui.interact(r, ui.id().with("cb_bar_popin"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Back into the main window");
+    let b = ui.interact(r, ui.id().with("cb_bar_popin"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Return to main window");
     if studio {
         crate::studio::key(&p, r, false, b.is_pointer_button_down_on(), b.hovered());
         crate::font::keep_caps(|| ptext(&p, r.center(), Align::Center, label, 1.2, crate::studio::key_fg(false)));

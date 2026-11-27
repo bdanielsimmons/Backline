@@ -34,27 +34,27 @@ pub(crate) const DRILLS: [Drill; 14] = [
     Drill {
         name: "CHORD QUALITIES",
         key: "quality",
-        about: "A chord plays. Name its quality: listen for the 3rd (major or minor) and the 7th (major, minor or diminished), then the colors on top.",
+        about: "A chord plays. Name its quality: hear the 3rd and the 7th, then the colors on top.",
     },
     Drill {
         name: "INTERVALS",
         key: "interval",
-        about: "Two notes play. Name the interval. Up, down, or both at once.",
+        about: "Two notes play, up, down or together. Name the interval.",
     },
     Drill {
         name: "PROGRESSIONS",
         key: "prog",
-        about: "A progression plays in a random key. Name it in numerals. Follow the bass, and hear where it lands.",
+        about: "A progression plays in a random key. Name it in numerals.",
     },
     Drill {
         name: "SCALE DEGREES",
         key: "degree",
-        about: "A cadence sets the key, then one note plays. Which degree of the key is it? Sing down to the root if you need to.",
+        about: "A cadence sets the key, then one note plays. Name its degree.",
     },
     Drill {
         name: "GUIDE TONES",
         key: "guide",
-        about: "A ii-V-I plays with a line on top, then the line alone. Which chord tones does the line follow?",
+        about: "A ii-V-I plays with a line on top, then the line alone. Name the chord tones it follows.",
     },
     Drill {
         name: "SCALES & MODES",
@@ -64,28 +64,28 @@ pub(crate) const DRILLS: [Drill; 14] = [
     Drill {
         name: "BASS NOTE",
         key: "bass",
-        about: "A 7th chord plays. Which of its notes is in the bass: the root, the 3rd, the 5th or the 7th?",
+        about: "A 7th chord plays. Name the chord tone in the bass.",
     },
     Drill {
         name: "PLAY IT BACK",
         key: "back",
-        about: "The key's chord plays, then a short lick. Play it back on your guitar, then click its notes on the neck, in order.",
+        about: "The key's chord plays, then a short lick. Play it back, then click its notes on the neck in order.",
     },
     // atonal
     Drill {
         name: "FREE INTERVALS",
         key: "free",
-        about: "Two notes from anywhere, with no key around them. Name the interval, up to a 10th. SING FIRST: see the interval, sing it from the first note, then hear it.",
+        about: "Two notes with no key around them: name the interval, up to a 10th. SING FIRST: sing it from the first note, then hear it.",
     },
     Drill {
         name: "CELLS",
         key: "cell",
-        about: "Four notes up or down from any note: name the tetrachord, the cell scales are joined from. Or three notes: name the set.",
+        about: "Four notes up or down from any note: name the tetrachord. Three notes: name the set.",
     },
     Drill {
         name: "SCALE IN INTERVALS",
         key: "sung",
-        about: "Sing the scale in 3rds, then 4ths, up to 10ths. Use the syllables shown, then go on to the next scale, and mark yourself after each run.",
+        about: "Sing the scale in 3rds, then 4ths, up to 10ths, with the syllables shown. Mark yourself after each run.",
     },
     Drill {
         name: "VERTICALS",
@@ -95,13 +95,13 @@ pub(crate) const DRILLS: [Drill; 14] = [
     Drill {
         name: "SIGHT-SING",
         key: "sight",
-        about: "A new line each day, its first note Do. Hear the first note, sing the line, then hear it and mark yourself. NEXT NOTE: a line stops; sing the note that comes next.",
+        about: "A new line each day, first note Do: sing it, then hear it and mark yourself. NEXT NOTE: sing the note that comes next.",
     },
     // the neck
     Drill {
         name: "NOTES ON THE NECK",
         key: "neck",
-        about: "A note lights on the neck: name it, as quick as you can, and say it out loud. The landmarks first (frets 0, 3, 5, 7, 10 and 12, most of them known from tuning); once a string's landmarks are quick, its other frets join. The slow ones come up more.",
+        about: "A note lights on the neck: name it out loud, fast. Landmarks (frets 0, 3, 5, 7, 10, 12) first, then the rest; slow ones come up more.",
     },
 ];
 
@@ -2325,7 +2325,7 @@ impl App {
             if drill >= ATONAL {
                 self.ear_atonal_options(ui, acts, drill);
             }
-            if check_box(ui, "CHIME", !self.store.ear_quiet).tip("A soft sound after each answer").clicked() {
+            if check_box(ui, "CHIME", !self.store.ear_quiet).tip("Chime after each answer").clicked() {
                 self.store.ear_quiet = !self.store.ear_quiet;
                 self.store_dirty = true;
             }
@@ -2367,7 +2367,7 @@ impl App {
                 }
                 2 => {
                     let text = format!("CHOOSE CHORDS ({})", o.mine.len());
-                    if retro_btn(ui, &text, self.ear.choose).tip("Select any chords, from any level").clicked() {
+                    if retro_btn(ui, &text, self.ear.choose).tip("Choose chords from any level").clicked() {
                         self.ear.choose = !self.ear.choose;
                     }
                 }
@@ -2378,7 +2378,7 @@ impl App {
                         [] => LEVELS[1].to_string(),
                         _ => format!("{} LEVELS", lv.len()),
                     };
-                    if retro_btn(ui, &text, self.ear.choose).tip("Pick one or more levels").clicked() {
+                    if retro_btn(ui, &text, self.ear.choose).tip("Choose levels").clicked() {
                         self.ear.choose = !self.ear.choose;
                     }
                 }
@@ -2444,10 +2444,10 @@ impl App {
             if let Some(i) = crate::dropdown(ui, "ear_root", "", &ROOTS, o.same_root as usize, 0.0) {
                 o.same_root = i == 1;
             }
-            if check_box(ui, "TOP NOTE", o.top).on_hover_text("After the chord: which of its notes is on top?").clicked() {
+            if check_box(ui, "TOP NOTE", o.top).on_hover_text("Also name the top note").clicked() {
                 o.top = !o.top;
             }
-            if check_box(ui, "IN CONTEXT", o.context).on_hover_text("Hear it after a ii-V (a dominant as the V)").clicked() {
+            if check_box(ui, "IN CONTEXT", o.context).on_hover_text("Play after a ii-V (dominant as the V)").clicked() {
                 o.context = !o.context;
             }
         });
@@ -2943,7 +2943,7 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     if now_ok || last_ok {
                         let next: Vec<&str> = names[level..(level + 2).min(names.len())].to_vec();
-                        if retro_btn(ui, "MORE ANSWERS", false).tip(format!("Adds {}", next.join(" and "))).clicked() {
+                        if retro_btn(ui, "MORE ANSWERS", false).tip(format!("Add {}", next.join(" and "))).clicked() {
                             let all = names.len();
                             let st = self.ear_stats();
                             st.level = (level + 2).min(all);
@@ -2956,7 +2956,7 @@ impl App {
             }
             if level > START.min(names.len()) {
                 ui.horizontal_wrapped(|ui| {
-                    if retro_btn(ui, "FEWER ANSWERS", false).tip("Back to fewer answers").clicked() {
+                    if retro_btn(ui, "FEWER ANSWERS", false).tip("Fewer answers").clicked() {
                         let st = self.ear_stats();
                         st.level = level.saturating_sub(2).max(START);
                         self.store_dirty = true;
@@ -3054,7 +3054,7 @@ impl App {
         match drill {
             8 => {
                 if check_box(ui, "SING FIRST", a.sing_first)
-                    .tip("See the interval, hear the first note, sing the other, then hear it")
+                    .tip("Sing the interval from the first note, then hear it")
                     .clicked()
                 {
                     a.sing_first = !a.sing_first;
@@ -3092,7 +3092,7 @@ impl App {
             }
         }
         if matches!(drill, 8 | 9 | 11)
-            && check_box(ui, "RESET", a.reset).tip("A soft wash of sound between questions, to clear your ear").clicked()
+            && check_box(ui, "RESET", a.reset).tip("Soft wash between questions to clear the ear").clicked()
         {
             a.reset = !a.reset;
         }
@@ -3129,7 +3129,7 @@ impl App {
                 let all = level_chords(l);
                 if ready {
                     let next: Vec<&str> = all[have..(have + 2).min(all.len())].iter().map(|c| CHORDS[*c].label).collect();
-                    if retro_btn(ui, "MORE CHORDS", false).tip(format!("Adds {}", next.join(" and "))).clicked() {
+                    if retro_btn(ui, "MORE CHORDS", false).tip(format!("Add {}", next.join(" and "))).clicked() {
                         set = Some((l, (have + 2).min(all.len())));
                     }
                 } else {
@@ -3137,7 +3137,7 @@ impl App {
                 }
             }
             if let Some(l) = shrink {
-                if retro_btn(ui, "FEWER CHORDS", false).tip(format!("Back to fewer {}", LEVELS[l].to_lowercase())).clicked() {
+                if retro_btn(ui, "FEWER CHORDS", false).tip(format!("Fewer {}", LEVELS[l].to_lowercase())).clicked() {
                     set = Some((l, level_in_play(&o, l).saturating_sub(2).max(START)));
                 }
             }

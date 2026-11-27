@@ -347,9 +347,9 @@ pub(crate) fn notes_box(
     let resp = if let Some(u) = &url {
         resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(u)
     } else if let Some(t) = &tag {
-        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Every day with {}.", t))
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Days with {}", t))
     } else if let Some(i) = tune {
-        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Open {}.", tunes[i]))
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip(format!("Open {}", tunes[i]))
     } else {
         resp.on_hover_cursor(egui::CursorIcon::Text)
     };

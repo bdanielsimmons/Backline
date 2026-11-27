@@ -257,7 +257,7 @@ impl App {
                     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(size.y - 90.0).show(ui, |ui| {
                         section_header(ui, "SIMPLE");
                         if check_box(ui, "HIDE THE PRACTICE TOOLS", !practice_tools())
-                            .tip("Hides the practice tools: Practice mode, loops, tunes, the Diary, Ear, Reading, Chords, Lines, the timer and the metronome. Nothing is deleted. Turn it off to have them back.")
+                            .tip("Plain music player · Nothing is deleted")
                             .clicked()
                         {
                             acts.push(Action::ToggleSimple);
@@ -269,7 +269,7 @@ impl App {
                             self.cache_at = std::time::Instant::now();
                         }
                         let (n, bytes) = self.cache_stats;
-                        para(ui, "Songs stream without being saved. Turn SAVING on to save each song you play on this computer. Saved songs start instantly and play offline.", pal().ink2);
+                        para(ui, "With SAVING on, played songs are kept on this computer. They start instantly and play offline.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             if retro_btn(ui, if self.keep_cache { "SAVING: ON" } else { "SAVING: OFF" }, self.keep_cache).clicked() {
                                 acts.push(Action::ToggleKeep);
@@ -280,7 +280,7 @@ impl App {
                             if retro_btn(ui, "CLEAR SAVED SONGS", false).clicked() {
                                 acts.push(Action::ClearCache);
                             }
-                            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all separated stems to free disk space.").clicked() {
+                            if retro_btn(ui, "CLEAR STEMS", false).tip("Delete all stems").clicked() {
                                 acts.push(Action::StemClear);
                             }
                         });
@@ -298,7 +298,7 @@ impl App {
                         para(ui, &format!("Settings and library: {}", crate::api::config_dir().display()), pal().dim);
 
                         section_header(ui, "DIARY");
-                        para(ui, "Practice after midnight counts toward the day before until this hour, so a late session stays on the day you started.", pal().ink2);
+                        para(ui, "Practice after midnight counts toward the previous day until this hour.", pal().ink2);
                         const ENDS: [&str; 7] = ["MIDNIGHT", "1 AM", "2 AM", "3 AM", "4 AM", "5 AM", "6 AM"];
                         let now = crate::store::DAY_ENDS.load(std::sync::atomic::Ordering::Relaxed) as usize;
                         if let Some(i) = crate::choice_line(ui, "day_ends", "YOUR DAY ENDS AT", &ENDS, now.min(6), 200.0) {
@@ -308,10 +308,10 @@ impl App {
 
                         section_header(ui, "LINKED DEVICES (SYNC)");
                         let sv = crate::sync::view();
-                        para(ui, "Keep your plan, progress, loops, lists and practice the same on your computers on this network. Only what you made goes across, never songs: a song downloads on a computer only when you play it there.", pal().ink2);
+                        para(ui, "Sync plan, progress, loops and lists between computers on this network. Songs are never copied.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             if retro_btn(ui, if sv.on { "SYNC: ON" } else { "SYNC: OFF" }, sv.on)
-                                .tip("Windows may ask to let Backline use your network: choose Allow.")
+                                .tip("If Windows asks for network access, choose Allow")
                                 .clicked()
                             {
                                 crate::sync::set_on(!sv.on);
@@ -320,7 +320,7 @@ impl App {
                                 if retro_btn(ui, "SYNC NOW", false).clicked() {
                                     crate::sync::sync_now();
                                 }
-                                if retro_btn(ui, "UNLINK", false).tip("Stop syncing with that computer. Link again with a code.").clicked() {
+                                if retro_btn(ui, "UNLINK", false).tip("Stop syncing with the other computer").clicked() {
                                     crate::sync::unlink();
                                 }
                             }
@@ -329,7 +329,7 @@ impl App {
                             if sv.peer.is_some() {
                                 para(ui, &sv.linked_line(), pal().ink);
                                 // song files stay on their computer; one of yours that's on the other: what to do
-                                para(ui, "Song files stay on their own computer: copy the ones you want in FILES. When a song in a playlist is on the other computer:", pal().ink2);
+                                para(ui, "Song files aren't synced; copy them in FILES. When a playlist song is on the other computer:", pal().ink2);
                                 ui.horizontal_wrapped(|ui| {
                                     for (k, name) in ["ASK", "PLAY FROM THERE", "SAVE A COPY HERE"].iter().enumerate() {
                                         if retro_btn(ui, name, self.peer_play == k as u8).clicked() {
@@ -340,7 +340,7 @@ impl App {
                                 });
                             } else {
                                 para(ui, &format!("This computer's code: {}", sv.code_shown()), pal().ink);
-                                para(ui, "Type this code on your other computer. The first time, it takes this computer's plan, progress and lists (its own are backed up). Or type its code here to take its plan, progress and lists instead:", pal().ink2);
+                                para(ui, "Enter this code on the other computer to copy this one's plan, progress and lists there (its own are backed up). Or enter its code here:", pal().ink2);
                                 ui.horizontal(|ui| {
                                     let (rect, _) = ui.allocate_exact_size(egui::vec2(120.0, crate::bh()), egui::Sense::hover());
                                     let o = crate::views::field(ui, &mut self.ed, crate::tools::F_SYNC_CODE, &mut self.sync_in, rect, "Code", false);
@@ -359,7 +359,7 @@ impl App {
                         }
 
                         section_header(ui, "SHARE WITH A FRIEND");
-                        para(ui, "Put your plan, books, lines, chord melodies and loops in one file. Your friend drops it on Backline and each part switches on. Your progress (the plan's log, keepers, diary) is never included.", pal().ink2);
+                        para(ui, "Bundle plan, books, lines, chord melodies and loops into one file to share. Progress and diary are never included.", pal().ink2);
                         let have = crate::pack::available();
                         if have.is_empty() {
                             para(ui, "Nothing to share yet besides loops and playlists.", pal().dim);
@@ -380,14 +380,14 @@ impl App {
                             }
                         });
                         ui.horizontal_wrapped(|ui| {
-                            if retro_btn(ui, "MAKE A PACK...", false).tip("Saves the checked parts to one file to send.").clicked() {
+                            if retro_btn(ui, "MAKE A PACK...", false).tip("Save checked parts to a file").clicked() {
                                 acts.push(Action::PackMake);
                             }
-                            if retro_btn(ui, "OPEN A PACK...", false).tip("Or drop a pack on Backline's window.").clicked() {
+                            if retro_btn(ui, "OPEN A PACK...", false).tip("Open a pack file · Or drop it on the window").clicked() {
                                 acts.push(Action::PackOpen(false));
                             }
                             if retro_btn(ui, "OPEN A FOLDER...", false)
-                                .tip("An unzipped pack (a Mac may unzip it automatically), or a folder with the pack's files.")
+                                .tip("Open an unzipped pack folder")
                                 .clicked()
                             {
                                 acts.push(Action::PackOpen(true));
@@ -407,7 +407,7 @@ impl App {
                         para(ui, &status, pal().ink2);
                         if self.upd_state == 2
                             && retro_btn(ui, "Restart and Update", false)
-                                .tip("Saves everything and restarts Backline on the new version.")
+                                .tip("Restart on the new version")
                                 .clicked()
                         {
                             acts.push(Action::ApplyUpdate);
@@ -421,7 +421,7 @@ impl App {
                             ui.ctx().request_repaint_after(std::time::Duration::from_secs(30));
                         }
                         if check_box(ui, "RESTART TO UPDATE WHEN IDLE", self.auto_restart)
-                            .tip("Off by default. When on, Backline restarts to install a downloaded update after 5 idle minutes with nothing playing. When off, it only restarts when you click.")
+                            .tip("After 5 idle minutes with nothing playing")
                             .clicked()
                         {
                             self.auto_restart = !self.auto_restart;
@@ -429,7 +429,7 @@ impl App {
                         }
                         para(
                             ui,
-                            "Backline checks for updates when it opens and every 6 hours. The check is tiny and costs nothing when there is nothing new.",
+                            "Checks for updates at startup and every 6 hours.",
                             pal().ink2,
                         );
                         if matches!(self.upd_state, 0 | 3) && retro_btn(ui, "CHECK NOW", false).clicked() {
@@ -439,7 +439,7 @@ impl App {
                         section_header(ui, "SOUND OUTPUT");
                         para(
                             ui,
-                            "Choose where the sound plays. Bluetooth headphones and speakers show up here once you pair them in your computer's settings. If the chosen one is off or unplugged, the default plays instead. If Bluetooth headphones or a speaker drop out, the music pauses.",
+                            "Choose where sound plays. Bluetooth devices show here once paired in system settings.",
                             pal().ink2,
                         );
                         ui.horizontal_wrapped(|ui| {
@@ -456,7 +456,7 @@ impl App {
 
                         section_header(ui, "QUEUE");
                         if check_box(ui, "REMOVE QUEUED SONGS AFTER THEY PLAY", self.q_drop)
-                            .tip("Songs you add with PLAY NEXT or ADD TO QUEUE are removed once they play or you skip them. The playlist's own songs always stay. When off, every song stays.")
+                            .tip("Play Next and Add to Queue songs only")
                             .clicked()
                         {
                             self.q_drop = !self.q_drop;
@@ -464,7 +464,7 @@ impl App {
                         }
 
                         section_header(ui, "STARTUP SOUND");
-                        para(ui, "Click a sound to preview it. The selected one plays when Backline starts. You can also use your own sound file.", pal().ink2);
+                        para(ui, "The selected sound plays at startup. Pick one to preview it.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for (m, name) in [(0u8, "OFF"), (1, "BACKLINE'S"), (2, "MY FILE")] {
                                 let ok = m != 2 || self.intro_file.is_some();
@@ -502,14 +502,14 @@ impl App {
                         section_header(ui, "ACCESSIBILITY");
                         let safe = crate::skin::LOOP_SAFE.load(std::sync::atomic::Ordering::Relaxed);
                         if check_box(ui, "COLOR-BLIND SAFE LOOPS", safe)
-                            .tip("Draws loops and their A and B markers in orange. Nearly everyone can tell orange from red and green.")
+                            .tip("Orange loops and A/B markers")
                             .clicked()
                         {
                             crate::skin::LOOP_SAFE.store(!safe, std::sync::atomic::Ordering::Relaxed);
                             self.dirty = true;
                         }
                         if check_box(ui, "SHOW ICON LABELS", self.icon_names)
-                            .tip("Shows a label under each icon at the top of the sidebar (Online, Focus, Mini...).")
+                            .tip("Labels under the sidebar's top icons")
                             .clicked()
                         {
                             self.icon_names = !self.icon_names;
@@ -517,7 +517,7 @@ impl App {
                         }
                         let calm = crate::skin::calm();
                         if check_box(ui, "REDUCE MOTION", calm)
-                            .tip("Stops the spinning record, the tilting cover and the scrolling song titles.")
+                            .tip("No spinning record, tilting cover or scrolling titles")
                             .clicked()
                         {
                             crate::skin::CALM.store(!calm, std::sync::atomic::Ordering::Relaxed);
@@ -525,12 +525,12 @@ impl App {
                         }
                         para(
                             ui,
-                            "The HIGH CONTRAST skins in the BACKLINE tab help too, and so does ZOOM below.",
+                            "HIGH CONTRAST skins and ZOOM help too.",
                             pal().ink2,
                         );
 
                         section_header(ui, "CHORDS");
-                        para(ui, "Set how strong the faint rings are. They show the rest of a chord on the guitar neck.", pal().ink2);
+                        para(ui, "Strength of the faint rings that show the rest of a chord on the neck.", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             for (lab, a) in [("SUBTLE", 0.3f32), ("MEDIUM", 0.55), ("STRONG", 0.8), ("FULL", 1.0)] {
                                 if retro_btn(ui, lab, (self.ghost_alpha - a).abs() < 0.05).clicked() {
@@ -541,7 +541,7 @@ impl App {
                         });
 
                         section_header(ui, "ZOOM");
-                        para(ui, "Make buttons and text bigger or smaller. Shortcut: CTRL and + or - (CMD on a Mac).", pal().ink2);
+                        para(ui, "Button and text size. Shortcut: CTRL + or - (CMD on a Mac).", pal().ink2);
                         ui.horizontal_wrapped(|ui| {
                             let now = (ctx.zoom_factor() * 100.0).round() as i32;
                             for pct in [90, 100, 115, 130, 150, 175] {
@@ -553,8 +553,8 @@ impl App {
                         });
 
                         section_header(ui, "KEYBOARD SHORTCUTS");
-                        para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette. Type any action and press ENTER.", pal().ink2);
-                        para(ui, "Click a key, then press the new one. ESC cancels. A key can do only one thing, so reusing it clears the old shortcut.", pal().ink2);
+                        para(ui, "CTRL+K (CMD+K on a Mac) opens the command palette.", pal().ink2);
+                        para(ui, "Click a key, then press the new one. Reusing a key clears its old shortcut.", pal().ink2);
                         if !self.bind_note.is_empty() {
                             para(ui, &self.bind_note.clone(), pal().ink);
                         }

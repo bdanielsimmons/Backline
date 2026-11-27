@@ -104,7 +104,7 @@ pub(crate) fn note_under(ui: &mut egui::Ui, note: &str, indent: f32) -> egui::Re
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), lines.len() as f32 * note_lh() + 4.0), Sense::click());
     let col = if resp.hovered() { pal().ink } else { pal().ink2 };
     draw_note_lines(ui.painter(), r.min.x + indent, r.min.y, &lines, col);
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click to edit the note.")
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Edit note")
 }
 
 /// "NOTE  [ box ]" for a loop's or bookmark's note: a few lines tall, and taller as you write (Enter starts a new
@@ -149,7 +149,7 @@ pub(crate) fn mark_tip(m: &store::Bookmark, k: usize, at: &str) -> String {
             s.push('\n');
         }
     }
-    format!("{}Bookmark {} at {}. Click to jump, alt + click to remove, right-click to rename, add a note or recolor.", s, k + 1, at)
+    format!("{}Bookmark {} at {}. Alt+click to remove · Right-click for more", s, k + 1, at)
 }
 
 /// The bookmark colours: bright enough to read a dark number on, apart enough to tell apart.
@@ -236,7 +236,7 @@ impl App {
             let title = if g.is_empty() { "NO GROUP".to_string() } else { g.to_uppercase() };
             let sub = format!("{} {}", n, if *n == 1 { "LOOP" } else { "LOOPS" });
             if let Some(r) = list_row(ui, k, None, || title.clone(), || sub.clone(), RowState::Normal, false, false) {
-                if r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Open this group.").clicked() {
+                if r.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Open group").clicked() {
                     self.grp_open = Some(g.clone());
                     self.grp_edit = None;
                     self.grp_ask = None;
@@ -312,7 +312,7 @@ impl App {
             .collect();
         members.sort_by(|a, b| a.2.name.cmp(&b.2.name).then(a.0.cmp(&b.0)).then(a.1.cmp(&b.1)));
         if members.is_empty() {
-            para(ui, "No loops in this group yet. Right-click a loop in LOOPS or the PRACTICE panel to move it here.", pal().ink2);
+            para(ui, "No loops in this group yet. Right-click a loop in LOOPS or PRACTICE to move it here.", pal().ink2);
             return;
         }
         for (k, (id, i, s)) in members.iter().enumerate() {
@@ -322,7 +322,7 @@ impl App {
             let sub = song.clone();
             if let Some(r) = list_row(ui, k, None, || title.clone(), || sub.clone(), RowState::Normal, false, false) {
                 let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).tip(if s.note.is_empty() {
-                    "Play this loop.".to_string()
+                    "Play loop".to_string()
                 } else {
                     s.note.clone()
                 });
@@ -489,13 +489,13 @@ impl App {
             let _ = field(ui, &mut self.ed, crate::tools::F_LOOPS_FILTER, &mut self.loops_filter, rect, "Filter", false);
         });
         ui.horizontal(|ui| {
-            if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practiced or looped in the last 7 days.").clicked() {
+            if retro_btn(ui, "THIS WEEK", !self.loops_all).tip("Songs practiced in the last 7 days").clicked() {
                 self.loops_all = false;
             }
-            if retro_btn(ui, "ALL", self.loops_all).tip("Every song with a loop or a bookmark.").clicked() {
+            if retro_btn(ui, "ALL", self.loops_all).tip("All songs with loops or bookmarks").clicked() {
                 self.loops_all = true;
             }
-            let more = retro_btn_w(ui, "...", 34.0, false).tip("More options: show, sort, export and import.");
+            let more = retro_btn_w(ui, "...", 34.0, false).tip("More options");
             let pop = ui.id().with("loops_more");
             if more.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(pop));
@@ -649,7 +649,7 @@ impl App {
             } else if self.loops_all {
                 "No loops or bookmarks yet. In PRACTICE, set A and B and press SAVE LOOP, or press + MARK."
             } else {
-                "Nothing this week yet. Songs you practice or loop appear here. ALL shows every song."
+                "Nothing practiced this week. ALL shows every song."
             };
             para(ui, msg, pal().ink2);
             return;
@@ -723,10 +723,10 @@ impl App {
             }
         }
         if c.v.is_none() {
-            hresp.clone().tip("Unknown song. This bookmark is from an older version of Backline.");
+            hresp.clone().tip("Unknown song (saved by an older version)");
         }
         if let Some(v) = &c.v {
-            let pr = ui.interact(play_r, ui.id().with(("spot_play", c.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play the song.");
+            let pr = ui.interact(play_r, ui.id().with(("spot_play", c.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play song");
             if pr.clicked() {
                 acts.push(Action::PlaySaved(v.clone(), None));
             }
@@ -867,7 +867,7 @@ impl App {
                             let th = ui
                                 .interact(tr, ui.id().with(("loop_move", c.id, *i, k)), Sense::click())
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .tip("Open it in the Progression Lab");
+                                .tip("Open in Progression Lab");
                             let p = ui.painter();
                             p.rect_filled(tr, crate::corner(), if th.hovered() { pal().sel } else { pal().panel_dk });
                             p.rect_stroke(tr, crate::corner(), Stroke::new(1.0_f32, pal().accent));
@@ -883,7 +883,7 @@ impl App {
                     let sh = ui
                         .interact(star_r, ui.id().with(("loop_star", c.id, *i)), Sense::click())
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip(if s.fav { "Starred. Click to unstar." } else { "Star it to keep it at the top." });
+                        .tip(if s.fav { "Unstar" } else { "Star to keep at top" });
                     let star_col = if s.fav {
                         STAR_COL
                     } else if sh.hovered() || resp.hovered() {
@@ -898,7 +898,7 @@ impl App {
                             self.store_dirty = true;
                         }
                     }
-                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play this loop. Right-click to rename or add a note.");
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play loop · Right-click for more");
                     if resp.clicked() && !sh.clicked() && !tag_hit {
                         if let Some(v) = &c.v {
                             acts.push(Action::PlaySaved(v.clone(), Some((s.a, s.b))));
@@ -941,7 +941,7 @@ impl App {
                     draw_note_lines(p, r.min.x + 36.0, r.min.y + 28.0, &nl, pal().ink2);
                     let resp = resp
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip("Play from this bookmark. Right-click to rename, add a note or remove it.");
+                        .tip("Play from here · Right-click for more");
                     if resp.clicked() {
                         if let Some(v) = &c.v {
                             acts.push(Action::PlayAt(v.clone(), m.t));

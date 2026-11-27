@@ -367,7 +367,7 @@ impl App {
         let dur_now = tr.as_ref().map_or(0.0, |t| t.duration);
         let tw = time_digits(&p, Pos2::new(tx, r.min.y + th / 2.0 + 2.0), th, &shown, dur_now);
         let time_r = Rect::from_min_size(Pos2::new(tx, r.min.y), Vec2::new(tw + 6.0, th + 4.0));
-        if ui.interact(time_r, id.with("time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+        if ui.interact(time_r, id.with("time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
             self.time_left = !self.time_left;
             self.dirty = true;
         }
@@ -463,7 +463,7 @@ impl App {
         y += kh + 6.0;
         // ---- Shuffle, Repeat, EQ, PL with their lights; the balance
         let rep_on = !matches!(self.repeat, crate::Repeat::Off);
-        let toggles = [("SHUF", self.shuffle, "Shuffle"), ("REP", rep_on, "Repeat"), ("EQ", self.show_eq, "The equalizer"), ("PL", !self.queue_hidden, "The playlist")];
+        let toggles = [("SHUF", self.shuffle, "Shuffle"), ("REP", rep_on, "Repeat"), ("EQ", self.show_eq, "Equalizer"), ("PL", !self.queue_hidden, "Playlist")];
         let mut x = r.min.x;
         for (n, (name, on, tip)) in toggles.into_iter().enumerate() {
             let w = p.ctx().fonts(|f| f.layout_no_wrap(name.to_string(), egui::FontId::new(10.0 * s, egui::FontFamily::Name("studio_mono".into())), Color32::WHITE).size().x) + 22.0;
@@ -489,7 +489,7 @@ impl App {
         px(&p, Pos2::new(bx, y + 11.0 * s), egui::Align2::LEFT_CENTER, "BAL", 8.5, dim());
         let bal = Rect::from_min_max(Pos2::new(bx + 24.0 * s, y + 11.0 * s - 5.0), Pos2::new(r.max.x, y + 11.0 * s + 5.0));
         if bal.width() > 24.0 {
-            let bh = ui.interact(bal.expand2(Vec2::new(0.0, 5.0)), id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance  (double-click to center)");
+            let bh = ui.interact(bal.expand2(Vec2::new(0.0, 5.0)), id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance · Double-click to center");
             if bh.double_clicked() {
                 acts.push(Action::Balance(0));
             } else if bh.clicked() || bh.dragged() {
@@ -625,11 +625,11 @@ impl App {
             return;
         }
         let tabs = [
-            ("Lyrics", self.studio_np == 1, "The lyrics"),
-            ("Up Next", self.studio_np == 2, "What plays next"),
-            ("About", self.studio_np == 3, "About the song"),
-            ("Loops", self.studio_np == 4, "Its loops and bookmarks"),
-            ("Visuals", self.studio_np == 5, "The visuals, in the screen's ink"),
+            ("Lyrics", self.studio_np == 1, "Lyrics"),
+            ("Up Next", self.studio_np == 2, "Up next"),
+            ("About", self.studio_np == 3, "About this song"),
+            ("Loops", self.studio_np == 4, "Loops and bookmarks"),
+            ("Visuals", self.studio_np == 5, "Visuals"),
         ];
         if let Some(i) = frame_tabs(ui, r, &tabs, "studio_np_tab") {
             let v = i as u8 + 1;
@@ -878,7 +878,7 @@ impl App {
             2 => {
                 let resp = ui.interact(body, ui.id().with("studio_terr_menu"), Sense::click());
                 // (no tip once the mouse plays with it: it would sit over the ripples)
-                let resp = if self.studio_terr_mouse == 0 { resp.on_hover_text("Right-click for the terrain's settings") } else { resp };
+                let resp = if self.studio_terr_mouse == 0 { resp.on_hover_text("Right-click for terrain settings") } else { resp };
                 self.studio_terrain(&p, body, resp.hover_pos(), resp.clicked());
                 resp.context_menu(|ui| self.studio_terr_menu(ui));
             }
@@ -1174,7 +1174,7 @@ impl App {
             let shown = if time.starts_with('-') { time } else { format!(" {}", time) };
             let tw = time_digits(&p, Pos2::new(head.max.x - 220.0 * s, head.center().y), 40.0 * s, &shown, tr.duration);
             let tr_r = Rect::from_min_size(Pos2::new(head.max.x - 220.0 * s, head.min.y), Vec2::new(tw + 6.0, head.height()));
-            if ui.interact(tr_r, ui.id().with("studio_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+            if ui.interact(tr_r, ui.id().with("studio_prac_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
                 self.time_left = !self.time_left;
                 self.dirty = true;
             }
@@ -1269,7 +1269,7 @@ fn dissolve(old: &egui::ColorImage, new: &egui::ColorImage, t: f32) -> egui::Col
 /// screen's ink.
 pub(crate) fn cover_switch(ui: &egui::Ui, r: Rect, acts: &mut Vec<Action>, salt: &str) {
     let ink = crate::skin::STUDIO_COVER.load(std::sync::atomic::Ordering::Relaxed) == 1;
-    let tip = if ink { "Click for the cover in color" } else { "Click for the cover in the screen's ink" };
+    let tip = if ink { "Show cover in color" } else { "Show cover in screen ink" };
     let h = ui.interact(r, ui.id().with(("studio_cover_switch", salt)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
     if h.clicked() {
         acts.push(Action::StyleColor(5, if ink { 0 } else { 1 }));

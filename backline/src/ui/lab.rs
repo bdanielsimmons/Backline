@@ -930,9 +930,9 @@ impl App {
             self.lab_play_btn(ui, acts, lit);
             ui.add_space(10.0);
             let tip = if self.lab_over_loop() {
-                "Four clicks before the first chord, in time with the record (the record keeps the time after that)"
+                "Four-click count-in, in time with the record"
             } else {
-                "Clicks when it plays and while you tap the timing (the count-off too; the four lights still count it)"
+                "Metronome for playback and tap timing"
             };
             if crate::check_box(ui, "METRONOME", self.lab_metro).tip(tip).clicked() {
                 self.lab_metro = !self.lab_metro;
@@ -940,8 +940,7 @@ impl App {
             }
             if self.lab_over_loop() {
                 ui.add_space(10.0);
-                let tip = "Your chords on the guitar over the record, in time with it (from where they're lined up). \
-                    Untick to mute them.";
+                let tip = "Play the chords over the record";
                 if crate::check_box(ui, "HEAR MY CHORDS", self.lab_loop_chords).tip(tip).clicked() {
                     self.lab_loop_chords = !self.lab_loop_chords;
                     if !self.lab_loop_chords && self.lab_pass.take().is_some() {
@@ -988,13 +987,13 @@ impl App {
             ui.add_space(6.0);
             experimental_chip(ui);
             ui.add_space(14.0);
-            if retro_btn(ui, "UNDO", false).tip("Undo the last change  (Ctrl+Z)").clicked() && !running {
+            if retro_btn(ui, "UNDO", false).tip("Undo  (Ctrl+Z)").clicked() && !running {
                 self.lab_undo_last();
             }
-            if retro_btn(ui, "KEEP IT", false).tip("Keep it under its name (a kept one by the same name is replaced)").clicked() || out.enter {
+            if retro_btn(ui, "KEEP IT", false).tip("Save progression · Replaces one with the same name").clicked() || out.enter {
                 self.lab_keep();
             }
-            if retro_btn(ui, "NEW", false).tip("Start a new progression (the kept ones stay)").clicked() && !running {
+            if retro_btn(ui, "NEW", false).tip("New progression").clicked() && !running {
                 let bpm = self.store.lab_bench.bpm;
                 self.store.lab_bench = LabProg { name: String::new(), bpm, chords: vec![blank()], link: None };
                 self.lab_sel = 0;
@@ -1062,7 +1061,7 @@ impl App {
         ui.painter().rect_filled(fill, if crate::winamp_ui::chrome_on() { 2.0 } else { 0.0 }, pal().ink2);
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
-            .tip("Chord volume, separate from the song volume");
+            .tip("Chord volume");
         if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
             self.lab_vol = ((p.x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
             self.dirty = true;
@@ -1087,13 +1086,13 @@ impl App {
     /// PLAY (or STOP while it plays, or while TAP TIMING runs).
     fn lab_play_btn(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, lit: Option<usize>) {
         if self.lab_run.is_some() {
-            if retro_btn(ui, "STOP", true).tip("Stop tapping (Esc). The chords you tapped keep their timing.").clicked() {
+            if retro_btn(ui, "STOP", true).tip("Stop tapping, keep the timing  (Esc)").clicked() {
                 self.lab_end_timing(false);
             }
             return;
         }
         let playing = lit.is_some() || self.lab_loop_play || self.lab_play.is_some();
-        let tip = if self.lab_over_loop() { "Play the loop: the chords follow the record" } else { "Hear it at its tempo" };
+        let tip = if self.lab_over_loop() { "Play the loop with the record" } else { "Play at tempo" };
         if retro_btn(ui, if playing { "STOP" } else { "PLAY" }, playing).tip(tip).clicked() {
             if playing {
                 if self.lab_loop_play {
@@ -1114,11 +1113,9 @@ impl App {
         let record = self.lab_over_loop();
         ui.horizontal_wrapped(|ui| {
             let tip = if record {
-                "Over the record: tap (or press Space) as each chord starts, and once more after the last. With the \
-                 metronome on, four clicks lead in and the first chord starts by itself where it's lined up below. Esc stops."
+                "Tap each chord change over the record, then once after the last  (Space)"
             } else {
-                "A bar of clicks, then each chord in turn: tap (or press Space) as it changes, and once more after the \
-                 last. Esc stops."
+                "Tap each chord change after a count-in, then once after the last  (Space)"
             };
             // what the next tap does: wait through the count-off, start (along a record), next, or end on the last chord
             let last = self.store.lab_bench.chords.len().saturating_sub(1);
@@ -1149,7 +1146,7 @@ impl App {
                 self.store.lab_bench.bpm = (bpm + 2.0).min(240.0);
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "TAP TEMPO", false).tip("Tap on the beat a few times to set the tempo").clicked() && !running {
+            if retro_btn(ui, "TAP TEMPO", false).tip("Tap tempo").clicked() && !running {
                 self.lab_tempo_tap();
             }
         });
@@ -1157,7 +1154,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             // (over the record it goes round by itself)
             if !record {
-                if crate::check_box(ui, "REPEAT", self.lab_repeat).tip("Repeat until you stop it").clicked() {
+                if crate::check_box(ui, "REPEAT", self.lab_repeat).tip("Loop playback").clicked() {
                     self.lab_repeat = !self.lab_repeat;
                     self.dirty = true;
                 }
@@ -1326,13 +1323,13 @@ impl App {
             crate::views::form_label(ui, "LINE UP");
             let say = format!("FIRST CHORD AT {} ({:.2} SECONDS INTO THE LOOP)", clock(l.a + l.at), l.at);
             crate::views::label(ui, &say, crate::font::text_w(&say, 2.0) + 16.0);
-            if retro_btn(ui, "< EARLIER", false).tip("A little earlier (0.02 seconds)").clicked() && !running {
+            if retro_btn(ui, "< EARLIER", false).tip("Nudge earlier 0.02 s").clicked() && !running {
                 at -= 0.02;
             }
-            if retro_btn(ui, "LATER >", false).tip("A little later (0.02 seconds)").clicked() && !running {
+            if retro_btn(ui, "LATER >", false).tip("Nudge later 0.02 s").clicked() && !running {
                 at += 0.02;
             }
-            let tip = "Put the first chord where the record's first strong hit is";
+            let tip = "Snap the first chord to the record's first hit";
             if retro_btn(ui, "FIND THE FIRST HIT", false).tip(tip).clicked() && !running {
                 match env.as_ref().and_then(|(e, rate)| first_hit(e, *rate)) {
                     Some(t) => at = t,
@@ -1660,7 +1657,7 @@ impl App {
             };
             crate::views::label(ui, &hold, crate::font::text_w(&hold, 1.2) + 16.0);
             ui.add_space(18.0);
-            let tip = "A new chord after this one, starting from the same grip: move the notes that change";
+            let tip = "Add chord after this one, same grip";
             if retro_btn(ui, "+ ADD CHORD", false).tip(tip).clicked() && self.store.lab_bench.chords.len() < 64 && !running {
                 let mut c = self.store.lab_bench.chords[i].clone();
                 c.beats = PLACEHOLDER;
@@ -1670,7 +1667,7 @@ impl App {
                 self.lab_sel = i + 1;
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "REMOVE", false).tip("Remove this chord").clicked() && !running {
+            if retro_btn(ui, "REMOVE", false).tip("Remove chord").clicked() && !running {
                 let chords = &mut self.store.lab_bench.chords;
                 if chords.len() > 1 {
                     chords.remove(i);
@@ -1680,7 +1677,7 @@ impl App {
                 self.lab_sel = i.saturating_sub(1);
                 self.store_dirty = true;
             }
-            if retro_btn(ui, "CLEAR ALL", false).tip("Remove every chord (you can undo it)").clicked() && !running {
+            if retro_btn(ui, "CLEAR ALL", false).tip("Remove all chords").clicked() && !running {
                 self.store.lab_bench.chords = vec![blank()];
                 self.lab_sel = 0;
                 self.store_dirty = true;
@@ -1716,13 +1713,13 @@ impl App {
         let step = snap_step(self.lab_snap);
         ui.horizontal_wrapped(|ui| {
             tool_group(ui, "LENGTH", |ui| {
-                if retro_btn(ui, "- SHORTER", false).tip("Shorten this chord").clicked() && !running {
+                if retro_btn(ui, "- SHORTER", false).tip("Shorten chord").clicked() && !running {
                     let c = &mut self.store.lab_bench.chords[i];
                     c.beats = snap_to(c.beats - step, self.lab_snap);
                     c.timed = true;
                     self.store_dirty = true;
                 }
-                if retro_btn(ui, "+ LONGER", false).tip("Lengthen this chord").clicked() && !running {
+                if retro_btn(ui, "+ LONGER", false).tip("Lengthen chord").clicked() && !running {
                     let c = &mut self.store.lab_bench.chords[i];
                     c.beats = snap_to(c.beats + step, self.lab_snap);
                     c.timed = true;
@@ -1730,13 +1727,13 @@ impl App {
                 }
             });
             tool_group(ui, "ORDER", |ui| {
-                if retro_btn(ui, "< EARLIER", false).tip("Swap with the previous chord").clicked() && i > 0 && !running {
+                if retro_btn(ui, "< EARLIER", false).tip("Swap with previous chord").clicked() && i > 0 && !running {
                     self.store.lab_bench.chords.swap(i, i - 1);
                     self.lab_sel = i - 1;
                     self.store_dirty = true;
                 }
                 let n = self.store.lab_bench.chords.len();
-                if retro_btn(ui, "LATER >", false).tip("Swap with the next chord").clicked() && i + 1 < n && !running {
+                if retro_btn(ui, "LATER >", false).tip("Swap with next chord").clicked() && i + 1 < n && !running {
                     self.store.lab_bench.chords.swap(i, i + 1);
                     self.lab_sel = i + 1;
                     self.store_dirty = true;
@@ -1764,7 +1761,7 @@ impl App {
                         }
                     } else {
                         let label = if custom { cur.name.clone() } else { "CUSTOM".to_string() };
-                        if retro_btn(ui, &label, custom).tip("Type your own name for it").clicked() && !running {
+                        if retro_btn(ui, &label, custom).tip("Custom chord name").clicked() && !running {
                             self.ed.id = crate::tools::F_LAB_CUSTOM;
                         }
                     }
@@ -1778,10 +1775,10 @@ impl App {
                 }
             });
             tool_group(ui, "GRIP", |ui| {
-                if retro_btn(ui, "HEAR IT", false).tip("Hear this chord").clicked() {
+                if retro_btn(ui, "HEAR IT", false).tip("Play chord").clicked() {
                     self.lab_hear(self.lab_sel);
                 }
-                if retro_btn(ui, "CLEAR", false).tip("Clear the neck").clicked() && !running {
+                if retro_btn(ui, "CLEAR", false).tip("Clear grip").clicked() && !running {
                     let c = &mut self.store.lab_bench.chords[self.lab_sel];
                     c.grip = [None; 6];
                     c.name.clear();
@@ -1789,7 +1786,7 @@ impl App {
                 }
                 let frets: Vec<u8> = cur.grip.iter().flatten().copied().collect();
                 let (lo, hi) = (frets.iter().min().copied(), frets.iter().max().copied());
-                for (label, d, tip) in [("< MOVE", -1i32, "The whole shape a fret down"), ("MOVE >", 1, "The whole shape a fret up")] {
+                for (label, d, tip) in [("< MOVE", -1i32, "Shape down a fret"), ("MOVE >", 1, "Shape up a fret")] {
                     let can = matches!((lo, hi), (Some(l), Some(h)) if (d < 0 && l > 0) || (d > 0 && h < 15));
                     if retro_btn(ui, label, false).tip(tip).clicked() && can && !running {
                         let c = &mut self.store.lab_bench.chords[self.lab_sel];
@@ -1805,7 +1802,7 @@ impl App {
                 }
             });
             tool_group(ui, "KEY", |ui| {
-                for (label, d, tip) in [("-", -1i32, "Every chord a fret down"), ("+", 1, "Every chord a fret up")] {
+                for (label, d, tip) in [("-", -1i32, "Transpose down a half step"), ("+", 1, "Transpose up a half step")] {
                     let all: Vec<u8> = self.store.lab_bench.chords.iter().flat_map(|c| c.grip.iter().flatten().copied()).collect();
                     let can = !all.is_empty() && if d < 0 { all.iter().all(|f| *f > 0) } else { all.iter().all(|f| *f < 15) };
                     if retro_btn_w(ui, label, 28.0, false).tip(tip).clicked() && can && !running {
@@ -1868,7 +1865,7 @@ fn experimental_chip(ui: &mut egui::Ui) {
     let p = ui.painter();
     p.rect_stroke(r, 3.0, Stroke::new(1.0_f32, pal().accent));
     ptext(p, r.center(), Align::Center, t, 1.0, pal().accent);
-    resp.tip("New and still changing: say what works and what doesn't. Put the chords in (Chords), then time them (Timing).");
+    resp.tip("Experimental");
 }
 
 #[cfg(test)]

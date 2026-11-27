@@ -234,7 +234,7 @@ fn gospel_moves() -> Vec<MoveDef> {
     vec![
         (
             "CHURCH PLAGAL: I - IV/I - I",
-            "The amen move. The IV triad over the I bass and back. The bass holds while the top two notes rise a step and come back.",
+            "The amen move: the IV triad over the I bass and back. The top two notes rise a step and return.",
             vec![
                 (0, MA, None, Strum, 2.0),
                 (5, MA, Some(0), Strum, 2.0),
@@ -245,7 +245,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "HAMMER INTO THE 3RD",
-            "Grab the sus chord, then hammer the 3rd on: Isus4 to I, IVsus2 to IV. Let the other strings ring.",
+            "Hammer the 3rd onto the sus chord: Isus4 to I, IVsus2 to IV.",
             vec![
                 (0, S4, None, Strum, 1.0),
                 (0, MA, None, Hammer, 1.0),
@@ -257,7 +257,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "SLIDE IN FROM A HALF STEP BELOW",
-            "Hit the triad a fret low and slide it up into place. Works into any chord.",
+            "The triad a fret low, slid up into place. Works into any chord.",
             vec![
                 (11, MA, None, Strum, 0.5),
                 (0, MA, None, Slide, 1.5),
@@ -269,7 +269,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "PASSING DIMINISHED: I - #I\u{00b0} - ii - V - I",
-            "A diminished triad a half step above the I walks you up into the ii.",
+            "A diminished triad a half step above the I, leading into the ii.",
             vec![
                 (0, MA, None, Strum, 2.0),
                 (1, DI, None, Strum, 2.0),
@@ -280,7 +280,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "IV - #IV\u{00b0} - I/V",
-            "From the IV, a diminished a half step up leads into the I over its 5th, then home through the V.",
+            "A diminished a half step above the IV leads to I/5, then home through the V.",
             vec![
                 (5, MA, None, Strum, 2.0),
                 (6, DI, None, Strum, 2.0),
@@ -291,12 +291,12 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "MINOR PLAGAL: IV - iv - I",
-            "The IV turns minor before home: one note slips down a half step.",
+            "The IV turns minor before home: its 3rd drops a half step.",
             vec![(5, MA, None, Strum, 2.0), (5, MI, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
         (
             "6-5-4-3-2-1 BASS WALK",
-            "The bass walks down the scale with a triad over each step: vi, I/5, IV, I/3, ii, then V and home.",
+            "The bass walks down the scale, a triad on each step: vi, I/5, IV, I/3, ii, V, I.",
             vec![
                 (9, MI, None, Strum, 2.0),
                 (0, MA, Some(7), Strum, 2.0),
@@ -309,7 +309,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "3-6-2-5-1 WITH MAJOR TRIADS",
-            "Each chord a major triad, so each one is the V of the next (secondary dominants): III, VI, II, V, I.",
+            "All major triads, each the V of the next: III, VI, II, V, I.",
             vec![
                 (4, MA, None, Strum, 2.0),
                 (9, MA, None, Strum, 2.0),
@@ -320,7 +320,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "TRIAD PAIR OVER THE ROOT: IV/I - V/I",
-            "Two triads a step apart, back and forth over the same bass. Lots of color from two easy shapes.",
+            "Two triads a step apart, back and forth over the same bass.",
             vec![
                 (5, MA, Some(0), Strum, 1.0),
                 (7, MA, Some(0), Strum, 1.0),
@@ -331,22 +331,22 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "bVII - IV - I",
-            "Down from bVII through IV to I. The backdoor, gospel and rock style.",
+            "bVII through IV to I, gospel and rock style.",
             vec![(10, MA, None, Strum, 2.0), (5, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
         (
             "ii - bII - I",
-            "The bII stands in for the V (a tritone away), so the top slides down by half steps into the I.",
+            "bII as the tritone sub for V; the top slides down by half steps into the I.",
             vec![(2, MI, None, Strum, 2.0), (1, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
         (
             "4 OVER 5 HOME: IV/V - I",
-            "The IV triad over the V in the bass, then home. The church's V: softer than a V7, and it pulls just as hard.",
+            "The IV triad over the V bass, then home. The church's V: softer than V7, same pull.",
             vec![(5, MA, Some(7), Strum, 2.0), (0, MA, None, Strum, 2.0), (5, MA, Some(7), Strum, 2.0), (0, MA, None, Strum, 2.0)],
         ),
         (
             "WALK-UP: I - I/3 - IV - #IV\u{00b0} - I/5",
-            "The bass walks up 1, 3, 4, #4, 5 under the chords, then home through the V. The church's way into a chorus.",
+            "The bass walks up 1, 3, 4, #4, 5, then home through the V. The church's way into a chorus.",
             vec![
                 (0, MA, None, Strum, 1.0),
                 (0, MA, Some(4), Strum, 1.0),
@@ -359,7 +359,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "THE 7-3-6: vii\u{00b0} - III - vi - II - V - I",
-            "The 7, the 3 and the 6: a diminished on the 7th, the III as a major chord pulling into the vi, then round through II and V to home.",
+            "Diminished on the 7th, major III into vi, then II, V, I.",
             vec![
                 (11, DI, None, Strum, 2.0),
                 (4, MA, None, Strum, 2.0),
@@ -371,12 +371,12 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "CHURCH ENDING: bVI - bVII - I",
-            "Two major chords a whole step apart, from below, then home. The big ending.",
+            "Two major chords a whole step apart, rising into the I. The big ending.",
             vec![(8, MA, None, Strum, 2.0), (10, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
         (
             "SHOUT VAMP (MINOR): i - iv - i - V",
-            "The praise break in a minor key: short, fast, and round and round. Keep it tight and let the drums drive it.",
+            "Minor-key praise break: short, fast, looped.",
             vec![
                 (0, MI, None, Strum, 1.0),
                 (5, MI, None, Strum, 1.0),
@@ -390,7 +390,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "QUARTET TURNAROUND: I - I/b7 - IV - iv - I/5 - V - I",
-            "Quartet style: the I over its b7 sounds as a I7 going into the IV. The IV turns minor, then home through the V.",
+            "I over its b7 acts as I7 into the IV. The IV turns minor, then home through the V.",
             vec![
                 (0, MA, None, Strum, 2.0),
                 (0, MA, Some(10), Strum, 2.0),
@@ -403,7 +403,7 @@ fn gospel_moves() -> Vec<MoveDef> {
         ),
         (
             "BACK DOOR: iv - bVII - I",
-            "The minor iv, then the bVII, then home: the I comes in by the back door.",
+            "Minor iv, then bVII, then home by the back door.",
             vec![(5, MI, None, Strum, 2.0), (10, MA, None, Strum, 2.0), (0, MA, None, Strum, 4.0)],
         ),
     ]
@@ -516,7 +516,7 @@ impl App {
 
     /// MAP: every inversion of a triad on a set of strings, up the neck.
     fn tr_map(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "One triad, every inversion up the neck on the strings you pick. Root position, then 3rd on the bottom, then 5th, and round again an octave up. Learn them on each string set and you can grab any triad anywhere. Click a dot to pick a shape.", pal().ink2);
+        para(ui, "Every inversion of one triad up the neck on one string set. Click a shape to hear it.", pal().ink2);
         self.key_and_set(ui, false);
         self.quality_row(ui);
         let root = self.tr_root;
@@ -542,13 +542,13 @@ impl App {
                 ui,
                 acts,
                 "PLAY ALL",
-                "Every shape in turn, up the neck",
+                "Play every shape up the neck",
                 "triads",
                 || grips.iter().map(grip_notes).collect(),
                 0.9,
             );
             if retro_btn(ui, "WHOLE NECK", self.tr_whole)
-                .tip("Highlight every root, 3rd and 5th to see how the shapes sit on the whole neck.")
+                .tip("Show every root, 3rd and 5th on the neck")
                 .clicked()
             {
                 self.tr_whole = !self.tr_whole;
@@ -583,7 +583,7 @@ impl App {
 
     /// VOICE LEADING: changes played with triads on one set of strings, each the closest inversion to the last.
     fn tr_lead(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Type the changes and each chord becomes the triad nearest the last. Use chord names, numerals like I IV V or ii, or 1-7 for the key's own triads. Every triad stays on the same strings, so your hand barely moves. Blue notes move, black ones stay. The top notes make a melody of their own.", pal().ink2);
+        para(ui, "Each chord becomes the triad nearest the last, on the same strings. Enter chord names, numerals (I IV V, ii) or 1-7; blue notes move, black ones stay.", pal().ink2);
         self.key_and_set(ui, false);
         ui.horizontal_wrapped(|ui| {
             let names: Vec<&str> = POSITIONS.iter().map(|p| p.0).collect();
@@ -591,7 +591,7 @@ impl App {
                 self.tr_pos = i as u8;
             }
             if let Some(text) = self.chart_text() {
-                if retro_btn(ui, "USE THE LEAD SHEET'S CHANGES", false).tip("The chords of the lead sheet, in order").clicked() {
+                if retro_btn(ui, "USE THE LEAD SHEET'S CHANGES", false).tip("Load the lead sheet's chords").clicked() {
                     let chart = crate::chart::parse_friendly(&text);
                     let order = chart.play_order();
                     let mut all: Vec<String> = order.iter().flat_map(|b| chart.bars[*b].chords.clone()).collect();
@@ -636,7 +636,7 @@ impl App {
         }
         let lit = self.mv_lit(ui);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "PLAY IT", lit.is_some()).tip("Two beats a chord, at the band's tempo").clicked() {
+            if retro_btn(ui, "PLAY IT", lit.is_some()).tip("Two beats per chord at band tempo").clicked() {
                 self.play_steps(&steps);
             }
             let tops: Vec<String> = steps
@@ -660,7 +660,7 @@ impl App {
 
     /// OVER A BASS: a triad over each of the twelve bass notes, and what chord it makes.
     fn tr_bass(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Over a new bass note, a triad becomes the colors of a bigger chord. D over C is a C Lydian sound, Bb over C a C9sus, and F over G the gospel IV over V. Pick a triad, then walk the bass under it.", pal().ink2);
+        para(ui, "A triad over a new bass note implies a bigger chord. D/C is C Lydian, Bb/C a C9sus, F/G the gospel IV/V.", pal().ink2);
         self.key_and_set(ui, false);
         self.quality_row(ui);
         let root = self.tr_root;
@@ -748,7 +748,7 @@ impl App {
     fn mv_show(&mut self, ui: &mut egui::Ui, steps: &[Step]) {
         let lit = self.mv_lit(ui);
         ui.horizontal_wrapped(|ui| {
-            if retro_btn(ui, "PLAY IT", lit.is_some()).tip("At the band's tempo").clicked() {
+            if retro_btn(ui, "PLAY IT", lit.is_some()).tip("Play at band tempo").clicked() {
                 self.play_steps(steps);
             }
             ui.add_space(8.0);
@@ -767,7 +767,7 @@ impl App {
 
     /// GOSPEL: common moves built from triads, in any key, voice-led on the strings picked.
     fn mv_gospel(&mut self, ui: &mut egui::Ui) {
-        para(ui, "Common gospel moves, built from triads in any key and voiced close on the strings you pick. Learn each one in a few keys, then drop it into tunes.", pal().ink2);
+        para(ui, "Common gospel moves from close triads, in any key, on the chosen strings.", pal().ink2);
         self.tr_set = self.tr_set.min(3);
         ui.horizontal_wrapped(|ui| {
             if let Some(k) = dropdown(ui, "mv_key", "KEY", &KEYS, self.tr_root as usize, 110.0) {
@@ -783,7 +783,7 @@ impl App {
             if let Some(i) = dropdown(ui, "mv_pos", "START", &pos, self.tr_pos as usize, 200.0) {
                 self.tr_pos = i as u8;
             }
-            if retro_btn(ui, "WHAMMY DIP AT THE END", self.mv_dip).tip("Dip the bar on the last chord").clicked() {
+            if retro_btn(ui, "WHAMMY DIP AT THE END", self.mv_dip).tip("Whammy dip on the last chord").clicked() {
                 self.mv_dip = !self.mv_dip;
             }
         });
@@ -845,7 +845,7 @@ impl App {
     /// QUARTAL & CLUSTERS: McCoy Tyner style stacks of 4ths (or of 2nds) built on each note of a mode and planed
     /// through it, side-slipped a half step out and back, over a held bass if you like.
     fn mv_quartal(&mut self, ui: &mut egui::Ui) {
-        para(ui, "McCoy Tyner's sound: stacks of 4ths moved in parallel through a mode. The root and 5th sit low, with chords built in 4ths (not 3rds) on top. The stack moves up and down the mode, and slips a half step out and back for tension. Stack 2nds instead and you get clusters that move the same way. On guitar the low strings are already tuned in 4ths: the open E A D G B is the famous So What chord.", pal().ink2);
+        para(ui, "McCoy Tyner's sound: 4th stacks planed through a mode over a low root and 5th. Side-slip a half step for tension.", pal().ink2);
         let parents: Vec<String> = theory::PARENT_MODES.iter().map(|p| p.0.to_uppercase()).collect();
         let parents: Vec<&str> = parents.iter().map(|s| s.as_str()).collect();
         ui.horizontal_wrapped(|ui| {
@@ -872,8 +872,8 @@ impl App {
             crate::views::label(ui, "STACK", 70.0);
             for (i, (n, tip)) in [
                 ("4THS", "Three notes a 4th apart"),
-                ("4THS + 3RD", "So What style: two 4ths with a 3rd on top, four notes"),
-                ("2NDS (CLUSTER)", "Three scale notes side by side"),
+                ("4THS + 3RD", "So What style: two 4ths, a 3rd on top"),
+                ("2NDS (CLUSTER)", "Three adjacent scale notes"),
             ]
             .iter()
             .enumerate()
@@ -889,7 +889,7 @@ impl App {
                     self.mv_motion = i as u8;
                 }
             }
-            if retro_btn(ui, "BASS UNDER IT", self.mv_pedal).tip("Hold the mode's root low, like McCoy's left hand").clicked() {
+            if retro_btn(ui, "BASS UNDER IT", self.mv_pedal).tip("Pedal the mode's root in the bass").clicked() {
                 self.mv_pedal = !self.mv_pedal;
             }
         });

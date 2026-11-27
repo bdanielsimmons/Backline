@@ -7,13 +7,13 @@ use crate::canon;
 
 /// What to practise, and how to do it here: (what, how in Backline). A checkbox each, for today.
 pub(crate) const SUGGESTIONS: [(&str, &str); 7] = [
-    ("LISTEN BEFORE YOU PLAY", "Play a recording of a tune from your set, twice, guitar down. Click the tune, then a recording in TUNES. Loop the head with A and B in the PRACTICE panel."),
-    ("LEARN THE MELODY BY EAR", "Slow the loop down until you can play along without the sheet. Use SPEED in the PRACTICE panel, and the pitch stays the same. Then move it up a 4th in PITCH and find it again."),
-    ("PLAY THE CHANGES WITH THE BAND", "Comp shells with the band, then run arpeggios through the tune. Click a tune in your set to show its chart on the right. Press PLAY BAND on the lead sheet. For arpeggios, go to LINES > ARPEGGIOS."),
-    ("ONE LICK THROUGH 12 KEYS", "Loop 4 to 8 bars you love from a record and take them through every key. In TRAINER, set THEN to UP A 4TH to move the loop every few passes. Play it back in each key by ear."),
-    ("RECORD A SOLO", "Record three choruses with the band. Go to PRACTICE > RECORD and turn on WITH THE BAND. Don't listen back today."),
-    ("LISTEN BACK (ONCE A WEEK)", "Hear the week's takes with ALL TAKES in the RECORD tab. Write down one thing to fix with LOG PRACTICE in the DIARY."),
-    ("LISTEN TO A RECORD", "Listen closely to one album, start to finish. Pick it in DIARY > LISTENING."),
+    ("LISTEN BEFORE YOU PLAY", "Play a recording of a set tune twice, guitar down. Loop the head with A and B in PRACTICE."),
+    ("LEARN THE MELODY BY EAR", "Slow the loop with SPEED in PRACTICE and play along without the sheet. Then move it up a 4th with PITCH and find it again."),
+    ("PLAY THE CHANGES WITH THE BAND", "Comp shells with PLAY BAND on the lead sheet, then run arpeggios through the tune (LINES > ARPEGGIOS)."),
+    ("ONE LICK THROUGH 12 KEYS", "Loop 4 to 8 bars from a record and take them through every key by ear. In TRAINER, set THEN to UP A 4TH."),
+    ("RECORD A SOLO", "Record three choruses in PRACTICE > RECORD with WITH THE BAND on. Don't listen back today."),
+    ("LISTEN BACK (ONCE A WEEK)", "Hear the week's takes with ALL TAKES in RECORD. Note one thing to fix with LOG PRACTICE in the DIARY."),
+    ("LISTEN TO A RECORD", "One album, start to finish, closely. Pick it in DIARY > LISTENING."),
 ];
 
 impl App {
@@ -21,7 +21,7 @@ impl App {
     pub(crate) fn routine_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         // ---- your set: one tune of each kind
         section_header(ui, "YOUR SET");
-        para(ui, "One tune of each kind keeps you ready for any session. That means a blues, rhythm changes, a ballad and so on. Pick one in each row, and click its name to see the chart on the right.", pal().ink2);
+        para(ui, "One tune of each kind (a blues, rhythm changes, a ballad...) covers any session. Select a name to see its chart.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "JAZZ", !self.store.routine_gospel).clicked() {
                 self.store.routine_gospel = false;
@@ -47,7 +47,7 @@ impl App {
                 crate::views::label(ui, kind, kind_w / crate::font::ui_scale());
                 if let Some(name) = &picked {
                     let on = showing.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name));
-                    if retro_btn(ui, &crate::font::as_label(name), on).tip("Shows its chart on the right.").clicked() {
+                    if retro_btn(ui, &crate::font::as_label(name), on).tip("Show chart").clicked() {
                         acts.push(Action::PreviewTune(name.clone()));
                     }
                 }
@@ -80,7 +80,7 @@ impl App {
         section_header(ui, "A SESSION");
         para(
             ui,
-            "Ideas for today, from how the masters practiced. Do what you have time for, and check off what you did.",
+            "Ideas for today, from how the masters practiced. Check off what's done.",
             pal().ink2,
         );
         let date = store::today_str();
@@ -114,7 +114,7 @@ impl App {
                         Stroke::new(2.0_f32, pal().ink),
                     );
                 }
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Mark as done.").clicked() {
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Mark done").clicked() {
                     acts.push(Action::RoutineDone(k as u8));
                 }
             });
@@ -124,7 +124,7 @@ impl App {
 
     /// LISTENING: records by kind, jazz or gospel; a click finds the album on Tidal; LISTENED counts it.
     pub(crate) fn listening_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        para(ui, "Close listening was half of how the masters practiced. They played a few records over and over. Click one to play it, and each play is counted.", pal().ink2);
+        para(ui, "Close listening was half of how the masters practiced: a few records, over and over. Each play is counted.", pal().ink2);
         ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "JAZZ", !self.listen_gospel).clicked() {
                 self.listen_gospel = false;
@@ -186,7 +186,7 @@ impl App {
                 }
                 if resp
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .tip("Play it from Tidal. Each play counts as a listen.")
+                    .tip("Play album · Counts as a listen")
                     .clicked()
                 {
                     acts.push(Action::PlayRecord(artist.to_string(), album.to_string()));

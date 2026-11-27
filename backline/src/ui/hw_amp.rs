@@ -81,7 +81,7 @@ impl App {
         let lw = scr.width() - m.v(24.0);
         let time = if self.time_left { format!("-{}", fmt_time((self.cur_track().map_or(0.0, |t| t.duration) - pos).max(0.0))) } else { fmt_time(pos) };
         crate::styles::hw_time(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), &time, self.cur_track().map_or(0.0, |t| t.duration), 3.9 * s, lw);
-        if ui.interact(scr, ui.id().with("hw_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+        if ui.interact(scr, ui.id().with("hw_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
             self.time_left = !self.time_left;
             self.dirty = true;
         }
@@ -179,8 +179,8 @@ impl App {
             let hit = Rect::from_center_size(c, Vec2::splat(m.v(44.0)));
             let tip = match k {
                 0 => format!("Volume {}%", (self.volume * 100.0).round()),
-                1 => format!("Bass {:+.0} dB (the equalizer's low bands)", bass),
-                2 => format!("Treble {:+.0} dB (the equalizer's high bands)", treble),
+                1 => format!("Bass {:+.0} dB (EQ low bands)", bass),
+                2 => format!("Treble {:+.0} dB (EQ high bands)", treble),
                 3 => match self.balance {
                     0 => "Balance: center".to_string(),
                     b if b < 0 => format!("Balance: {}% left", -b),
@@ -191,7 +191,7 @@ impl App {
             let h = ui
                 .interact(hit, ui.id().with(("hw_knob", k)), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeVertical)
-                .tip(format!("{}. Drag up or down, or use the mouse wheel; double-click to reset.", tip));
+                .tip(format!("{} · Drag to turn · Double-click to reset", tip));
             let wheel = if h.hovered() { ui.input(|i| i.raw_scroll_delta.y) } else { 0.0 };
             let step = -h.drag_delta().y / m.v(120.0) * 9.0 + wheel.signum() * if wheel != 0.0 { 0.25 } else { 0.0 };
             if h.dragged() || h.double_clicked() || step != 0.0 {
@@ -224,10 +224,10 @@ impl App {
             let off = i == 2 && !has_words;
             let row = Rect::from_min_max(Pos2::new(br.min.x - 2.0, br.min.y - 2.0), Pos2::new(dc.x + m.v(42.0), br.max.y + 2.0));
             let tip = match i {
-                0 => "Meters under the panel: tuning, stereo, loudness and the analyzer",
-                1 => "The analyzer as light behind smoked glass",
+                0 => "Meters and analyzer",
+                1 => "Analyzer light",
                 _ if off => "No lyrics for this song",
-                _ => "The lyrics, lit through the cloth",
+                _ => "Lyrics",
             };
             let h = ui.interact(row, ui.id().with(("hw_show", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             let on = showing == i as u8 && !prac;
@@ -264,7 +264,7 @@ impl App {
             _ => {
                 let o = inner.min;
                 let at = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(o + Vec2::new(m.v(x), m.v(y)), Vec2::new(m.v(w), m.v(h)));
-                let tips = ["Which side is louder", "How alike the two sides are", "How loud, in LUFS"];
+                let tips = ["Left/right balance", "Stereo correlation", "Loudness (LUFS)"];
                 for (k, sub) in ["dB", "CORRELATION", "LUFS"].iter().enumerate() {
                     let b = at(14.0 + 202.0 * k as f32, 9.0, 170.0, 96.0);
                     bezel(&p, m, b, 4.0, false);

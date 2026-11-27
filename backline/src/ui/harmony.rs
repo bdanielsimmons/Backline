@@ -185,7 +185,7 @@ impl App {
     pub(crate) fn scale_harmony(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         para(
             ui,
-            "Stack a scale's notes on each degree and you get its chords. Click one to see what to play over it.",
+            "The chords built on each degree of a scale. Click one for what to play over it.",
             pal().ink2,
         );
         // ---- the three choices, on one row
@@ -318,7 +318,7 @@ impl App {
         let beat = 60.0 / self.band_bpm();
         ui.horizontal_wrapped(|ui| {
             let all: Vec<Vec<i32>> = grips.iter().flatten().map(grip_notes).collect();
-            self.seq_button(ui, acts, "HEAR ALL SEVEN", "Each chord of the scale in turn", "hm_all", || all, beat * 2.0);
+            self.seq_button(ui, acts, "HEAR ALL SEVEN", "Play each chord of the scale", "hm_all", || all, beat * 2.0);
         });
 
         // ---- the chord picked
@@ -453,13 +453,13 @@ impl App {
         let mine = self.prac_chart.as_ref().is_some_and(|c| c.0 == title);
         ui.horizontal_wrapped(|ui| {
             let full = self.hm_vamp.len() >= 4;
-            if !full && retro_btn(ui, &format!("+ ADD {}", shown), false).tip("Add the chord picked above").clicked() {
+            if !full && retro_btn(ui, &format!("+ ADD {}", shown), false).tip("Add selected chord to the vamp").clicked() {
                 self.hm_vamp.push(sel as u8);
             }
             let mut drop: Option<usize> = None;
             for (i, d) in self.hm_vamp.iter().enumerate() {
                 let d = (*d as usize).min(6);
-                if retro_btn(ui, &format!("{}  X", chords[d].3), false).tip("Remove").clicked() {
+                if retro_btn(ui, &format!("{}  X", chords[d].3), false).tip("Remove from vamp").clicked() {
                     drop = Some(i);
                 }
             }
@@ -478,7 +478,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 let playing = mine && self.band_on;
                 if retro_btn(ui, if playing { "STOP THE BAND" } else { "LOOP IT WITH THE BAND" }, playing)
-                    .tip("The band loops the vamp, and the lead sheet opens with it.")
+                    .tip("Loop the vamp with the band · Also on Chart")
                     .clicked()
                 {
                     if playing {

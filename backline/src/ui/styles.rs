@@ -587,7 +587,7 @@ impl App {
         right = vol.min.x - 18.0;
         if st == STYLE_STREAMING {
             let q = Rect::from_center_size(Pos2::new(right - 13.0, r.center().y), Vec2::splat(26.0));
-            let tip = if self.stream_queue { "Hide the queue" } else { "Show the queue" };
+            let tip = if self.stream_queue { "Hide queue" } else { "Show queue" };
             if self.small_toggle(ui, q, "queue", self.stream_queue, tip, id.with("queue")) {
                 self.stream_queue = !self.stream_queue;
                 self.dirty = true;
@@ -595,11 +595,11 @@ impl App {
             right = q.min.x - 8.0;
         }
         let e = Rect::from_center_size(Pos2::new(right - 13.0, r.center().y), Vec2::splat(26.0));
-        if self.small_toggle(ui, e, "sliders", self.show_eq, if self.show_eq { "Hide the equalizer" } else { "Show the equalizer" }, id.with("eq")) {
+        if self.small_toggle(ui, e, "sliders", self.show_eq, if self.show_eq { "Hide equalizer" } else { "Show equalizer" }, id.with("eq")) {
             acts.push(Action::ToggleEq);
         }
         let vz = Rect::from_center_size(Pos2::new(e.min.x - 21.0, r.center().y), Vec2::splat(26.0));
-        if self.small_toggle(ui, vz, "wave", self.mini_viz, if self.mini_viz { "Hide the visualizer" } else { "Show the visualizer" }, id.with("viz")) {
+        if self.small_toggle(ui, vz, "wave", self.mini_viz, if self.mini_viz { "Hide visualizer" } else { "Show visualizer" }, id.with("viz")) {
             self.mini_viz = !self.mini_viz;
             self.dirty = true;
         }
@@ -739,7 +739,7 @@ impl App {
             ptext(&p, Pos2::new(inner.min.x, inner.min.y + 8.0), Align::Min, "Equalizer", 1.9, fg());
         }
         let x = Rect::from_min_size(Pos2::new(inner.max.x - 20.0, inner.min.y - 2.0), Vec2::splat(20.0));
-        let h = ui.interact(x, ui.id().with("st_eq_close"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Close the equalizer");
+        let h = ui.interact(x, ui.id().with("st_eq_close"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Close");
         crate::vicon::named(&p, x.shrink(5.0), "close", if h.hovered() { fg() } else { fg2() });
         if h.clicked() {
             self.show_eq = false;
@@ -1083,7 +1083,7 @@ impl App {
         // the top strip: moves the window; its switches and buttons at the right
         crate::app_bar_strip(ui, Rect::from_min_size(card.min, Vec2::new(card.width() - 130.0, 22.0)), ui.id().with("st_mini_bar"));
         let mut x = card.max.x - 6.0;
-        for (n, (icon, tip)) in [("close", "Quit Backline"), ("max", "Back to the full window")].into_iter().enumerate() {
+        for (n, (icon, tip)) in [("close", "Quit Backline"), ("max", "Exit mini player")].into_iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(x - 20.0, card.min.y + 3.0), Vec2::splat(20.0));
             x = r.min.x - 2.0;
             let h = ui.interact(r, ui.id().with(("st_mini_btn", n)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
@@ -1095,7 +1095,7 @@ impl App {
         }
         x -= 8.0;
         let pl_on = !self.queue_hidden;
-        let toggles = [("list", pl_on, "The playlist"), ("sliders", self.show_eq, "The equalizer"), ("wave", self.mini_viz, "The visualizer")];
+        let toggles = [("list", pl_on, "Playlist"), ("sliders", self.show_eq, "Equalizer"), ("wave", self.mini_viz, "Visualizer")];
         for (n, (icon, on, tip)) in toggles.into_iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(x - 20.0, card.min.y + 3.0), Vec2::splat(20.0));
             x = r.min.x - 4.0;
@@ -1302,7 +1302,7 @@ impl App {
             }
         }
         // the time: a click switches elapsed and what's left
-        if ui.interact(time_r, id.with("time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Click for the time left").clicked() {
+        if ui.interact(time_r, id.with("time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
             self.time_left = !self.time_left;
             self.dirty = true;
         }
@@ -1362,8 +1362,8 @@ impl App {
         let toggles = [
             ("shuffle", self.shuffle, "Shuffle"),
             ("loop", rep_on, "Repeat"),
-            ("sliders", self.show_eq, "The equalizer"),
-            ("list", !self.queue_hidden, "The playlist"),
+            ("sliders", self.show_eq, "Equalizer"),
+            ("list", !self.queue_hidden, "Playlist"),
         ];
         let tw = 30.0 * s;
         for (n, (icon, on, tip)) in toggles.into_iter().enumerate() {
@@ -1391,7 +1391,7 @@ impl App {
             ptext(&p, Pos2::new(sx, bal.center().y), Align::Min, "L R", 1.1, fg2());
         }
         let line = Rect::from_min_max(Pos2::new(bal.min.x, bal.center().y - 2.0), Pos2::new(bal.max.x, bal.center().y + 2.0));
-        let h = ui.interact(bal, id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance  (double-click to center)");
+        let h = ui.interact(bal, id.with("bal"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Balance · Double-click to center");
         if h.double_clicked() {
             acts.push(Action::Balance(0));
         } else if h.clicked() || h.dragged() {
