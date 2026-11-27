@@ -144,8 +144,8 @@ impl Own {
             }
             _ => (Vec::new(), 44100.0),
         };
-        crate::analyse(&mut self.bands, &mut self.peaks, &mut self.wave, &samples, rate, now.bars, now.gain);
         let dt = ((t - self.last) as f32).clamp(0.0, 0.1);
+        crate::analyse(&mut self.bands, &mut self.peaks, &mut self.wave, &samples, rate, now.bars, now.gain, dt);
         self.last = t;
         let mut f = Frame::from_audio(t as f32, &self.bands, &self.peaks, &self.wave);
         self.agc.apply(&mut f, dt);

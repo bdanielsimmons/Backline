@@ -3022,7 +3022,9 @@ impl App {
         (viz::resample(&self.bands, c.n, k), viz::resample(&self.peaks, c.n, k), self.viz_wave.iter().map(|v| v * k).collect())
     }
 
-    fn update_bands(&mut self) {
+    /// The spectrum for this frame (`dt`: the time since the last, so the bars fall at one pace however often the
+    /// window draws).
+    fn update_bands(&mut self, dt: f32) {
         let active = self.cur.is_some() && !self.paused && !self.stopped && !self.buffering;
         let (samples, rate) = if active {
             let v = self.player.viz.lock().unwrap();
@@ -3035,7 +3037,7 @@ impl App {
         let terrain = crate::studio::on() && self.art_view && self.studio_np == 5 && self.studio_vis == 2;
         let nb = self.viz[0].n.max(self.viz[1].n).clamp(8, 96).max(if terrain { self.studio_terr_n.clamp(16, 256) } else { 0 });
         let gain = self.viz[0].gain.max(self.viz[1].gain);
-        analyse(&mut self.bands, &mut self.peaks, &mut self.viz_wave, &samples, rate, nb, gain);
+        analyse(&mut self.bands, &mut self.peaks, &mut self.viz_wave, &samples, rate, nb, gain, dt);
     }
 
     /// A line's sound: the notes, `gap` seconds apart, over its backing - nothing, the root held, the chord
@@ -3400,7 +3402,7 @@ impl eframe::App for App {
                 self.set_err(d);
             }
         }
-        self.update_bands();
+        self.update_bands(ctx.input(|i| i.unstable_dt));
         self.sleep_tick();
         self.tick_practice();
         let mut title = match self.cur_track() {
@@ -4123,6 +4125,7 @@ mod tests {
 /// The latest samples (`rate` a second) as the visualizers see them: `bands` from 50 Hz to 12 kHz (`nb` of them,
 /// 0..1, up at once and down slowly), their falling `peaks`, and `wave`, the loudest swing in each slice; `gain` is the
 /// sensitivity. No samples (nothing playing): everything settles down.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn analyse(
     bands: &mut Vec<f32>,
     peaks: &mut Vec<f32>,
@@ -4131,7 +4134,15 @@ pub(crate) fn analyse(
     rate: f32,
     nb: usize,
     gain: f32,
+    dt: f32,
 ) {
+    // (the bars, their caps and the wave ease at the same pace however often the window draws: Now Playing draws as
+    // often as the screen refreshes, 165 a second here, the mini player about 50; at 0.06 a frame the bars fell three
+    // times faster in Now Playing and flickered. The pace now is what 50 a second gave)
+    let dt = dt.clamp(0.0, 0.25);
+    let fall = 3.0 * dt;
+    let cap_fall = 0.6 * dt;
+    let keep = 0.45f32.powf(dt * 50.0);
     let n = samples.len();
     if bands.len() != nb {
         *bands = vec![0.0; nb];
@@ -4172,11 +4183,11 @@ pub(crate) fn analyse(
         } else {
             0.0
         };
-        wave[k] = wave[k] * 0.45 + tv * 0.55;
+        wave[k] = wave[k] * keep + tv * (1.0 - keep);
     }
     for i in 0..nb {
         let old = bands[i];
-        bands[i] = if target[i] > old { target[i] } else { (old - 0.06).max(target[i]) };
-        peaks[i] = bands[i].max(peaks[i] - 0.012);
+        bands[i] = if target[i] > old { target[i] } else { (old - fall).max(target[i]) };
+        peaks[i] = bands[i].max(peaks[i] - cap_fall);
     }
 }

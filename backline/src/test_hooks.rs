@@ -288,6 +288,10 @@ Second line: comp lighter here.", m.1.note);
                 if std::env::var_os("BACKLINE_PRACTICE").is_some() {
                     app.practice = true;
                 }
+                // (BACKLINE_MINI=1: in the mini player)
+                if std::env::var_os("BACKLINE_MINI").is_some() {
+                    app.apply(Action::ToggleMini);
+                }
                 if let Some(t) = std::env::var("BACKLINE_HW_BIG").ok().and_then(|v| v.parse::<f32>().ok()) {
                     app.hw_big = t >= 1.0;
                     app.hw_big_t = t;

@@ -1255,8 +1255,12 @@ impl App {
         let deck_h = (full.width() / 275.0 * 116.0).min(full.height());
         let card = Rect::from_min_size(full.min, Vec2::new(full.width(), deck_h)).shrink(6.0);
         panel(&p, card);
-        // the top strip: moves the window; its switches and buttons at the right
-        crate::app_bar_strip(ui, Rect::from_min_size(card.min, Vec2::new(card.width() - 130.0, 22.0)), ui.id().with("st_mini_bar"));
+        // the top strip: moves the window, as the classic mini player's title bar does (the mini player has no
+        // system title bar, and the full window's bar is off in it); its switches and buttons at the right
+        let strip = Rect::from_min_size(card.min, Vec2::new(card.width() - 130.0, 22.0));
+        if ui.interact(strip, ui.id().with("st_mini_bar"), Sense::drag()).drag_started() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
         let mut x = card.max.x - 6.0;
         for (n, (icon, tip)) in [("close", "Quit Backline"), ("max", "Exit mini player")].into_iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(x - 20.0, card.min.y + 3.0), Vec2::splat(20.0));
