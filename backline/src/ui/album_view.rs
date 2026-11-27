@@ -803,8 +803,6 @@ impl App {
             }
         }
         let body = Rect::from_min_max(Pos2::new(r.min.x, cs.max.y + 14.0), r.max);
-        // (the tour points at the practice tools)
-        tour::mark("ARTPRACTICE", body);
         self.practice_stack(ui, body, acts, false);
     }
 
@@ -995,8 +993,6 @@ impl App {
         }
         // ---- at the right: speed, practice, the output, "...", Close
         let row = Rect::from_min_max(Pos2::new(x0 + 2.5 * gap + 30.0, cy - bh() / 2.0), Pos2::new(full.max.x - 28.0, cy + bh() / 2.0));
-        // (the tour points at the controls along the foot)
-        tour::mark("ARTBTNS", Rect::from_min_max(Pos2::new(full.min.x + 28.0, cy - bh() / 2.0), row.max));
         let used = ui
             .allocate_new_ui(egui::UiBuilder::new().max_rect(row), |ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

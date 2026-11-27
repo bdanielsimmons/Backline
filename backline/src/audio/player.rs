@@ -1112,6 +1112,8 @@ pub struct Piece {
     pub body: Vec<i16>,
     pub until: Option<std::time::Instant>,
     slot: Option<usize>,
+    /// a piece of the song playing (not a chord, a line or the band)
+    pub song: bool,
 }
 
 /// What a demo recording kept: every sound, each with its time.
@@ -1157,6 +1159,7 @@ fn rec_sound(data: &[i16], body: &[i16], gain: f32, slot: Option<usize>) {
             body: body.to_vec(),
             until: None,
             slot,
+            song: false,
         });
     }
 }
@@ -1240,6 +1243,7 @@ impl<S: Source<Item = i16>> Iterator for Tap<S> {
                         body: Vec::new(),
                         until: None,
                         slot: None,
+                        song: true,
                     });
                 }
                 self.rec.clear();

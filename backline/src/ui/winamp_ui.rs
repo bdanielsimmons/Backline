@@ -238,7 +238,6 @@ impl App {
                 }
             }
         }
-        crate::tour::mark("COVER", cover);
         if self.mini || side < 1.0 {
             // (no cover in mini, or with the player sized to fill the window)
         } else if let Some(tr) = self.cur_track() {

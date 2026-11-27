@@ -278,9 +278,13 @@ Second line: comp lighter here.", m.1.note);
                     app.queue = Arc::new(q);
                     app.play_index(0);
                 }
-                // (BACKLINE_NP=1: in Now Playing; BACKLINE_HW_BIG=1: Hardware's close-up on the cover, or =0.5 halfway in)
+                // (BACKLINE_NP=1: in Now Playing; BACKLINE_HW_BIG=1: Hardware's close-up on the cover, or =0.5 halfway in;
+                // BACKLINE_PRACTICE=1: practising)
                 if std::env::var_os("BACKLINE_NP").is_some() {
                     app.art_view = true;
+                }
+                if std::env::var_os("BACKLINE_PRACTICE").is_some() {
+                    app.practice = true;
                 }
                 if let Some(t) = std::env::var("BACKLINE_HW_BIG").ok().and_then(|v| v.parse::<f32>().ok()) {
                     app.hw_big = t >= 1.0;

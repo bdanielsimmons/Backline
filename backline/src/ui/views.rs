@@ -517,7 +517,6 @@ impl App {
         let tabs: &[&str] = if practice_tools() { &["MUSIC", "PRACTICE", "BACKLINE"] } else { &["MUSIC", "BACKLINE"] };
         let last = tabs.len() - 1;
         let cur = if side { last } else { (practice_tools() && in_practice) as usize };
-        let top = ui.cursor().min.y;
         if let Some(i) = tab_row(ui, tabs, cur) {
             if i == last {
                 acts.push(Action::BacklinePage);
@@ -539,8 +538,6 @@ impl App {
                 acts.push(Action::Section(to));
             }
         }
-        let r = ui.min_rect();
-        crate::tour::mark("APPMENU", Rect::from_min_max(Pos2::new(r.min.x, top), Pos2::new(r.max.x, ui.cursor().min.y)));
         if side {
             // the BACKLINE tab's own pages
             let items = [(Sec::Tidal, "SETTINGS"), (Sec::Tidal, "SKINS"), (Sec::Tidal, "LOG")];

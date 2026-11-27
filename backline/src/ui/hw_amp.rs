@@ -98,7 +98,6 @@ impl App {
             let pan = m.r(314.0, 48.0, 608.0, 478.0);
             black_panel(&p, m, pan);
             let body = pan.shrink(m.v(14.0));
-            tour::mark("ARTPRACTICE", body);
             self.practice_stack(ui, body, acts, true);
             return;
         }

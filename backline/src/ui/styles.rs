@@ -387,9 +387,11 @@ impl App {
         egui::TopBottomPanel::bottom("st_player").exact_height(bar_h).resizable(false).show_separator_line(false).frame(none).show(ctx, |ui| {
             let r = ui.max_rect();
             if st == STYLE_STREAMING {
+                crate::tour::mark("PLAYER", r);
                 self.player_bar(ui, r, acts);
             } else {
                 let pr = Rect::from_min_max(r.min + Vec2::new(GAP, 0.0), r.max - Vec2::splat(GAP));
+                crate::tour::mark("PLAYER", pr);
                 panel_named(ui.painter(), pr, "Player");
                 self.player_bar(ui, pr, acts);
             }
@@ -502,12 +504,14 @@ impl App {
                     let left = self.queue.len().saturating_sub(self.cur.map_or(0, |c| c + 1)).clamp(1, 5) as f32;
                     let want = 14.0 + 30.0 + left * 54.0 + 14.0;
                     let nr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, if self.practice { foot } else { (y + want).min(foot) }));
+                    crate::tour::mark("QUEUE", nr);
                     panel(ui.painter(), nr);
                     self.next_up(ui, nr.shrink(14.0), acts);
                 }
                 // the playlist (the deck's PL switch hides it)
                 if st != STYLE_STREAMING && !self.queue_hidden && foot - y > 80.0 {
                     let qr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, foot));
+                    crate::tour::mark("QUEUE", qr);
                     panel_named(ui.painter(), qr, "Playlist");
                     self.style_queue(ui, qr.shrink(14.0), acts);
                 }

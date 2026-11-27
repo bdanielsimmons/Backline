@@ -43,7 +43,6 @@ impl App {
         self.export_pill(ui, er, acts);
         self.timer_pill(ui, tr, acts);
         self.metro_pill(ui, mr, acts);
-        crate::tour::mark("TIMEBTNS", tr.union(mr));
         // the panel's contents scroll when the panel is short, rather than running past its edge
         // (no drag-to-scroll: dragging on the waveform sets loops)
         // everything inside grows and shrinks with the panel, gently (the square root of the size change), from a
@@ -1045,19 +1044,11 @@ impl App {
         }
         ui.add_space(4.0);
         if self.more {
-            let top = ui.cursor().min.y;
             self.more_tools(ui, acts);
-            let r = ui.min_rect();
-            crate::tour::mark("MOREBOX", Rect::from_min_max(Pos2::new(r.min.x, top), Pos2::new(r.max.x, ui.cursor().min.y)));
             return;
         }
 
-        // ---- A and B, then the loop's own buttons  (each block reports where it is, for the practice tour)
-        let row_mark = |ui: &egui::Ui, key: &str, top: f32| {
-            let r = ui.min_rect();
-            crate::tour::mark(key, Rect::from_min_max(Pos2::new(r.min.x, top), Pos2::new(r.max.x, ui.cursor().min.y)));
-        };
-        let ab_top = ui.cursor().min.y;
+        // ---- A and B, then the loop's own buttons
         let a_txt = self.loop_a.map(fmt_t).unwrap_or_else(|| "-:--.-".to_string());
         let b_txt = self.loop_b.map(fmt_t).unwrap_or_else(|| "-:--.-".to_string());
         // three rows, each centred: A and B; the loop's buttons and moving about; the speed
@@ -1124,11 +1115,9 @@ impl App {
                 acts.push(Action::ShiftLoop(true));
             }
         });
-        row_mark(ui, "LOOPROW", ab_top);
         ui.add_space(6.0);
 
         // ---- the speed
-        let speed_top = ui.cursor().min.y;
         centered_row(ui, "speed_row", |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             label(ui, "SPEED", 0.0);
@@ -1157,7 +1146,6 @@ impl App {
                 "1% slower · Or type a speed, 25 to 250%",
             );
         });
-        row_mark(ui, "SPEEDROW", speed_top);
         ui.add_space(14.0);
 
         // ---- saved loops for this track: which one is looping now (or that it isn't saved yet)

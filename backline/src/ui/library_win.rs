@@ -1507,7 +1507,6 @@ impl App {
             }
             self.side_nav(ui, side, acts);
             tour::mark("TABS", side);
-            tour::mark("APPMENU", side);
             let mut rest = Rect::from_min_max(Pos2::new(side.max.x + if styled { 10.0 } else { 0.0 }, all.min.y), all.max);
             // (a Style has its own player)
             if let Some(tr) = self.cur_track().filter(|_| all.height() > 300.0 && !styled) {
@@ -2197,8 +2196,8 @@ impl App {
             }
             sa.show(ui, |ui| {
                     ui.push_id((serial, sec_i), |ui| match sec {
-                        // used without Tidal: the tab is still here, and logs you in
-                        Sec::Tidal if self.offline => {
+                        // used without Tidal: the tab is still here, and logs you in (a tour shows its own song here)
+                        Sec::Tidal if self.offline && self.tour_play.is_none() => {
                             ui.add_space(10.0);
                             title_line(ui, "TIDAL", 3.0, pal().ink);
                             para(ui, "Not logged in to Tidal. Files, YouTube, SoundCloud and the practice tools still work.", pal().ink2);

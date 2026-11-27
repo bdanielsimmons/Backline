@@ -11,10 +11,8 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 <!-- shots:start -->
 | | |
 |---|---|
-| ![The player, library and playlist](screenshots/player.png) | ![The equalizer](screenshots/equalizer.png) |
-| ![The album view](screenshots/album-view.png) | ![Practice: loop a spot](screenshots/practice.png) |
-| ![Name a chord from the neck or piano](screenshots/chord-namer.png) | ![The lead sheet and the band](screenshots/lead-sheet.png) |
-| ![Ear training: chord qualities](screenshots/ear-training.png) | |
+| ![The library, the player and the playlist](screenshots/player.png) | ![The Studio look](screenshots/studio.png) |
+| ![Hardware's Now Playing: a reel-to-reel deck beside an amp](screenshots/now-playing.png) | ![Practice: loop a spot and slow it down](screenshots/practice.png) |
 <!-- shots:end -->
 
 ## What's new
@@ -283,7 +281,7 @@ If cargo hits an SSL/revocation error behind a corporate proxy: `set CARGO_HTTP_
 - icon.ico + build.rs embed the logo in the Windows exe (taskbar / pinned shortcuts).
 - Help overlay (? button / F1): start, keys, practice, about.
 - Visualizer settings are now separate for the player widget and the album view (VizCfg).
-- Guided tour (tour.rs): general tour for everyone + a separate short practice tour; opens from Help > TOUR, offered once on first run.
+- Guided tours (tour.rs): six steps for everyone and six for the practice tools; open from Help > TOUR, the first offered once on first run.
 - Update shows a restart bar; auto-restart is opt-in (see Preferences).
 
 ## Preferences (PREFS button)

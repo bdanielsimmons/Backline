@@ -1,9 +1,10 @@
 //! The guided tour: a dimmed screen with the part being explained left bright, and a small card with
-//! BACK / NEXT. One short tour for everyone, and a separate short one for the practice tools.
-//! A step can light up a whole window or a single control, and can set the scene first (open the album view,
-//! switch practice mode on, open MORE). The tour plays its own song (tour_song.rs) and shows things working on it:
-//! a slower speed, a loop, an EQ preset. When it ends, everything comes back: what was showing, the queue, the
-//! song and where it was, the speed, the loop and the equalizer.
+//! BACK / NEXT. Two short tours of six steps each: one for everyone, one for the practice tools. Every look reports
+//! the same parts (LIBRARY, PLAYER, QUEUE, PRACTICE), so a tour reads the same in all of them.
+//! A step can light up a part and set the scene first (Now Playing, practice mode, a practice page). The tour plays
+//! its own song (tour_song.rs), very quietly, and shows things working on it: a loop at a slower speed, a chord,
+//! the band. When it ends, everything comes back: what was showing, the queue, the song and where it was, the
+//! speed, the loop and the equalizer.
 
 use crate::Within;
 use crate::{pal, retro_btn, title_line, Action, App, practice_tools};
@@ -44,36 +45,24 @@ enum Scene {
     /// practice mode off (to show where it is switched on)
     PracticeOff,
     Practice,
-    /// practice mode with MORE open on a tab (0 TRAINER, 1 PITCH, 2 STEMS)
-    PracticeMore(u8),
-    /// the album view in practice mode, with its little practice strip
-    AlbumPractice,
-    /// practice mode, the CHORDS tab on its chord finder
+    /// practice mode, the CHORDS page on its chord finder
     Chords,
-    /// practice mode, the CHORDS tab on its analyzer, with a grip on the neck
-    Analyzer,
-    /// practice mode, CHORDS on SCALE HARMONY
-    Harmony,
-    /// practice mode, LINES on Slonimsky's Diary
-    Lines,
     /// practice mode, the EAR training page
     Ear,
-    /// practice mode, the lead sheet on the right with a ii-V-I on it
+    /// practice mode, the lead sheet with Cherokee on it
     Sheet,
 }
 
 struct Step {
-    /// window or control to light up ("" = none, the card sits in the middle)
+    /// the part to light up ("" = none, the card sits in the middle)
     key: &'static str,
     scene: Scene,
     title: &'static str,
     text: &'static str,
-    /// the tour shows it working on the tour's song: its speed (0 = normal), the A-B loop on, an EQ preset
+    /// the tour shows it working on the tour's song: its speed (0 = normal), the A-B loop on
     speed: u32,
     ab: bool,
-    eq: Option<usize>,
-    /// done once when the step opens (the tour's song pauses for it): 1 strum a chord, 2 play a line, 3 the band,
-    /// 4 notes put on the analyzer's neck, 5 a triad pair played
+    /// done once when the step opens (the tour's song pauses for it): 1 a chord strummed, 2 the band
     act: u8,
 }
 
@@ -81,55 +70,41 @@ struct Step {
 pub(crate) const CHEROKEE: &str = "T44 *A | Bb6 | Fm7 Bb7 | Ebmaj7 | Ebm7 Ab7 | Bb6 | C7 | Cm7 | F7 | Bb6 | Fm7 Bb7 | Ebmaj7 | Ebm7 Ab7 | Bb6 | Cm7 F7 | Bb6 | % | *B | C#m7 | F#7 | Bmaj7 | % | Bm7 | E7 | Amaj7 | % | Am7 | D7 | Gmaj7 | % | Gm7 | C7 | Cm7 | F7 |";
 
 /// A step with nothing being demonstrated (fill in the rest).
-const BASE: Step = Step { key: "", scene: Scene::Normal, title: "", text: "", speed: 0, ab: false, eq: None, act: 0 };
+const BASE: Step = Step { key: "", scene: Scene::Normal, title: "", text: "", speed: 0, ab: false, act: 0 };
 
 const BASIC: &[Step] = &[
     Step {
         title: "WELCOME",
-        text: "A quick tour, with a song playing so you hear each part work. NEXT and BACK (or the arrow keys) move between steps, and ESC exits. Your queue and song are restored at the end.",
+        text: "A one-minute tour, with a quiet song playing so you hear things work. NEXT or the right arrow moves on, ESC ends it, and your music comes back after.",
+        ..BASE
+    },
+    Step {
+        key: "LIBRARY",
+        title: "YOUR MUSIC",
+        text: "Tidal, your files, YouTube, SoundCloud and your own playlists. Click a song to play it, or right-click it for more.",
         ..BASE
     },
     Step {
         key: "PLAYER",
         title: "THE PLAYER",
-        text: "Play, pause, skip, seek and set the volume. It shows the song's tempo and key, too. EQ and PL open the equalizer and the playlist.",
-        ..BASE
-    },
-    Step {
-        key: "EQUALIZER",
-        title: "THE EQUALIZER",
-        text: "The BASS preset is on, so the low end comes up. AUTO remembers an EQ for each song.",
-        eq: Some(1),
-        ..BASE
-    },
-    Step {
-        key: "LIBRARY",
-        title: "THE LIBRARY",
-        text: "Everything you can play, down the side: Tidal, your files, SoundCloud, YouTube and your own lists. Click a song to play it, or right-click for more.",
+        text: "Play, pause, skip and the volume. Click along the bar to jump in the song.",
         ..BASE
     },
     Step {
         key: "QUEUE",
-        title: "THE QUEUE",
-        text: "This is what plays next. Drag a row to reorder it. Right-click to remove it or add it to a playlist.",
+        title: "UP NEXT",
+        text: "The songs coming up. Drag one to move it.",
         ..BASE
     },
     Step {
-        key: "ARTBTNS",
         scene: Scene::Album,
         title: "NOW PLAYING",
-        text: "Press A, or click the song at the bottom of the library, to open Now Playing. Shuffle and repeat light up when on. Click a lyric line to jump there; ESC closes it.",
-        ..BASE
-    },
-    Step {
-        key: "APPMENU",
-        title: "GETTING AROUND",
-        text: "The sidebar: MUSIC has your songs, PRACTICE your tunes and tools, SETTINGS your skins and preferences. LISTEN and PRACTICE under the name switch modes. CTRL+K opens the command palette.",
+        text: "Press A for the song up close: the cover big, with the lyrics and what's next. ESC comes back.",
         ..BASE
     },
     Step {
         title: "THAT'S IT",
-        text: "DONE puts everything back the way you had it. The ? button lists every key and tip.",
+        text: "SKINS, down the side, changes the whole look. F1 lists every key. DONE puts your music back.",
         ..BASE
     },
 ];
@@ -138,124 +113,47 @@ const PRACTICE_TOUR: &[Step] = &[
     Step {
         key: "CHIP",
         scene: Scene::PracticeOff,
-        title: "PRACTICE MODE",
-        text: "Tools for learning music from recordings. Click PRACTICE under the Backline name, or press P. Opening a practice page from MUSIC turns them on too.",
+        title: "PRACTICE",
+        text: "Tools for learning music from records. Click PRACTICE, or press P.",
         ..BASE
     },
     Step {
-        key: "LOOPROW",
+        key: "PRACTICE",
         scene: Scene::Practice,
-        title: "1. LOOP A SPOT",
-        text: "Loop a few seconds to hear them again. Press A and B (or [ and ]), or shift-drag on the waveform. The arrows move the whole loop on to the next phrase. Name it and SAVE LOOP to keep it.",
-        ab: true,
-        ..BASE
-    },
-    Step {
-        key: "SPEEDROW",
-        scene: Scene::Practice,
-        title: "2. SLOW IT DOWN",
-        text: "The same loop at 85%, with the same pitch. Play it clean slow, then step it up.",
+        title: "LOOP AND SLOW DOWN",
+        text: "A few seconds going round at 85%, at the same pitch. Press A and B to loop your own spot, or shift-drag on the waveform.",
         ab: true,
         speed: 85,
-        ..BASE
-    },
-    Step {
-        key: "MOREBOX",
-        scene: Scene::PracticeMore(0),
-        title: "3. SPEED TRAINER",
-        text: "The TRAINER plays your loop a few times, then speeds it up a little, again and again.",
-        ab: true,
-        speed: 85,
-        ..BASE
-    },
-    Step {
-        key: "MOREBOX",
-        scene: Scene::PracticeMore(1),
-        title: "4. FIX THE PITCH",
-        text: "Change the key, see how far the record is from A440, and tune it to your instrument.",
-        ..BASE
-    },
-    Step {
-        key: "MOREBOX",
-        scene: Scene::PracticeMore(2),
-        title: "5. STEMS",
-        text: "STEMS splits a song into drums, bass, vocals and the rest. Solo one part, or mute it.",
-        ..BASE
-    },
-    Step {
-        key: "MOREBOX",
-        scene: Scene::PracticeMore(3),
-        title: "6. BOOKMARKS",
-        text: "BOOKMARKS mark the spots you come back to: the solo, the bridge, the bar you keep missing. Alt-click the waveform to add one, then name it.",
-        ..BASE
-    },
-    Step {
-        key: "TIMEBTNS",
-        scene: Scene::Practice,
-        title: "7. KEEP TIME",
-        text: "The two buttons at the top: a focus timer with breaks, and a metronome for any meter that can lock to the song's beat. Click the dot to start, the label to open it.",
-        ..BASE
-    },
-    Step {
-        key: "ARTPRACTICE",
-        scene: Scene::AlbumPractice,
-        title: "8. PRACTICE IN NOW PLAYING",
-        text: "The loop and speed carry over to Now Playing.",
-        ab: true,
         ..BASE
     },
     Step {
         key: "CHORDSVIEW",
         scene: Scene::Chords,
-        title: "9. CHORDS",
-        text: "Any chord's notes, the scales that fit, and its grips as a chord book lays them out: the ones to know first, open, movable by root string, with a capo, and every drop voicing.",
+        title: "CHORDS",
+        text: "Any chord's notes, its grips on the neck and the scales that fit.",
         act: 1,
-        ..BASE
-    },
-    Step {
-        key: "CHORDSVIEW",
-        scene: Scene::Analyzer,
-        title: "10. NAME A CHORD",
-        text: "Click notes on a neck or a piano to name the chord. This one is Dm7.",
-        act: 4,
-        ..BASE
-    },
-    Step {
-        key: "CHORDSVIEW",
-        scene: Scene::Harmony,
-        title: "11. THE CHORDS OF A SCALE",
-        text: "See every chord a scale makes, with its mode and a grip. Here it is G melodic minor. Pick a chord to see what to solo over it. You are hearing a triad pair, C then D.",
-        act: 5,
-        ..BASE
-    },
-    Step {
-        key: "LINESVIEW",
-        scene: Scene::Lines,
-        title: "12. LINES",
-        text: "Scales, arpeggios, pentatonics and Slonimsky's Diary in notation and tab. Play them alone or over the band.",
-        act: 2,
         ..BASE
     },
     Step {
         key: "SHEET",
         scene: Scene::Sheet,
-        title: "13. THE LEAD SHEET AND THE BAND",
-        text: "Every tune can have a chart, and a little band plays it at your tempo. Drag across bars to loop just those. Here it is Cherokee.",
-        act: 3,
+        title: "THE BAND",
+        text: "Every tune can have a chart, and a band plays it at your tempo. This is Cherokee.",
+        act: 2,
         ..BASE
     },
     Step {
         key: "EARVIEW",
         scene: Scene::Ear,
-        title: "14. EAR TRAINING",
-        text: "Tonal drills, from chord qualities to playing a lick back, and atonal ones: free intervals, scales sung in intervals, sight-singing. You start with four answers and get more as you get them right; the ones you mix up come back more often.",
+        title: "EAR TRAINING",
+        text: "Drills from intervals to chord qualities. The ones you mix up come back more often.",
         ..BASE
     },
     Step {
         key: "TABS",
         scene: Scene::Practice,
-        title: "15. KEEP TRACK",
-        text: "PRACTICE in the sidebar holds your TUNES, a DIARY of what you practiced, and every tool. DONE puts everything back.",
+        title: "KEEP TRACK",
+        text: "TUNES, LOOPS and the DIARY keep what you've practiced. DONE puts everything back.",
         ..BASE
     },
 ];
@@ -274,21 +172,16 @@ pub(crate) struct TourPlay {
     last: Option<crate::store::Last>,
     /// repeat as it was (the tour plays its song on repeat one)
     repeat: crate::Repeat,
-    /// the library list, the right-hand tab, the lead sheet's practice chart and the CHORDS / LINES tabs as they were
+    /// the library list, the right-hand tab, the lead sheet's practice chart and the CHORDS tab as they were
     sec: crate::Sec,
     rtab: u8,
     prac_chart: Option<(String, String)>,
     chords_tab: u8,
-    ln_tab: u8,
-    an_frets: [Option<u8>; 6],
     /// the side pages that were open (preferences; the BACKLINE page, Winamp skins or the log): the tour
     /// closes them so every window it points at can be seen, and opens them again at the end
     pages: (bool, Option<crate::Side>),
     /// the step whose action has been done, and whether the tour paused its song or started the band
     acted: Option<usize>,
-    /// when the step's action began, and how many of the analyzer's notes are on the neck so far
-    act_at: Option<std::time::Instant>,
-    placed: usize,
     paused: bool,
     band: bool,
     /// the page that was showing (your library, Tidal home...): the tour shows only its own song, then puts it back
@@ -305,8 +198,9 @@ fn steps(kind: u8) -> &'static [Step] {
     }
 }
 
-/// How loud the tour's song plays, as a share of the volume set (it's background music for the tour).
-const TOUR_LEVEL: f32 = 0.5;
+/// How loud the tour's song plays, as a share of the volume set: very quiet, background music for the tour (the
+/// chord and the band it shows play at your volume, over it). A recorded tour keeps the song as quiet.
+const TOUR_LEVEL: f32 = 0.25;
 
 impl App {
     pub(crate) fn tour_start(&mut self, kind: u8) {
@@ -333,12 +227,8 @@ impl App {
             rtab: self.rtab,
             prac_chart: self.prac_chart.clone(),
             chords_tab: self.chords_tab,
-            ln_tab: self.ln_tab,
-            an_frets: self.an_frets,
             pages: (self.show_prefs, self.side),
             acted: None,
-            act_at: None,
-            placed: 0,
             paused: false,
             band: false,
             page: self.page.clone(),
@@ -406,17 +296,23 @@ impl App {
         self.loop_b = None;
         self.loop_on = false;
         self.apply(Action::PlayIndex(0));
-        // quieter than your own music: the tour talks over it (your volume comes back when it ends)
-        self.player.send(crate::player::Cmd::Volume((self.volume * TOUR_LEVEL).powi(2)));
+        self.tour_volume(true);
+    }
+
+    /// The tour's song plays very quietly, under the tour; the chord and the band it shows (the song paused for them)
+    /// at your own volume. Your volume comes back when it ends.
+    fn tour_volume(&self, quiet: bool) {
+        let v = if quiet { self.volume * TOUR_LEVEL } else { self.volume };
+        self.player.send(crate::player::Cmd::Volume(v * v));
     }
 
     /// Show the step's feature working on the tour's song (only what differs, so nothing restarts).
-    fn tour_demo(&mut self, speed: u32, ab: bool, eq: Option<usize>) {
+    fn tour_demo(&mut self, speed: u32, ab: bool) {
         let Some(snap) = &self.tour_play else { return };
         if snap.song.is_none() {
             return;
         }
-        let (saved_eq, song) = (snap.eq, snap.song);
+        let song = snap.song;
         if self.cur_track().map(|t| t.id) != song {
             return; // something else was picked meanwhile: leave it alone
         }
@@ -441,40 +337,6 @@ impl App {
             self.loop_on = false;
             self.sync_loop();
         }
-        let (gains, on, show) = match eq {
-            Some(p) => (crate::EQ_PRESETS[p.min(crate::EQ_PRESETS.len() - 1)].1, true, true),
-            None => saved_eq,
-        };
-        if self.eq_gains != gains || self.eq_on != on || self.show_eq != show {
-            self.eq_gains = gains;
-            self.eq_on = on;
-            self.show_eq = show;
-            self.apply_eq();
-        }
-    }
-
-    /// The analyzer step: Dm7 (x 5 7 5 6 5) goes on the neck a note at a time, each one heard as it lands, then the
-    /// whole chord is strummed.
-    fn tour_place_notes(&mut self) {
-        const GRIP: [Option<u8>; 6] = [None, Some(5), Some(7), Some(5), Some(6), Some(5)];
-        let Some(s) = self.tour_play.as_ref() else { return };
-        let (Some(at), placed) = (s.act_at, s.placed) else { return };
-        let notes: Vec<(usize, u8)> = GRIP.iter().enumerate().filter_map(|(s, f)| f.map(|f| (s, f))).collect();
-        let due = ((at.elapsed().as_secs_f32() - 0.6) / 0.7).max(0.0) as usize;
-        if placed < notes.len() && due > placed {
-            let (string, fret) = notes[placed];
-            self.an_frets[string] = Some(fret);
-            self.apply(Action::PlayNotes(vec![crate::theory::STANDARD[string] + fret as i32]));
-            if let Some(s) = self.tour_play.as_mut() {
-                s.placed += 1;
-            }
-        } else if placed == notes.len() && due > placed + 1 {
-            let all: Vec<i32> = notes.iter().map(|(s, f)| crate::theory::STANDARD[*s] + *f as i32).collect();
-            self.apply(Action::PlayNotes(all));
-            if let Some(s) = self.tour_play.as_mut() {
-                s.placed += 1;
-            }
-        }
     }
 
     /// Put back what was playing before the tour: the queue, the song (playing again where it was if it was
@@ -491,8 +353,6 @@ impl App {
         self.rtab = s.rtab;
         self.prac_chart = s.prac_chart.clone();
         self.chords_tab = s.chords_tab;
-        self.ln_tab = s.ln_tab;
-        self.an_frets = s.an_frets;
         (self.show_prefs, self.side) = s.pages;
         if s.song.is_some() {
             self.apply(Action::StopBtn);
@@ -534,23 +394,11 @@ impl App {
     /// Put the screen in the state a step needs (only what differs, so nothing flickers).
     fn tour_scene(&mut self, scene: Scene) {
         let Some((_, practice, more, mtab)) = self.tour_restore else { return };
-        let want_art = matches!(scene, Scene::Album | Scene::AlbumPractice);
+        let want_art = scene == Scene::Album;
         let want_practice = match scene {
             Scene::PracticeOff => false,
-            Scene::Practice
-            | Scene::PracticeMore(_)
-            | Scene::AlbumPractice
-            | Scene::Chords
-            | Scene::Analyzer
-            | Scene::Harmony
-            | Scene::Lines
-            | Scene::Ear
-            | Scene::Sheet => true,
+            Scene::Practice | Scene::Chords | Scene::Ear | Scene::Sheet => true,
             _ => practice,
-        };
-        let (want_more, want_tab) = match scene {
-            Scene::PracticeMore(tab) => (true, tab),
-            _ => (more, mtab),
         };
         if self.art_view != want_art {
             self.art_view = want_art;
@@ -558,24 +406,12 @@ impl App {
         if practice_tools() && self.practice != want_practice {
             self.apply(Action::TogglePractice);
         }
-        self.more = want_more;
-        self.mtab = want_tab;
+        // (the practice panel shows its loop and speed, not a MORE tab)
+        (self.more, self.mtab) = if scene == Scene::Practice { (false, mtab) } else { (more, mtab) };
         match scene {
             Scene::Chords => {
                 self.sec = crate::Sec::Chords;
                 self.chords_tab = 0;
-            }
-            Scene::Analyzer => {
-                self.sec = crate::Sec::Chords;
-                self.chords_tab = 1;
-            }
-            Scene::Harmony => {
-                self.sec = crate::Sec::Chords;
-                self.chords_tab = 6;
-            }
-            Scene::Lines => {
-                self.sec = crate::Sec::Lines;
-                self.ln_tab = 0;
             }
             Scene::Ear => {
                 self.sec = crate::Sec::Ear;
@@ -590,8 +426,8 @@ impl App {
         }
     }
 
-    /// A step's one-off: the tour's song pauses, then a chord is strummed, a line played or the band started.
-    /// Leaving those steps stops the band and lets the song go on.
+    /// A step's one-off: the tour's song pauses, then a chord is strummed or the band started. Leaving those steps
+    /// stops the band and lets the song go on.
     fn tour_act(&mut self, i: usize, act: u8) {
         let Some(s) = self.tour_play.as_ref() else { return };
         if s.song.is_none() {
@@ -603,18 +439,7 @@ impl App {
             if act != 0 && !self.paused && !self.stopped {
                 self.apply(Action::PauseBtn);
             }
-            if act == 4 {
-                self.tour_place_notes();
-            }
             return;
-        }
-        // a line still going round from the step before stops here
-        if self.seq_play.is_some() {
-            self.apply(Action::StopSequence);
-        }
-        if let Some(s) = self.tour_play.as_mut() {
-            s.act_at = Some(std::time::Instant::now());
-            s.placed = 0;
         }
         if let Some(s) = self.tour_play.as_mut() {
             s.acted = Some(i);
@@ -623,6 +448,7 @@ impl App {
             if had_band && self.band_on {
                 self.apply(Action::Opt(crate::extras::Opt::Band));
             }
+            self.tour_volume(true);
             if was_paused && self.paused {
                 self.apply(Action::PlayBtn);
             }
@@ -637,7 +463,8 @@ impl App {
                 s.paused = true;
             }
         }
-        if act != 3 && had_band && self.band_on {
+        self.tour_volume(false);
+        if act != 2 && had_band && self.band_on {
             self.apply(Action::Opt(crate::extras::Opt::Band));
             if let Some(s) = self.tour_play.as_mut() {
                 s.band = false;
@@ -649,23 +476,6 @@ impl App {
                 if let Some(c) = crate::theory::chord_notes("Cmaj7") {
                     self.apply(Action::PlayNotes(crate::chords::piano_voicing(&c)));
                 }
-            }
-            5 => {
-                // the triad pair of G melodic minor, C then D, up and back
-                let notes = crate::harmony::pair_line(&[0, 4, 7], &[2, 6, 9], 60);
-                self.apply(Action::PlaySequenceAt(notes.iter().map(|m| vec![*m]).collect(), 0.18, "hm_tour".to_string()));
-            }
-            4 => {
-                // the neck starts empty; the notes go on one by one (tour_place_notes)
-                self.an_frets = [None; 6];
-            }
-            2 => {
-                // the line on show: a pattern from the book when one was added, else one from Slonimsky's system
-                let notes = crate::lines::book()
-                    .first()
-                    .map(|l| l.notes())
-                    .unwrap_or_else(|| crate::lines::slonimsky_line(48, 6, &[0, 1]));
-                self.apply(Action::PlaySequenceAt(notes.iter().map(|m| vec![*m]).collect(), 0.18, "line".to_string()));
             }
             _ => {
                 if !self.band_on {
@@ -700,7 +510,7 @@ impl App {
         // the library window shows the library, not a side page, while the tour points at things
         (self.show_prefs, self.side) = (false, None);
         self.tour_scene(step.scene);
-        self.tour_demo(step.speed, step.ab, step.eq);
+        self.tour_demo(step.speed, step.ab);
         self.tour_act(i, step.act);
         let screen = ctx.screen_rect();
         let target = if step.key.is_empty() { None } else { find(step.key) };
@@ -743,14 +553,13 @@ impl App {
                 }
                 // (the whole text, plainly on the card - not folded to a line)
                 crate::wrapped(ui, step.text, Color32::from_rgb(225, 225, 220));
-                // the credit the song's licence asks for, while it plays
+                // the credit the song's licence asks for, while it plays: small and still, under the text
                 if self.tour_play.as_ref().is_some_and(|s| s.song.is_some()) {
-                    // scrolling at the same speed as the song's name in the player
-                    let (r, _) = ui.allocate_exact_size(
-                        egui::Vec2::new(ui.available_width(), 7.0 * crate::spx(1.0) + 6.0),
-                        egui::Sense::hover(),
-                    );
-                    crate::marquee_at(ui, r, crate::tour_song::CREDIT, 1.0, Color32::from_gray(160), crate::title_scroll());
+                    let w = ui.available_width() - 12.0;
+                    for line in crate::wrap(crate::tour_song::CREDIT, 1.0, w) {
+                        let (r, _) = ui.allocate_exact_size(egui::Vec2::new(w, 7.0 * crate::spx(1.0) + 4.0), egui::Sense::hover());
+                        crate::ptext(ui.painter(), Pos2::new(r.min.x + 6.0, r.center().y), egui::Align::Min, &line, 1.0, Color32::from_gray(130));
+                    }
                 }
                 ui.horizontal(|ui| {
                     if i > 0 && retro_btn(ui, "BACK", false).clicked() {
@@ -900,7 +709,11 @@ impl DemoRec {
         }
         let audio = self.out.with_extension("wav");
         let offset = 0.0;
-        if let Some(r) = crate::player::rec_take() {
+        if let Some(mut r) = crate::player::rec_take() {
+            // the song as quiet as the tour plays it, under the chord and the band (kept before the volume, as they are)
+            for p in r.pieces.iter_mut().filter(|p| p.song) {
+                p.gain = TOUR_LEVEL * TOUR_LEVEL;
+            }
             let secs = self.frames as f64 / FPS;
             let _ = std::fs::write(&audio, crate::band::wav_of(&mix(&r, self.start, secs), MIX_RATE, 2));
         }
@@ -1007,12 +820,11 @@ impl App {
                         rec.step_at = now;
                     }
                     let list = steps(kind);
-                    // long enough to read the card, and for what it shows to be heard: the notes going on the
-                    // neck, a line, the band
+                    // long enough to read the card, and for what it shows to be heard: the chord, the band
                     let words = list[i].text.split_whitespace().count() as f32;
                     let least = match list[i].act {
-                        3 => 7.0,
-                        2 | 4 | 5 => 5.0,
+                        2 => 7.0,
+                        1 => 4.0,
                         _ => 3.0,
                     };
                     let stay = (1.5 + words / 6.0).within(least, 8.0);
@@ -1051,46 +863,39 @@ mod tests {
 
     #[test]
     fn every_step_points_at_something_that_reports_itself() {
-        // windows report themselves by title; single controls call tour::mark("KEY", ...)
-        let windows = ["LIBRARY", "PLAYER", "PRACTICE", "QUEUE", "EQUALIZER"];
+        // the library and practice panels report themselves in every look (window_deco); Classic's player and queue
+        // windows too, and the styles mark their player bar and queue (styles::styled_layout); single controls call
+        // tour::mark("KEY", ...)
+        let windows = ["LIBRARY", "PLAYER", "PRACTICE", "QUEUE"];
         let src = [
-            include_str!("../main.rs"),
             include_str!("library_win.rs"),
-            include_str!("player_win.rs"),
-            include_str!("album_view.rs"),
-            include_str!("views.rs"),
-            include_str!("tunes.rs"),
-            include_str!("diary.rs"),
-            include_str!("loops_page.rs"),
-            include_str!("practice.rs"),
-            include_str!("layout.rs"),
-            include_str!("tracks.rs"),
             include_str!("chords.rs"),
-            include_str!("lines.rs"),
             include_str!("tools.rs"),
             include_str!("ear.rs"),
         ]
         .concat();
+        let styles = include_str!("styles.rs");
         for s in BASIC.iter().chain(PRACTICE_TOUR) {
             if s.key.is_empty() {
                 continue;
             }
-            let marked = src.contains(&format!("mark(\"{}\"", s.key)) || src.contains(&format!("row_mark(ui, \"{}\"", s.key));
+            let marked = src.contains(&format!("mark(\"{}\"", s.key));
             assert!(marked || windows.contains(&s.key), "tour step {} points at {}, which nothing reports", s.title, s.key);
+            // (and the styles have them too)
+            if ["PLAYER", "QUEUE"].contains(&s.key) {
+                assert!(styles.contains(&format!("tour::mark(\"{}\"", s.key)), "the styles don't mark {}", s.key);
+            }
         }
     }
 
     #[test]
-    fn practice_steps_have_practice_on() {
-        // the practice panel only exists in practice mode: steps pointing into it must switch it on
-        for s in PRACTICE_TOUR.iter().filter(|s| ["PRACTICE", "LOOPROW", "SPEEDROW", "MOREBOX", "ARTPRACTICE"].contains(&s.key)) {
-            assert!(matches!(s.scene, Scene::Practice | Scene::PracticeMore(_) | Scene::AlbumPractice), "{}", s.title);
+    fn tours_are_short_and_practice_steps_have_practice_on() {
+        assert!(BASIC.len() <= 6 && PRACTICE_TOUR.len() <= 6, "simpler is better: six steps at most");
+        // the practice panel only exists in practice mode: a step pointing into it must switch it on
+        for s in PRACTICE_TOUR.iter().filter(|s| s.key == "PRACTICE") {
+            assert!(s.scene == Scene::Practice, "{}", s.title);
         }
-        // the MORE steps open MORE, each on its own tab
-        let tabs: Vec<u8> =
-            PRACTICE_TOUR.iter().filter_map(|s| if let Scene::PracticeMore(t) = s.scene { Some(t) } else { None }).collect();
-        assert_eq!(tabs, vec![0, 1, 2, 3], "trainer, pitch, stems and bookmarks each get a step");
-        assert!(BASIC.iter().any(|s| s.scene == Scene::Album), "the main tour visits the album view");
+        assert!(BASIC.iter().any(|s| s.scene == Scene::Album), "the main tour visits Now Playing");
         assert!(BASIC.last().unwrap().scene == Scene::Normal, "and comes back from it");
     }
 }

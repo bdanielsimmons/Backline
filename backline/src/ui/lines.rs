@@ -296,7 +296,6 @@ impl App {
     }
 
     pub(crate) fn lines_view(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        crate::tour::mark("LINESVIEW", ui.clip_rect());
         self.seq_tick(ui.ctx());
         // (the page's path over the page does the work of these two rows when it shows)
         if !self.path_on {

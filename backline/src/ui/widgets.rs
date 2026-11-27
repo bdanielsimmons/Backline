@@ -17,19 +17,6 @@ pub(crate) fn bh() -> f32 {
 }
 
 // --------------------------------------------------------------- marquee
-/// How fast the player's title scrolls (points a second, as f32 bits), so other scrolling text can keep pace.
-pub(crate) static TITLE_SCROLL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-/// The player title's scrolling speed (points a second), or a usual one before the player has drawn.
-pub(crate) fn title_scroll() -> f32 {
-    let v = f32::from_bits(TITLE_SCROLL.load(std::sync::atomic::Ordering::Relaxed));
-    if v > 0.0 {
-        v
-    } else {
-        9.0 * spx(1.5)
-    }
-}
-
 /// Scrolling bitmap text inside `rect` (static if it fits).
 pub(crate) fn marquee(ui: &egui::Ui, rect: Rect, text: &str, px: f32, color: Color32) {
     marquee_at(ui, rect, text, px, color, 9.0 * spx(px));
