@@ -197,6 +197,8 @@ mod vicon;
 mod views;
 #[path = "ui/visuals.rs"]
 mod visuals;
+#[path = "ui/retro.rs"]
+mod retro;
 #[path = "ui/terrain.rs"]
 mod terrain;
 #[path = "ui/wave.rs"]
@@ -1017,6 +1019,8 @@ app_state! {
     // ---- visuals (ui/visuals.rs)
     vis_gl: Arc<Mutex<visuals::Gl>> = Arc::new(Mutex::new(visuals::Gl::default())),
     vis_preset: usize = visuals::find("3D: Terrain"),
+    /// The classic visuals' frames a second (0: WMP's own pace), ui/retro.rs.
+    vis_fps: u8 = 60,
     /// Visuals in Now Playing, in place of the cover.
     vis_np: bool,
     /// Automatic gain and beats for the visuals.
@@ -1253,6 +1257,8 @@ app_state! {
     yt_in: String,
     sc_in: String,
     marker_drag: u8,
+    /// Now Playing's seek bar: the loop end being dragged there (1: A, 2: B)
+    bar_drag: u8,
     pan_off: f32,
     pan_len: f32,
     sc_msg: String,

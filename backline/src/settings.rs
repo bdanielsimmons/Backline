@@ -30,6 +30,7 @@ plain_settings! {
     xfade: u8 => min(12),
     volume: f32 => clamp(0.0, 1.0),
     vis_idle: u32,
+    vis_fps: u8,
     spec_op: f32 => clamp(0.05, 0.8),
     art_op: f32 => clamp(0.5, 1.0),
     wv_h: f32,
@@ -111,6 +112,7 @@ impl App {
         if let Some(v) = st["vis_preset"].as_str() {
             app.vis_preset = visuals::offered(visuals::find(v));
         }
+        crate::retro::FPS.store(app.vis_fps, std::sync::atomic::Ordering::Relaxed);
         if let Some(a) = st["vis_pop_px"].as_array().filter(|a| a.len() == 4) {
             let v: Vec<i32> = a.iter().map(|x| x.as_i64().unwrap_or(0) as i32).collect();
             app.pop_px = Some([v[0], v[1], v[2], v[3]]);

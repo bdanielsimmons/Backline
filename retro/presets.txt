@@ -1,0 +1,394 @@
+alchemy3d	0	3D Alchemy	Classic
+alchemy3d	1	3D Alchemy	Kaleidoscope
+alchemy3d	2	3D Alchemy	Monoliths
+alchemy3d	3	3D Alchemy	Strange world
+alchemy3d	4	3D Alchemy	WM Museum
+alchemy3d	5	3D Alchemy	Draco's room
+animator	0	Animator	Show
+alchemy	0	Alchemy	Random
+alchemy	1	Alchemy	Random (WMP 9)
+alchemy	2	Alchemy	Random (WMP 10)
+alchemy	3	Alchemy	Random (WMP 11)
+ambience	0	Ambience	Random
+ambience	1	Ambience	Swirl
+ambience	2	Ambience	Warp
+ambience	3	Ambience	Anon
+ambience	4	Ambience	Falloff
+ambience	5	Ambience	Water
+ambience	6	Ambience	Bubble
+ambience	7	Ambience	Dizzy
+ambience	8	Ambience	Windmill
+ambience	9	Ambience	Niagara
+ambience	10	Ambience	Blender
+ambience	11	Ambience	X Marks the Spot
+ambience	12	Ambience	Down the Drain
+ambience	13	Ambience	Thingus
+ambience	14	Ambience	Random (WMP 7)
+ambience	15	Ambience	Random (WMP 8)
+ambience	16	Ambience	Random (WMP 9)
+ambience	17	Ambience	Swirl (WMP 7-9)
+ambience	18	Ambience	Warp (WMP 7-9)
+ambience	19	Ambience	Anon (WMP 7-9)
+ambience	20	Ambience	Water (WMP 7-9)
+ambience	21	Ambience	Bubble (WMP 7-9)
+ambience	22	Ambience	Dizzy (WMP 7-9)
+ambience	23	Ambience	Niagara (WMP 7-8)
+analyzed	0	Analyzed	Line Bars
+analyzed	1	Analyzed	Mirror Bars
+analyzed	2	Analyzed	Digital Bars
+analyzed	3	Analyzed	Line Ghost Bars
+analyzed	4	Analyzed	Mirror Ghost Bars
+analyzed	5	Analyzed	Digital Ghost Bars
+analyzed	6	Analyzed	Bar Scope
+analyzed	7	Analyzed	Dot Scope
+bars	0	Bars and Waves	Bars
+bars	1	Bars and Waves	Ocean Mist
+bars	2	Bars and Waves	Fire Storm
+bars	3	Bars and Waves	Scope
+bars	4	Bars and Waves	Bars (WMP 7-8)
+bars	5	Bars and Waves	Ocean Mist (WMP 7-10)
+bars	6	Bars and Waves	Fire Storm (WMP 7-10)
+bars	7	Bars and Waves	Scope (WMP 7-8)
+bars	8	Bars and Waves	Bars (WMP 9)
+bars	9	Bars and Waves	Scope (WMP 9)
+bars	10	Bars and Waves	Bars (WMP 10)
+bars	11	Bars and Waves	Scope (WMP 10)
+battery	0	Battery	Randomization
+battery	1	Battery	brightsphere
+battery	2	Battery	dance of the freaky circles
+battery	3	Battery	cominatcha
+battery	4	Battery	cottonstar
+battery	5	Battery	dandelionaid
+battery	6	Battery	drinkdeep
+battery	7	Battery	eletriarnation
+battery	8	Battery	event horizon
+battery	9	Battery	hizodge
+battery	10	Battery	gemstonematrix
+battery	11	Battery	sepiaswirl
+battery	12	Battery	illuminator
+battery	13	Battery	i see the truth
+battery	14	Battery	kaleidovision
+battery	15	Battery	chemicalnova
+battery	16	Battery	lotus
+battery	17	Battery	green is not your enemy
+battery	18	Battery	relatively calm
+battery	19	Battery	sleepyspray
+battery	20	Battery	smoke or water?
+battery	21	Battery	spider's last moment...
+battery	22	Battery	strawberryaid
+battery	23	Battery	the world
+battery	24	Battery	my tornado is resting
+battery	25	Battery	back to the groove
+battery	26	Battery	Randomization (WMP 8)
+battery	27	Battery	brightsphere (WMP 8)
+battery	28	Battery	dance of the freaky circles (WMP 8)
+battery	29	Battery	cominatcha (WMP 8)
+battery	30	Battery	cottonstar (WMP 8)
+battery	31	Battery	dandelionaid (WMP 8-10)
+battery	32	Battery	drinkdeep (WMP 8)
+battery	33	Battery	eletriarnation (WMP 8-10)
+battery	34	Battery	event horizon (WMP 8)
+battery	35	Battery	hizodge (WMP 8-10)
+battery	36	Battery	gemstonematrix (WMP 8-10)
+battery	37	Battery	sepiaswirl (WMP 8)
+battery	38	Battery	illuminator (WMP 8)
+battery	39	Battery	i see the truth (WMP 8)
+battery	40	Battery	kaleidovision (WMP 8)
+battery	41	Battery	chemicalnova (WMP 8-9)
+battery	42	Battery	lotus (WMP 8)
+battery	43	Battery	green is not your enemy (WMP 8)
+battery	44	Battery	relatively calm (WMP 8-10)
+battery	45	Battery	sleepyspray (WMP 8)
+battery	46	Battery	smoke or water? (WMP 8-10)
+battery	47	Battery	spider's last moment... (WMP 8-10)
+battery	48	Battery	strawberryaid (WMP 8-9)
+battery	49	Battery	the world (WMP 8)
+battery	50	Battery	my tornado is resting (WMP 8-9)
+battery	51	Battery	back to the groove (WMP 8-10)
+battery	52	Battery	Randomization (WMP 9)
+battery	53	Battery	brightsphere (WMP 9-10)
+battery	54	Battery	dance of the freaky circles (WMP 9)
+battery	55	Battery	cominatcha (WMP 9-11)
+battery	56	Battery	cottonstar (WMP 9-10)
+battery	57	Battery	drinkdeep (WMP 9-11)
+battery	58	Battery	event horizon (WMP 9-10)
+battery	59	Battery	sepiaswirl (WMP 9)
+battery	60	Battery	illuminator (WMP 9)
+battery	61	Battery	i see the truth (WMP 9-11)
+battery	62	Battery	kaleidovision (WMP 9)
+battery	63	Battery	lotus (WMP 9-10)
+battery	64	Battery	green is not your enemy (WMP 9-11)
+battery	65	Battery	sleepyspray (WMP 9-10)
+battery	66	Battery	the world (WMP 9)
+battery	67	Battery	Randomization (WMP 10)
+battery	68	Battery	dance of the freaky circles (WMP 10)
+battery	69	Battery	sepiaswirl (WMP 10)
+battery	70	Battery	illuminator (WMP 10)
+battery	71	Battery	kaleidovision (WMP 10)
+battery	72	Battery	chemicalnova (WMP 10)
+battery	73	Battery	strawberryaid (WMP 10)
+battery	74	Battery	the world (WMP 10)
+battery	75	Battery	my tornado is resting (WMP 10)
+battery	76	Battery	Randomization (WMP 11)
+battery	77	Battery	brightsphere (WMP 11)
+battery	78	Battery	dance of the freaky circles (WMP 11)
+battery	79	Battery	cottonstar (WMP 11)
+battery	80	Battery	dandelionaid (WMP 11)
+battery	81	Battery	eletriarnation (WMP 11)
+battery	82	Battery	event horizon (WMP 11)
+battery	83	Battery	hizodge (WMP 11)
+battery	84	Battery	gemstonematrix (WMP 11)
+battery	85	Battery	sepiaswirl (WMP 11)
+battery	86	Battery	illuminator (WMP 11)
+battery	87	Battery	kaleidovision (WMP 11)
+battery	88	Battery	chemicalnova (WMP 11)
+battery	89	Battery	lotus (WMP 11)
+battery	90	Battery	relatively calm (WMP 11)
+battery	91	Battery	sleepyspray (WMP 11)
+battery	92	Battery	smoke or water? (WMP 11)
+battery	93	Battery	spider's last moment... (WMP 11)
+battery	94	Battery	strawberryaid (WMP 11)
+battery	95	Battery	the world (WMP 11)
+battery	96	Battery	my tornado is resting (WMP 11)
+battery	97	Battery	back to the groove (WMP 11)
+blazing	0	Blazing Colors	Burning Dance
+blazing	1	Blazing Colors	Firey Colors
+blazing	2	Blazing Colors	Paint Can
+bubbles	0	Bubbles	Random
+bubbles	1	Bubbles	Centered
+bubbles	2	Bubbles	Gravity
+bubbles	3	Bubbles	Pop
+celestial	0	Celestial	Balance
+celestial	1	Celestial	Rhyme
+celestial	2	Celestial	Reflection
+celestial	3	Celestial	Harmony
+celestial	4	Celestial	Mandala
+celestial	5	Celestial	Synchronicity
+celestial	6	Celestial	Synergy
+celestial	7	Celestial	Serenity
+celestial	8	Celestial	Transcendence
+celestial	9	Celestial	The coyote is laughing (he is)
+clarify	0	Clarify	Lucid
+clarify	1	Clarify	Vivid
+clarify	2	Clarify	Focus
+clarify	3	Clarify	Epiphany
+colorcubes	0	Color Cubes	Flower Boxes
+colorcubes	1	Color Cubes	Rhythmic Squares
+colorcubes	2	Color Cubes	Sheer Delight
+corona	0	Phthalo's Corona	Corona
+corona	1	Phthalo's Corona	Blaze
+particle	0	Particle	Particle
+particle	1	Particle	Rotating Particle
+particle	2	Particle	Particle (WMP 7-8)
+particle	3	Particle	Rotating Particle (WMP 7-8)
+dungeon	0	Dungeon Siege	Poster
+dungeon	1	Dungeon Siege	Lurking in the dark lies an enemy...
+eclectic	0	Eclectic Colors	Rolling Colors
+eclectic	1	Eclectic Colors	Ribbon Rhythm
+eclectic	2	Eclectic Colors	Night Fire
+firedancer	0	Fire Dancer	Fire Dancer
+flashes	0	Flashes	Show
+googly	0	Googly Moogly!	Googly Squares
+googly	1	Googly Moogly!	Frequency
+googly	2	Googly Moogly!	Waveform
+grind	0	Grind(2003)	Go BIG or Go Home
+kiddraw	0	Kid Drawing	Solo Dance
+kiddraw	1	Kid Drawing	Surfing
+wm10	0	Windows Media Player 10	Energy Bliss
+wm9s	0	Windows Media 9 Series	Rhythm and Waves
+pictureviz	0	Picture Viz	Pop Transition
+pictureviz	1	Picture Viz	Transparency Transition
+pictureviz	2	Picture Viz	Zoom Transition
+pictureviz	3	Picture Viz	Squirt Transition
+pictureviz	4	Picture Viz	Twirl Transition
+pictureviz	5	Picture Viz	Dissolve Transition
+pictureviz	6	Picture Viz	Random
+pictureviz2	0	Picture Viz II	Favorite Transitions
+pictureviz2	1	Picture Viz II	Random Selection - Basic Transitions
+pictureviz2	2	Picture Viz II	Random Selection - Geometric Transitions
+pictureviz2	3	Picture Viz II	Random Selection - Particle Transitions
+pictureviz2	4	Picture Viz II	Random Selection - All Transitions
+pictureviz2	5	Picture Viz II	Basic - Pop Transition
+pictureviz2	6	Picture Viz II	Basic - Transparency Transition
+pictureviz2	7	Picture Viz II	Basic - Zoom Transition
+pictureviz2	8	Picture Viz II	Basic - Curtains
+pictureviz2	9	Picture Viz II	Basic - Dissolve Transition
+pictureviz2	10	Picture Viz II	Basic - Toaster
+pictureviz2	11	Picture Viz II	Basic - Swipe
+pictureviz2	12	Picture Viz II	Basic - Rotate
+pictureviz2	13	Picture Viz II	Pattern
+pictureviz2	14	Picture Viz II	WetGlass
+pictureviz2	15	Picture Viz II	Spiral
+pictureviz2	16	Picture Viz II	Flourish
+pictureviz2	17	Picture Viz II	Undulation
+pictureviz2	18	Picture Viz II	SpotLight
+pictureviz2	19	Picture Viz II	Twirl Transition
+pictureviz2	20	Picture Viz II	Disperse
+pictureviz2	21	Picture Viz II	SeaGrass
+pictureviz2	22	Picture Viz II	Ripple
+pictureviz2	23	Picture Viz II	SquareS
+pictureviz2	24	Picture Viz II	Transport
+pictureviz2	25	Picture Viz II	Variegate
+pictureviz2	26	Picture Viz II	Suck Transition
+pictureviz2	27	Picture Viz II	Dematerialize
+pictureviz2	28	Picture Viz II	Spin
+pictureviz2	29	Picture Viz II	BullsEye
+pictureviz2	30	Picture Viz II	Radial
+pictureviz2	31	Picture Viz II	Favorite Transitions (Winter Edition)
+pictureviz2	32	Picture Viz II	Random Selection - Basic Transitions (Winter Edition)
+pictureviz2	33	Picture Viz II	Random Selection - Geometric Transitions (Winter Edition)
+pictureviz2	34	Picture Viz II	Random Selection - Particle Transitions (Winter Edition)
+pictureviz2	35	Picture Viz II	Random Selection - All Transitions (Winter Edition)
+pictureviz2	36	Picture Viz II	Basic - Pop Transition (Winter Edition)
+pictureviz2	37	Picture Viz II	Basic - Transparency Transition (Winter Edition)
+pictureviz2	38	Picture Viz II	Basic - Zoom Transition (Winter Edition)
+pictureviz2	39	Picture Viz II	Basic - Curtains (Winter Edition)
+pictureviz2	40	Picture Viz II	Basic - Dissolve Transition (Winter Edition)
+pictureviz2	41	Picture Viz II	Basic - Toaster (Winter Edition)
+pictureviz2	42	Picture Viz II	Basic - Swipe (Winter Edition)
+pictureviz2	43	Picture Viz II	Basic - Rotate (Winter Edition)
+pictureviz2	44	Picture Viz II	Pattern (Winter Edition)
+pictureviz2	45	Picture Viz II	WetGlass (Winter Edition)
+pictureviz2	46	Picture Viz II	Spiral (Winter Edition)
+pictureviz2	47	Picture Viz II	Flourish (Winter Edition)
+pictureviz2	48	Picture Viz II	Undulation (Winter Edition)
+pictureviz2	49	Picture Viz II	SpotLight (Winter Edition)
+pictureviz2	50	Picture Viz II	Twirl Transition (Winter Edition)
+pictureviz2	51	Picture Viz II	Disperse (Winter Edition)
+pictureviz2	52	Picture Viz II	SeaGrass (Winter Edition)
+pictureviz2	53	Picture Viz II	Ripple (Winter Edition)
+pictureviz2	54	Picture Viz II	SquareS (Winter Edition)
+pictureviz2	55	Picture Viz II	Transport (Winter Edition)
+pictureviz2	56	Picture Viz II	Variegate (Winter Edition)
+pictureviz2	57	Picture Viz II	Suck Transition (Winter Edition)
+pictureviz2	58	Picture Viz II	Dematerialize (Winter Edition)
+pictureviz2	59	Picture Viz II	Spin (Winter Edition)
+pictureviz2	60	Picture Viz II	BullsEye (Winter Edition)
+pictureviz2	61	Picture Viz II	Radial (Winter Edition)
+pictureviz3	0	Picture Viz 3D	Favorite 3D Transitions
+pictureviz3	1	Picture Viz 3D	Random Selection - Basic 3D
+pictureviz3	2	Picture Viz 3D	Random Selection - Liquid Transitions
+pictureviz3	3	Picture Viz 3D	Random Selection - All Transitions
+pictureviz3	4	Picture Viz 3D	Pop
+pictureviz3	5	Picture Viz 3D	Transparency
+pictureviz3	6	Picture Viz 3D	Zoom
+pictureviz3	7	Picture Viz 3D	Store
+pictureviz3	8	Picture Viz 3D	Spiral
+pictureviz3	9	Picture Viz 3D	Spin
+pictureviz3	10	Picture Viz 3D	Turn
+pictureviz3	11	Picture Viz 3D	Flip
+pictureviz3	12	Picture Viz 3D	Stack'm
+pictureviz3	13	Picture Viz 3D	Slide
+pictureviz3	14	Picture Viz 3D	Water Rain
+pictureviz3	15	Picture Viz 3D	Water Drop
+pictureviz3	16	Picture Viz 3D	Watery
+pictureviz3	17	Picture Viz 3D	Spiky Thing
+pictureviz3	18	Picture Viz 3D	Caldron
+pictureviz3	19	Picture Viz 3D	Tidal Pool
+pictureviz3	20	Picture Viz 3D	Wisp on water
+pictureviz3	21	Picture Viz 3D	Plunk
+pictureviz3	22	Picture Viz 3D	Flower
+pictureviz3	23	Picture Viz 3D	Spatter
+pictureviz3	24	Picture Viz 3D	Burst
+pictureviz3	25	Picture Viz 3D	Blast-off
+pictureviz3	26	Picture Viz 3D	Electric
+pictureviz3	27	Picture Viz 3D	Crossing
+pictureviz3	28	Picture Viz 3D	Sundrops
+pictureviz3	29	Picture Viz 3D	Volcanic
+pixeltrip	0	PixelTrip	PixelTrip
+plenoptic	0	Plenoptic	Random
+plenoptic	1	Plenoptic	Smokey Circles
+plenoptic	2	Plenoptic	Smokey Lines
+plenoptic	3	Plenoptic	Vox
+plenoptic	4	Plenoptic	Flame
+plenoptic	5	Plenoptic	Fountain
+plenoptic	6	Plenoptic	Spyro
+plenoptic	7	Plenoptic	Random (WMP 8)
+plenoptic	8	Plenoptic	Spyro (WMP 8)
+plenoptic	9	Plenoptic	Random (WMP 7)
+plenoptic	10	Plenoptic	Smokey Circles (WMP 7)
+plenoptic	11	Plenoptic	Smokey Lines (WMP 7)
+plenoptic	12	Plenoptic	Vox (WMP 7)
+plenoptic	13	Plenoptic	Flame (WMP 7)
+plenoptic	14	Plenoptic	Fountain (WMP 7)
+plenoptic	15	Plenoptic	Spyro (WMP 7)
+plus3d	0	Plus! 3-D Visualizations	Oddworld: Munch's Oddysee
+plus3d	1	Plus! 3-D Visualizations	Maxx's Kingdom
+plus3d	2	Plus! 3-D Visualizations	Undersea Wonders
+pulsing	0	Pulsing Colors	Lip Sink
+pulsing	1	Pulsing Colors	Musical Island
+pulsing	2	Pulsing Colors	Steel Rhythm
+ribbons	0	Ribbons	Random
+ribbons	1	Ribbons	Mystify
+ribbons	2	Ribbons	Ribbons
+ribbons	3	Ribbons	Dense
+ribbons	4	Ribbons	Embossed
+ribbons	5	Ribbons	More Embossed
+ripple	0	Ripple	Plaid
+ripple	1	Ripple	Pool
+ripple	2	Ripple	Acid
+ripple	3	Ripple	Haze
+ripple	4	Ripple	Hulk
+ripple	5	Ripple	Solvent
+ripple	6	Ripple	Vomit
+ripple	7	Ripple	Slime
+shacojin	0	Shacojin	Shacojin - mello
+shacojin	1	Shacojin	Shacojin - groove
+shacojin	2	Shacojin	Shacojin - chill
+shacojin	3	Shacojin	Shacojin - freak
+snowtime	0	SnowTime	Softie the Snowman
+spikes	0	Spikes	Spike
+spikes	1	Spikes	Amoeba
+startime	0	StarTime	Starlight
+startime	1	StarTime	Star Clouds
+startime	2	StarTime	Star Glow
+t3	0	T3	Rise of the Machines
+gigertron	0	Gigertron 3D	Cubetro
+gigertron	1	Gigertron 3D	Syntax
+gigertron	2	Gigertron 3D	Northern
+trilogy1	0	Trilogy I	Pulsar
+trilogy1	1	Trilogy I	Wings
+trilogy1	2	Trilogy I	Twirling
+trilogy1	3	Trilogy I	Random Selection
+trilogy2	0	Trilogy II	Musical Sine
+trilogy2	1	Trilogy II	4th Dimension
+trilogy2	2	Trilogy II	Mathical Music
+trilogy2	3	Trilogy II	Random Selection
+trilogy3	0	Trilogy III	Lava
+trilogy3	1	Trilogy III	Mystic Cloud
+trilogy3	2	Trilogy III	Undulation
+trilogy3	3	Trilogy III	Random Selection
+twistedpixel	0	TwistedPixel	TwistedPixel Preset Vis
+betterbars	0	Better Bars	Bars
+betterbars	1	Better Bars	Stereo Scope
+betterbars	2	Better Bars	Scan
+wm3dspectrum	0	3D Spectrum Analyzer	Rose Garden
+wm3dspectrum	1	3D Spectrum Analyzer	City Lights
+wm3dspectrum	2	3D Spectrum Analyzer	Rose Garden Points
+wm3dspectrum	3	3D Spectrum Analyzer	City Lights Points
+wm3dspectrum	4	3D Spectrum Analyzer	Rose Garden - Smooth
+wm3dspectrum	5	3D Spectrum Analyzer	City Lights - Smooth
+wm3dspectrum	6	3D Spectrum Analyzer	Rose Garden Points - Smooth
+wm3dspectrum	7	3D Spectrum Analyzer	City Lights Points - Smooth
+musical	0	Musical Colors	Night Lights
+musical	1	Musical Colors	Colors in Motion
+musical	2	Musical Colors	Aurora
+musical	3	Musical Colors	Rhythmic Colors
+musical	4	Musical Colors	Star Power
+musical	5	Musical Colors	Electric Green
+musical	6	Musical Colors	Soft Fire
+musical	7	Musical Colors	Silky Wave
+musical	8	Musical Colors	CutOut
+musical	9	Musical Colors	Rolling Fire
+musical	10	Musical Colors	Water Spray
+musical	11	Musical Colors	Acid Rock
+musical	12	Musical Colors	Hard Rock
+musical	13	Musical Colors	Hot Spray
+musical	14	Musical Colors	Yellow Swirl
+musical	15	Musical Colors	Blue Flame
+musical	16	Musical Colors	Critter Rock
+musical	17	Musical Colors	Electric Rainbow
+musical	18	Musical Colors	Neon Highway
+musical	19	Musical Colors	Ice Crystals
+musical	20	Musical Colors	WinMe 3D (WMP 7)
+yule	0	Yule Log	Yule Log

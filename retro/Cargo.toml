@@ -1,0 +1,19 @@
+[package]
+name = "retro"
+version = "1.0.0"
+edition = "2021"
+description = "The classic Windows Media Player visualizers (wmp-legacy-visualizers, MIT) in V8, as a library Backline downloads."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+v8 = "=152.2.0"
+
+# (no panic = "abort": every call catches a panic and reports it, so one can never take Backline down)
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 8
+strip = true

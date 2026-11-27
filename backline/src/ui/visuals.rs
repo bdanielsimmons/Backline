@@ -1,6 +1,7 @@
-//! Visuals: the 3D Terrain the music builds (ui/terrain.rs, on the graphics card) and two old Windows screensavers
-//! (3D Pipes, Starfield) drawn by egui. Shown full screen, behind Now Playing, in a window of their own
-//! (ui/popout.rs), and as a screensaver when you step away.
+//! Visuals: the 3D Terrain the music builds (ui/terrain.rs, on the graphics card), two old Windows screensavers
+//! (3D Pipes, Starfield) drawn by egui, and the classic Windows Media Player visualizers (ui/retro.rs, numbered after
+//! `PRESETS`). Shown full screen, behind Now Playing, in a window of their own (ui/popout.rs), and as a screensaver
+//! when you step away.
 
 use crate::Within;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -34,8 +35,25 @@ pub(crate) const PRESETS: &[Preset] = &[
 /// The menu's groups, in order.
 pub(crate) const GROUPS: &[&str] = &["3D", "Screensavers"];
 
+/// Every preset: `PRESETS`, then the classic ones (ui/retro.rs) in their order.
+pub(crate) fn count() -> usize {
+    PRESETS.len() + crate::retro::list().len()
+}
+
+/// A classic preset's place in ui/retro.rs's list (None for one of `PRESETS`).
+pub(crate) fn retro_of(i: usize) -> Option<usize> {
+    i.checked_sub(PRESETS.len()).filter(|&k| k < crate::retro::list().len())
+}
+
+/// The menu's group for the classic ones, and how they're saved ("Retro: Family: Name").
+pub(crate) const RETRO: &str = "Retro";
+
 /// A preset by name, as saved ("Group: Name", or an older plain name); one no longer kept is the Terrain.
 pub(crate) fn find(name: &str) -> usize {
+    if let Some((fam, n)) = name.strip_prefix("Retro: ").and_then(|r| r.split_once(": ")) {
+        let l = crate::retro::list();
+        return l.iter().position(|e| e.group == fam && e.name == n).map_or(0, |k| PRESETS.len() + k);
+    }
     let (g, n) = name.split_once(": ").unwrap_or(("", name));
     PRESETS
         .iter()
@@ -46,21 +64,21 @@ pub(crate) fn find(name: &str) -> usize {
 
 /// Kept in the code but not offered: in no menu, and passed over by the arrows.
 pub(crate) fn hidden(i: usize) -> bool {
-    matches!(PRESETS[i.min(PRESETS.len() - 1)].kind, Kind::Wave)
+    i < PRESETS.len() && matches!(PRESETS[i].kind, Kind::Wave)
 }
 
 /// What a saved choice shows: itself, or the Terrain in place of one not offered.
 pub(crate) fn offered(i: usize) -> usize {
-    if hidden(i) {
+    if hidden(i) || i >= count() {
         0
     } else {
-        i.min(PRESETS.len() - 1)
+        i
     }
 }
 
-/// The preset `by` steps on from `i` (`PRESETS.len() - 1` steps back one), passing over those not offered.
+/// The preset `by` steps on from `i` (`count() - 1` steps back one), passing over those not offered.
 pub(crate) fn next_shown(i: usize, by: usize) -> usize {
-    let n = PRESETS.len();
+    let n = count();
     let mut j = i.min(n - 1);
     for _ in 0..n {
         j = (j + by) % n;
@@ -73,6 +91,9 @@ pub(crate) fn next_shown(i: usize, by: usize) -> usize {
 
 /// How a preset is saved: "Group: Name".
 pub(crate) fn save_name(i: usize) -> String {
+    if let Some(e) = retro_of(i).map(|k| &crate::retro::list()[k]) {
+        return format!("{}: {}: {}", RETRO, e.group, e.name);
+    }
     let p = &PRESETS[i.min(PRESETS.len() - 1)];
     format!("{}: {}", p.group, p.name)
 }
@@ -209,6 +230,11 @@ pub(crate) fn paint_preset(
     stars: &mut Stars,
     hear: impl FnOnce() -> crate::terrain::Input,
 ) {
+    if let Some(k) = retro_of(preset) {
+        crate::retro::paint(p, r, k);
+        return;
+    }
+    let preset = preset.min(PRESETS.len() - 1);
     let old_gl = gl.lock().is_ok_and(|g| g.failed);
     match PRESETS[preset].kind {
         Kind::Terrain if !old_gl => paint_terrain(p, r, slot, gl, Arc::new(hear())),
@@ -234,9 +260,12 @@ pub(crate) fn hear(viz: &Mutex<crate::player::Viz>, ctl: &crate::player::Ctl, so
     crate::terrain::Input { t, samples, first, rate, song, music }
 }
 
-/// A preset as "Group: Name".
+/// A preset as "Group: Name" (a classic one as "Family: Name").
 pub(crate) fn name_of(i: usize, _t: f32) -> String {
-    let p = &PRESETS[i];
+    if let Some(e) = retro_of(i).map(|k| &crate::retro::list()[k]) {
+        return format!("{}: {}", e.group, e.name);
+    }
+    let p = &PRESETS[i.min(PRESETS.len() - 1)];
     format!("{}: {}", p.group, p.name)
 }
 
@@ -534,7 +563,8 @@ impl App {
             return;
         }
         let (f, dt) = self.vis_frame(ui.ctx());
-        let preset = self.vis_preset.min(PRESETS.len() - 1);
+        let preset = offered(self.vis_preset);
+        self.retro_feed(preset);
         let p = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
         let t = ui.ctx().input(|i| i.time);
         let song = self.cur_track().map_or(0, |t| t.id as u64);
@@ -567,7 +597,7 @@ impl App {
                 continue;
             }
             let title = *g;
-            let mark = if PRESETS[self.vis_preset].group == *g { "* " } else { "  " };
+            let mark = if self.vis_preset < PRESETS.len() && PRESETS[self.vis_preset].group == *g { "* " } else { "  " };
             crate::sub_menu(ui, &format!("{}{}", mark, title), |ui| {
                 for (i, p) in PRESETS.iter().enumerate().filter(|(i, p)| p.group == *g && !hidden(*i)) {
                     let mark = if i == self.vis_preset { "* " } else { "  " };
@@ -579,6 +609,7 @@ impl App {
                 }
             });
         }
+        self.retro_menu(ui);
         ui.separator();
         if crate::menu_item(ui, "  Full screen  (G)") {
             self.vis_set_full(!self.vis_full, false);
@@ -604,6 +635,58 @@ impl App {
                 ui.close_menu();
             }
         }
+    }
+
+    /// A classic preset about to be shown: its thread started, and the song's cover handed over (for Picture Viz).
+    pub(crate) fn retro_feed(&mut self, preset: usize) {
+        if retro_of(preset).is_none() {
+            return;
+        }
+        crate::retro::start(&self.player.viz);
+        let url = self.cur_track().map(|t| crate::api::cover_url(&t.cover, 640)).unwrap_or_default();
+        crate::retro::set_cover(&url);
+    }
+
+    /// The classic visualizers in the menu, by family, and how many frames a second they draw.
+    fn retro_menu(&mut self, ui: &mut egui::Ui) {
+        if crate::retro::list().is_empty() {
+            return;
+        }
+        let on = retro_of(self.vis_preset);
+        let mark = if on.is_some() { "* " } else { "  " };
+        crate::sub_menu(ui, &format!("{}{}", mark, RETRO), |ui| {
+            crate::views::dim_line(ui, "Ported by Ryan Circelli", 1.0, crate::pal().ink2);
+            let h = (ui.ctx().screen_rect().height() * 0.7).max(200.0);
+            egui::ScrollArea::vertical().id_salt("retro_families").max_height(h).show(ui, |ui| {
+                for fam in crate::retro::families() {
+                    let cur = on.is_some_and(|k| crate::retro::list()[k].group == fam);
+                    crate::sub_menu(ui, &format!("{}{}", if cur { "* " } else { "  " }, fam), |ui| {
+                        let h = (ui.ctx().screen_rect().height() * 0.7).max(200.0);
+                        egui::ScrollArea::vertical().id_salt(("retro_presets", fam)).max_height(h).show(ui, |ui| {
+                            for (k, e) in crate::retro::list().iter().enumerate().filter(|(_, e)| e.group == fam) {
+                                let mark = if on == Some(k) { "* " } else { "  " };
+                                if crate::menu_item(ui, &format!("{}{}", mark, e.name)) {
+                                    self.vis_preset = PRESETS.len() + k;
+                                    self.dirty = true;
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+                    });
+                }
+            });
+        });
+        crate::sub_menu(ui, "  Refresh Rate", |ui| {
+            for (fps, label) in crate::retro::RATES {
+                let mark = if self.vis_fps == fps { "* " } else { "  " };
+                if crate::menu_item(ui, &format!("{}{}", mark, label)) {
+                    self.vis_fps = fps;
+                    crate::retro::FPS.store(fps, std::sync::atomic::Ordering::Relaxed);
+                    self.dirty = true;
+                    ui.close_menu();
+                }
+            }
+        });
     }
 
     /// Full screen visuals on or off (`saver`: started by being idle, so any touch ends it).
@@ -671,7 +754,7 @@ impl App {
         if ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
             self.vis_ui_at = now;
         }
-        let n = PRESETS.len();
+        let n = count();
         // (the arrow keys move through the song here too, as everywhere: the visuals change with < and > on screen)
         let esc = !self.panel_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if esc || resp.double_clicked() {
@@ -721,5 +804,30 @@ impl App {
             Color32::from_white_alpha(140),
         );
         let _ = acts;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every preset offered is saved by a name that brings back that same preset (the classic ones too).
+    #[test]
+    fn saved_names_come_back() {
+        for i in 0..count() {
+            if !hidden(i) {
+                assert_eq!(find(&save_name(i)), i, "{}", save_name(i));
+            }
+        }
+        // the arrows go through all of them and round again
+        let (mut i, mut seen) = (0, 0);
+        loop {
+            i = next_shown(i, 1);
+            seen += 1;
+            if i == 0 || seen > count() {
+                break;
+            }
+        }
+        assert_eq!(seen, count() - PRESETS.iter().filter(|p| p.kind == Kind::Wave).count());
     }
 }

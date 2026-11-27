@@ -796,12 +796,46 @@ impl App {
         // ---- how far in
         let sb = Rect::from_min_size(Pos2::new(full.min.x + 28.0, full.max.y - bar_h), Vec2::new(full.width() - 56.0, 10.0));
         let sr = ui.interact(sb.expand2(Vec2::new(0.0, 4.0)), ui.id().with("art_seek"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
-        if active && dur > 0.0 && (sr.clicked() || sr.drag_stopped()) {
-            if let Some(pp) = sr.interact_pointer_pos() {
-                acts.push(Action::Seek(((pp.x - sb.min.x) / sb.width()).clamp(0.0, 1.0) * dur));
+        let line = Rect::from_center_size(sb.center(), Vec2::new(sb.width(), 4.0));
+        let t_of = |x: f32| ((x - sb.min.x) / sb.width()).clamp(0.0, 1.0) * dur;
+        let x_of = |t: f32| line.min.x + line.width() * (t / dur.max(0.001)).clamp(0.0, 1.0);
+        // practising with a loop: its ends move as on the practice waveform (drag one, ctrl + drag near one, ctrl + click
+        // moves the nearer one there)
+        let looping = practice_tools() && self.practice && active && dur > 0.0 && self.loop_a.is_some() && self.loop_b.is_some();
+        let sr = if looping { sr.tip("Click: jump · Drag a loop end: move it · Ctrl+click: move loop end") } else { sr };
+        let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+        let mut moved_end = false;
+        if looping {
+            let hover = ui.input(|i| i.pointer.hover_pos());
+            if self.bar_drag == 0 && sr.hovered() && hover.is_some_and(|pp| self.loop_end_at(pp.x, 7.0, x_of) != 0) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+            if sr.drag_started() {
+                // (from where the button went down: egui calls it a drag only some pixels on)
+                if let Some(pp) = ui.input(|i| i.pointer.press_origin()).or(sr.interact_pointer_pos()) {
+                    self.bar_drag = self.loop_end_at(pp.x, if ctrl { 14.0 } else { 7.0 }, x_of);
+                }
+            }
+            if self.bar_drag != 0 {
+                if let Some(pp) = hover {
+                    self.loop_end_to(self.bar_drag, t_of(pp.x), acts);
+                }
+                moved_end = true;
+                if sr.drag_stopped() {
+                    self.bar_drag = 0;
+                }
+            } else if sr.clicked() && ctrl {
+                if let Some(pp) = sr.interact_pointer_pos() {
+                    self.loop_end_to(0, t_of(pp.x), acts);
+                }
+                moved_end = true;
             }
         }
-        let line = Rect::from_center_size(sb.center(), Vec2::new(sb.width(), 4.0));
+        if active && dur > 0.0 && !moved_end && (sr.clicked() || sr.drag_stopped()) {
+            if let Some(pp) = sr.interact_pointer_pos() {
+                acts.push(Action::Seek(t_of(pp.x)));
+            }
+        }
         if active && dur > 0.0 {
             crate::widgets::seek_label(ui, &sr, line, |x| ((x - sb.min.x) / sb.width()).clamp(0.0, 1.0) * dur);
         }
@@ -815,9 +849,8 @@ impl App {
             p.circle_filled(Pos2::new(line.min.x + line.width() * frac, line.center().y), 6.0, over);
         }
         if practice_tools() && self.practice && active && dur > 0.0 {
-            let x_at = |t: f32| line.min.x + line.width() * (t / dur).clamp(0.0, 1.0);
             if let (Some(a), Some(b)) = (self.loop_a, self.loop_b) {
-                let r = Rect::from_min_max(Pos2::new(x_at(a), line.min.y - 2.0), Pos2::new(x_at(b).max(x_at(a) + 3.0), line.max.y + 2.0));
+                let r = Rect::from_min_max(Pos2::new(x_of(a), line.min.y - 2.0), Pos2::new(x_of(b).max(x_of(a) + 3.0), line.max.y + 2.0));
                 p.rect_filled(r, 2.0, crate::skin::loop_col().gamma_multiply(if self.loop_on { 0.8 } else { 0.45 }));
             }
         }

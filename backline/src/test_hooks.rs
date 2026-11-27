@@ -224,6 +224,13 @@ Second line: comp lighter here.", m.1.note);
                     app.vis_preset = visuals::find(&v);
                     app.vis_np = true;
                 }
+                // (BACKLINE_LOOP=<a>-<b>: with that loop set, for the practice view)
+                if let Some((a, b)) = std::env::var("BACKLINE_LOOP").ok().and_then(|l| {
+                    let (a, b) = l.split_once('-')?;
+                    Some((a.parse::<f32>().ok()?, b.parse::<f32>().ok()?))
+                }) {
+                    (app.loop_a, app.loop_b) = (Some(a), Some(b));
+                }
                 // (BACKLINE_LYRICS=1: made-up synced lyrics for the song, for pictures of the lyrics)
                 if let (Some(_), Some(t)) = (std::env::var_os("BACKLINE_LYRICS"), app.cur_track()) {
                     let words = ["The streetlights hum a minor key", "the last bus sighing up the hill", "I count the bars till you come home", "and play it slow, and play it still", "The radio is half asleep", "it hums along the way you do"];
@@ -760,16 +767,50 @@ pub(crate) fn lab_auto(app: &mut App, acts: &mut Vec<Action>) {
 /// a frame later, a release at that place, put in the window's input, so a click can be checked in a picture.
 pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
     use std::sync::Mutex;
-    static LEFT: Mutex<Option<Vec<(f32, f32, f64, u8)>>> = Mutex::new(None);
+    /// a click or a drag: from, to, when, Ctrl / Shift held, and how far along it is (one step a frame)
+    struct Fake {
+        a: egui::Pos2,
+        b: egui::Pos2,
+        t: f64,
+        mods: egui::Modifiers,
+        button: egui::PointerButton,
+        hover: bool,
+        step: u8,
+    }
+    static LEFT: Mutex<Option<Vec<Fake>>> = Mutex::new(None);
     let mut left = LEFT.lock().unwrap_or_else(|e| e.into_inner());
     if left.is_none() {
+        // "x,y@t" clicks; "x,y>x2,y2@t" drags; a leading ^ holds Ctrl, + holds Shift, ~ is the right button, ? only
+        // moves the pointer there (a hover)
         let list = std::env::var("BACKLINE_CLICKS").unwrap_or_default();
+        let pos = |xy: &str| -> Option<egui::Pos2> {
+            let (x, y) = xy.split_once(',')?;
+            Some(egui::Pos2::new(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        };
         *left = Some(
             list.split(';')
                 .filter_map(|c| {
-                    let (xy, t) = c.split_once('@')?;
-                    let (x, y) = xy.split_once(',')?;
-                    Some((x.trim().parse().ok()?, y.trim().parse().ok()?, t.trim().parse().ok()?, 0u8))
+                    let (mut what, t) = c.trim().split_once('@')?;
+                    let mut mods = egui::Modifiers::default();
+                    let (mut button, mut hover) = (egui::PointerButton::Primary, false);
+                    loop {
+                        if let Some(r) = what.strip_prefix('^') {
+                            (mods.ctrl, mods.command, what) = (true, true, r);
+                        } else if let Some(r) = what.strip_prefix('+') {
+                            (mods.shift, what) = (true, r);
+                        } else if let Some(r) = what.strip_prefix('~') {
+                            (button, what) = (egui::PointerButton::Secondary, r);
+                        } else if let Some(r) = what.strip_prefix('?') {
+                            (hover, what) = (true, r);
+                        } else {
+                            break;
+                        }
+                    }
+                    let (a, b) = match what.split_once('>') {
+                        Some((a, b)) => (pos(a)?, pos(b)?),
+                        None => (pos(what)?, pos(what)?),
+                    };
+                    Some(Fake { a, b, t: t.trim().parse().ok()?, mods, button, hover, step: 0 })
                 })
                 .collect(),
         );
@@ -777,16 +818,37 @@ pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
     let Some(now) = raw.time else { return };
     let Some(list) = left.as_mut() else { return };
     for c in list.iter_mut() {
-        if c.3 >= 2 || now < c.2 {
+        if c.step >= 5 || now < c.t {
             continue;
         }
-        let pos = egui::Pos2::new(c.0, c.1);
-        raw.events.push(egui::Event::PointerMoved(pos));
-        raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: c.3 == 0, modifiers: Default::default() });
-        if c.3 == 0 {
-            crate::api::log(&format!("test click at {:.0},{:.0}", c.0, c.1));
+        // press, three moves on the way (a drag only), release
+        let drag = c.a != c.b;
+        // (the first move a hand's few pixels, enough to count as a drag; then the rest of the way)
+        let first = c.a + (c.b - c.a).normalized() * 8.0;
+        let at = |k: f32| if k < 0.4 { first } else { first + (c.b - first) * k };
+        raw.modifiers = c.mods;
+        if c.hover {
+            raw.events.push(egui::Event::PointerMoved(c.a));
+            c.step = 5;
+            break;
         }
-        c.3 += 1;
+        match c.step {
+            0 => {
+                raw.events.push(egui::Event::PointerMoved(c.a));
+                raw.events.push(egui::Event::PointerButton { pos: c.a, button: c.button, pressed: true, modifiers: c.mods });
+                crate::api::log(&format!("test {} at {:.0},{:.0}", if drag { "drag" } else { "click" }, c.a.x, c.a.y));
+                c.step = if drag { 1 } else { 4 };
+            }
+            1..=3 => {
+                raw.events.push(egui::Event::PointerMoved(at(c.step as f32 / 3.0)));
+                c.step += 1;
+            }
+            _ => {
+                raw.events.push(egui::Event::PointerMoved(c.b));
+                raw.events.push(egui::Event::PointerButton { pos: c.b, button: c.button, pressed: false, modifiers: c.mods });
+                c.step = 5;
+            }
+        }
         break;
     }
 }

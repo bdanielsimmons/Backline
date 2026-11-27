@@ -89,6 +89,8 @@ pub struct Viz {
     pub samples: Vec<f32>,
     pub first: Vec<f32>,
     pub rate: u32,
+    /// how many frames have come through in all (the classic visuals take the ones they haven't had yet)
+    pub total: u64,
     /// the song being played (a number that changes with it, and its file), for reading it ahead of what is heard
     pub song: Option<(u64, Arc<Vec<u8>>)>,
 }
@@ -1200,6 +1202,7 @@ impl<S: Source<Item = i16>> Tap<S> {
     fn flush(&mut self) {
         if let Ok(mut guard) = self.viz.lock() {
             let v = &mut *guard;
+            v.total += self.scratch.len() as u64;
             v.samples.append(&mut self.scratch);
             v.first.append(&mut self.scratch_first);
             for buf in [&mut v.samples, &mut v.first] {

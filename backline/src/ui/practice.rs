@@ -221,6 +221,31 @@ impl App {
     /// Practising in Now Playing, every style the same: the waveform as tall as the room allows (the whole song in a
     /// strip above it), then the practice tabs and their tools in what's left. Only the tools scroll, never the page.
     /// `amp`: Hardware's or Studio's screen colours.
+    /// Which end of the loop (1: A, 2: B; 0: neither) is within `tol` pixels of `x` on a timeline drawn by `x_at`.
+    pub(crate) fn loop_end_at(&self, x: f32, tol: f32, x_at: impl Fn(f32) -> f32) -> u8 {
+        [(1u8, self.loop_a), (2u8, self.loop_b)]
+            .into_iter()
+            .filter_map(|(k, v)| v.map(|t| (k, (x_at(t) - x).abs())))
+            .filter(|c| c.1 < tol)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map_or(0, |c| c.0)
+    }
+
+    /// An end of the loop to `t` (1: A, 2: B, 0: the nearer one), never closer than 0.2 s to the other end.
+    pub(crate) fn loop_end_to(&self, end: u8, t: f32, acts: &mut Vec<Action>) {
+        let end = match (end, self.loop_a, self.loop_b) {
+            (0, Some(a), Some(b)) => if (t - a).abs() <= (t - b).abs() { 1 } else { 2 },
+            (0, None, _) => 1,
+            (0, _, _) => 2,
+            (e, _, _) => e,
+        };
+        if end == 1 {
+            acts.push(Action::SetAAt(self.loop_b.map_or(t, |b| t.min(b - 0.2))));
+        } else {
+            acts.push(Action::SetBAt(self.loop_a.map_or(t, |a| t.max(a + 0.2))));
+        }
+    }
+
     pub(crate) fn practice_stack(&mut self, ui: &mut egui::Ui, r: Rect, acts: &mut Vec<Action>, amp: bool) {
         let dur = self.track_len();
         let pos = self.pos();
@@ -294,7 +319,7 @@ impl App {
         }
         let resp = resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip("Click: jump · Right-drag: loop · Alt+click: bookmark · Right-click: more");
+            .tip("Click: jump · Right-drag: loop · Ctrl+click: move loop end · Alt+click: bookmark · Right-click: more");
         if amp && studio {
             // (Studio: a screen within the screen, a fine line of ink round it)
             ui.painter().rect_filled(bar, 0.0, crate::studio::key_col());
@@ -851,47 +876,36 @@ impl App {
                 }
             }
 
-            // shift + drag (or a drag with the right button) selects a loop; plain click / drag seeks
+            // shift + drag (or a drag with the right button) selects a loop; plain click / drag seeks. (A drag counts
+            // from where the button went down: egui calls it a drag only some pixels on, past a marker's reach.)
+            let pressed_at = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos());
             if resp.drag_started_by(egui::PointerButton::Secondary) || (resp.drag_started() && shift) {
-                if let Some(pp) = resp.interact_pointer_pos() {
+                if let Some(pp) = pressed_at {
                     self.sel_anchor = Some(time_at(pp.x));
                 }
             }
             // a drag that starts on A or B moves that marker (ctrl + drag near one too); the pointer shows it can
             let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
-            let near = |x: f32| -> u8 {
-                [(1u8, self.loop_a), (2u8, self.loop_b)]
-                    .into_iter()
-                    .filter_map(|(k, v)| v.map(|t| (k, (at(t) - x).abs())))
-                    .filter(|c| c.1 < 7.0)
-                    .min_by(|a, b| a.1.total_cmp(&b.1))
-                    .map_or(0, |c| c.0)
-            };
             if self.marker_drag == 0 && !shift && resp.hovered() {
                 if let Some(pp) = ui.input(|i| i.pointer.hover_pos()) {
-                    if near(pp.x) != 0 {
+                    if self.loop_end_at(pp.x, 7.0, at) != 0 {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                     }
                 }
             }
             if resp.drag_started_by(egui::PointerButton::Primary) && !shift && !ctrl {
-                if let Some(pp) = resp.interact_pointer_pos() {
-                    self.marker_drag = near(pp.x);
+                if let Some(pp) = pressed_at {
+                    self.marker_drag = self.loop_end_at(pp.x, 7.0, at);
                 }
             }
             if resp.drag_started() && ctrl {
-                if let Some(pp) = resp.interact_pointer_pos() {
-                    self.marker_drag = [(1u8, self.loop_a), (2u8, self.loop_b)]
-                        .into_iter()
-                        .filter_map(|(k, v)| v.map(|t| (k, (at(t) - pp.x).abs())))
-                        .filter(|c| c.1 < 14.0)
-                        .min_by(|a, b| a.1.total_cmp(&b.1))
-                        .map_or(0, |c| c.0);
+                if let Some(pp) = pressed_at {
+                    self.marker_drag = self.loop_end_at(pp.x, 14.0, at);
                 }
             }
             // shift + drag inside the loop slides the whole loop, keeping its length
             if resp.drag_started() && shift && !ctrl {
-                if let (Some(a), Some(b), Some(pp)) = (self.loop_a, self.loop_b, resp.interact_pointer_pos()) {
+                if let (Some(a), Some(b), Some(pp)) = (self.loop_a, self.loop_b, pressed_at) {
                     let t = time_at(pp.x);
                     if t > a && t < b {
                         self.marker_drag = 3;
@@ -908,10 +922,8 @@ impl App {
                         let a = (t - self.pan_off).within(0.0, (dur - self.pan_len).max(0.0));
                         acts.push(Action::SetAAt(a));
                         acts.push(Action::SetBAt(a + self.pan_len));
-                    } else if self.marker_drag == 1 {
-                        acts.push(Action::SetAAt(self.loop_b.map_or(t, |b| t.min(b - 0.2))));
                     } else {
-                        acts.push(Action::SetBAt(self.loop_a.map_or(t, |a| t.max(a + 0.2))));
+                        self.loop_end_to(self.marker_drag, t, acts);
                     }
                 }
                 if resp.drag_stopped() {
@@ -937,6 +949,11 @@ impl App {
                         }
                     }
                     self.sel_anchor = None;
+                }
+            } else if resp.clicked() && ctrl && both {
+                // ctrl + click: the nearer end of the loop moves there (the song plays on)
+                if let Some(pp) = resp.interact_pointer_pos() {
+                    self.loop_end_to(0, time_at(pp.x), acts);
                 }
             } else if resp.clicked() && ui.input(|i| i.modifiers.alt) {
                 // alt + click: a bookmark there - or, on one, takes it away (the song plays on)

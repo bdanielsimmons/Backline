@@ -1,0 +1,3 @@
+# V8's prebuilt library uses the static C runtime: the library is built the same way, so it needs nothing beside it
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

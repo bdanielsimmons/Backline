@@ -1,6 +1,6 @@
 """Make Backline's download site (GitHub Pages) for a release: a folder the workflow then puts on Pages.
 
-    publish_site.py <build number> <folder of files> <notes.md or ""> <site url> <out folder>
+    publish_site.py <build number> <folder of files> <notes.md or ""> <site url> <out folder> [<tools folder>]
 
 Pages swaps the whole site in on each deploy, so the folder holds everything the site should keep:
   builds/<n>/<file>  the newest build of each file. A file not built this time (the Mac one, when it's built less
@@ -12,7 +12,10 @@ Pages swaps the whole site in on each deploy, so the folder holds everything the
   robots.txt   asks search engines to leave the site out (it's for people given the link).
   tools/onnxruntime-<version>/<system>/<library>   the stem tool's runtime, which the app downloads from here (see
                runtime() below), with its license.
+  tools/retro-<version>/retro.zip   the classic visualizers' library (retro/ in the repo), which the app downloads
+               from here the first time one is picked (see retro() below), with its license.
 """
+import re
 import hashlib
 import html
 import io
@@ -167,6 +170,39 @@ def runtime(site, out):
         print(f"{base}/{name}: {mb(len(data))}")
 
 
+def retro(site, out, tools):
+    """The classic visualizers' library into the site, zipped with its license: this build's (from the tools folder),
+    or kept from the live site when this build has none. Its version is the one retro/src/lib.rs states (the app asks
+    for that one: backline/src/ui/retro.rs)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    lib_rs = open(os.path.join(here, "..", "retro", "src", "lib.rs"), encoding="utf-8").read()
+    version = re.search(r"const VERSION: u32 = (\d+);", lib_rs).group(1)
+    base = f"tools/retro-{version}"
+    dll = os.path.join(tools, "retro.dll") if tools else ""
+    if dll and os.path.exists(dll):
+        lic = open(os.path.join(tools, "retro-LICENSE.txt"), "rb").read()
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            z.write(dll, "retro.dll")
+            z.writestr("LICENSE-wmp-legacy-visualizers.txt", lic)
+        got = {"retro.zip": buf.getvalue(), "LICENSE-wmp-legacy-visualizers.txt": lic}
+    else:
+        got = {}
+        for name in ["retro.zip", "LICENSE-wmp-legacy-visualizers.txt"]:
+            try:
+                got[name] = fetch(f"{site}/{base}/{name}")
+            except urllib.error.HTTPError:
+                pass
+        if "retro.zip" not in got:
+            print("::warning::no visualizers' library this time, and none on the live site")
+    for name, data in got.items():
+        dest = os.path.join(out, base, name)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
+        print(f"{base}/{name}: {mb(len(data))}")
+
+
 def write(out, key, text):
     with open(os.path.join(out, key), "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
@@ -174,6 +210,7 @@ def write(out, key, text):
 
 def main():
     n, folder, notes_md, site, out = sys.argv[1:6]
+    tools = sys.argv[6] if len(sys.argv) > 6 else ""
     n = int(n)
     site = site.rstrip("/")
     os.makedirs(out, exist_ok=True)
@@ -220,6 +257,7 @@ def main():
         notes = sorted(notes, key=lambda x: -x.get("build", 0))[:30]
 
     runtime(site, out)
+    retro(site, out, tools)
     write(out, "notes.json", json.dumps(notes, indent=1))
     write(out, "latest.json", json.dumps(latest, indent=1))
     write(out, "index.html", page(latest))

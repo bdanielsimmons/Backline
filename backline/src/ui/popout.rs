@@ -20,7 +20,7 @@
 
 use crate::Within;
 use crate::player::{Ctl, Viz};
-use crate::visuals::{self, Frame, PRESETS};
+use crate::visuals::{self, Frame};
 use crate::App;
 use crate::Tip;
 use eframe::egui::{self, Align, Color32, CursorIcon, Pos2, Rect, Sense, Vec2};
@@ -193,7 +193,7 @@ fn ui(ctx: &egui::Context, own: &mut Own, now: &Now, pin: bool, seen: bool, t: f
         return a;
     }
     if left {
-        a.step(now.preset, PRESETS.len() - 1);
+        a.step(now.preset, visuals::count() - 1);
     }
     if right {
         a.step(now.preset, 1);
@@ -208,7 +208,7 @@ fn ui(ctx: &egui::Context, own: &mut Own, now: &Now, pin: bool, seen: bool, t: f
         let body = ui.interact(r, id, Sense::click_and_drag());
         if seen {
             let (f, dt) = own.music(now, viz, t);
-            let preset = now.preset.min(PRESETS.len() - 1);
+            let preset = visuals::offered(now.preset);
             let p = ui.painter().with_clip_rect(r);
             visuals::paint_preset(&p, r, SLOT, preset, f, dt, &own.gl, &mut own.pipes, &mut own.stars, || {
                 visuals::hear(viz, ctl, now.song, t)
@@ -367,7 +367,7 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
     if arrows {
         let (lr, rr) = (pill(r.min.x + m), pill(r.min.x + m + pw + gap));
         if press(lr, "vis_prev", false).tip("Previous visual  (Left)").clicked() {
-            a.step(now.preset, PRESETS.len() - 1);
+            a.step(now.preset, visuals::count() - 1);
         }
         chevron(&p, lr.center(), true, ink);
         if press(rr, "vis_next", false).tip("Next visual  (Right)").clicked() {
@@ -393,7 +393,7 @@ fn controls(ui: &egui::Ui, r: Rect, id: egui::Id, now: &Now, pin: bool, a: &mut 
         }
     }
     // ---- along the top: the visuals' name at the right (when there is room), the song's card at the left
-    let name = visuals::name_of(a.picked.unwrap_or(now.preset).min(PRESETS.len() - 1), ui.ctx().input(|i| i.time) as f32);
+    let name = visuals::name_of(visuals::offered(a.picked.unwrap_or(now.preset)), ui.ctx().input(|i| i.time) as f32);
     let name_w = (crate::text_w(&name, 1.0) + 24.0).min(r.width() * 0.45);
     // (only with room beside it for the song's card)
     let show_name = r.width() - 2.0 * m - name_w - gap >= 170.0;
@@ -559,6 +559,8 @@ impl App {
     /// Every frame while the window is open: what it changed and asked for, and what it needs from the app.
     pub(crate) fn pop_frame(&mut self, ctx: &egui::Context) {
         let Some(pop) = self.pop.clone() else { return };
+        // (a classic preset in the window: its thread, fed from here)
+        self.retro_feed(visuals::offered(self.vis_preset));
         let (asks, closed) = {
             let mut s = lock(&pop);
             if s.at.is_some() && s.at != self.pop_px {
