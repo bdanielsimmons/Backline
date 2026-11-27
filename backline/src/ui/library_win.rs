@@ -1437,10 +1437,8 @@ impl App {
 
     pub(crate) fn library_ui(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         window_deco(ui, ui.max_rect(), "LIBRARY");
-        // a Style has no deck: the window's own buttons (its menu, minimize, maximize, quit) on the library's bar
-        if crate::styles::styled() && !self.mini {
-            self.stream_buttons(ui, acts);
-        }
+        // (a Style's window buttons, its menu, minimize, maximize, quit, are at the window's top right corner, over the
+        // column: styled_layout)
         // a skin worn: the places down a list at the side (as Spotify has them), the page beside it
         if self.wa_art.is_some() && !self.mini && crate::winamp_ui::chrome_on() {
             // one surface inside the frame, as Spotify's and Tidal's are: the places down the side a shade apart and
@@ -2333,10 +2331,10 @@ pub(crate) fn color_wash(p: &egui::Painter, r: Rect, top: Color32) {
 }
 
 impl App {
-    /// Streaming's window buttons on the library's bar, right to left: quit, maximize, minimize, and the menu (skins,
-    /// preferences, help), as the deck has them in the other looks.
-    fn stream_buttons(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
-        let inner = ui.max_rect();
+    /// A Style's window buttons in the title strip of the window at `inner` (the column at the window's top right
+    /// corner, so they're always in the corner), right to left: quit, maximize, minimize, and the menu (skins,
+    /// preferences, help), as the deck has them in the other looks. Gives where they begin on the left.
+    pub(crate) fn stream_buttons(&mut self, ui: &mut egui::Ui, inner: Rect, acts: &mut Vec<Action>) -> f32 {
         let s = 24.0;
         let mut right = crate::title_right(inner);
         let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
@@ -2376,5 +2374,6 @@ impl App {
                 _ => {}
             }
         }
+        right + 4.0
     }
 }

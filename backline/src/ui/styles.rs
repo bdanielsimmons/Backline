@@ -439,8 +439,10 @@ impl App {
                 let x0 = r.min.x;
                 let x1 = r.max.x - pad;
                 let mut y = r.min.y + crate::FRAME_TOP;
-                // (its top strip moves the window, as the others' bars do)
-                crate::app_bar_strip(ui, Rect::from_min_max(Pos2::new(x0, r.min.y), Pos2::new(x1, y)), ui.id().with("st_bar_strip"));
+                // the window's buttons (menu, minimize, maximize, quit) in its top strip, the window's top right corner
+                let ctl = if self.mini { x1 } else { self.stream_buttons(ui, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, r.max.y)), acts) };
+                // (the rest of the strip moves the window, as the others' bars do)
+                crate::app_bar_strip(ui, Rect::from_min_max(Pos2::new(x0, r.min.y), Pos2::new((ctl - 4.0).max(x0), y)), ui.id().with("st_bar_strip"));
                 // the deck at the top right, the classic player's controls made easy (the owner); practising keeps it,
                 // the practice panel goes under it
                 {
