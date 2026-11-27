@@ -336,7 +336,8 @@ pub(crate) fn marquee(ui: &egui::Ui, r: Rect, text: &str, size: f32, col: Color3
 /// The song as the deck scrolls it: who, what, how long, and the key and tempo once they're known.
 fn song_line(tr: &Track) -> String {
     let info = crate::meta::get(tr.id).unwrap_or_default();
-    let mut s = format!("{} - {} ({})", tr.artists_text().to_uppercase(), tr.title.to_uppercase(), fmt_time(tr.duration));
+    let album = if tr.album.is_empty() { String::new() } else { format!(" · {}", tr.album.to_uppercase()) };
+    let mut s = format!("{} - {}{} ({})", tr.artists_text().to_uppercase(), tr.title.to_uppercase(), album, fmt_time(tr.duration));
     if info.key.is_some() {
         s += &format!("  * KEY {}", crate::meta::key_text(&info));
     }
@@ -675,7 +676,8 @@ impl App {
         marquee(ui, line, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), big, ink());
         let mut y = line.max.y + 10.0;
         let who = tr.artist_album();
-        px(&p, Pos2::new(x0, y), egui::Align2::LEFT_CENTER, &who.to_uppercase(), 10.0, dim());
+        let wr = px(&p, Pos2::new(x0, y), egui::Align2::LEFT_CENTER, &who.to_uppercase(), 10.0, dim());
+        self.album_link(ui, wr.expand2(Vec2::new(0.0, 2.0)), "studio_np", ink(), acts);
         y += 22.0 * s;
         // what's known of it, each in a little box
         // (key, tempo and loops always have a box, dim dashes while unknown, like an unlit readout; the tuning only
@@ -745,7 +747,7 @@ impl App {
                         }
                         let col = if now { scr() } else if played { ink().gamma_multiply(0.42) } else { ink() };
                         let nr = Rect::from_min_max(Pos2::new(row.min.x + 4.0, row.min.y), Pos2::new(row.max.x - 64.0 * s, row.max.y));
-                        marquee(ui, nr, &format!("{} · {}", n.title.to_uppercase(), n.artists_text().to_uppercase()), 15.0, col);
+                        marquee(ui, nr, &format!("{} · {}", n.title.to_uppercase(), n.artist_album().to_uppercase()), 15.0, col);
                         dot(ui.painter(), Pos2::new(row.max.x - 4.0, row.center().y), egui::Align2::RIGHT_CENTER, &fmt_time(n.duration), 15.0, col);
                         if h.clicked() {
                             acts.push(Action::PlayIndex(i));

@@ -774,7 +774,8 @@ impl App {
         // the song, top left
         let p = ui.painter();
         if let Some(t) = self.cur_track() {
-            let line = format!("{}  -  {}", t.artists_text(), t.title);
+            let album = if t.album.is_empty() { String::new() } else { format!("  ·  {}", t.album) };
+            let line = format!("{}  -  {}{}", t.artists_text(), t.title, album);
             crate::ptext(p, r.min + Vec2::new(28.0, 30.0), egui::Align::Min, &line, 1.6, Color32::from_white_alpha(230));
         }
         // the preset and arrows, bottom middle

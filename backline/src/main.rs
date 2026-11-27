@@ -3417,6 +3417,7 @@ impl eframe::App for App {
                 Some((
                     t.artists_text(),
                     t.title.clone(),
+                    t.album.clone(),
                     Some(cover_url(&t.cover, 320)).filter(|c| c.starts_with("http")).unwrap_or_default(),
                 )),
                 if self.paused { 2 } else { 1 },

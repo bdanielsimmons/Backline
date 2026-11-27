@@ -262,7 +262,7 @@ pub(crate) fn table_header(ui: &mut egui::Ui, left: &str, mid: &str, last: &str,
 // ------------------------------------------------------------------ list columns
 /// Which extra columns the track lists show: bit0 artist, bit1 album, bit2 length, bit3 key and tempo
 /// (name is always shown).
-pub(crate) static COLS: AtomicU32 = AtomicU32::new(0b11101);
+pub(crate) static COLS: AtomicU32 = AtomicU32::new(0b11111);
 pub(crate) const COL_NAMES: [&str; 5] = ["ARTIST", "ALBUM", "LENGTH", "KEY / BPM", "SOURCE"];
 /// width of the SOURCE slot (Tidal, SoundCloud, YouTube, File), left of the heart
 pub(crate) const SRC_W: f32 = 100.0;
@@ -850,6 +850,16 @@ pub(crate) fn source_label(kind: &str) -> &'static str {
 }
 
 // ------------------------------------------------------------------ page view
+/// A song to bring into view in the next track list that has it, until a time (the album opened from Now Playing).
+static SHOW_SONG: std::sync::Mutex<Option<(i64, f64)>> = std::sync::Mutex::new(None);
+
+/// Bring song `id` into view in the next track list that shows it, if one does before `until` (seconds, egui's clock).
+pub(crate) fn show_song(id: i64, until: f64) {
+    if let Ok(mut g) = SHOW_SONG.lock() {
+        *g = Some((id, until));
+    }
+}
+
 /// `own`: the id of your own Tidal playlist these songs are, for taking one out of it. `src`: where each song not on
 /// Tidal plays from (the SOURCE column).
 pub(crate) fn tracks_list(
@@ -872,6 +882,22 @@ pub(crate) fn tracks_list(
         song_sort_key(t.id, &t.title, &t.artists_text(), &t.album, t.duration, track_kind(src, t.id), c)
     });
     let shown: Vec<Track> = if sort_now().is_some() { order.iter().map(|&i| tracks[i].clone()).collect() } else { Vec::new() };
+    // (a song to bring into view: the album opened from Now Playing, its song lit in the middle of the list)
+    let want = SHOW_SONG.lock().ok().and_then(|g| *g);
+    if let Some((id, until)) = want {
+        let now = ui.input(|i| i.time);
+        let at = order.iter().position(|&i| tracks[i].id == id);
+        if now > until || at.is_some() {
+            if let Ok(mut g) = SHOW_SONG.lock() {
+                *g = None;
+            }
+        }
+        if let (Some(pos), true) = (at, now <= until) {
+            let h = row_height(ui, art);
+            let top = ui.cursor().min;
+            ui.scroll_to_rect(Rect::from_min_size(Pos2::new(top.x, top.y + pos as f32 * h), Vec2::new(ui.available_width(), h)), Some(Align::Center));
+        }
+    }
     let (first, last) = row_window(ui, tracks.len(), art);
     for pos in first..last.min(order.len()) {
         let i = order[pos];

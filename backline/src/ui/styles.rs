@@ -818,7 +818,7 @@ impl App {
                 let w = scr.width() - 190.0;
                 // (the song as written, over its artist, in the screen's face)
                 screen_marquee(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w, amber());
-                screen_marquee(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w, amber().gamma_multiply(0.65));
+                screen_marquee(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artist_album(), 1.1, w, amber().gamma_multiply(0.65));
             }
             if ui.interact(scr, id.with("screen"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Now Playing  (A)").clicked() {
                 acts.push(Action::ToggleArt);
@@ -861,7 +861,7 @@ impl App {
             let tx = cover.max.x + 12.0;
             let room = (r.center().x - 200.0 - tx).max(60.0);
             let tw = crate::row_text(&p, Pos2::new(tx, r.center().y - 9.0), Align::Min, &tr.title, room, fg());
-            crate::row_text(&p, Pos2::new(tx, r.center().y + 10.0), Align::Min, &tr.artists_text(), room, fg2());
+            crate::row_text(&p, Pos2::new(tx, r.center().y + 10.0), Align::Min, &tr.artist_album(), room, fg2());
             let hr = Rect::from_min_size(Pos2::new(tx + tw.min(room) + 10.0, r.center().y - 19.0), Vec2::new(crate::HEART_W, 20.0));
             if crate::draw_heart(ui, hr, self.liked.contains(&tr.id), false, id.with("heart")) {
                 acts.push(Action::ToggleLike(tr.clone()));
@@ -1028,7 +1028,7 @@ impl App {
                     let dw = ptext(p, Pos2::new(row.max.x - 6.0, row.center().y), Align::Max, &dur, 1.5, col2);
                     let room = w - dw - 24.0;
                     crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y - 8.0), Align::Min, &tr.title, room, col);
-                    crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y + 9.0), Align::Min, &tr.artists_text(), room, col2);
+                    crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y + 9.0), Align::Min, &tr.artist_album(), room, col2);
                 } else if hw {
                     // (Hardware: the song over its artist on the screen, as every look has it; the length at the right)
                     if now || h.hovered() {
@@ -1039,7 +1039,7 @@ impl App {
                     screen_text(p, Pos2::new(row.max.x - 6.0, row.center().y), Align::Max, &dur, 1.2, dw + 4.0, col);
                     let room = w - dw - 22.0;
                     screen_text(p, Pos2::new(row.min.x + 6.0, row.center().y - 8.0), Align::Min, &tr.title, 1.25, room, col);
-                    screen_text(p, Pos2::new(row.min.x + 6.0, row.center().y + 9.0), Align::Min, &tr.artists_text(), 1.05, room, col.gamma_multiply(0.6));
+                    screen_text(p, Pos2::new(row.min.x + 6.0, row.center().y + 9.0), Align::Min, &tr.artist_album(), 1.05, room, col.gamma_multiply(0.6));
                 } else {
                     if now || h.hovered() {
                         p.rect_filled(row, 6.0, wash(if now { 34 } else { 16 }));
@@ -1051,7 +1051,7 @@ impl App {
                     let dw = ptext(p, Pos2::new(row.max.x - 8.0, row.center().y), Align::Max, &dur, 1.6, fg2().gamma_multiply(dim));
                     let room = w - dw - 30.0;
                     crate::row_text(p, Pos2::new(row.min.x + 14.0, row.center().y - 9.0), Align::Min, &tr.title, room, col);
-                    crate::row_text(p, Pos2::new(row.min.x + 14.0, row.center().y + 10.0), Align::Min, &tr.artists_text(), room, fg2().gamma_multiply(dim));
+                    crate::row_text(p, Pos2::new(row.min.x + 14.0, row.center().y + 10.0), Align::Min, &tr.artist_album(), room, fg2().gamma_multiply(dim));
                 }
                 if h.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     acts.push(Action::PlayIndex(i));
@@ -1301,7 +1301,7 @@ impl App {
             let tx = row_a.min.x + row_a.width() * 0.42;
             if let Some(tr) = self.cur_track() {
                 let mq = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 4.0), Pos2::new(row_a.max.x - 8.0, row_a.min.y + 24.0));
-                sd::marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artists_text().to_uppercase()), 14.0, sd::ink());
+                sd::marquee(ui, mq, &format!("{} - {}", tr.title.to_uppercase(), tr.artist_album().to_uppercase()), 14.0, sd::ink());
             }
             if self.mini_viz {
                 let vr = Rect::from_min_max(Pos2::new(tx, row_a.min.y + 30.0), row_a.max - Vec2::new(8.0, 6.0));
@@ -1319,7 +1319,7 @@ impl App {
             }
             let tx = row_a.min.x + row_a.width() * 0.42;
             if let Some(tr) = self.cur_track() {
-                screen_marquee(&p, Pos2::new(tx, row_a.min.y + 11.0), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15, row_a.max.x - tx - 8.0, amber());
+                screen_marquee(&p, Pos2::new(tx, row_a.min.y + 11.0), Align::Min, &format!("{} · {}", tr.title, tr.artist_album()), 1.15, row_a.max.x - tx - 8.0, amber());
             }
             if self.mini_viz {
                 mini_viz(&p, Rect::from_min_max(Pos2::new(tx, row_a.min.y + 22.0), row_a.max - Vec2::new(8.0, 6.0)), &bands, amber(), true);
@@ -1334,7 +1334,7 @@ impl App {
                 }
                 let tx = cover.max.x + 10.0;
                 let room = row_a.max.x - tx;
-                crate::row_text(&p, Pos2::new(tx, row_a.min.y + 8.0), Align::Min, &format!("{} - {}", tr.artists_text(), tr.title), room, fg());
+                crate::row_text(&p, Pos2::new(tx, row_a.min.y + 8.0), Align::Min, &format!("{} - {}{}", tr.artists_text(), tr.title, if tr.album.is_empty() { String::new() } else { format!(" · {}", tr.album) }), room, fg());
                 let big = (row_a.height() / 22.0).clamp(1.6, 3.4);
                 let tw = font::keep_caps(|| ptext(&p, Pos2::new(tx, row_a.max.y - row_a.height() * 0.3), Align::Min, &fmt_time(pos), big, fg()));
                 if self.mini_viz {
@@ -1455,7 +1455,7 @@ impl App {
             let w = scr.width() - 20.0;
             if let Some(tr) = &tr {
                 screen_marquee(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0 * s), Align::Min, &tr.title, 1.3, w, amber());
-                screen_marquee(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artists_text(), 1.05, w, amber().gamma_multiply(0.65));
+                screen_marquee(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artist_album(), 1.05, w, amber().gamma_multiply(0.65));
             }
             let mid = scr.min.y + scr.height() * 0.58;
             let big = ((scr.height() / s - 50.0) / 9.0).clamp(2.6, 4.4);
@@ -1474,7 +1474,7 @@ impl App {
             let room = top.max.x - tx;
             if let Some(tr) = &tr {
                 crate::row_text(&p, Pos2::new(tx, top.min.y + 9.0 * s), Align::Min, &tr.title, room, fg());
-                crate::row_text(&p, Pos2::new(tx, top.min.y + 27.0 * s), Align::Min, &tr.artists_text(), room, fg2());
+                crate::row_text(&p, Pos2::new(tx, top.min.y + 27.0 * s), Align::Min, &tr.artist_album(), room, fg2());
             }
             let big = (top.height() / s / 34.0).clamp(1.8, 3.2);
             let ty = top.max.y - top.height() * 0.28;
@@ -1657,7 +1657,7 @@ impl App {
             let dw = ptext(&p, Pos2::new(row.max.x - 6.0, row.center().y), Align::Max, &fmt_time(tr.duration), 1.6, fg2());
             let room = row.max.x - dw - 18.0 - tx;
             crate::row_text(&p, Pos2::new(tx, row.center().y - 9.0), Align::Min, &tr.title, room, fg());
-            crate::row_text(&p, Pos2::new(tx, row.center().y + 10.0), Align::Min, &tr.artists_text(), room, fg2());
+            crate::row_text(&p, Pos2::new(tx, row.center().y + 10.0), Align::Min, &tr.artist_album(), room, fg2());
             if hr.clicked() {
                 acts.push(Action::PlayIndex(i));
             }

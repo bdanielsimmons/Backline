@@ -389,9 +389,10 @@ impl App {
             app.prac_h = if h <= 0.0 { 0.0 } else { (h as f32).clamp(120.0, 900.0) };
         }
         if let Some(c) = st["cols"].as_u64() {
-            // settings from before the KEY / BPM and SOURCE columns: shown once, they can be turned off from the header
+            // settings from before the KEY / BPM and SOURCE columns, or from when ALBUM started off: shown once, they
+            // can be turned off from the header
             let v = st["cols_v"].as_u64().unwrap_or(1);
-            let new = if v < 2 { 0b1000 } else { 0 } | if v < 3 { 0b10000 } else { 0 };
+            let new = if v < 2 { 0b1000 } else { 0 } | if v < 3 { 0b10000 } else { 0 } | if v < 4 { 0b10 } else { 0 };
             COLS.store(c as u32 | new, Ordering::Relaxed);
         }
         if let Some(v) = st["track_sort"].as_u64() {
@@ -530,7 +531,7 @@ impl App {
             "pomo_was": self.pomo_was,
             "cols": COLS.load(Ordering::Relaxed),
             "track_sort": crate::tracks::SORT.load(Ordering::Relaxed),
-            "cols_v": 3,
+            "cols_v": 4,
             "vinyl": VINYL.load(Ordering::Relaxed),
             "row_art": ROW_ARTS.load(Ordering::Relaxed),
             "my_a": self.my_a,

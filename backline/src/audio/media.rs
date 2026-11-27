@@ -60,8 +60,8 @@ pub fn spawn(tx: Sender<Msg>, ctx: egui::Context) {
 #[cfg(not(windows))]
 pub fn spawn(_tx: Sender<Msg>, _ctx: egui::Context) {}
 
-/// What the media controls show: (artist, title, cover address) and 0 nothing, 1 playing, 2 paused.
-pub type Shown = (Option<(String, String, String)>, u8);
+/// What the media controls show: (artist, title, album, cover address) and 0 nothing, 1 playing, 2 paused.
+pub type Shown = (Option<(String, String, String, String)>, u8);
 
 /// Windows' media controls for Backline's window, and what they show now.
 #[cfg(windows)]
@@ -114,10 +114,11 @@ pub fn show(c: &mut Controls, now: Shown) {
     }
     if c.shown.0 != now.0 {
         match &now.0 {
-            Some((artist, title, cover)) => {
+            Some((artist, title, album, cover)) => {
                 let _ = c.c.set_metadata(souvlaki::MediaMetadata {
                     title: Some(title),
                     artist: Some(artist),
+                    album: (!album.is_empty()).then_some(album.as_str()),
                     cover_url: (!cover.is_empty()).then_some(cover.as_str()),
                     ..Default::default()
                 });

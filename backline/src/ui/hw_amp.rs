@@ -323,7 +323,7 @@ impl App {
             let tx = cr.max.x + m.v(10.0);
             let room = row.max.x - tx - tw - m.v(16.0);
             crate::styles::screen_text(&lp, Pos2::new(tx, row.center().y - m.v(7.0)), Align::Min, &tr.title, 1.25 * s, room, col);
-            crate::styles::screen_text(&lp, Pos2::new(tx, row.center().y + m.v(8.0)), Align::Min, &tr.artists_text(), 1.05 * s, room, col.gamma_multiply(0.6));
+            crate::styles::screen_text(&lp, Pos2::new(tx, row.center().y + m.v(8.0)), Align::Min, &tr.artist_album(), 1.05 * s, room, col.gamma_multiply(0.6));
             crate::styles::screen_text(&lp, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &len, 1.2 * s, tw + 4.0, col);
             if h.clicked() {
                 acts.push(Action::PlayIndex(*i));

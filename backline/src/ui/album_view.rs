@@ -155,9 +155,19 @@ impl App {
                     ptext_fit(&p, Pos2::new(cx + 0.8, y0), Align::Center, &tr.title, tp, w, ink);
                 }
                 let sy = y0 + if st == STYLE_STREAMING { 40.0 } else { 30.0 } * cap_k;
-                ptext_fit(&p, Pos2::new(cx, sy), Align::Center, &sub, sp, w, ink.gamma_multiply(0.75));
                 let cap_r = Rect::from_center_size(Pos2::new(cx, (y0 + sy) / 2.0), Vec2::new(tw + 30.0, sy - y0 + 40.0));
                 self.np_caption_menu(ui, cap_r);
+                // (the artist and album: a link to the album, the caption's menu on it too)
+                let sub_r = Rect::from_center_size(Pos2::new(cx, sy), Vec2::new(text_w(&sub, sp).min(w), sp * 10.0 + 4.0));
+                let over = match self.album_link(ui, sub_r, "np_caption", ink.gamma_multiply(0.75), acts) {
+                    Some(h) => {
+                        let over = h.hovered();
+                        h.context_menu(|ui| self.np_caption_items(ui));
+                        over
+                    }
+                    None => false,
+                };
+                ptext_fit(&p, Pos2::new(cx, sy), Align::Center, &sub, sp, w, ink.gamma_multiply(if over { 0.95 } else { 0.75 }));
             } else if track.is_none() {
                 let t = now as f32;
                 let breath = ((t * std::f32::consts::TAU / 5.0).sin() + 1.0) / 2.0;
@@ -188,7 +198,10 @@ impl App {
                     let room = card.max.x - tx - 10.0;
                     let a8 = |c: Color32| c.gamma_multiply(show);
                     ptext_fit(&p, Pos2::new(tx, card.center().y - 11.0), Align::Min, &tr.title, 2.2, room, a8(OVER));
-                    ptext_fit(&p, Pos2::new(tx, card.center().y + 13.0), Align::Min, &tr.artist_album(), 1.6, room, a8(OVER.gamma_multiply(0.7)));
+                    let sub = tr.artist_album();
+                    let sub_r = Rect::from_min_size(Pos2::new(tx, card.center().y + 13.0 - 9.0), Vec2::new(text_w(&sub, 1.6).min(room), 18.0));
+                    self.album_link(ui, sub_r, "np_vis_card", a8(OVER.gamma_multiply(0.7)), acts);
+                    ptext_fit(&p, Pos2::new(tx, card.center().y + 13.0), Align::Min, &sub, 1.6, room, a8(OVER.gamma_multiply(0.7)));
                 }
             }
         }
@@ -468,7 +481,33 @@ impl App {
 
     /// The song's words under the cover: right-click for their size, colour and what's shown.
     fn np_caption_menu(&mut self, ui: &mut egui::Ui, r: Rect) {
-        ui.interact(r, ui.id().with("caption"), Sense::click()).context_menu(|ui| {
+        ui.interact(r, ui.id().with("caption"), Sense::click()).context_menu(|ui| self.np_caption_items(ui));
+    }
+
+    /// The line under the song ("Artist · Album", drawn over `r`) as a link to the album, for a Tidal song: the
+    /// pointer turns over it and it's underlined in `col`; a click opens the album in the library (Now Playing steps
+    /// aside) with the song lit and brought into view. Gives its response (None: the song has no album page - a file,
+    /// a YouTube or SoundCloud song - or Backline is offline).
+    pub(crate) fn album_link(&mut self, ui: &egui::Ui, r: Rect, name: &str, col: Color32, acts: &mut Vec<Action>) -> Option<egui::Response> {
+        let tr = self.cur_track().filter(|t| t.id > 0 && !self.offline && !self.go_offline)?;
+        let h = ui
+            .interact(r, ui.id().with(("album_link", name)), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .tip("Go to the album");
+        if h.hovered() {
+            ui.painter().line_segment([Pos2::new(r.min.x, r.max.y), Pos2::new(r.max.x, r.max.y)], Stroke::new(1.0_f32, col));
+        }
+        if h.clicked() {
+            acts.push(Action::GoTo(tr.id, crate::GoTo::Album));
+            crate::tracks::show_song(tr.id, ui.input(|i| i.time) + 20.0);
+            self.art_view = false;
+        }
+        Some(h)
+    }
+
+    /// The caption's right-click menu: its size, its colour, what it shows, the record spinning.
+    fn np_caption_items(&mut self, ui: &mut egui::Ui) {
+        {
             for (i, name) in ["SMALL", "MEDIUM", "LARGE"].iter().enumerate() {
                 let mark = if self.cap_size as usize == i { "> " } else { "   " };
                 if menu_item(ui, &format!("{}TEXT: {}", mark, name)) {
@@ -499,7 +538,7 @@ impl App {
                 self.apply(Action::ToggleVinyl);
                 ui.close_menu();
             }
-        });
+        }
     }
 
     /// The side panel: its tabs (Lyrics, Up Next, About, Loops) along its top, then the one picked, with no box (on
@@ -564,7 +603,10 @@ impl App {
                     if let Some(tr) = self.cur_track() {
                         ptext_fit(p, Pos2::new(cs.max.x + 14.0, cs.center().y - 10.0), Align::Min, &tr.title, 2.4, head.width() - 80.0, OVER);
                         ptext_fit(p, Pos2::new(cs.max.x + 14.6, cs.center().y - 10.0), Align::Min, &tr.title, 2.4, head.width() - 80.0, OVER);
-                        ptext_fit(p, Pos2::new(cs.max.x + 14.0, cs.center().y + 14.0), Align::Min, &tr.artist_album(), 1.7, head.width() - 80.0, OVER.gamma_multiply(0.7));
+                        let sub = tr.artist_album();
+                        let sub_r = Rect::from_min_size(Pos2::new(cs.max.x + 14.0, cs.center().y + 14.0 - 10.0), Vec2::new(text_w(&sub, 1.7).min(head.width() - 80.0), 20.0));
+                        self.album_link(ui, sub_r, "np_lyrics_head", OVER.gamma_multiply(0.7), acts);
+                        ptext_fit(p, Pos2::new(cs.max.x + 14.0, cs.center().y + 14.0), Align::Min, &sub, 1.7, head.width() - 80.0, OVER.gamma_multiply(0.7));
                     }
                     Rect::from_min_max(Pos2::new(r.min.x, r.min.y + 84.0), r.max)
                 } else {
@@ -775,7 +817,10 @@ impl App {
             let name_w = (r.width() - 140.0 - w1 - w2 - 30.0).max(80.0);
             ptext_fit(&p, Pos2::new(tx, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, name_w, OVER);
             ptext_fit(&p, Pos2::new(tx + 0.6, cs.min.y + 16.0), Align::Min, &tr.title, 2.6, name_w, OVER);
-            ptext_fit(&p, Pos2::new(tx, cs.min.y + 42.0), Align::Min, &tr.artist_album(), 1.7, name_w, OVER.gamma_multiply(0.7));
+            let sub = tr.artist_album();
+            let sub_r = Rect::from_min_size(Pos2::new(tx, cs.min.y + 42.0 - 10.0), Vec2::new(text_w(&sub, 1.7).min(name_w), 20.0));
+            self.album_link(ui, sub_r, "np_prac_head", OVER.gamma_multiply(0.7), acts);
+            ptext_fit(&p, Pos2::new(tx, cs.min.y + 42.0), Align::Min, &sub, 1.7, name_w, OVER.gamma_multiply(0.7));
             // what's known of it, as tags
             let info = crate::meta::get(tr.id).unwrap_or_default();
             let mut tags: Vec<String> = Vec::new();

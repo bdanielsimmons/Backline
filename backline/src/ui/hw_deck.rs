@@ -231,7 +231,12 @@ impl App {
         if let Some(t) = &tr {
             // (a long title or artist scrolls across the glass, as a deck's display does)
             crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(52.0)), Align::Min, &t.title, 1.3 * k, room, amber);
-            crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(70.0)), Align::Min, &t.artist_album(), 1.05 * k, room, amber.gamma_multiply(0.6));
+            let sub = t.artist_album();
+            crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(70.0)), Align::Min, &sub, 1.05 * k, room, amber.gamma_multiply(0.6));
+            // (the artist and album: a link to the album)
+            let sw = crate::styles::screen_w(p, &sub, 1.05 * k).min(room);
+            let sub_r = Rect::from_min_size(Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(62.0)), Vec2::new(sw, m.v(16.0)));
+            self.album_link(ui, sub_r, "hw_deck", amber.gamma_multiply(0.6), acts);
         } else {
             crate::styles::screen_text(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(60.0)), Align::Min, "No tape", 1.2 * k, room, amber.gamma_multiply(0.6));
         }

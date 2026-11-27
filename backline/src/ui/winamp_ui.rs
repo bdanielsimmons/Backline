@@ -412,7 +412,8 @@ impl App {
                 if let Some(b) = info.bpm {
                     extra += &format!("  *  {} BPM", b);
                 }
-                format!("{} - {} ({}){}", tr.artists_text(), tr.title, fmt_time(tr.duration), extra)
+                let album = if tr.album.is_empty() { String::new() } else { format!(" · {}", tr.album) };
+                format!("{} - {}{} ({}){}", tr.artists_text(), tr.title, album, fmt_time(tr.duration), extra)
             }
             (None, None) => "BACKLINE - A RETRO PLAYER FOR TIDAL".to_string(),
         };
@@ -1299,7 +1300,7 @@ impl App {
                 let name = if self.queued(i) { format!("QUEUED  {}", tr.title) } else { tr.title.clone() };
                 pl_text(&clip, Pos2::new(tx, r.center().y - 6.0 * tk), Align::Min, &name, tk, room, col);
                 let by = if now { col.gamma_multiply(0.75) } else { pal().ink2 };
-                pl_text(&clip, Pos2::new(tx, r.center().y + 6.0 * tk), Align::Min, &tr.artists_text(), tk, room, by);
+                pl_text(&clip, Pos2::new(tx, r.center().y + 6.0 * tk), Align::Min, &tr.artist_album(), tk, room, by);
             } else {
                 pl_text(&clip, Pos2::new(r.min.x + 3.0 * tk, r.center().y), Align::Min, &label, tk, r.width() - dw - 10.0 * tk, col);
             }

@@ -1406,7 +1406,7 @@ impl App {
         }
         let room = (cx - 2.5 * cw - 12.0) - tx;
         crate::row_text(&p, Pos2::new(tx, bar.min.y + 17.0), Align::Min, &tr.title, room, pal().bar_txt);
-        crate::row_text(&p, Pos2::new(tx, bar.min.y + 35.0), Align::Min, &tr.artists_text(), room, pal().ink2);
+        crate::row_text(&p, Pos2::new(tx, bar.min.y + 35.0), Align::Min, &tr.artist_album(), room, pal().ink2);
         // how far in: a thin line along the foot - click or drag it to move in the song
         let f = if tr.duration > 0.0 { (self.pos() / tr.duration).clamp(0.0, 1.0) } else { 0.0 };
         let line = Rect::from_min_max(Pos2::new(bar.min.x + 2.0, bar.max.y - 4.0), Pos2::new(bar.max.x - 2.0, bar.max.y - 2.0));
