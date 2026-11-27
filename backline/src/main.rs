@@ -975,6 +975,10 @@ app_state! {
     xfade: u8,
     /// the next song to play comes in over this many seconds (set as the crossfade starts it)
     fade_next: f32,
+    /// gapless: the song lined up in the player to follow this one with no gap (0: none)
+    armed: i64,
+    /// the next song to play is already playing (it followed with no gap): `play_index` only catches up
+    gapless_next: bool,
     prefetching: i64,
     player: Player = Player::new(),
     // (a first run starts well below full: the tour's song is the first thing heard)
@@ -2765,7 +2769,10 @@ impl App {
         // (a crossfade into the song downloaded ahead: the one playing isn't stopped, it fades out)
         let fade = std::mem::take(&mut self.fade_next);
         let fading = fade > 0.0 && self.prefetched.as_ref().is_some_and(|p| p.0 == t.id);
-        if !fading {
+        // (it followed the last one with no gap: it's playing already)
+        let followed = std::mem::take(&mut self.gapless_next) && self.prefetched.as_ref().is_some_and(|p| p.0 == t.id);
+        self.armed = 0;
+        if !fading && !followed {
             self.player.send(Cmd::Stop);
         }
         self.status.clear();
@@ -2793,7 +2800,9 @@ impl App {
                 self.start_wave(id, &bytes);
                 self.start_meta(id, &bytes);
                 self.start_beats(id, &bytes);
-                self.player.send(if fading { Cmd::PlayFade(bytes, fade) } else { Cmd::Play(bytes) });
+                if !followed {
+                    self.player.send(if fading { Cmd::PlayFade(bytes, fade) } else { Cmd::Play(bytes) });
+                }
                 self.after_play();
                 self.set_kbps(n);
                 self.buffering = false;
@@ -3223,12 +3232,27 @@ impl eframe::App for App {
 
         // Player events: errors and end-of-track
         {
-            let (ended, err) = {
+            let (ended, err, advanced) = {
                 let mut g = self.player.shared.lock().unwrap();
                 let e = g.ended;
                 g.ended = false;
-                (e, g.error.take())
+                (e, g.error.take(), std::mem::take(&mut g.advanced))
             };
+            // the song lined up has started, with no gap: the app catches up (the next song, unless the queue moved)
+            if advanced && self.armed != 0 {
+                let armed = self.armed;
+                match self.next_index().filter(|&j| self.queue.get(j).is_some_and(|t| t.id == armed)) {
+                    Some(j) => {
+                        self.gapless_next = true;
+                        self.advance_to(j);
+                    }
+                    None => {
+                        if let Some(j) = self.next_index() {
+                            self.advance_to(j);
+                        }
+                    }
+                }
+            }
             if let Some(e) = err {
                 self.buffering = false;
                 if e.starts_with("DECODE") {
@@ -3254,6 +3278,26 @@ impl eframe::App for App {
             // crossfade: the next song comes in over the last seconds of this one - only as one song follows another
             // by itself, once the next one is here, and never over a loop or a song on repeat
             let looping = self.loop_on && self.loop_a.is_some() && self.loop_b.is_some();
+            // gapless (crossfade off): the next song lined up in the player in the last seconds, to follow with no gap;
+            // called off if the song after this one is no longer it, or a loop or repeat came on
+            if self.armed != 0 {
+                let want = self.next_index().and_then(|j| self.queue.get(j)).map(|t| t.id);
+                if looping || self.repeat == Repeat::One || want != Some(self.armed) || self.xfade > 0 {
+                    self.player.send(Cmd::Unqueue);
+                    self.armed = 0;
+                }
+            } else if self.xfade == 0 && self.cur.is_some() && !self.stopped && !self.buffering && !ended && !advanced {
+                let (dur, pos) = (self.track_len(), self.pos());
+                if self.repeat != Repeat::One && !looping && dur > 20.0 && pos > 1.0 && dur - pos <= 8.0 {
+                    let next = self.next_index().and_then(|j| self.queue.get(j)).map(|t| t.id);
+                    if let (Some(id), Some((pid, bytes))) = (next, self.prefetched.as_ref()) {
+                        if *pid == id {
+                            self.player.send(Cmd::Queue(bytes.clone()));
+                            self.armed = id;
+                        }
+                    }
+                }
+            }
             if self.xfade > 0 && self.cur.is_some() && !self.stopped && !self.paused && !self.buffering && !ended {
                 let (dur, pos, secs) = (self.track_len(), self.pos(), self.xfade as f32);
                 if self.repeat != Repeat::One && !looping && dur > secs * 3.0 && pos > 1.0 && dur - pos <= secs {

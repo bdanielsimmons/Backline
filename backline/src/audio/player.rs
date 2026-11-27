@@ -45,6 +45,11 @@ pub enum Cmd {
     /// play these bytes as the next song, crossfading over `secs` from the one playing (it fades out on its own as
     /// this one comes in)
     PlayFade(Vec<u8>, f32),
+    /// gapless: these bytes lined up to follow the song playing, with no gap (the app hears when it starts:
+    /// `Shared::advanced`)
+    Queue(Vec<u8>),
+    /// the song lined up to follow is called off (the queue changed, a loop or repeat came on)
+    Unqueue,
     Pause,
     Resume,
     Seek(f32),
@@ -69,6 +74,8 @@ pub enum Cmd {
 pub struct Shared {
     pub pos: f32,
     pub ended: bool,
+    /// the song lined up to follow (`Cmd::Queue`) has started
+    pub advanced: bool,
     pub rate: u32,
     pub error: Option<String>,
     /// Set if the audio device could not be opened at all (playback is impossible).
@@ -162,6 +169,22 @@ impl Ahead {
 static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
 
 /// What to run when a song ends: the app's "draw again now".
+/// The song's bytes opened for playing, on a thread of its own (a damaged file can't hang or crash the player).
+fn open_song(bytes: Arc<Vec<u8>>) -> Result<SymSource, String> {
+    let (dtx, drx) = channel::<Result<SymSource, String>>();
+    std::thread::spawn(move || {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| SymSource::shared(bytes)));
+        let _ = dtx.send(match r {
+            Ok(x) => x,
+            Err(_) => Err("decoder panicked".to_string()),
+        });
+    });
+    match drx.recv_timeout(Duration::from_secs(15)) {
+        Ok(r) => r,
+        Err(_) => Err("decoder timed out".to_string()),
+    }
+}
+
 pub fn on_end(f: impl Fn() + Send + Sync + 'static) {
     let _ = WAKE.set(Box::new(f));
 }
@@ -186,6 +209,8 @@ pub struct Ctl {
     /// the song playing (each new one gets the next number): during a crossfade only it moves the position, loops and
     /// clicks; the one going out just plays out
     song: AtomicU64,
+    /// bumped as a song lined up to follow starts
+    began: AtomicU32,
     rate: AtomicU32,
     /// transpose in cents (100 = one semitone)
     semis: AtomicI32,
@@ -223,6 +248,7 @@ impl Ctl {
             speed: AtomicU32::new(100),
             pos_fr: AtomicU64::new(0),
             song: AtomicU64::new(0),
+            began: AtomicU32::new(0),
             rate: AtomicU32::new(44100),
             semis: AtomicI32::new(0),
             chan: AtomicU32::new(0),
@@ -322,8 +348,10 @@ struct Looper<S: Source<Item = i16>> {
     next_beat: usize,
     sounding: Option<(bool, usize)>,
     click_val: f32,
-    /// its song's number (`Ctl::song`)
+    /// its song's number (`Ctl::song`; 0: lined up to follow, not started yet)
     song: u64,
+    /// (lined up to follow) called off: it ends before it begins
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl<S: Source<Item = i16>> Looper<S> {
@@ -333,7 +361,14 @@ impl<S: Source<Item = i16>> Looper<S> {
         ctl.rate.store(rate, Ordering::Relaxed);
         ctl.pos_fr.store(0, Ordering::Relaxed);
         let song = ctl.song.fetch_add(1, Ordering::Relaxed) + 1;
-        Looper { inner, ctl, ch, rate, frame: 0, sub: 0, clicks: None, clicks_gen: u32::MAX, next_beat: 0, sounding: None, click_val: 0.0, song }
+        Looper { inner, ctl, ch, rate, frame: 0, sub: 0, clicks: None, clicks_gen: u32::MAX, next_beat: 0, sounding: None, click_val: 0.0, song, cancel: None }
+    }
+
+    /// A song lined up to follow the one playing: it becomes the song playing as its first sample is asked for.
+    fn queued(inner: S, ctl: Arc<Ctl>, cancel: Arc<AtomicBool>) -> Looper<S> {
+        let ch = inner.channels().max(1);
+        let rate = inner.sample_rate().max(1);
+        Looper { inner, ctl, ch, rate, frame: 0, sub: 0, clicks: None, clicks_gen: u32::MAX, next_beat: 0, sounding: None, click_val: 0.0, song: 0, cancel: Some(cancel) }
     }
 
     /// The first beat at or after the current frame (after a seek, a loop jump or new clicks).
@@ -392,6 +427,16 @@ impl<S: Source<Item = i16>> Iterator for Looper<S> {
     type Item = i16;
 
     fn next(&mut self) -> Option<i16> {
+        // lined up to follow, and its turn now: called off, it ends at once; else it is the song playing
+        if self.song == 0 {
+            if self.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
+                return None;
+            }
+            self.song = self.ctl.song.fetch_add(1, Ordering::Relaxed) + 1;
+            self.ctl.rate.store(self.rate, Ordering::Relaxed);
+            self.ctl.pos_fr.store(0, Ordering::Relaxed);
+            self.ctl.began.fetch_add(1, Ordering::Relaxed);
+        }
         // the song going out in a crossfade: it just plays out (the one coming in has the position, loop and clicks)
         if self.ctl.song.load(Ordering::Relaxed) != self.song {
             return self.inner.next();
@@ -1401,6 +1446,9 @@ impl Player {
             // a crossfade: the song going out (its sink, when it began, how long, its volume) and the one coming in
             let mut fading: Option<(Sink, std::time::Instant, f32, f32)> = None;
             let mut fade_in: Option<(std::time::Instant, f32)> = None;
+            // gapless: the song lined up to follow (its call-off switch, its bytes and rate), and starts seen so far
+            let mut armed: Option<(Arc<AtomicBool>, Arc<Vec<u8>>, u32)> = None;
+            let mut last_began = ctl_t.began.load(Ordering::Relaxed);
 
             loop {
                 let wait = if fading.is_some() || fade_in.is_some() { 15 } else { 50 };
@@ -1413,6 +1461,9 @@ impl Player {
                             _ => continue,
                         };
                         log(&format!("player: received {} bytes{}", bytes.len(), if fade > 0.0 { " (crossfade)" } else { "" }));
+                        if let Some((c, ..)) = armed.take() {
+                            c.store(true, Ordering::Relaxed);
+                        }
                         if let Some((f, ..)) = fading.take() {
                             f.stop();
                         }
@@ -1427,19 +1478,7 @@ impl Player {
                         }
                         let sink_res = Sink::try_new(&handle);
                         let bytes = Arc::new(bytes);
-                        let file = bytes.clone();
-                        let (dtx, drx) = channel::<Result<SymSource, String>>();
-                        std::thread::spawn(move || {
-                            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| SymSource::shared(file)));
-                            let _ = dtx.send(match r {
-                                Ok(x) => x,
-                                Err(_) => Err("decoder panicked".to_string()),
-                            });
-                        });
-                        let dec_res = match drx.recv_timeout(Duration::from_secs(15)) {
-                            Ok(r) => r,
-                            Err(_) => Err("decoder timed out".to_string()),
-                        };
+                        let dec_res = open_song(bytes.clone());
                         match (sink_res, dec_res) {
                             (Ok(s), Ok(dec)) => {
                                 let rate = dec.sample_rate();
@@ -1512,6 +1551,9 @@ impl Player {
                                 f.stop();
                             }
                             fade_in = None;
+                            if let Some((c, ..)) = armed.take() {
+                                c.store(true, Ordering::Relaxed);
+                            }
                             for slot in slots.iter_mut() {
                                 if let Some((m, _)) = slot.take() {
                                     m.stop();
@@ -1618,8 +1660,37 @@ impl Player {
                             c.detach();
                         }
                     }
+                    Ok(Cmd::Queue(bytes)) => {
+                        if let Some((c, ..)) = armed.take() {
+                            c.store(true, Ordering::Relaxed);
+                        }
+                        let bytes = Arc::new(bytes);
+                        match (&sink, open_song(bytes.clone())) {
+                            (Some(s), Ok(dec)) => {
+                                let rate = dec.sample_rate();
+                                let cancel = Arc::new(AtomicBool::new(false));
+                                let chain = Resample::new(
+                                    Stretch::new(Looper::queued(dec, ctl_t.clone(), cancel.clone()), ctl_t.clone()),
+                                    ctl_t.clone(),
+                                );
+                                s.append(Tap::new(Equalizer::new(Chan::new(chain, ctl_t.clone()), eq_t.clone()), vz.clone()));
+                                log(&format!("player: lined up {} bytes to follow", bytes.len()));
+                                armed = Some((cancel, bytes, rate));
+                            }
+                            (_, Err(e)) => log(&format!("player: couldn't line up the next song ({})", e)),
+                            _ => {}
+                        }
+                    }
+                    Ok(Cmd::Unqueue) => {
+                        if let Some((c, ..)) = armed.take() {
+                            c.store(true, Ordering::Relaxed);
+                        }
+                    }
                     Ok(Cmd::Stop) => {
                         user_paused = false;
+                        if let Some((c, ..)) = armed.take() {
+                            c.store(true, Ordering::Relaxed);
+                        }
                         if let Some((f, ..)) = fading.take() {
                             f.stop();
                         }
@@ -1642,6 +1713,30 @@ impl Player {
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
 
+                // the song lined up to follow has started: it is the one playing now (the app is told)
+                let b = ctl_t.began.load(Ordering::Relaxed);
+                if b != last_began {
+                    last_began = b;
+                    let rate = armed.as_ref().map_or(44100, |a| a.2);
+                    if let Some((_, bytes, rate)) = armed.take() {
+                        let mut v = vz.lock().unwrap();
+                        v.samples.clear();
+                        v.first.clear();
+                        v.rate = rate;
+                        song_no += 1;
+                        v.song = Some((song_no, bytes));
+                    }
+                    log("player: the next song began, no gap");
+                    {
+                        let mut g = sh.lock().unwrap();
+                        g.advanced = true;
+                        g.pos = 0.0;
+                        g.rate = rate;
+                    }
+                    if let Some(wake) = WAKE.get() {
+                        wake();
+                    }
+                }
                 // a crossfade going on: equal power (the sum stays as loud), out with a cosine, in with a sine
                 if let Some((f, t0, secs, v0)) = fading.take() {
                     let k = (t0.elapsed().as_secs_f32() / secs.max(0.05)).min(1.0);
