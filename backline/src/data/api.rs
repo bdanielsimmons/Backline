@@ -1060,6 +1060,12 @@ impl Api {
             _ => return Err("only albums and playlists can be saved".to_string()),
         };
         let _ = self.get(&format!("/users/{}/favorites/ids", self.uid()), &[])?; // a fresh login first, as any request
+        self.favorite(what, key, &c.id, on)
+    }
+
+    /// Add (`on`) or take away one of your Tidal favorites: `what` tracks, albums, playlists or artists, `key` the
+    /// form's name for its id (a fresh login first is the caller's).
+    fn favorite(&self, what: &str, key: &str, id: &str, on: bool) -> Res<()> {
         let (tok, country, uid) = {
             let s = self.session.lock().unwrap();
             (s.access_token.clone(), s.country.clone(), s.user_id)
@@ -1070,14 +1076,14 @@ impl Api {
                 .post(&base)
                 .bearer_auth(&tok)
                 .query(&[("countryCode", country.as_str())])
-                .form(&[(key, c.id.as_str()), ("onArtifactNotFound", "SKIP")])
+                .form(&[(key, id), ("onArtifactNotFound", "SKIP")])
                 .send()
         } else {
-            self.http.delete(format!("{}/{}", base, c.id)).bearer_auth(&tok).query(&[("countryCode", country.as_str())]).send()
+            self.http.delete(format!("{}/{}", base, id)).bearer_auth(&tok).query(&[("countryCode", country.as_str())]).send()
         };
         let r = r.map_err(e2s)?;
         let st = r.status();
-        log(&format!("{} favorite {} {} -> {}", if on { "POST" } else { "DELETE" }, what, c.id, st.as_u16()));
+        log(&format!("{} favorite {} {} -> {}", if on { "POST" } else { "DELETE" }, what, id, st.as_u16()));
         if st.is_success() {
             Ok(())
         } else {
@@ -1091,31 +1097,7 @@ impl Api {
     pub fn follow_artist(&self, id: &str, on: bool) -> Res<()> {
         guard()?;
         let _ = self.get(&format!("/artists/{}", id), &[])?; // a fresh login first, as any request
-        let (tok, country, uid) = {
-            let s = self.session.lock().unwrap();
-            (s.access_token.clone(), s.country.clone(), s.user_id)
-        };
-        let base = format!("{}/users/{}/favorites/artists", API, uid);
-        let r = if on {
-            self.http
-                .post(&base)
-                .bearer_auth(&tok)
-                .query(&[("countryCode", country.as_str())])
-                .form(&[("artistIds", id), ("onArtifactNotFound", "SKIP")])
-                .send()
-        } else {
-            self.http.delete(format!("{}/{}", base, id)).bearer_auth(&tok).query(&[("countryCode", country.as_str())]).send()
-        };
-        let r = r.map_err(e2s)?;
-        let st = r.status();
-        log(&format!("{} follow artist {} -> {}", if on { "POST" } else { "DELETE" }, id, st.as_u16()));
-        if st.is_success() {
-            Ok(())
-        } else {
-            let t = r.text().unwrap_or_default();
-            log(&format!("  error body: {}", t.chars().take(300).collect::<String>()));
-            Err(format!("{}: {}", st.as_u16(), t.chars().take(120).collect::<String>()))
-        }
+        self.favorite("artists", "artistIds", id, on)
     }
 
     /// What is new from the artists you follow (Tidal's activity feed): their new albums and singles, newest first.
@@ -1148,32 +1130,7 @@ impl Api {
         if has_rt && exp > 0 && exp < now() + 60 {
             let _ = self.refresh();
         }
-        let (tok, country, uid) = {
-            let s = self.session.lock().unwrap();
-            (s.access_token.clone(), s.country.clone(), s.user_id)
-        };
-        let base = format!("{}/users/{}/favorites/tracks", API, uid);
-        let idstr = id.to_string();
-        let r = if like {
-            self.http
-                .post(&base)
-                .bearer_auth(&tok)
-                .query(&[("countryCode", country.as_str())])
-                .form(&[("trackIds", idstr.as_str()), ("onArtifactNotFound", "SKIP")])
-                .send()
-        } else {
-            self.http.delete(format!("{}/{}", base, idstr)).bearer_auth(&tok).query(&[("countryCode", country.as_str())]).send()
-        };
-        let r = r.map_err(e2s)?;
-        let st = r.status();
-        log(&format!("{} favorite {} -> {}", if like { "POST" } else { "DELETE" }, id, st.as_u16()));
-        if st.is_success() {
-            Ok(())
-        } else {
-            let t = r.text().unwrap_or_default();
-            log(&format!("  error body: {}", t.chars().take(300).collect::<String>()));
-            Err(format!("{}: {}", st.as_u16(), t.chars().take(120).collect::<String>()))
-        }
+        self.favorite("tracks", "trackIds", &id.to_string(), like)
     }
 
     /// One page (100) of liked songs starting at `offset`.

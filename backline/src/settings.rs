@@ -11,21 +11,104 @@ pub(crate) fn load_settings() -> serde_json::Value {
         .unwrap_or(serde_json::Value::Null)
 }
 
+/// Settings kept under their own field's name: read back when there (and of their type; else the field keeps what it
+/// starts as), some kept in range (`=> clamp(..)`, `=> min(..)`), and written as they are.
+macro_rules! plain_settings {
+    ($( $f:ident: $t:ty $(=> $m:ident($($a:expr),*))? ),* $(,)?) => {
+        impl App {
+            fn restore_plain(&mut self, st: &serde_json::Value) {
+                $( if let Ok(v) = serde_json::from_value::<$t>(st[stringify!($f)].clone()) { self.$f = v $(.$m($($a),*))?; } )*
+            }
+            fn save_plain(&self, m: &mut serde_json::Map<String, serde_json::Value>) {
+                $( m.insert(stringify!($f).to_string(), serde_json::json!(self.$f)); )*
+            }
+        }
+    };
+}
+
+plain_settings! {
+    volume: f32 => clamp(0.0, 1.0),
+    vis_idle: u32,
+    spec_op: f32 => clamp(0.05, 0.8),
+    art_op: f32 => clamp(0.5, 1.0),
+    wv_h: f32,
+    mt_vol: f32,
+    q_drop: bool,
+    chart_lock: bool,
+    lab_snap: u8 => min(3),
+    lab_metro: bool,
+    lab_with_loop: bool,
+    lab_repeat: bool,
+    lab_tab: u8 => min(2),
+    cb_set: usize,
+    cb_fam: usize,
+    cb_view: u8 => min(4),
+    cb_sound: bool,
+    cb_order: u8 => min(1),
+    cb_hide: bool,
+    lab_vol: f32 => clamp(0.0, 1.0),
+    lab_loop_chords: bool,
+    neck_zoom: f32 => clamp(0.8, 2.2),
+    ghost_alpha: f32 => clamp(0.1, 1.0),
+    intro: u8 => min(2),
+    auto_restart: bool,
+    tour_seen: bool,
+    cap_size: u8 => min(2),
+    cap_dark: bool,
+    cap_show: u8 => min(2),
+    art_border: u8 => min(2),
+    spec_lyr: u8 => min(1),
+    spec_frame: u8 => min(1),
+    spec_w: f32 => clamp(0.2, 1.0),
+    spec_h: f32 => clamp(0.15, 0.9),
+    eq_on: bool,
+    keep_cache: bool,
+    prac_stack_w: f32,
+    nav_w: f32,
+    stack_w: f32,
+    lib_frac: f32 => clamp(0.2, 0.7),
+    stack_frac: f32 => clamp(0.1, 1.0),
+    chime_vol: f32 => clamp(0.0, 1.0),
+    pomo_sound: bool,
+    speed: u32 => clamp(25, 250),
+    vis_np: bool,
+    wv_follow: bool,
+    wv_draw: u8 => min(2),
+    seen_build: u64,
+    tr_whole: bool,
+    mine_stems: bool,
+    eq_auto: bool,
+    look_custom: bool,
+    mini_viz: bool,
+    np_tab: u8 => min(3),
+    hw_show: u8 => min(2),
+    studio_np: u8 => min(5),
+    studio_vis: u8 => min(3),
+    studio_terr_cam: u8 => min(2),
+    studio_terr_mouse: u8 => min(3),
+    studio_terr_swell: bool,
+    style_col_w: f32,
+    style_deck_h: f32,
+    style_prac_col_w: f32,
+    time_left: bool,
+    wa_guide: bool,
+    wa_outline: bool,
+    diary_span: u8 => min(2),
+    diary_reading: bool,
+    loops_show: u8 => min(2),
+    peer_play: u8 => min(2),
+    upd_at: u64,
+}
+
 impl App {
     /// The settings saved last time, put back (at start, before the first frame).
     pub(crate) fn restore_settings(&mut self, st: &serde_json::Value) {
         let app = self;
-        if let Some(v) = st["volume"].as_f64() {
-            app.volume = (v as f32).clamp(0.0, 1.0);
-        }
+        app.restore_plain(st);
         // always the best quality Tidal gives (it sends lossless when it will, else 320): no setting
         app.prefer_lossless = true;
-        app.vis_np = st["vis_np"].as_bool().unwrap_or(false);
         if let Some(v) = st["vis_preset"].as_str() {
             app.vis_preset = visuals::offered(visuals::find(v));
-        }
-        if let Some(m) = st["vis_idle"].as_u64() {
-            app.vis_idle = m as u32;
         }
         if let Some(a) = st["vis_pop_px"].as_array().filter(|a| a.len() == 4) {
             let v: Vec<i32> = a.iter().map(|x| x.as_i64().unwrap_or(0) as i32).collect();
@@ -34,9 +117,6 @@ impl App {
         app.pop_pin = st["vis_pop_pin"].as_bool().unwrap_or(true);
         if let Some(b) = st["spec"].as_bool() {
             app.show_spec = b;
-        }
-        if let Some(f) = st["spec_op"].as_f64() {
-            app.spec_op = (f as f32).clamp(0.05, 0.8);
         }
         // older saves had one shared set: both visualizers start from it
         for k in 0..2 {
@@ -49,9 +129,6 @@ impl App {
             app.ctx.set_zoom_factor((z as f32).clamp(0.8, 2.0));
         }
         app.lib_zoom = st["lib_zoom"].as_f64().map_or(1.0, |z| (z as f32).clamp(0.8, 2.5));
-        if let Some(f) = st["art_op"].as_f64() {
-            app.art_op = (f as f32).clamp(0.5, 1.0);
-        }
         skin::LOOP_SAFE.store(st["loop_safe"].as_bool().unwrap_or(false), Ordering::Relaxed);
         skin::CALM.store(st["reduce_motion"].as_bool().unwrap_or(false), Ordering::Relaxed);
         // SIMPLE: settings from before it was a switch don't have it, so the copy starts as the edition it was built
@@ -65,13 +142,6 @@ impl App {
             app.export_pick = (v as usize).min(crate::extras::EXPORT_AS.len() - 1);
         }
         app.export_dir = st["export_dir"].as_str().filter(|d| !d.is_empty()).map(std::path::PathBuf::from);
-        if let Some(v) = st["wv_h"].as_f64() {
-            app.wv_h = v as f32;
-        }
-        app.wv_follow = st["wv_follow"].as_bool().unwrap_or(true);
-        app.wv_draw = st["wv_draw"].as_u64().unwrap_or(0).min(2) as u8;
-        app.seen_build = st["seen_build"].as_u64().unwrap_or(0);
-        app.tr_whole = st["tr_whole"].as_bool().unwrap_or(true);
         app.mark_col = serde_json::from_value(st["mark_col"].clone()).unwrap_or(None);
         // the first start of a new version: what changed (and in the few before it, for anyone who skipped some);
         // a first install (no settings yet) has nothing to catch up on
@@ -87,79 +157,18 @@ impl App {
                 app.seen_build = update::build();
             }
         }
-        if let Some(v) = st["mt_vol"].as_f64() {
-            app.mt_vol = v as f32;
-        }
         app.player.send(Cmd::MetroVolume(app.mt_vol * app.mt_vol));
         if let Some(l) = st["mine_off"].as_array() {
             app.mine_off = l.iter().filter_map(|v| v.as_str().map(String::from)).collect();
-        }
-        if let Some(b) = st["q_drop"].as_bool() {
-            app.q_drop = b;
-        }
-        if let Some(b) = st["chart_lock"].as_bool() {
-            app.chart_lock = b;
-        }
-        app.mine_stems = st["mine_stems"].as_bool().unwrap_or(false);
-        if let Some(v) = st["lab_snap"].as_u64() {
-            app.lab_snap = (v as u8).min(3);
-        }
-        if let Some(v) = st["lab_metro"].as_bool() {
-            app.lab_metro = v;
-        }
-        if let Some(v) = st["lab_with_loop"].as_bool() {
-            app.lab_with_loop = v;
-        }
-        if let Some(v) = st["lab_repeat"].as_bool() {
-            app.lab_repeat = v;
-        }
-        if let Some(v) = st["lab_tab"].as_u64() {
-            app.lab_tab = (v as u8).min(2);
-        }
-        if let Some(v) = st["cb_set"].as_u64() {
-            app.cb_set = v as usize;
-        }
-        if let Some(v) = st["cb_fam"].as_u64() {
-            app.cb_fam = v as usize;
-        }
-        if let Some(v) = st["cb_view"].as_u64() {
-            app.cb_view = (v as u8).min(4);
-        }
-        if let Some(v) = st["cb_sound"].as_bool() {
-            app.cb_sound = v;
-        }
-        if let Some(v) = st["cb_order"].as_u64() {
-            app.cb_order = (v as u8).min(1);
-        }
-        if let Some(v) = st["cb_hide"].as_bool() {
-            app.cb_hide = v;
-        }
-        if let Some(v) = st["lab_vol"].as_f64() {
-            app.lab_vol = (v as f32).clamp(0.0, 1.0);
-        }
-        if let Some(v) = st["lab_loop_chords"].as_bool() {
-            app.lab_loop_chords = v;
-        }
-        if let Some(z) = st["neck_zoom"].as_f64() {
-            app.neck_zoom = (z as f32).clamp(0.8, 2.2);
-        }
-        if let Some(a) = st["ghost_alpha"].as_f64() {
-            app.ghost_alpha = (a as f32).clamp(0.1, 1.0);
         }
         if let Some(v) = st["chord_sp"].as_array() {
             let b = |i: usize, d: bool| v.get(i).and_then(|x| x.as_bool()).unwrap_or(d);
             app.chord_sp =
                 theory::Spelling { symbols: b(0, false), sharps: b(1, false), detailed: b(2, false), slash: b(3, true) };
         }
-        if let Some(m) = st["intro"].as_u64() {
-            app.intro = (m as u8).min(2);
-        }
         app.intro_file = st["intro_file"].as_str().map(|s| s.to_string());
         if let Some(n) = st["intro_sound"].as_u64() {
             app.intro_sound = (n as usize).min(intro::SOUNDS.len() - 1) as u8;
-        }
-        if let Some(b) = st["auto_restart"].as_bool() {
-            app.auto_restart = b;
         }
         if st.get("binds").is_some() {
             app.binds = prefs::binds_from_json(&st["binds"]);
@@ -170,9 +179,6 @@ impl App {
         if st["icon_build"].as_u64() != Some(update::build()) {
             media::refresh_icons();
             app.dirty = true;
-        }
-        if let Some(b) = st["tour_seen"].as_bool() {
-            app.tour_seen = b;
         }
         // (a new key: everyone starts with the names hidden, the old "icon_names" is ignored)
         if let Some(b) = st["icon_words"].as_bool() {
@@ -207,18 +213,6 @@ impl App {
             app.out_device = Some(d.to_string());
             app.player.send(Cmd::Device(app.out_device.clone()));
         }
-        if let Some(b) = st["cap_size"].as_u64() {
-            app.cap_size = (b as u8).min(2);
-        }
-        if let Some(b) = st["cap_dark"].as_bool() {
-            app.cap_dark = b;
-        }
-        if let Some(b) = st["cap_show"].as_u64() {
-            app.cap_show = (b as u8).min(2);
-        }
-        if let Some(b) = st["art_border"].as_u64() {
-            app.art_border = (b as u8).min(2);
-        }
         // the Winamp skin worn last time, from its saved file
         if let Some(list) = st["wa_favs"].as_array() {
             app.wa_favs = list.iter().filter_map(|v| Some((v[0].as_str()?.to_string(), v[1].as_str()?.to_string()))).collect();
@@ -233,7 +227,6 @@ impl App {
         if let Some(f) = st["pl_font"].as_u64() {
             app.pl_font = (f as usize).min(winamp_ui::PL_FONTS.len() - 1);
         }
-        app.eq_auto = st["eq_auto"].as_bool().unwrap_or(false);
         // your Custom look's colors (its display and writing, when they're yours)
         let rgb = |v: &serde_json::Value| {
             let a = v.as_array()?;
@@ -245,21 +238,8 @@ impl App {
         if let (Some(b), Some(a)) = (rgb(&st["ambient_look"][0]), rgb(&st["ambient_look"][1])) {
             app.ambient = skin::CustomLook { background: b, accent: a, display: None, text: None };
         }
-        app.look_custom = st["look_custom"].as_bool().unwrap_or(false);
-        app.mini_viz = st["mini_viz"].as_bool().unwrap_or(true);
-        app.np_tab = st["np_tab"].as_u64().unwrap_or(0).min(3) as u8;
-        app.hw_show = st["hw_show"].as_u64().unwrap_or(0).min(2) as u8;
-        app.studio_np = st["studio_np"].as_u64().unwrap_or(0).min(5) as u8;
-        app.studio_vis = st["studio_vis"].as_u64().unwrap_or(0).min(3) as u8;
         app.studio_terr_n = st["studio_terr_n"].as_u64().map_or(160, |v| v.clamp(16, 256) as usize);
         app.studio_terr_rows = st["studio_terr_rows2"].as_u64().map_or(160, |v| v.clamp(16, 240) as usize);
-        app.studio_terr_cam = st["studio_terr_cam"].as_u64().unwrap_or(0).min(2) as u8;
-        app.studio_terr_mouse = st["studio_terr_mouse"].as_u64().unwrap_or(0).min(3) as u8;
-        app.studio_terr_swell = st["studio_terr_swell"].as_bool().unwrap_or(false);
-        app.style_col_w = st["style_col_w"].as_f64().unwrap_or(0.0) as f32;
-        app.style_deck_h = st["style_deck_h"].as_f64().unwrap_or(0.0) as f32;
-        app.style_prac_col_w = st["style_prac_col_w"].as_f64().unwrap_or(0.0) as f32;
-        app.time_left = st["time_left"].as_bool().unwrap_or(false);
         // (the Chord Book always starts back in the main window: a restart puts a popped-out one back in)
         if let Some(a) = st["cb_pop_rect"].as_array().filter(|a| a.len() == 4) {
             let v: Vec<f32> = a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
@@ -342,19 +322,6 @@ impl App {
                 }
             }
         }
-
-        if let Some(f) = st["spec_lyr"].as_u64() {
-            app.spec_lyr = (f as u8).min(1);
-        }
-        if let Some(f) = st["spec_frame"].as_u64() {
-            app.spec_frame = (f as u8).min(1);
-        }
-        if let Some(f) = st["spec_w"].as_f64() {
-            app.spec_w = (f as f32).clamp(0.2, 1.0);
-        }
-        if let Some(f) = st["spec_h"].as_f64() {
-            app.spec_h = (f as f32).clamp(0.15, 0.9);
-        }
         if let Some(b) = st["lyrics"].as_bool() {
             app.show_lyrics = b;
         }
@@ -364,9 +331,6 @@ impl App {
                 2 => Repeat::One,
                 _ => Repeat::Off,
             };
-        }
-        if let Some(b) = st["eq_on"].as_bool() {
-            app.eq_on = b;
         }
         if let Some(a) = st["eq"].as_array() {
             for (i, x) in a.iter().take(10).enumerate() {
@@ -378,9 +342,6 @@ impl App {
         if let Some(h) = st["day_ends"].as_u64() {
             crate::store::DAY_ENDS.store(h.min(6) as u8, std::sync::atomic::Ordering::Relaxed);
         }
-        if let Some(b) = st["keep_cache"].as_bool() {
-            app.keep_cache = b;
-        }
         if let Some(b) = st["sc_browser"].as_u64() {
             sources::SC_BROWSER.store((b as u8).min(3), Ordering::Relaxed);
         }
@@ -388,24 +349,7 @@ impl App {
             app.offline = true;
             app.sec = Sec::Files;
         }
-        if let Some(f) = st["prac_stack_w"].as_f64() {
-            app.prac_stack_w = f as f32;
-        }
-        if let Some(f) = st["nav_w"].as_f64() {
-            app.nav_w = f as f32;
-        }
-        if let Some(f) = st["stack_w"].as_f64() {
-            app.stack_w = f as f32;
-        }
-        if let Some(f) = st["lib_frac"].as_f64() {
-            app.lib_frac = (f as f32).clamp(0.2, 0.7);
-        }
-        if let Some(f) = st["stack_frac"].as_f64() {
-            app.stack_frac = (f as f32).clamp(0.1, 1.0);
-        }
         app.eq_h_user = st["eq_h"].as_f64().map(|h| (h as f32).clamp(140.0, 900.0));
-        app.wa_guide = st["wa_guide"].as_bool().unwrap_or(false);
-        app.wa_outline = st["wa_outline"].as_bool().unwrap_or(false);
         app.pn_num = st["pn_num"].as_str().unwrap_or("").to_string();
         app.name_kept = st["name_kept"]
             .as_array()
@@ -420,16 +364,11 @@ impl App {
             app.go_offline = true;
             crate::api::OFFLINE.store(true, Ordering::Relaxed);
         }
-        app.diary_span = st["diary_span"].as_u64().unwrap_or(0).min(2) as u8;
-        app.diary_reading = st["diary_reading"].as_bool().unwrap_or(true);
         // (sorting by song is what LOOPS always does now: that old choice reads as A-Z)
         app.loops_sort = match st["loops_sort"].as_u64().unwrap_or(0) {
             3 => 1,
             s => s.min(2) as u8,
         };
-        app.loops_show = st["loops_show"].as_u64().unwrap_or(0).min(2) as u8;
-        app.peer_play = st["peer_play"].as_u64().unwrap_or(0).min(2) as u8;
-        app.upd_at = st["upd_at"].as_u64().unwrap_or(0);
         app.my_a = st["my_a"].as_f64().map(|a| a as f32).filter(|a| (380.0..=500.0).contains(a)).unwrap_or(440.0);
         app.eq_zoom = st["eq_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
         app.deck_zoom = st["deck_zoom"].as_f64().map(|z| (z as f32).clamp(0.5, 8.0));
@@ -461,12 +400,6 @@ impl App {
         if let Ok(t) = serde_json::from_value::<tools::TimerMore>(st["timer_more"].clone()) {
             app.tm = t;
         }
-        if let Some(v) = st["chime_vol"].as_f64() {
-            app.chime_vol = (v as f32).clamp(0.0, 1.0);
-        }
-        if let Some(b) = st["pomo_sound"].as_bool() {
-            app.pomo_sound = b;
-        }
         // the focus timer as it was (closed, updated, crashed): held where it was, CONTINUE to carry on
         let num = |k: &str, lo: u64, hi: u64, d: u32| st[k].as_u64().map_or(d, |v| v.within(lo, hi) as u32);
         app.pomo_focus = num("pomo_focus", 1, 180, app.pomo_focus);
@@ -484,9 +417,6 @@ impl App {
             app.pomo_was = if run == 4 { st["pomo_was"].as_u64().unwrap_or(1) as u8 } else { run }.clamp(1, 2);
             app.pomo_n = num("pomo_n", 1, 16, 1);
         }
-        if let Some(p) = st["speed"].as_u64() {
-            app.speed = (p as u32).clamp(25, 250);
-        }
         if let Some(o) = st["loops"].as_object() {
             for (k, v) in o {
                 if let (Ok(id), Some(a), Some(b)) = (k.parse::<i64>(), v[0].as_f64(), v[1].as_f64()) {
@@ -497,24 +427,11 @@ impl App {
     }
 
     pub(crate) fn save_settings(&mut self) {
-        let v = serde_json::json!({
+        let mut v = serde_json::json!({
             "look_name": SKIN_NAMES[SKIN.load(Ordering::Relaxed) % LOOKS.len()],
-            "look_custom": self.look_custom,
             "classic_worn": self.classic_worn,
-            "mini_viz": self.mini_viz,
-            "np_tab": self.np_tab,
-            "hw_show": self.hw_show,
-            "studio_np": self.studio_np,
-            "studio_vis": self.studio_vis,
             "studio_terr_n": self.studio_terr_n,
             "studio_terr_rows2": self.studio_terr_rows,
-            "studio_terr_cam": self.studio_terr_cam,
-            "studio_terr_mouse": self.studio_terr_mouse,
-            "studio_terr_swell": self.studio_terr_swell,
-            "style_col_w": self.style_col_w,
-            "style_deck_h": self.style_deck_h,
-            "style_prac_col_w": self.style_prac_col_w,
-            "time_left": self.time_left,
             "cb_pop": self.cb_pop,
             "cb_pop_rect": self.cb_pop_rect,
             "style_colors": [
@@ -542,109 +459,53 @@ impl App {
                 self.custom.display.map(|c| vec![c.r(), c.g(), c.b()]),
                 self.custom.text.map(|c| vec![c.r(), c.g(), c.b()])
             ],
-            "volume": self.volume,
             "spec": self.show_spec,
             "vis_preset": visuals::save_name(self.vis_preset),
-            "vis_np": self.vis_np,
-            "vis_idle": self.vis_idle,
             "vis_pop_px": self.pop_px,
             "vis_pop_pin": self.pop_pin,
-            "tour_seen": self.tour_seen,
             "icon_words": self.icon_names,
             "icon_build": update::build(),
-            "auto_restart": self.auto_restart,
-            "intro": self.intro,
-            "neck_zoom": self.neck_zoom,
-            "lab_snap": self.lab_snap,
-            "lab_metro": self.lab_metro,
-            "lab_with_loop": self.lab_with_loop,
-            "lab_repeat": self.lab_repeat,
-            "lab_tab": self.lab_tab,
-            "lab_vol": self.lab_vol,
-            "cb_set": self.cb_set,
-            "cb_fam": self.cb_fam,
-            "cb_view": self.cb_view,
-            "cb_sound": self.cb_sound,
-            "cb_hide": self.cb_hide,
-            "cb_order": self.cb_order,
-            "lab_loop_chords": self.lab_loop_chords,
-            "q_drop": self.q_drop,
             "mine_off": self.mine_off,
-            "mine_stems": self.mine_stems,
-            "mt_vol": self.mt_vol,
-            "seen_build": self.seen_build,
-            "tr_whole": self.tr_whole,
             "mark_col": self.mark_col,
-            "wv_h": self.wv_h,
-            "wv_follow": self.wv_follow,
-            "wv_draw": self.wv_draw,
             "export_pick": self.export_pick,
             "export_dir": self.export_dir.as_ref().map(|d| d.display().to_string()).unwrap_or_default(),
             "wv_notes": self.wv_notes,
-            "chart_lock": self.chart_lock,
-            "ghost_alpha": self.ghost_alpha,
             "chord_sp": [self.chord_sp.symbols, self.chord_sp.sharps, self.chord_sp.detailed, self.chord_sp.slash],
             "loop_safe": skin::LOOP_SAFE.load(Ordering::Relaxed),
             "reduce_motion": skin::calm(),
             "simple": !crate::practice_tools(),
             "intro_file": self.intro_file,
             "intro_sound": self.intro_sound,
-            "art_op": self.art_op,
             "zoom": self.ctx.zoom_factor(),
             "lib_zoom": self.lib_zoom,
             "binds": prefs::binds_to_json(&self.binds),
-            "spec_op": self.spec_op,
-            "spec_h": self.spec_h,
-            "spec_w": self.spec_w,
-            "spec_frame": self.spec_frame,
-            "spec_lyr": self.spec_lyr,
             "pl_font": self.pl_font,
-            "eq_auto": self.eq_auto,
             "eq_songs": self.eq_songs,
             "eq_mine": self.eq_mine,
             "balance": self.balance,
             "winamp": self.wa_worn,
             "wa_recent": self.wa_recent,
             "wa_favs": self.wa_favs,
-            "art_border": self.art_border,
-            "cap_size": self.cap_size,
-            "cap_dark": self.cap_dark,
-            "cap_show": self.cap_show,
             "out_device": self.out_device,
             "viz": [self.viz[0].save(), self.viz[1].save()],
             "lyrics": self.show_lyrics,
             "repeat": match self.repeat { Repeat::Off => 0, Repeat::All => 1, Repeat::One => 2 },
-            "eq_on": self.eq_on,
             "eq": self.eq_gains.to_vec(),
             "eq_pre": self.eq_pre,
-            "keep_cache": self.keep_cache,
             "day_ends": crate::store::DAY_ENDS.load(std::sync::atomic::Ordering::Relaxed),
-            "speed": self.speed,
-            "lib_frac": self.lib_frac,
-            "stack_w": self.stack_w,
-            "prac_stack_w": self.prac_stack_w,
-            "nav_w": self.nav_w,
             "offline": self.offline,
             "sc_browser": sources::SC_BROWSER.load(Ordering::Relaxed),
-            "stack_frac": self.stack_frac,
             "prac_h2": self.prac_h,
             "eq_h": self.eq_h_user,
             "deck_zoom": self.deck_zoom,
             "eq_zoom": self.eq_zoom,
-            "wa_guide": self.wa_guide,
-            "wa_outline": self.wa_outline,
             "go_offline": self.go_offline,
             "pn_num": self.pn_num,
             "name_kept": self.name_kept,
             "pf_num": self.pf_num,
             "ar_num": self.ar_num,
             "pf_stars": self.pf_stars,
-            "diary_span": self.diary_span,
-            "diary_reading": self.diary_reading,
             "loops_sort": self.loops_sort,
-            "loops_show": self.loops_show,
-            "pomo_sound": self.pomo_sound,
-            "chime_vol": self.chime_vol,
             "timer_more": serde_json::to_value(&self.tm).unwrap_or_default(),
             "pomo_focus": self.pomo_focus,
             "pomo_break": self.pomo_break,
@@ -660,11 +521,12 @@ impl App {
             "vinyl": VINYL.load(Ordering::Relaxed),
             "row_art": ROW_ARTS.load(Ordering::Relaxed),
             "my_a": self.my_a,
-            "upd_at": self.upd_at,
-            "peer_play": self.peer_play,
             "col_w": *COL_W.lock().unwrap(),
             "loops": self.loops.iter().map(|(k, v)| (k.to_string(), serde_json::json!([v.0, v.1]))).collect::<serde_json::Map<String, serde_json::Value>>(),
         });
+        if let Some(m) = v.as_object_mut() {
+            self.save_plain(m);
+        }
         let dir = api::config_dir();
         let _ = std::fs::create_dir_all(&dir);
         // (written whole: a stop in the middle never leaves half a file)

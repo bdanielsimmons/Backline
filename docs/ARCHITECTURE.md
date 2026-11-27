@@ -6,8 +6,7 @@ A map for finding things fast. Every source file starts with a `//!` summary; th
 
 - **One app struct.** `App` (in `backline/src/main.rs`, declared through `app_state!`) holds all state: each field written once, with what it starts as (`= value`; none: its type's default), and `App::new` builds it through `App::start`. Settings live in
   `settings.rs`: `load_settings` reads `settings.json`, `restore_settings` puts them back at start, `save_settings`
-  writes them. A new setting = a field in `app_state!` (with `= value` unless it starts empty), one line in each of `restore_settings` and
-  `save_settings`.
+  writes them. A new setting = a field in `app_state!` (with `= value` unless it starts empty), then one line in `plain_settings!` (settings.rs) when it's kept under its own name as it is (or clamped), else one line in each of `restore_settings` and `save_settings`.
 - **Actions.** UI code never changes state directly for anything non-trivial: it pushes an `Action` (enum in
   `main.rs`); `actions.rs` carries it out after the frame (`apply`: playing, the queue, the library, the windows;
   `apply_extra`: practice, tunes, the diary, tools).
