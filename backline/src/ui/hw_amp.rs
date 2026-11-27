@@ -201,6 +201,10 @@ impl App {
             let col = if on { INK } else { INK.gamma_multiply(if h.hovered() { 0.8 } else { 0.5 }) };
             caps(&p, Pos2::new(br.max.x + m.v(4.0), y), egui::Align2::LEFT_CENTER, name, m.v(7.0), m.v(1.0), col, true);
             if h.clicked() {
+                // (UP NEXT, picked or pressed again: to the song playing)
+                if i == 3 {
+                    self.hw_q_from = usize::MAX;
+                }
                 self.hw_show = i as u8;
                 self.dirty = true;
                 if prac {
@@ -262,26 +266,30 @@ impl App {
         }
     }
 
-    /// Up Next on the amp's screen: every song after this one, each with its cover, the title over the artist and the
-    /// length; the wheel scrolls them (coming to rest on a whole song), a click plays one.
+    /// Up Next on the amp's screen: the whole queue as every look's Up Next has it, each song with its cover, the title
+    /// over the artist and the length; the ones played dim, the one playing lit. It opens on the song playing with the
+    /// one before it above (the wheel goes further back); the wheel scrolls them (coming to rest on a whole song), a
+    /// click plays one.
     fn hw_upnext(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, w: Rect, dt: f32, acts: &mut Vec<Action>) {
         let s = m.s;
-        let col = crate::styles::amber();
-        let from = self.cur.map_or(0, |c| c + 1);
-        let ahead = self.queue.len().saturating_sub(from);
-        if ahead == 0 {
-            crate::styles::screen_text(p, w.center(), Align::Center, "Nothing after this song", 1.3 * s, w.width() - m.v(20.0), col.gamma_multiply(0.7));
+        let amber = crate::styles::amber();
+        let n = self.queue.len();
+        if n == 0 {
+            crate::styles::screen_text(p, w.center(), Align::Center, "Nothing queued", 1.3 * s, w.width() - m.v(20.0), amber.gamma_multiply(0.7));
             return;
-        }
-        if self.hw_q_from != from {
-            // (a new song: back to the one after it)
-            self.hw_q_from = from;
-            self.hw_q_want = 0.0;
-            self.hw_q_at = 0.0;
         }
         let rh = m.v(36.0);
         let list = w.shrink2(Vec2::new(m.v(6.0), m.v(6.0)));
-        let most = (ahead as f32 - list.height() / rh).max(0.0);
+        let most = (n as f32 - list.height() / rh).max(0.0);
+        let cur = self.cur;
+        let key = cur.map_or(0, |c| c + 1);
+        if self.hw_q_from != key {
+            // (a new song, or the screen just picked: to the song playing, the one before it above)
+            self.hw_q_from = key;
+            let top = (cur.map_or(0, |c| c.saturating_sub(1)) as f32).min(most.round());
+            self.hw_q_want = top;
+            self.hw_q_at = top;
+        }
         let (mut want, mut at) = (self.hw_q_want, self.hw_q_at);
         ease_scroll(ui, &mut want, &mut at, most, rh, w, dt);
         (self.hw_q_want, self.hw_q_at) = (want, at);
@@ -289,7 +297,7 @@ impl App {
         let lp = p.with_clip_rect(list);
         let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(list));
         cu.set_clip_rect(list);
-        let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(from + first).take((list.height() / rh) as usize + 2).collect();
+        let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(first).take((list.height() / rh) as usize + 2).collect();
         for (k, (i, tr)) in rows.iter().enumerate() {
             let y = list.min.y + rh * ((first + k) as f32 - at);
             if y > list.max.y || y + rh < list.min.y {
@@ -297,13 +305,19 @@ impl App {
             }
             let row = Rect::from_min_size(Pos2::new(list.min.x, y), Vec2::new(list.width() - m.v(8.0), rh));
             let h = ui.interact(row.intersect(list), ui.id().with(("hw_next", *i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
-            if h.hovered() {
-                lp.rect_filled(row, m.v(2.0), col.gamma_multiply(0.1));
+            let now = cur == Some(*i);
+            let played = cur.is_some_and(|c| *i < c);
+            let col = if played { amber.gamma_multiply(0.42) } else { amber };
+            if now || h.hovered() {
+                lp.rect_filled(row, m.v(2.0), amber.gamma_multiply(if now { 0.14 } else { 0.06 }));
             }
             let cs = rh - m.v(8.0);
             let cr = Rect::from_min_size(Pos2::new(row.min.x + m.v(4.0), row.center().y - cs / 2.0), Vec2::splat(cs));
             let url = if tr.cover.is_empty() { String::new() } else { format!("thumb:{}", crate::api::cover_url(&tr.cover, 80)) };
             crate::row_cover(&cu, cr, &url);
+            if played {
+                lp.rect_filled(cr, m.v(2.0), Color32::from_black_alpha(130));
+            }
             let len = fmt_time(tr.duration);
             let tw = crate::styles::screen_w(&lp, &len, 1.2 * s);
             let tx = cr.max.x + m.v(10.0);
@@ -315,7 +329,7 @@ impl App {
                 acts.push(Action::PlayIndex(*i));
             }
         }
-        scroll_thumb(p, m, w, list, at, most, ahead as f32, rh);
+        scroll_thumb(p, m, w, list, at, most, n as f32, rh);
     }
 
     /// The credits on the amp's screen: the song's details as the other looks' About has them, then who made it

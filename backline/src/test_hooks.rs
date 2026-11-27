@@ -275,8 +275,10 @@ Second line: comp lighter here.", m.1.note);
                         app.srcmap.insert(c.id, Src::File(p.clone()));
                         q.push(c);
                     }
+                    // (BACKLINE_QUEUE_AT=k: playing the k-th of them, for pictures of the songs played)
+                    let at = std::env::var("BACKLINE_QUEUE_AT").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(q.len() - 1);
                     app.queue = Arc::new(q);
-                    app.play_index(0);
+                    app.play_index(at);
                 }
                 // (BACKLINE_NP=1: in Now Playing; BACKLINE_HW_BIG=1: Hardware's close-up on the cover, or =0.5 halfway in;
                 // BACKLINE_PRACTICE=1: practising)

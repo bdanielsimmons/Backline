@@ -1070,6 +1070,9 @@ impl App {
             ui.separator();
             for (i, name) in ["Meters", "Analyzer Light", "Lyrics", "Up Next", "Credits", "Loops"].iter().enumerate() {
                 if menu_item(ui, &format!("{}Under the Panel: {}", mark(self.hw_show as usize == i), name)) {
+                    if i == 3 {
+                        self.hw_q_from = usize::MAX;
+                    }
                     self.hw_show = i as u8;
                     self.dirty = true;
                     ui.close_menu();
