@@ -104,23 +104,34 @@ impl App {
             }
             Action::SaveInfo(id, title, artist) => self.save_info(id, title, artist),
             Action::UseCopy(tidal, mine) => {
-                // your copy's sound in the Tidal song's place on this computer: it plays from there in its album,
-                // playlists and My Tracks, under Tidal's names
+                // your copy's sound in the Tidal song's place: it plays from there in its album, playlists and My
+                // Tracks, under Tidal's names. Which copy is kept in the library, so the other computer (SYNC) plays
+                // it too, fetching it the first time as it does any YouTube song
+                let ext = self.ext_of(mine);
                 let bytes = crate::cache::get(mine).or_else(|| {
-                    self.ext_of(mine).filter(|e| e.kind == "file").and_then(|e| std::fs::read(&e.src).ok()).filter(|b| b.len() > 1024)
+                    ext.as_ref().filter(|e| e.kind == "file").and_then(|e| std::fs::read(&e.src).ok()).filter(|b| b.len() > 1024)
                 });
-                match bytes {
-                    Some(b) if crate::cache::put(tidal, &b).is_some() => {
-                        self.serial += 1;
-                        self.set_note("PLAYS FROM YOUR COPY NOW");
-                    }
-                    Some(_) => self.set_err("Couldn't save the copy".to_string()),
-                    None => self.set_note("PLAY YOUR COPY ONCE FIRST, SO IT'S ON THIS COMPUTER"),
+                crate::cache::remove(tidal);
+                if let Some(e) = &ext {
+                    self.store.my_copies.insert(tidal, e.to_version());
+                    self.store_dirty = true;
                 }
+                match bytes {
+                    Some(b) if crate::cache::put(tidal, &b).is_some() => self.set_note("PLAYS FROM YOUR COPY NOW"),
+                    Some(_) => self.set_err("Couldn't save the copy".to_string()),
+                    None if ext.as_ref().is_some_and(|e| e.kind != "file") => self.set_note("PLAYS FROM YOUR COPY NOW"),
+                    None => self.set_note("YOUR COPY ISN'T ON THIS COMPUTER"),
+                }
+                self.serial += 1;
+                crate::tracks::set_linked(self.store.my_copies.keys());
             }
             Action::DropCopy(tidal) => {
                 crate::cache::remove(tidal);
+                if self.store.my_copies.remove(&tidal).is_some() {
+                    self.store_dirty = true;
+                }
                 self.serial += 1;
+                crate::tracks::set_linked(self.store.my_copies.keys());
                 self.set_note("COPY REMOVED");
             }
             Action::PlaySequenceAt(chords, gap, tag) => {
@@ -458,7 +469,17 @@ impl App {
                 if self.pos() > 3.0 {
                     self.player.send(Cmd::Seek(0.0));
                 } else if let Some(c) = self.cur {
-                    self.play_index(c.saturating_sub(1));
+                    // (a song before that can't play here - gone from Tidal, with no copy on this computer - is
+                    // passed over to the one before it; playing it would only go on to this one again)
+                    match (0..c).rev().find(|&k| !self.cant_play(&self.queue[k])) {
+                        Some(k) => self.play_index(k),
+                        None => {
+                            self.player.send(Cmd::Seek(0.0));
+                            if c > 0 {
+                                self.set_note("THE SONGS BEFORE THIS ONE CAN'T PLAY HERE (NO LONGER ON TIDAL)");
+                            }
+                        }
+                    }
                 }
             }
             Action::Seek(t) => self.player.send(Cmd::Seek(t)),

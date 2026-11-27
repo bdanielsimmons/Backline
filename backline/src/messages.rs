@@ -949,6 +949,11 @@ impl App {
                     c.1 = Some(r);
                 }
             }
+            Msg::HwCredits(id, r) => {
+                if let Some(c) = self.hw_credits.as_mut().filter(|c| c.0 == id) {
+                    c.1 = Some(r);
+                }
+            }
             Msg::WaList(r, more) => {
                 self.wa_busy = false;
                 match r {

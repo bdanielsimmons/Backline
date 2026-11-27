@@ -587,7 +587,7 @@ impl App {
                 if track_id != Some(l.id) || l.status == 0 {
                     msg = Some("Loading lyrics...");
                 } else if l.status == 2 {
-                    msg = Some("No lyrics for this track.");
+                    msg = Some("No lyrics for this song");
                 } else {
                     let n = l.lines.len();
                     let idx: Option<usize> = if l.synced { l.lines.iter().rposition(|(tt, _)| *tt <= pos + 0.25) } else { None };
@@ -1048,7 +1048,7 @@ impl App {
             return;
         }
         if crate::skin::style() == crate::skin::STYLE_HARDWARE {
-            for (i, name) in ["Meters", "Analyzer Light", "Lyrics"].iter().enumerate() {
+            for (i, name) in ["Meters", "Analyzer Light", "Lyrics", "Up Next", "Credits", "Loops"].iter().enumerate() {
                 if menu_item(ui, &format!("{}Under the Panel: {}", mark(self.hw_show as usize == i), name)) {
                     self.hw_show = i as u8;
                     self.dirty = true;

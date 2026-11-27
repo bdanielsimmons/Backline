@@ -260,8 +260,18 @@ Second line: comp lighter here.", m.1.note);
             Ok("playing") => {
                 if let Some(p) = tour_song::ready() {
                     let t = sources::ext_for_file(&p).to_track();
-                    app.srcmap.insert(t.id, Src::File(p));
-                    app.queue = Arc::new(vec![t]);
+                    app.srcmap.insert(t.id, Src::File(p.clone()));
+                    let mut q = vec![t.clone()];
+                    // (BACKLINE_QUEUE=n: n more songs after it, for pictures of Up Next)
+                    let more = std::env::var("BACKLINE_QUEUE").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+                    for k in 0..more {
+                        let mut c = t.clone();
+                        c.id = t.id - 1 - k as i64;
+                        c.title = format!("{} {}", t.title, k + 2);
+                        app.srcmap.insert(c.id, Src::File(p.clone()));
+                        q.push(c);
+                    }
+                    app.queue = Arc::new(q);
                     app.play_index(0);
                 }
                 // (BACKLINE_NP=1: in Now Playing)
@@ -775,13 +785,15 @@ pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
         mods: egui::Modifiers,
         button: egui::PointerButton,
         hover: bool,
+        /// a turn of the wheel there instead (points, down negative)
+        wheel: f32,
         step: u8,
     }
     static LEFT: Mutex<Option<Vec<Fake>>> = Mutex::new(None);
     let mut left = LEFT.lock().unwrap_or_else(|e| e.into_inner());
     if left.is_none() {
-        // "x,y@t" clicks; "x,y>x2,y2@t" drags; a leading ^ holds Ctrl, + holds Shift, ~ is the right button, ? only
-        // moves the pointer there (a hover)
+        // "x,y@t" clicks; "x,y>x2,y2@t" drags; "x,y*dy@t" turns the wheel there; a leading ^ holds Ctrl, + holds
+        // Shift, ~ is the right button, ? only moves the pointer there (a hover)
         let list = std::env::var("BACKLINE_CLICKS").unwrap_or_default();
         let pos = |xy: &str| -> Option<egui::Pos2> {
             let (x, y) = xy.split_once(',')?;
@@ -806,11 +818,15 @@ pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
                             break;
                         }
                     }
+                    let mut wheel = 0.0;
+                    if let Some((xy, dy)) = what.split_once('*') {
+                        (what, wheel) = (xy, dy.trim().parse().ok()?);
+                    }
                     let (a, b) = match what.split_once('>') {
                         Some((a, b)) => (pos(a)?, pos(b)?),
                         None => (pos(what)?, pos(what)?),
                     };
-                    Some(Fake { a, b, t: t.trim().parse().ok()?, mods, button, hover, step: 0 })
+                    Some(Fake { a, b, t: t.trim().parse().ok()?, mods, button, hover, wheel, step: 0 })
                 })
                 .collect(),
         );
@@ -827,6 +843,13 @@ pub(crate) fn fake_clicks(raw: &mut egui::RawInput) {
         let first = c.a + (c.b - c.a).normalized() * 8.0;
         let at = |k: f32| if k < 0.4 { first } else { first + (c.b - first) * k };
         raw.modifiers = c.mods;
+        if c.wheel != 0.0 {
+            raw.events.push(egui::Event::PointerMoved(c.a));
+            raw.events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::Vec2::new(0.0, c.wheel), modifiers: c.mods });
+            crate::api::log(&format!("test wheel {} at {:.0},{:.0}", c.wheel, c.a.x, c.a.y));
+            c.step = 5;
+            break;
+        }
         if c.hover {
             raw.events.push(egui::Event::PointerMoved(c.a));
             c.step = 5;

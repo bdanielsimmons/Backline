@@ -296,6 +296,23 @@ fn sort_click(col: u8) {
     COLS_CHANGED.store(true, Ordering::Relaxed);
 }
 
+/// Songs gone from Tidal that play from a copy of yours (`Store.my_copies`): not greyed, though the copy may come
+/// down only when one is played.
+static LINKED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+
+pub(crate) fn set_linked<'a>(ids: impl Iterator<Item = &'a i64>) {
+    *LINKED.lock().unwrap_or_else(|e| e.into_inner()) = ids.copied().collect();
+}
+
+fn linked(id: i64) -> bool {
+    LINKED.lock().unwrap_or_else(|e| e.into_inner()).contains(&id)
+}
+
+/// Gone from Tidal and nothing here to play it from (shown greyed; a click does nothing).
+pub(crate) fn gone_here(t: &Track) -> bool {
+    t.gone && !cache::has(t.id) && !linked(t.id)
+}
+
 /// Your own songs (YouTube, SoundCloud, files) that a song gone from Tidal can play from: their ids and "artist
 /// title", kept up to date by the library page as its lists change (`refresh_my_copies`).
 static MY_COPIES: Mutex<(u64, Vec<(i64, String)>)> = Mutex::new((u64::MAX, Vec::new()));
@@ -860,7 +877,7 @@ pub(crate) fn tracks_list(
         let i = order[pos];
         let t = &tracks[i];
         // (a song Tidal can't stream any more, with no copy here: greyed, and it doesn't play)
-        let gone = t.gone && !cache::has(t.id);
+        let gone = gone_here(t);
         let state = if playing_id == Some(t.id) {
             RowState::Playing
         } else if gone {
@@ -912,7 +929,7 @@ pub(crate) fn tracks_list(
                             }
                         }
                     });
-                    if cache::has(t.id) && menu_item(ui, "Remove My Copy") {
+                    if (cache::has(t.id) || linked(t.id)) && menu_item(ui, "Remove My Copy") {
                         acts.push(Action::DropCopy(t.id));
                         ui.close_menu();
                     }
@@ -1365,7 +1382,7 @@ pub(crate) fn page_view(
                 // (or that the reading stopped)
                 if filter.trim().is_empty() && !crate::api::OFFLINE.load(Ordering::Relaxed) {
                     let state = LIB_LOAD.load(Ordering::Relaxed);
-                    let gone = page.tracks.iter().filter(|t| t.gone && !cache::has(t.id)).count();
+                    let gone = page.tracks.iter().filter(|t| gone_here(t)).count();
                     let gap = page.total.saturating_sub(page.tracks.len());
                     let mut why: Vec<String> = Vec::new();
                     if gone > 0 && state != 0 {

@@ -52,10 +52,13 @@ fn sc() -> f32 {
 /// (Doto) and a typewriter face (IBM Plex Mono), each with the proportional fonts behind it for any letter it lacks;
 /// while Studio is worn, the typewriter face goes first for all the reading.
 pub(crate) fn add_fonts(fonts: &mut egui::FontDefinitions) {
-    let faces: [(&str, &'static [u8]); 3] = [
+    let faces: [(&str, &'static [u8]); 5] = [
         ("studio_px", include_bytes!("../../assets/Silkscreen-Regular.ttf")),
         ("studio_dot", include_bytes!("../../assets/Doto.ttf")),
         ("studio_mono", include_bytes!("../../assets/IBMPlexMono-Regular.ttf")),
+        // (Hardware's screens: Scanline and Terminal, `styles::screen_text`)
+        ("hw_scan", include_bytes!("../../assets/Sixtyfour.ttf")),
+        ("hw_term", include_bytes!("../../assets/VT323-Regular.ttf")),
     ];
     let behind: Vec<String> = fonts.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
     for (name, bytes) in faces {

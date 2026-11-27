@@ -796,6 +796,13 @@ impl App {
                 if let Some(i) = crate::styles::swatches(ui, &items, crate::skin::HW_SCREEN.load(Ordering::Relaxed) as usize, true) {
                     acts.push(if i + 1 == items.len() { Action::EditLook } else { Action::StyleColor(1, i as u8) });
                 }
+                // (the face its screens write in)
+                ui.add_space(6.0);
+                crate::views::label(ui, "SCREEN TYPE", 160.0);
+                let tips = ["Chunky retro type with scanlines".to_string(), "An old computer terminal's type".to_string()];
+                if let Some(k) = crate::widgets::segments_tips(ui, &crate::skin::HW_TYPES, crate::skin::HW_TYPE.load(Ordering::Relaxed) as usize, &tips) {
+                    acts.push(Action::StyleColor(6, k as u8));
+                }
             }
             STYLE_STUDIO => {
                 let mut items: Vec<(&str, Color32, Color32)> = crate::skin::STUDIO_SCREENS.iter().map(|(n, glass, _, ink, _)| (*n, *ink, *glass)).collect();

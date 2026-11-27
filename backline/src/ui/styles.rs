@@ -145,10 +145,114 @@ pub(crate) fn lcd(p: &egui::Painter, r: Rect) {
     p.line_segment([r.left_bottom() + Vec2::new(4.0, 1.0), r.right_bottom() + Vec2::new(-4.0, 1.0)], Stroke::new(1.0_f32, white(12)));
 }
 
-/// Amber words on a screen, glowing a little.
+/// Hardware's screens write in a face of their own (the Skins page's SCREEN TYPE): Sixtyfour's scanlines or VT323's
+/// terminal. Studio keeps its own type.
+fn screen_face() -> Option<(egui::FontFamily, f32)> {
+    if style() != STYLE_HARDWARE {
+        return None;
+    }
+    // (each face's size for the app's text size: Sixtyfour is wide and short, VT323 tall and narrow)
+    Some(match crate::skin::HW_TYPE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => (egui::FontFamily::Name("hw_term".into()), 1.45),
+        _ => (egui::FontFamily::Name("hw_scan".into()), 0.84),
+    })
+}
+
+/// How wide `text` is on a Hardware screen at the app's text size `px`.
+pub(crate) fn screen_w(p: &egui::Painter, text: &str, px: f32) -> f32 {
+    match screen_face() {
+        Some((fam, k)) => p.layout_no_wrap(text.to_string(), egui::FontId::new(font::text_px(px) * k, fam), Color32::WHITE).size().x,
+        None => font::keep_caps(|| text_w(text, px)),
+    }
+}
+
+/// Words on a Hardware screen as written (a song's name, its artist): the screen's own face, lit with a faint glow,
+/// cut with "..." when too long for `max_w`. `at` is the left / middle / right edge at the words' middle.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn screen_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px: f32, max_w: f32, col: Color32) {
+    let Some((fam, k)) = screen_face() else {
+        // (Studio shares these screens: its own writing, as before)
+        let _ = col;
+        lcd_text(p, at, align, text, px, max_w);
+        return;
+    };
+    let fid = egui::FontId::new(font::text_px(px) * k, fam);
+    let w = |s: &str| p.layout_no_wrap(s.to_string(), fid.clone(), Color32::WHITE).size().x;
+    let mut shown = text.to_string();
+    if w(&shown) > max_w {
+        let mut c: Vec<char> = shown.chars().collect();
+        while !c.is_empty() && w(&(c.iter().collect::<String>().trim_end().to_string() + "...")) > max_w {
+            c.pop();
+        }
+        shown = c.iter().collect::<String>().trim_end().to_string() + "...";
+    }
+    let anchor = match align {
+        Align::Min => egui::Align2::LEFT_CENTER,
+        Align::Center => egui::Align2::CENTER_CENTER,
+        Align::Max => egui::Align2::RIGHT_CENTER,
+    };
+    // (lit: a faint halo round the writing, then the words)
+    let halo = col.gamma_multiply(0.08);
+    for d in [Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0)] {
+        p.text(at + d * 1.3, anchor, &shown, fid.clone(), halo);
+    }
+    p.text(at, anchor, &shown, fid, col);
+}
+
+/// Scanline screens (Hardware's SCREEN TYPE 0), its big digits: `draw` lit in bands two pixels tall with a pixel's gap between, as an
+/// old tube's rows, whatever is behind (the glass, a row's highlight) showing in the gaps; the other type draws it
+/// whole.
+fn scanned(p: &egui::Painter, r: Rect, draw: impl Fn(&egui::Painter)) {
+    // (only big writing: the bands would cut small letters' strokes away)
+    if crate::skin::HW_TYPE.load(std::sync::atomic::Ordering::Relaxed) != 0 || r.height() < 22.0 {
+        draw(p);
+        return;
+    }
+    let clip = p.clip_rect();
+    let mut y = r.min.y.floor();
+    while y < r.max.y {
+        let band = Rect::from_min_max(Pos2::new(r.min.x - 2.0, y), Pos2::new(r.max.x + 2.0, y + 2.0)).intersect(clip);
+        if band.is_positive() {
+            draw(&p.with_clip_rect(band));
+        }
+        y += 3.0;
+    }
+}
+
+/// Hardware's time in 7-segment digits `h` tall from `at` (left middle), lit with a glow, the unlit segments faint
+/// behind them (a deck's display). Returns how wide.
+pub(crate) fn hw_digits(p: &egui::Painter, at: Pos2, h: f32, text: &str, col: Color32) -> f32 {
+    let halo = col.gamma_multiply(0.07);
+    for d in [Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0)] {
+        crate::studio::digits(p, at + d * (h * 0.05).max(1.0), h, text, halo, Color32::TRANSPARENT);
+    }
+    let w = digits_w(h, text);
+    let r = Rect::from_min_max(Pos2::new(at.x - 2.0, at.y - h * 0.5 - 1.0), Pos2::new(at.x + w + h * 0.2, at.y + h * 0.5 + 1.0));
+    scanned(p, r, |pp| {
+        crate::studio::digits(pp, at, h, text, col, col.gamma_multiply(0.07));
+    });
+    w
+}
+
+/// How wide `text` is in LCD digits `h` tall (`studio::digits`).
+pub(crate) fn digits_w(h: f32, text: &str) -> f32 {
+    let k = h / 25.0;
+    text.chars()
+        .map(|c| match c {
+            ':' => 6.0 * k,
+            '.' => 4.5 * k,
+            _ => 15.5 * k,
+        })
+        .sum()
+}
+
 /// Hardware's big time on its amber screen with the song's length after it, half the size, in the same light (every
 /// look shows how long the song is). Returns how wide, the length included.
 pub(crate) fn hw_time(p: &egui::Painter, at: Pos2, shown: &str, dur: f32, big: f32, max_w: f32) -> f32 {
+    if style() == STYLE_HARDWARE {
+        // (7-segment digits as tall as the writing's capitals were)
+        return hw_time_h(p, at, shown, dur, font::text_px(big) * 0.74, max_w);
+    }
     let tw = font::keep_caps(|| text_w(shown, big));
     lcd_text(p, at, Align::Min, shown, big, max_w);
     if dur <= 0.0 {
@@ -166,7 +270,35 @@ pub(crate) fn hw_time(p: &egui::Painter, at: Pos2, shown: &str, dur: f32, big: f
     tw + 8.0 + lw
 }
 
+/// Hardware's time in 7-segment digits `h` tall from `at` (left middle), the song's length half the size after a
+/// slash, on their foot (left out when there's no room in `max_w`). Returns how wide.
+pub(crate) fn hw_time_h(p: &egui::Painter, at: Pos2, shown: &str, dur: f32, h: f32, max_w: f32) -> f32 {
+    {
+        let col = amber();
+        let tw = hw_digits(p, at, h, shown, col);
+        if dur <= 0.0 {
+            return tw;
+        }
+        let sh = h * 0.5;
+        let len = fmt_time(dur);
+        let lw = digits_w(sh, &len) + sh * 0.6;
+        if tw + h * 0.15 + lw > max_w {
+            return tw;
+        }
+        let foot = at.y + h * 0.44;
+        let x0 = at.x + tw + h * 0.12;
+        p.line_segment([Pos2::new(x0, foot), Pos2::new(x0 + sh * 0.34, foot - sh * 0.88)], Stroke::new((h * 0.05).max(1.3), col));
+        let w2 = hw_digits(p, Pos2::new(x0 + sh * 0.55, foot - sh * 0.44), sh, &len, col);
+        tw + h * 0.12 + sh * 0.55 + w2
+    }
+}
+
 pub(crate) fn lcd_text(p: &egui::Painter, at: Pos2, align: Align, text: &str, px: f32, max_w: f32) {
+    if screen_face().is_some() {
+        // (Hardware: in the screen's face, in capitals)
+        screen_text(p, at, align, &text.to_uppercase(), px, max_w, amber());
+        return;
+    }
     font::keep_caps(|| {
         // (too long for its room: cut short with ..., never run into what's beside it)
         let mut up = text.to_uppercase();
@@ -638,8 +770,9 @@ impl App {
             }
             if let Some(tr) = self.cur_track().filter(|_| scr.width() - 190.0 >= 60.0) {
                 let w = scr.width() - 190.0;
-                lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w);
-                lcd_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w);
+                // (the song as written, over its artist, in the screen's face)
+                screen_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w, amber());
+                screen_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w, amber().gamma_multiply(0.65));
             }
             if ui.interact(scr, id.with("screen"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Now Playing  (A)").clicked() {
                 acts.push(Action::ToggleArt);
@@ -804,7 +937,7 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let w0 = ui.available_width();
             // (roomier rows: bigger covers, more space between, the song over its artist)
-            let rh = if hw { 34.0 } else if studio { 40.0 } else { 50.0 };
+            let rh = if hw { 42.0 } else if studio { 40.0 } else { 50.0 };
             let mut rects: Vec<(usize, Rect)> = Vec::new();
             for (i, tr) in queue.iter().enumerate() {
                 let (row0, h) = ui.allocate_exact_size(Vec2::new(w0, rh), Sense::click_and_drag());
@@ -851,20 +984,16 @@ impl App {
                     crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y - 8.0), Align::Min, &tr.title, room, col);
                     crate::row_text(p, Pos2::new(row.min.x + 8.0, row.center().y + 9.0), Align::Min, &tr.artists_text(), room, col2);
                 } else if hw {
+                    // (Hardware: the song over its artist on the screen, as every look has it; the length at the right)
                     if now || h.hovered() {
                         p.rect_filled(row, 2.0, amber().gamma_multiply(if now { 0.14 } else { 0.06 }));
                     }
-                    let name = format!("{:02} {} - {}", i + 1, tr.artists_text(), tr.title);
                     let col = amber().gamma_multiply(dim);
-                    font::keep_caps(|| {
-                        ptext(p, Pos2::new(row.max.x - 4.0, row.center().y), Align::Max, &dur, 1.2, col);
-                    });
-                    let _ = col;
-                    if played {
-                        font::keep_caps(|| ptext_fit(p, Pos2::new(row.min.x + 4.0, row.center().y), Align::Min, &name.to_uppercase(), 1.2, w - 84.0, amber().gamma_multiply(0.42)));
-                    } else {
-                        lcd_text(p, Pos2::new(row.min.x + 4.0, row.center().y), Align::Min, &name, 1.2, w - 84.0);
-                    }
+                    let dw = screen_w(p, &dur, 1.2);
+                    screen_text(p, Pos2::new(row.max.x - 6.0, row.center().y), Align::Max, &dur, 1.2, dw + 4.0, col);
+                    let room = w - dw - 22.0;
+                    screen_text(p, Pos2::new(row.min.x + 6.0, row.center().y - 8.0), Align::Min, &tr.title, 1.25, room, col);
+                    screen_text(p, Pos2::new(row.min.x + 6.0, row.center().y + 9.0), Align::Min, &tr.artists_text(), 1.05, room, col.gamma_multiply(0.6));
                 } else {
                     if now || h.hovered() {
                         p.rect_filled(row, 6.0, wash(if now { 34 } else { 16 }));
@@ -1132,10 +1261,15 @@ impl App {
             // all on the screen: the time big, the song small at its top right, the meter under it
             lcd(&p, row_a);
             let big = (row_a.height() / 16.0).clamp(1.8, 4.2);
-            lcd_text(&p, Pos2::new(row_a.min.x + 10.0, row_a.center().y), Align::Min, &fmt_time(pos), big, row_a.width() * 0.4);
+            if style() == STYLE_HARDWARE {
+                // (the time in 7-segment digits)
+                hw_digits(&p, Pos2::new(row_a.min.x + 12.0, row_a.center().y), (row_a.height() * 0.5).clamp(18.0, 52.0), &fmt_time(pos), amber());
+            } else {
+                lcd_text(&p, Pos2::new(row_a.min.x + 10.0, row_a.center().y), Align::Min, &fmt_time(pos), big, row_a.width() * 0.4);
+            }
             let tx = row_a.min.x + row_a.width() * 0.42;
             if let Some(tr) = self.cur_track() {
-                lcd_text(&p, Pos2::new(tx, row_a.min.y + 11.0), Align::Min, &format!("{} - {}", tr.artists_text(), tr.title), 1.15, row_a.max.x - tx - 8.0);
+                screen_text(&p, Pos2::new(tx, row_a.min.y + 11.0), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15, row_a.max.x - tx - 8.0, amber());
             }
             if self.mini_viz {
                 mini_viz(&p, Rect::from_min_max(Pos2::new(tx, row_a.min.y + 22.0), row_a.max - Vec2::new(8.0, 6.0)), &bands, amber(), true);
@@ -1270,8 +1404,8 @@ impl App {
             lcd(&p, scr);
             let w = scr.width() - 20.0;
             if let Some(tr) = &tr {
-                lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0 * s), Align::Min, &tr.title, 1.3, w);
-                lcd_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artists_text(), 1.05, w);
+                screen_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0 * s), Align::Min, &tr.title, 1.3, w, amber());
+                screen_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artists_text(), 1.05, w, amber().gamma_multiply(0.65));
             }
             let mid = scr.min.y + scr.height() * 0.58;
             let big = ((scr.height() / s - 50.0) / 9.0).clamp(2.6, 4.4);

@@ -83,7 +83,7 @@ plain_settings! {
     look_custom: bool,
     mini_viz: bool,
     np_tab: u8 => min(3),
-    hw_show: u8 => min(2),
+    hw_show: u8 => min(5),
     studio_np: u8 => min(5),
     studio_vis: u8 => min(3),
     studio_terr_cam: u8 => min(2),
@@ -253,7 +253,15 @@ impl App {
         if let (Some(a), Some(b)) = (st["classic_worn"][0].as_str(), st["classic_worn"][1].as_str()) {
             app.classic_worn = Some((a.to_string(), b.to_string()));
         }
-        for (i, at) in [&crate::skin::STREAM_ACC, &crate::skin::HW_SCREEN, &crate::skin::AMB_FEEL, &crate::skin::AMB_FADE, &crate::skin::STUDIO_SCREEN, &crate::skin::STUDIO_COVER]
+        for (i, at) in [
+            &crate::skin::STREAM_ACC,
+            &crate::skin::HW_SCREEN,
+            &crate::skin::AMB_FEEL,
+            &crate::skin::AMB_FADE,
+            &crate::skin::STUDIO_SCREEN,
+            &crate::skin::STUDIO_COVER,
+            &crate::skin::HW_TYPE,
+        ]
             .into_iter()
             .enumerate()
         {
@@ -443,7 +451,8 @@ impl App {
                 crate::skin::AMB_FEEL.load(Ordering::Relaxed),
                 crate::skin::AMB_FADE.load(Ordering::Relaxed),
                 crate::skin::STUDIO_SCREEN.load(Ordering::Relaxed),
-                crate::skin::STUDIO_COVER.load(Ordering::Relaxed)
+                crate::skin::STUDIO_COVER.load(Ordering::Relaxed),
+                crate::skin::HW_TYPE.load(Ordering::Relaxed)
             ],
             // (your own colours for the styles: Streaming's accent, Hardware's writing and glass, Studio's glass and ink)
             "style_own": [

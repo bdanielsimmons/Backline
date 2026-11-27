@@ -1,49 +1,53 @@
-//! Hardware's Now Playing as an amp (the owner's picks from four style sheets, 2026-11-25): the cover, the time and Up
-//! Next on screens at the left; at the right a black amp: a black panel with two VU meters, a jewel light, STANDBY and
-//! cream knobs that work (volume, bass, treble, balance, speed), and DISPLAY push buttons; under it a second black
-//! panel showing the meters (tuning, stereo, loudness) and a 32-band analyzer, the analyzer as light behind smoked
-//! glass (or the visuals), or the lyrics through dark cloth. Practising, it holds the practice tools.
+//! Hardware's Now Playing as an amp (the owner's picks from four style sheets, 2026-11-25): at the left the album's
+//! cover standing on the floor and a reel-to-reel deck playing the song (`hw_deck.rs`, 2026-11-27); at the right a
+//! black amp: a black panel with two VU meters, a jewel light, STANDBY and cream knobs that work (volume, bass,
+//! treble, balance, speed), and DISPLAY push buttons; under it a second black panel showing the meters (tuning,
+//! stereo, loudness) and a 32-band analyzer, the analyzer as light behind smoked glass, the lyrics through dark cloth,
+//! Up Next, the credits or the song's loops on an amber screen. Practising, it holds the practice tools.
 //!
-//! Everything is laid out in the style sheet's own units (its 960 by 620 window, the amp at 300..936 by 34..538) and
-//! scaled to fit, so the amp keeps its shape at any window size.
+//! Everything is laid out in the style sheet's own units (the amp at 300..936 by 34..538, the deck and the cover to its
+//! left from `hw_deck::GEAR_X0`) and scaled to fit, so the gear keeps its shape at any window size.
 
 use super::*;
 
 /// The style sheet's units placed on screen: `o` is where its (12, 34) lands (the gear's top left), `s` how big one
 /// unit is.
 #[derive(Clone, Copy)]
-struct Mu {
-    o: Pos2,
-    s: f32,
+pub(crate) struct Mu {
+    pub(crate) o: Pos2,
+    pub(crate) s: f32,
 }
 
 impl Mu {
-    fn p(&self, x: f32, y: f32) -> Pos2 {
+    pub(crate) fn p(&self, x: f32, y: f32) -> Pos2 {
         Pos2::new(self.o.x + (x - 12.0) * self.s, self.o.y + (y - 34.0) * self.s)
     }
-    fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
+    pub(crate) fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
         Rect::from_min_size(self.p(x, y), Vec2::new(w * self.s, h * self.s))
     }
-    fn v(&self, n: f32) -> f32 {
+    pub(crate) fn v(&self, n: f32) -> f32 {
         n * self.s
     }
 }
 
-const INK: Color32 = Color32::from_rgb(239, 226, 194);
-const FACE_INK: Color32 = Color32::from_rgb(35, 29, 20);
+pub(crate) const INK: Color32 = Color32::from_rgb(239, 226, 194);
+pub(crate) const FACE_INK: Color32 = Color32::from_rgb(35, 29, 20);
 const FACE_SOFT: Color32 = Color32::from_rgb(90, 76, 54);
 const FACE_RED: Color32 = Color32::from_rgb(179, 39, 28);
 
-/// What shows under the panel.
-const SHOW_NAMES: [&str; 3] = ["METERS", "LIGHT", "LYRICS"];
+/// What shows under the panel (the DISPLAY buttons, two rows of three: the amp's own, then what the other looks keep
+/// in Now Playing's side panel).
+const SHOW_NAMES: [&str; 6] = ["METERS", "LIGHT", "LYRICS", "UP NEXT", "CREDITS", "LOOPS"];
 
 impl App {
     /// The amp, fitted into `r`.
     pub(crate) fn np_amp(&mut self, ui: &mut egui::Ui, r: Rect, tex: Option<egui::TextureId>, dt: f32, acts: &mut Vec<Action>) {
         let p = ui.painter().clone();
         let now = ui.input(|i| i.time);
-        let s = (r.width() / 924.0).min(r.height() / 504.0).max(0.3);
-        let m = Mu { o: r.center() - Vec2::new(462.0, 252.0) * s, s };
+        // (the whole row of gear, from the cover's left edge to the amp's right, centred)
+        let (gx0, gx1) = (crate::hw_deck::GEAR_X0, 936.0);
+        let s = (r.width() / (gx1 - gx0 + 16.0)).min(r.height() / 520.0).max(0.3);
+        let m = Mu { o: r.center() - Vec2::new(((gx0 + gx1) / 2.0 - 12.0) * s, 252.0 * s), s };
         self.hw_textures(ui.ctx());
         self.hw_measure(dt, now);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
@@ -55,73 +59,14 @@ impl App {
         let floor_y = m.p(0.0, 538.0).y;
         let whole = ui.max_rect();
         vgrad(&p, Rect::from_min_max(Pos2::new(whole.min.x, floor_y - m.v(30.0)), whole.max), Color32::TRANSPARENT, Color32::from_black_alpha(120));
-        for (x0, x1) in [(12.0, 294.0), (300.0, 936.0)] {
+        for (x0, x1) in crate::hw_deck::FEET.iter().copied().chain([(300.0, 936.0)]) {
             let (a, b) = (m.p(x0, 538.0), m.p(x1, 538.0));
             shadow(&p, Pos2::new((a.x + b.x) / 2.0, a.y + m.v(4.0)), (b.x - a.x) * 0.56, m.v(14.0), 0.75);
         }
 
-        // ---- the left: a black unit of its own, the cover in a framed window, the time and Up Next on screens
-        cabinet(&p, m, m.r(12.0, 34.0, 282.0, 504.0), self.hw_tex.as_ref().map(|t| t[0].id()));
-        black_panel(&p, m, m.r(19.0, 41.0, 268.0, 490.0));
-        let cb = m.r(27.0, 49.0, 252.0, 252.0);
-        bezel(&p, m, cb, 4.0, true);
-        let cover = cb.shrink(m.v(9.0));
-        match tex {
-            Some(id) => {
-                egui::Image::new(egui::load::SizedTexture::new(id, cover.size())).rounding(Rounding::same(m.v(2.0))).paint_at(ui, cover);
-            }
-            None => paint_record(&p, cover, None),
-        }
-        p.rect_stroke(cover, m.v(2.0), Stroke::new(1.0_f32, Color32::from_black_alpha(160)));
-        let sb = m.r(27.0, 311.0, 252.0, 68.0);
-        bezel(&p, m, sb, 4.0, false);
-        let scr = sb.shrink(m.v(5.0));
-        crate::styles::lcd(&p, scr);
-        let pos = if self.cur.is_some() { self.pos() } else { 0.0 };
-        let lw = scr.width() - m.v(24.0);
-        let time = if self.time_left { format!("-{}", fmt_time((self.cur_track().map_or(0.0, |t| t.duration) - pos).max(0.0))) } else { fmt_time(pos) };
-        crate::styles::hw_time(&p, Pos2::new(scr.min.x + m.v(12.0), scr.min.y + m.v(23.0)), &time, self.cur_track().map_or(0.0, |t| t.duration), 3.9 * s, lw);
-        if ui.interact(scr, ui.id().with("hw_time"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Elapsed / remaining").clicked() {
-            self.time_left = !self.time_left;
-            self.dirty = true;
-        }
-        if let Some(tr) = self.cur_track() {
-            crate::styles::lcd_text(&p, Pos2::new(scr.min.x + m.v(12.0), scr.max.y - m.v(11.0)), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15 * s, lw);
-        }
-        let ub = m.r(27.0, 389.0, 252.0, 134.0);
-        bezel(&p, m, ub, 4.0, false);
-        let up = ub.shrink(m.v(5.0));
-        crate::styles::lcd(&p, up);
-        crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(12.0), up.min.y + m.v(12.0)), Align::Min, "UP NEXT", 1.1 * s, lw);
-        let from = self.cur.map_or(0, |c| c + 1);
-        let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(from).take(4).collect();
-        if rows.is_empty() {
-            crate::styles::lcd_text(&p, Pos2::new(up.min.x + m.v(12.0), up.min.y + m.v(34.0)), Align::Min, "NOTHING AFTER THIS SONG", 1.15 * s, lw);
-        }
-        for (k, (i, tr)) in rows.iter().enumerate() {
-            // each song: its cover, the title over the artist, the length at the right
-            let rh = m.v(25.0);
-            let row = Rect::from_min_size(Pos2::new(up.min.x + m.v(6.0), up.min.y + m.v(21.0) + rh * k as f32), Vec2::new(up.width() - m.v(12.0), rh));
-            let h = ui.interact(row, ui.id().with(("hw_next", k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
-            if h.hovered() {
-                p.rect_filled(row, m.v(2.0), crate::styles::amber().gamma_multiply(0.1));
-            }
-            let cs = rh - m.v(4.0);
-            let cr = Rect::from_min_size(Pos2::new(row.min.x + m.v(4.0), row.center().y - cs / 2.0), Vec2::splat(cs));
-            let url = if tr.cover.is_empty() { String::new() } else { format!("thumb:{}", crate::api::cover_url(&tr.cover, 80)) };
-            crate::row_cover(ui, cr, &url);
-            let len = fmt_time(tr.duration);
-            let tw = text_w(&len, 1.2 * s);
-            let tx = cr.max.x + m.v(7.0);
-            let room = row.max.x - tx - tw - m.v(14.0);
-            crate::styles::lcd_text(&p, Pos2::new(tx, row.center().y - m.v(5.5)), Align::Min, &tr.title, 1.15 * s, room);
-            let artist = tr.artists_text().to_uppercase();
-            font::keep_caps(|| ptext_fit(&p, Pos2::new(tx, row.center().y + m.v(6.0)), Align::Min, &artist, 0.95 * s, room, crate::styles::amber().gamma_multiply(0.6)));
-            crate::styles::lcd_text(&p, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &len, 1.2 * s, tw + 4.0);
-            if h.clicked() {
-                acts.push(Action::PlayIndex(*i));
-            }
-        }
+        // ---- at the left: the album's cover standing on the floor, and the reel-to-reel deck playing the song
+        self.hw_cover(ui, &p, m, tex, acts);
+        self.hw_deck(ui, &p, m, dt, acts);
 
         // ---- the amp's cabinet: black tolex
         cabinet(&p, m, m.r(300.0, 34.0, 636.0, 504.0), self.hw_tex.as_ref().map(|t| t[0].id()));
@@ -161,7 +106,7 @@ impl App {
         }
         // the knobs
         let ky = 195.0;
-        let kx = [54.0, 136.0, 218.0, 300.0, 382.0, 464.0, 546.0];
+        let kx = [46.0, 118.0, 190.0, 262.0, 334.0, 406.0, 540.0];
         jacks(&p, m, pan_at(kx[0], ky));
         let bass = self.eq_gains[0];
         let treble = self.eq_gains[9];
@@ -212,29 +157,30 @@ impl App {
             }
             cream_knob(&p, m, c, *v);
         }
-        // DISPLAY: three push buttons with lamps (LYRICS only on songs with words)
-        let has_words = self.lyrics.as_ref().is_some_and(|l| Some(l.id) == self.cur_track().map(|t| t.id) && l.status == 1 && !l.lines.is_empty());
+        // DISPLAY: six push buttons with lamps in two columns (LYRICS on a song with none says so behind the cloth)
         let prac = practice_tools() && self.practice;
-        let showing = if self.hw_show == 2 && !has_words { 0 } else { self.hw_show.min(2) };
+        let showing = self.hw_show.min(5);
         let dc = pan_at(kx[6], ky);
         caps(&p, Pos2::new(dc.x, dc.y - m.v(39.0)), egui::Align2::CENTER_TOP, "DISPLAY", m.v(8.5), m.v(1.5), INK, true);
         for (i, name) in SHOW_NAMES.iter().enumerate() {
-            let y = dc.y - m.v(19.0) + m.v(17.0) * i as f32;
-            let br = Rect::from_center_size(Pos2::new(dc.x - m.v(20.5), y), Vec2::splat(m.v(13.0)));
-            let off = i == 2 && !has_words;
-            let row = Rect::from_min_max(Pos2::new(br.min.x - 2.0, br.min.y - 2.0), Pos2::new(dc.x + m.v(42.0), br.max.y + 2.0));
+            let y = dc.y - m.v(19.0) + m.v(17.0) * (i % 3) as f32;
+            let x = dc.x - m.v(58.0) + m.v(66.0) * (i / 3) as f32;
+            let br = Rect::from_center_size(Pos2::new(x, y), Vec2::splat(m.v(13.0)));
+            let row = Rect::from_min_max(Pos2::new(br.min.x - 2.0, br.min.y - 2.0), Pos2::new(x + m.v(58.0), br.max.y + 2.0));
             let tip = match i {
                 0 => "Meters and analyzer",
                 1 => "Analyzer light",
-                _ if off => "No lyrics for this song",
-                _ => "Lyrics",
+                2 => "Lyrics",
+                3 => "Up Next",
+                4 => "Credits: about the song, and who made it",
+                _ => "The song's loops and bookmarks",
             };
             let h = ui.interact(row, ui.id().with(("hw_show", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip);
             let on = showing == i as u8 && !prac;
             push_button(&p, br, on, h.is_pointer_button_down_on());
-            let col = if on { INK } else if off { INK.gamma_multiply(0.25) } else { INK.gamma_multiply(if h.hovered() { 0.8 } else { 0.5 }) };
+            let col = if on { INK } else { INK.gamma_multiply(if h.hovered() { 0.8 } else { 0.5 }) };
             caps(&p, Pos2::new(br.max.x + m.v(4.0), y), egui::Align2::LEFT_CENTER, name, m.v(7.0), m.v(1.0), col, true);
-            if h.clicked() && !off {
+            if h.clicked() {
                 self.hw_show = i as u8;
                 self.dirty = true;
                 if prac {
@@ -261,6 +207,19 @@ impl App {
                 let pos = self.pos();
                 self.hw_lyrics(ui, &p, m, w, dt, pos, acts);
             }
+            3..=5 => {
+                // (Up Next, the credits, the loops: on an amber screen in a bezel)
+                let b = inner.shrink(m.v(10.0));
+                bezel(&p, m, b, 4.0, false);
+                let w = b.shrink(m.v(6.0));
+                crate::styles::lcd(&p, w);
+                match showing {
+                    3 => self.hw_upnext(ui, &p, m, w, dt, acts),
+                    4 => self.hw_credits_screen(ui, &p, m, w, dt, acts),
+                    _ => self.hw_loops_screen(ui, &p, m, w, dt, acts),
+                }
+                glare(&p, m, w);
+            }
             _ => {
                 let o = inner.min;
                 let at = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(o + Vec2::new(m.v(x), m.v(y)), Vec2::new(m.v(w), m.v(h)));
@@ -281,6 +240,190 @@ impl App {
                 led_bars(&p, m, lcd_r, &bands, &peaks);
             }
         }
+    }
+
+    /// Up Next on the amp's screen: every song after this one, each with its cover, the title over the artist and the
+    /// length; the wheel scrolls them (coming to rest on a whole song), a click plays one.
+    fn hw_upnext(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, w: Rect, dt: f32, acts: &mut Vec<Action>) {
+        let s = m.s;
+        let col = crate::styles::amber();
+        let from = self.cur.map_or(0, |c| c + 1);
+        let ahead = self.queue.len().saturating_sub(from);
+        if ahead == 0 {
+            crate::styles::screen_text(p, w.center(), Align::Center, "Nothing after this song", 1.3 * s, w.width() - m.v(20.0), col.gamma_multiply(0.7));
+            return;
+        }
+        if self.hw_q_from != from {
+            // (a new song: back to the one after it)
+            self.hw_q_from = from;
+            self.hw_q_want = 0.0;
+            self.hw_q_at = 0.0;
+        }
+        let rh = m.v(36.0);
+        let list = w.shrink2(Vec2::new(m.v(6.0), m.v(6.0)));
+        let most = (ahead as f32 - list.height() / rh).max(0.0);
+        let (mut want, mut at) = (self.hw_q_want, self.hw_q_at);
+        ease_scroll(ui, &mut want, &mut at, most, rh, w, dt);
+        (self.hw_q_want, self.hw_q_at) = (want, at);
+        let first = at.floor() as usize;
+        let lp = p.with_clip_rect(list);
+        let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(list));
+        cu.set_clip_rect(list);
+        let rows: Vec<(usize, Track)> = self.queue.iter().cloned().enumerate().skip(from + first).take((list.height() / rh) as usize + 2).collect();
+        for (k, (i, tr)) in rows.iter().enumerate() {
+            let y = list.min.y + rh * ((first + k) as f32 - at);
+            if y > list.max.y || y + rh < list.min.y {
+                continue;
+            }
+            let row = Rect::from_min_size(Pos2::new(list.min.x, y), Vec2::new(list.width() - m.v(8.0), rh));
+            let h = ui.interact(row.intersect(list), ui.id().with(("hw_next", *i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Play");
+            if h.hovered() {
+                lp.rect_filled(row, m.v(2.0), col.gamma_multiply(0.1));
+            }
+            let cs = rh - m.v(8.0);
+            let cr = Rect::from_min_size(Pos2::new(row.min.x + m.v(4.0), row.center().y - cs / 2.0), Vec2::splat(cs));
+            let url = if tr.cover.is_empty() { String::new() } else { format!("thumb:{}", crate::api::cover_url(&tr.cover, 80)) };
+            crate::row_cover(&cu, cr, &url);
+            let len = fmt_time(tr.duration);
+            let tw = crate::styles::screen_w(&lp, &len, 1.2 * s);
+            let tx = cr.max.x + m.v(10.0);
+            let room = row.max.x - tx - tw - m.v(16.0);
+            crate::styles::screen_text(&lp, Pos2::new(tx, row.center().y - m.v(7.0)), Align::Min, &tr.title, 1.25 * s, room, col);
+            crate::styles::screen_text(&lp, Pos2::new(tx, row.center().y + m.v(8.0)), Align::Min, &tr.artists_text(), 1.05 * s, room, col.gamma_multiply(0.6));
+            crate::styles::screen_text(&lp, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &len, 1.2 * s, tw + 4.0, col);
+            if h.clicked() {
+                acts.push(Action::PlayIndex(*i));
+            }
+        }
+        scroll_thumb(p, m, w, list, at, most, ahead as f32, rh);
+    }
+
+    /// The credits on the amp's screen: the song's details as the other looks' About has them, then who made it
+    /// (Tidal's credits for a Tidal song, read once a song while this shows).
+    fn hw_credits_screen(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, w: Rect, dt: f32, _acts: &mut Vec<Action>) {
+        let s = m.s;
+        let col = crate::styles::amber();
+        let Some(tr) = self.cur_track() else {
+            crate::styles::screen_text(p, w.center(), Align::Center, "Nothing playing", 1.3 * s, w.width() - m.v(20.0), col.gamma_multiply(0.7));
+            return;
+        };
+        if tr.id > 0 && !self.go_offline && self.hw_credits.as_ref().is_none_or(|c| c.0 != tr.id) {
+            let id = tr.id;
+            self.hw_credits = Some((id, None));
+            self.bg(move |api| Msg::HwCredits(id, api.credits(id)));
+        }
+        let info = crate::meta::get(tr.id).unwrap_or_default();
+        let mut rows: Vec<(String, String)> = vec![("SONG".into(), tr.title.clone()), ("ARTIST".into(), tr.artists_text())];
+        if !tr.album.is_empty() {
+            rows.push(("ALBUM".into(), tr.album.clone()));
+        }
+        rows.push(("LENGTH".into(), fmt_time(tr.duration)));
+        if info.key.is_some() {
+            rows.push(("KEY".into(), crate::meta::key_text(&info)));
+        }
+        if let Some(b) = info.bpm {
+            rows.push(("TEMPO".into(), format!("{} BPM", b)));
+        }
+        if let Some(a4) = info.a4 {
+            rows.push(("TUNING".into(), format!("A = {:.1} Hz", a4)));
+        }
+        // (where it plays from: the sources map knows a file or a clip even when no list of yours has it)
+        let src = match (self.srcmap.get(&tr.id), self.ext_of(tr.id)) {
+            (_, Some(e)) if e.kind == "sc" => "SoundCloud",
+            (Some(crate::Src::Yt(_)), _) => "YouTube",
+            (Some(crate::Src::File(_)), _) => "A file on this computer",
+            (None, Some(e)) if e.kind == "yt" => "YouTube",
+            (None, Some(_)) => "A file on this computer",
+            (None, None) => "Tidal",
+        };
+        rows.push(("FROM".into(), src.to_string()));
+        match self.hw_credits.as_ref().filter(|c| c.0 == tr.id).map(|c| &c.1) {
+            Some(None) => rows.push(("CREDITS".into(), "Loading...".into())),
+            Some(Some(Ok(list))) => rows.extend(list.iter().map(|(role, names)| (role.to_uppercase(), names.clone()))),
+            _ => {}
+        }
+        // (two columns of rows, the label dim at the left of each; the wheel scrolls when there are more)
+        let rh = m.v(24.0);
+        let list = w.shrink2(Vec2::new(m.v(14.0), m.v(8.0)));
+        let cols = 2usize;
+        let per = rows.len().div_ceil(cols);
+        let fit = (list.height() / rh).floor().max(1.0);
+        let most = (per as f32 - fit).max(0.0);
+        let (mut want, mut at) = (self.hw_c_want, self.hw_c_at);
+        ease_scroll(ui, &mut want, &mut at, most, rh, w, dt);
+        (self.hw_c_want, self.hw_c_at) = (want, at);
+        let lp = p.with_clip_rect(list);
+        let cw = (list.width() - m.v(20.0)) / cols as f32;
+        let lab_w = m.v(78.0);
+        for (k, (lab, val)) in rows.iter().enumerate() {
+            let (c, r) = (k / per, k % per);
+            let y = list.min.y + rh * (r as f32 - at) + rh / 2.0;
+            if y < list.min.y - rh || y > list.max.y + rh {
+                continue;
+            }
+            let x = list.min.x + (cw + m.v(20.0)) * c as f32;
+            crate::styles::screen_text(&lp, Pos2::new(x, y), Align::Min, lab, 0.95 * s, lab_w - m.v(6.0), col.gamma_multiply(0.55));
+            crate::styles::screen_text(&lp, Pos2::new(x + lab_w, y), Align::Min, val, 1.15 * s, cw - lab_w, col);
+        }
+        scroll_thumb(p, m, w, list, at, most, per as f32, rh);
+    }
+
+    /// The song's loops and bookmarks on the amp's screen: a click loops one (or goes to the bookmark).
+    fn hw_loops_screen(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, w: Rect, dt: f32, acts: &mut Vec<Action>) {
+        let s = m.s;
+        let col = crate::styles::amber();
+        let Some(tr) = self.cur_track() else { return };
+        let loops = self.store.sections.get(&tr.id).cloned().unwrap_or_default();
+        let marks = self.store.marks.get(&tr.id).cloned().unwrap_or_default();
+        if loops.is_empty() && marks.is_empty() {
+            crate::styles::screen_text(p, w.center(), Align::Center, "No loops or bookmarks yet. Make them in Practice.", 1.2 * s, w.width() - m.v(20.0), col.gamma_multiply(0.7));
+            return;
+        }
+        // (each loop: its name and from - to; then each bookmark: its name and where)
+        let mut rows: Vec<(String, String, Action)> = loops
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let name = if l.name.is_empty() { format!("Loop {}", i + 1) } else { l.name.clone() };
+                (name, format!("{} - {}", fmt_t(l.a), fmt_t(l.b)), Action::GoSection(i))
+            })
+            .collect();
+        rows.extend(marks.iter().map(|b| {
+            let name = if b.name.is_empty() { "Bookmark".to_string() } else { b.name.clone() };
+            (name, fmt_t(b.t), Action::Seek(b.t))
+        }));
+        let rh = m.v(30.0);
+        let list = w.shrink2(Vec2::new(m.v(8.0), m.v(6.0)));
+        let most = (rows.len() as f32 - list.height() / rh).max(0.0);
+        let (mut want, mut at) = (self.hw_l_want, self.hw_l_at);
+        ease_scroll(ui, &mut want, &mut at, most, rh, w, dt);
+        (self.hw_l_want, self.hw_l_at) = (want, at);
+        let lp = p.with_clip_rect(list);
+        let nl = loops.len();
+        for (k, (name, when, act)) in rows.into_iter().enumerate() {
+            let y = list.min.y + rh * (k as f32 - at);
+            if y > list.max.y || y + rh < list.min.y {
+                continue;
+            }
+            let row = Rect::from_min_size(Pos2::new(list.min.x, y), Vec2::new(list.width() - m.v(8.0), rh));
+            let h = ui
+                .interact(row.intersect(list), ui.id().with(("hw_loop", k)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .tip(if k < nl { "Loop it" } else { "Go there" });
+            if h.hovered() {
+                lp.rect_filled(row, m.v(2.0), col.gamma_multiply(0.1));
+            }
+            let tw = crate::styles::screen_w(&lp, &when, 1.15 * s);
+            // (a bookmark marked with a small flag before its name)
+            let x = row.min.x + m.v(8.0);
+            let name = if k < nl { name } else { format!("> {}", name) };
+            crate::styles::screen_text(&lp, Pos2::new(x, row.center().y), Align::Min, &name, 1.2 * s, row.width() - tw - m.v(30.0), col);
+            crate::styles::screen_text(&lp, Pos2::new(row.max.x - m.v(6.0), row.center().y), Align::Max, &when, 1.15 * s, tw + 4.0, col.gamma_multiply(0.7));
+            if h.clicked() {
+                acts.push(act);
+            }
+        }
+        scroll_thumb(p, m, w, list, at, most, (most + list.height() / rh).max(1.0), rh);
     }
 
     /// Bass or treble: the equalizer's three lowest (or highest) bands turned together, like an amp's tone knob.
@@ -418,6 +561,28 @@ impl App {
         let cy = w.center().y;
         let hover = ui.input(|i| i.pointer.hover_pos()).filter(|pp| w.contains(*pp));
         let wheel = if hover.is_some() { ui.input(|i| i.raw_scroll_delta.y) } else { 0.0 };
+        let warm = Color32::from_rgb(255, 236, 204);
+        // (no words for this song, or not here yet: said behind the cloth, where the words would be)
+        let track_id = self.cur_track().map(|t| t.id);
+        let msg = match self.lyrics.as_ref() {
+            None if track_id.is_none() => Some("LYRICS SHOW HERE"),
+            None => Some("LOADING LYRICS..."),
+            Some(l) if track_id != Some(l.id) || l.status == 0 => Some("LOADING LYRICS..."),
+            Some(l) if l.status == 2 || l.lines.is_empty() => Some("NO LYRICS FOR THIS SONG"),
+            _ => None,
+        };
+        if let Some(msg) = msg {
+            let at = w.center();
+            for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
+                cp.text(at + Vec2::new(dx, dy), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(size * 0.8), add(Color32::from_rgb(255, 160, 60), 0.1));
+            }
+            cp.text(at, egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(size * 0.8), warm.gamma_multiply(0.75));
+            if let Some(t) = &self.hw_tex {
+                tiled(&cp, w, t[1].id(), m.v(32.0), Color32::from_white_alpha(210));
+            }
+            p.rect_stroke(w, m.v(3.0), Stroke::new(1.0_f32, Color32::from_black_alpha(220)));
+            return;
+        }
         let Some(l) = self.lyrics.as_ref() else { return };
         let n = l.lines.len();
         let idx: Option<usize> = if l.synced { l.lines.iter().rposition(|(tt, _)| *tt <= pos + 0.25) } else { None };
@@ -444,7 +609,6 @@ impl App {
             acts.push(Action::Seek(l.lines[i].0));
             self.lyric_free = 0.0;
         }
-        let warm = Color32::from_rgb(255, 236, 204);
         let mut lit: Vec<(Pos2, String, f32)> = Vec::new();
         for (i, (_, txt)) in l.lines.iter().enumerate() {
             if txt.is_empty() {
@@ -512,7 +676,7 @@ pub(crate) fn room(p: &egui::Painter, whole: Rect) {
 }
 
 /// A colour added onto what's under it (premultiplied with no alpha), at `a` of its strength.
-fn add(c: Color32, a: f32) -> Color32 {
+pub(crate) fn add(c: Color32, a: f32) -> Color32 {
     let k = a.clamp(0.0, 1.0);
     Color32::from_rgba_premultiplied((c.r() as f32 * k) as u8, (c.g() as f32 * k) as u8, (c.b() as f32 * k) as u8, 0)
 }
@@ -611,7 +775,7 @@ fn tiled(p: &egui::Painter, r: Rect, id: egui::TextureId, tile: f32, tint: Color
 }
 
 /// A rectangle filled top to bottom from `top` to `bot` (sharp corners).
-fn vgrad(p: &egui::Painter, r: Rect, top: Color32, bot: Color32) {
+pub(crate) fn vgrad(p: &egui::Painter, r: Rect, top: Color32, bot: Color32) {
     let mut mesh = egui::Mesh::default();
     for (q, c) in [(r.left_top(), top), (r.right_top(), top), (r.right_bottom(), bot), (r.left_bottom(), bot)] {
         mesh.colored_vertex(q, c);
@@ -623,7 +787,7 @@ fn vgrad(p: &egui::Painter, r: Rect, top: Color32, bot: Color32) {
 
 /// A circle shaded like a ball or a lamp: `stops` (place 0..1 from the bright spot out, colour) round a spot at
 /// `hi` (a share of the radius, from the centre). Its rim fades out over one pixel, so the edge is smooth.
-fn ball(p: &egui::Painter, c: Pos2, r: f32, hi: Vec2, stops: &[(f32, Color32)]) {
+pub(crate) fn ball(p: &egui::Painter, c: Pos2, r: f32, hi: Vec2, stops: &[(f32, Color32)]) {
     const SEG: usize = 72;
     const RINGS: usize = 10;
     let col_at = |f: f32| -> Color32 {
@@ -672,7 +836,7 @@ fn ball(p: &egui::Painter, c: Pos2, r: f32, hi: Vec2, stops: &[(f32, Color32)]) 
 
 /// Spaced capitals (the panel's lettering), `anchor`ed at `at`; `bold` draws them twice, a hair apart.
 #[allow(clippy::too_many_arguments)]
-fn caps(p: &egui::Painter, at: Pos2, anchor: egui::Align2, text: &str, size: f32, spacing: f32, color: Color32, bold: bool) {
+pub(crate) fn caps(p: &egui::Painter, at: Pos2, anchor: egui::Align2, text: &str, size: f32, spacing: f32, color: Color32, bold: bool) {
     let mut job = egui::text::LayoutJob::default();
     job.append(text, 0.0, egui::TextFormat { font_id: egui::FontId::proportional(size), extra_letter_spacing: spacing, color, ..Default::default() });
     let g = p.layout_job(job);
@@ -686,7 +850,7 @@ fn caps(p: &egui::Painter, at: Pos2, anchor: egui::Align2, text: &str, size: f32
 }
 
 /// A cabinet in black tolex: its grain, a dark edge, a faint light along the top.
-fn cabinet(p: &egui::Painter, m: Mu, r: Rect, grain: Option<egui::TextureId>) {
+pub(crate) fn cabinet(p: &egui::Painter, m: Mu, r: Rect, grain: Option<egui::TextureId>) {
     p.rect_filled(r, m.v(12.0), Color32::from_rgb(29, 27, 25));
     if let Some(id) = grain {
         tiled(p, r.shrink(m.v(3.0)), id, m.v(64.0), Color32::from_white_alpha(255));
@@ -695,7 +859,7 @@ fn cabinet(p: &egui::Painter, m: Mu, r: Rect, grain: Option<egui::TextureId>) {
 }
 
 /// A soft shadow on the floor: an oval `rx` by `ry` round `c`, darkest in the middle, fading to nothing.
-fn shadow(p: &egui::Painter, c: Pos2, rx: f32, ry: f32, a: f32) {
+pub(crate) fn shadow(p: &egui::Painter, c: Pos2, rx: f32, ry: f32, a: f32) {
     const SEG: usize = 48;
     const RINGS: usize = 8;
     let mut mesh = egui::Mesh::default();
@@ -731,7 +895,7 @@ fn black_panel(p: &egui::Painter, m: Mu, r: Rect) {
 }
 
 /// A meter's frame: a dark bezel with a light top edge (and screws at its corners when `screws`).
-fn bezel(p: &egui::Painter, m: Mu, r: Rect, rad: f32, screws: bool) {
+pub(crate) fn bezel(p: &egui::Painter, m: Mu, r: Rect, rad: f32, screws: bool) {
     p.rect_filled(r.translate(Vec2::new(0.0, m.v(2.0))), m.v(rad), Color32::from_black_alpha(140));
     p.rect_filled(r, m.v(rad), Color32::from_rgb(30, 28, 26));
     vgrad(p, r.shrink(m.v(1.5)), Color32::from_rgb(48, 45, 42), Color32::from_rgb(18, 17, 16));
@@ -959,13 +1123,13 @@ fn led_bars(p: &egui::Painter, m: Mu, r: Rect, bands: &[f32], peaks: &[f32]) {
 }
 
 /// Smoked glass: a dark window, deepest at the foot, set into the panel.
-fn glass(p: &egui::Painter, m: Mu, r: Rect) {
+pub(crate) fn glass(p: &egui::Painter, m: Mu, r: Rect) {
     p.rect_filled(r, m.v(3.0), Color32::from_rgb(8, 7, 6));
     vgrad(p, r.shrink(1.0), Color32::from_rgb(10, 9, 8), Color32::from_rgb(20, 16, 12));
 }
 
 /// The glass's edge, over what's behind it.
-fn glare(p: &egui::Painter, m: Mu, r: Rect) {
+pub(crate) fn glare(p: &egui::Painter, m: Mu, r: Rect) {
     p.rect_stroke(r.shrink(1.0), m.v(3.0), Stroke::new(2.0_f32, Color32::from_black_alpha(120)));
 }
 
@@ -1102,4 +1266,36 @@ fn push_button(p: &egui::Painter, r: Rect, on: bool, down: bool) {
     } else {
         p.circle_filled(c, lr, Color32::from_rgb(58, 36, 8));
     }
+}
+
+/// A list on a screen scrolled by the wheel over `over`: `want` (in rows) moved by the wheel, `at` easing after it
+/// and coming to rest on a whole row (`most`: the furthest it goes).
+fn ease_scroll(ui: &egui::Ui, want: &mut f32, at: &mut f32, most: f32, rh: f32, over: Rect, dt: f32) {
+    if ui.input(|i| i.pointer.hover_pos()).is_some_and(|pp| over.contains(pp)) {
+        let wheel = ui.input(|i| i.raw_scroll_delta.y);
+        if wheel != 0.0 {
+            *want -= wheel / rh;
+        }
+    }
+    *want = want.within(0.0, most);
+    let rest = want.round().min(most);
+    *at += (rest - *at) * (1.0 - (-dt * 14.0).exp());
+    if (rest - *at).abs() < 0.002 {
+        *at = rest;
+    } else {
+        ui.ctx().request_repaint();
+    }
+}
+
+/// More rows than fit: a thin thumb at the screen's right edge saying where in them you are.
+#[allow(clippy::too_many_arguments)]
+fn scroll_thumb(p: &egui::Painter, m: Mu, w: Rect, list: Rect, at: f32, most: f32, rows: f32, rh: f32) {
+    if most <= 0.0 {
+        return;
+    }
+    let track = Rect::from_min_max(Pos2::new(w.max.x - m.v(5.0), list.min.y + m.v(2.0)), Pos2::new(w.max.x - m.v(3.0), list.max.y - m.v(2.0)));
+    let frac = (list.height() / rh / rows).min(1.0);
+    let th = (track.height() * frac).max(m.v(10.0));
+    let ty = track.min.y + (track.height() - th) * (at / most).clamp(0.0, 1.0);
+    p.rect_filled(Rect::from_min_size(Pos2::new(track.min.x, ty), Vec2::new(track.width(), th)), 1.0, crate::styles::amber().gamma_multiply(0.45));
 }

@@ -85,6 +85,8 @@ pub(crate) use widgets::*;
 mod album_view;
 #[path = "ui/hw_amp.rs"]
 mod hw_amp;
+#[path = "ui/hw_deck.rs"]
+mod hw_deck;
 #[path = "ui/studio.rs"]
 mod studio;
 #[path = "ui/app_look.rs"]
@@ -409,6 +411,8 @@ enum Msg {
     TagsSaved(Result<String, String>),
     /// a track's credits: (role, names)
     Credits(Result<Vec<(String, String)>, String>),
+    /// Tidal's credits for Hardware's CREDITS screen (the song's id)
+    HwCredits(i64, Result<Vec<(String, String)>, String>),
     /// stem separation finished for this track id
     Stems(#[allow(dead_code)] i64, Result<(), String>),
     /// the stem tool (runtime + model) finished downloading
@@ -1115,6 +1119,27 @@ app_state! {
     /// stereo correlation and K-weighted loudness its meters
     /// read (eased), its three small meters' needles, until when each peak light stays lit, its tolex and cloth
     hw_show: u8,
+    /// Hardware's Up Next screen scrolled: the first song shown (after the playing one) wanted and as shown, eased;
+    /// the place it was for (a new song starts it over)
+    hw_q_want: f32,
+    hw_q_at: f32,
+    hw_q_from: usize,
+    /// the same for its credits and loops screens
+    hw_c_want: f32,
+    hw_c_at: f32,
+    hw_l_want: f32,
+    hw_l_at: f32,
+    /// Tidal's credits for Hardware's CREDITS screen: the song's id, then what came back (None while loading)
+    hw_credits: Option<(i64, Option<Result<Vec<(String, String)>, String>>)>,
+    /// Hardware's reel deck (hw_deck.rs): where its tape is shown (0..1 of the song), how fast it moves (of the song
+    /// a second), each reel's turn, the song it's for, the pinch roller's lift (0 pressed .. 1 away)
+    hw_tape: f32,
+    hw_tape_v: f32,
+    hw_reel: [f32; 2],
+    hw_tape_for: i64,
+    hw_pinch: f32,
+    /// (when the deck was last drawn: opened again after a while, its tape starts where the song is)
+    hw_tape_t: f64,
     hw_corr: f32 = 1.0,
     hw_ms: f32,
     hw_need: [f32; 3] = [0.0, -1.2, -40.0],
@@ -2742,8 +2767,9 @@ impl App {
         }
         let Some(t) = self.queue.get(i).cloned() else { return };
         // a song Tidal can't stream any more, with no copy here: on to the next one
-        if t.gone && !cache::has(t.id) {
-            if let Some(k) = (i + 1..self.queue.len()).find(|&k| !(self.queue[k].gone && !cache::has(self.queue[k].id))) {
+        if self.cant_play(&t) {
+            crate::api::log(&format!("play: '{}' - '{}' is no longer on Tidal, with no copy here: passed over", t.artist, t.title));
+            if let Some(k) = (i + 1..self.queue.len()).find(|&k| !self.cant_play(&self.queue[k])) {
                 self.play_index(k);
             } else {
                 self.set_note("NO LONGER AVAILABLE ON TIDAL");
@@ -2821,8 +2847,9 @@ impl App {
         }
         self.buffering = true;
         let lossless = self.prefer_lossless;
-        let keep = self.keep_cache || self.practised(t.id);
-        let src = self.srcmap.get(&t.id).cloned();
+        let src = self.src_of(t.id);
+        // (a song gone from Tidal that plays from your copy keeps it, so it plays at once from then on)
+        let keep = self.keep_cache || self.practised(t.id) || self.store.my_copies.contains_key(&t.id);
         // (a YouTube song not saved here comes down whole before it plays)
         if matches!(src, Some(Src::Yt(_))) && !cache::has(t.id) {
             self.set_note("GETTING THE SONG FROM YOUTUBE...");
@@ -2865,8 +2892,8 @@ impl App {
         self.prefetching = next.id;
         let id = next.id;
         let lossless = self.prefer_lossless;
-        let keep = self.keep_cache || self.practised(id);
-        let src = self.srcmap.get(&id).cloned();
+        let keep = self.keep_cache || self.practised(id) || self.store.my_copies.contains_key(&id);
+        let src = self.src_of(id);
         let (api, tx, ctx) = (self.api.clone(), self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
             if let Ok(b) = fetch_audio(&api, id, lossless, keep, src) {
@@ -2887,6 +2914,34 @@ impl App {
 
     fn pos(&self) -> f32 {
         self.player.shared.lock().unwrap().pos
+    }
+
+    /// Where a song plays from when it isn't Tidal's stream: your files, YouTube and SoundCloud, or for a song gone
+    /// from Tidal the copy of yours it plays from (`Store.my_copies`) while that isn't saved on this computer yet
+    pub(crate) fn src_of(&self, id: i64) -> Option<Src> {
+        if let Some(s) = self.srcmap.get(&id) {
+            return Some(s.clone());
+        }
+        if cache::has(id) {
+            return None;
+        }
+        let v = self.store.my_copies.get(&id)?;
+        match v.kind.as_str() {
+            "file" => {
+                // (a file: here, or copied here from the other computer)
+                let p = match crate::peer_files::copy_of(&self.store.copied, v) {
+                    Some(here) if !std::path::Path::new(&v.src).exists() => PathBuf::from(here),
+                    _ => PathBuf::from(&v.src),
+                };
+                p.exists().then_some(Src::File(p))
+            }
+            _ => (!v.src.is_empty()).then(|| Src::Yt(v.src.clone())),
+        }
+    }
+
+    /// A song that can't play on this computer: gone from Tidal, with no copy saved here and none of yours to fetch.
+    pub(crate) fn cant_play(&self, t: &Track) -> bool {
+        t.gone && !cache::has(t.id) && self.src_of(t.id).is_none()
     }
 
     fn cur_track(&self) -> Option<Track> {

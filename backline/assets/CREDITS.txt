@@ -6,3 +6,7 @@ http://creativecommons.org/licenses/by/4.0/
 Silkscreen-Regular.ttf, Doto.ttf, IBMPlexMono-Regular.ttf (the Studio style's pixel, dot and typewriter faces)
 Silkscreen: Copyright 2001 The Silkscreen Project Authors. Doto: Copyright 2024 The Doto Project Authors.
 IBM Plex Mono: Copyright 2017 IBM Corp. All licensed under the SIL Open Font License 1.1 (see their -OFL.txt files).
+
+Sixtyfour.ttf, VT323-Regular.ttf (the Hardware style's screen types, Scanline and Terminal)
+Sixtyfour: Copyright 2021 The Sixtyfour Project Authors. VT323: Copyright 2011 The VT323 Project Authors.
+Both licensed under the SIL Open Font License 1.1 (see their -OFL.txt files).

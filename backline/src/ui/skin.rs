@@ -165,6 +165,9 @@ pub(crate) const HW_SCREENS: [(&str, Color32, Color32); 5] = [
     ("White", c(242, 242, 242), c(22, 22, 22)),
 ];
 pub(crate) const AMB_FEELS: [&str; 3] = ["Dark", "Deep", "Light"];
+/// Hardware's screen type (the Skins page): the face its screens write in, Scanline (Sixtyfour) or Terminal (VT323).
+pub(crate) static HW_TYPE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub(crate) const HW_TYPES: [&str; 2] = ["Scanline", "Terminal"];
 /// Studio's screens (the Skins page): their name, glass, keys, ink, and the names on their frames; whether its covers
 /// are printed in the screen's ink (1) or in their own colours (0; a click on the cover in Now Playing switches).
 pub(crate) static STUDIO_SCREEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);

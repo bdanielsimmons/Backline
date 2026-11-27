@@ -844,6 +844,7 @@ impl App {
             2 => &crate::skin::AMB_FEEL,
             4 => &crate::skin::STUDIO_SCREEN,
             5 => &crate::skin::STUDIO_COVER,
+            6 => &crate::skin::HW_TYPE,
             _ => &crate::skin::AMB_FADE,
         };
         at.store(i, Ordering::Relaxed);

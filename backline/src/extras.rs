@@ -414,6 +414,8 @@ impl App {
 
     /// Every song the lists know, known to the player (where each one plays from).
     pub(crate) fn register_all(&mut self) {
+        // (songs gone from Tidal that play from a copy of yours: not greyed)
+        crate::tracks::set_linked(self.store.my_copies.keys());
         let mut vs: Vec<Version> = Vec::new();
         vs.extend(self.store.files.iter().map(|e| e.to_version()));
         vs.extend(self.store.yt.iter().map(|e| e.to_version()));
@@ -1547,6 +1549,8 @@ impl App {
         if let Some(t) = self.cur_track() {
             u.insert(t.id);
         }
+        // (the copies songs gone from Tidal play from)
+        u.extend(self.store.my_copies.values().map(|v| v.id));
         u
     }
 

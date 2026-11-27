@@ -593,6 +593,9 @@ pub struct Store {
     /// that names it there plays the copy here); this computer's own, like `files`
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub copied: std::collections::BTreeMap<String, String>,
+    /// songs gone from Tidal that play from a copy of yours (Play From My Copy): the Tidal song's id and the copy
+    /// (YouTube, SoundCloud or a file). Synced, so the other computer fetches the same copy when the song plays there
+    pub my_copies: HashMap<i64, Version>,
     pub bpm: HashMap<i64, u32>,
     /// tempo and key found by listening to the audio (see meta.rs)
     pub meta: HashMap<i64, crate::meta::Info>,
