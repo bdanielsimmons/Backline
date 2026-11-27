@@ -974,7 +974,10 @@ impl App {
     fn lab_header(&mut self, ui: &mut egui::Ui) {
         let running = self.lab_run.is_some();
         ui.horizontal_wrapped(|ui| {
-            let fw = (ui.available_width() - 420.0).clamp(180.0, 380.0);
+            // (wide enough for its name: on a narrow page the whole row, the buttons on the next)
+            let avail = ui.available_width();
+            let name_w = crate::font::text_w(&self.store.lab_bench.name, 2.0) + 24.0;
+            let fw = if avail - 420.0 >= name_w.min(380.0) { (avail - 420.0).clamp(180.0, 380.0) } else { avail.min(name_w.max(180.0)) };
             let (rect, _) = ui.allocate_exact_size(Vec2::new(fw, bh()), Sense::hover());
             let mut name = self.store.lab_bench.name.clone();
             let out = field(ui, &mut self.ed, crate::tools::F_LAB_NAME, &mut name, rect, "Name it", false);

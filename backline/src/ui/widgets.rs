@@ -40,6 +40,7 @@ pub(crate) fn marquee_at(ui: &egui::Ui, rect: Rect, text: &str, px: f32, color: 
     let px = spx(px);
     let w = text_w(text, px);
     let clip = ui.painter().with_clip_rect(rect.shrink2(Vec2::new(2.0, 0.0)));
+    crate::test_hooks::clip_ok(clip.clip_rect());
     let cy = rect.center().y;
     if w <= rect.width() - 8.0 {
         ptext(&clip, Pos2::new(rect.min.x + 5.0, cy), Align::Min, text, px, color);
@@ -845,7 +846,8 @@ pub(crate) fn check_box(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Respon
 }
 
 pub(crate) fn retro_btn_w(ui: &mut egui::Ui, text: &str, w: f32, active: bool) -> egui::Response {
-    let w = (w * font::ui_scale()).max(text_w(text, 2.0) + 16.0);
+    // (its words measured as they're drawn: in the title font)
+    let w = (w * font::ui_scale()).max(winamp_ui::as_title(|| text_w(text, 2.0)) + 16.0);
     // (never wider than the row it's in: on a narrow page it shrinks and its words are fitted, never off the edge)
     let w = w.min(ui.max_rect().width().max(40.0));
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::click());
@@ -1117,9 +1119,20 @@ pub(crate) fn crumb(
     last: bool,
 ) -> Option<usize> {
     let menu = !items.is_empty();
-    // (Hardware writes the path in capitals)
+    let extra = if menu { 26.0 } else { 12.0 };
+    // (Hardware writes the path in capitals; a step longer than the room left in the row is cut with "...", so the
+    // path never runs past the page on a narrow one)
+    // (Hardware and Studio draw a box round the whole path, a little past its last step)
+    let pad = if hardware() || crate::studio::on() { 7.0 } else { 0.0 };
+    let room = (ui.available_width() - extra - pad).max(30.0);
+    let face_fit = if hardware() {
+        font::keep_caps(|| font::fit(&face.to_uppercase(), 2.0, room))
+    } else {
+        font::fit(face, 2.0, room)
+    };
+    let face = face_fit.as_str();
     let tw = if hardware() { font::keep_caps(|| text_w(&face.to_uppercase(), 2.0)) } else { text_w(face, 2.0) };
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(tw + if menu { 26.0 } else { 12.0 }, bh()), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(tw + extra, bh()), Sense::click());
     let key = egui::Id::new(("dd", id));
     let open = menu && ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
     let hot = menu && resp.hovered();
@@ -1594,9 +1607,10 @@ pub(crate) fn form_label(ui: &mut egui::Ui, text: &str) {
 }
 
 pub(crate) fn label(ui: &mut egui::Ui, text: &str, w: f32) {
-    let w = (w * crate::font::ui_scale()).max(crate::text_w(text, 2.0) + 6.0);
+    // (never wider than its row, as buttons: on a narrow page the words are fitted)
+    let w = (w * crate::font::ui_scale()).max(crate::text_w(text, 2.0) + 6.0).min(ui.max_rect().width().max(40.0));
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
-    ptext(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, text, 2.0, pal().ink2);
+    ptext_fit(ui.painter(), Pos2::new(rect.min.x + 2.0, rect.center().y), Align::Min, text, 2.0, rect.width() - 4.0, pal().ink2);
 }
 
 pub(crate) fn dim_line(ui: &mut egui::Ui, text: &str, px: f32, col: egui::Color32) {
@@ -1681,7 +1695,8 @@ pub(crate) fn setup_style(ctx: &egui::Context) {
 /// should wrap (`horizontal_wrapped`, or a left-to-right layout `with_main_wrap(true)`), never run off the page.
 pub(crate) fn overflow_check(ui: &egui::Ui, room: Rect, page: &str) {
     let over = ui.min_rect().max.x - room.max.x;
-    if over <= 2.0 {
+    // (once the window has its size: the first frames can still be laid out for the one before)
+    if over <= 2.0 || ui.input(|i| i.time) < 2.5 {
         return;
     }
     static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());

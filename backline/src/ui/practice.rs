@@ -733,6 +733,8 @@ impl App {
                 let mut drop = None;
                 let mut recolour = None;
                 let mut rename = None;
+                // (where each row of flags ends so far: a flag that would land on the one before drops a row)
+                let mut row_end = [f32::MIN; 2];
                 for (k, m) in marks.iter().enumerate() {
                     if m.t < start || m.t > start + span {
                         continue;
@@ -751,7 +753,10 @@ impl App {
                     let full = if m.name.is_empty() { (k + 1).to_string() } else { m.name.clone() };
                     let lab = crate::font::fit(&full, 1.0, room - 8.0);
                     let fw = (crate::font::text_w(&lab, 1.0) + 8.0).min(room);
-                    let flag = Rect::from_min_size(Pos2::new(x, if roomy { top + 18.0 } else { bar.max.y - 40.0 }), Vec2::new(fw, 13.0));
+                    let row = if x >= row_end[0] { 0 } else { 1 };
+                    row_end[row] = x + fw + 2.0;
+                    let y = if roomy { top + 18.0 } else { bar.max.y - 40.0 } + row as f32 * 15.0;
+                    let flag = Rect::from_min_size(Pos2::new(x, y), Vec2::new(fw, 13.0));
                     p.rect_filled(flag, 1.0, col);
                     ptext(&p, flag.center(), Align::Center, &lab, 1.0, egui::Color32::from_gray(12));
                     let fr = ui

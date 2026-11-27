@@ -638,8 +638,8 @@ impl App {
             }
             let x = r.min.x + 10.0;
             let col = if playing == Some(key) { pal().bar_txt } else { pal().ink };
-            let clip = Rect::from_min_max(r.min, Pos2::new(r.max.x - 8.0, r.max.y)).intersect(p.clip_rect());
-            ptext(&p.with_clip_rect(clip), Pos2::new(x, r.min.y + 15.0), Align::Min, title, 1.6, col);
+            // (a long title ends in "...", never cut off mid-letter)
+            ptext_fit(p, Pos2::new(x, r.min.y + 15.0), Align::Min, title, 1.6, r.max.x - 8.0 - x, col);
             ptext_fit(p, Pos2::new(r.min.x + 10.0, r.min.y + 32.0), Align::Min, sub, 1.0, r.width() - 20.0, pal().ink2);
             resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
         };
@@ -705,8 +705,9 @@ impl App {
         {
             let p = ui.painter();
             let room = (hr.width() - 60.0).max(40.0);
-            let clip = Rect::from_min_max(hr.min, Pos2::new(hr.min.x + room, hr.max.y)).intersect(p.clip_rect());
-            let tw = ptext(&p.with_clip_rect(clip), Pos2::new(hr.min.x, hr.center().y), Align::Min, &title, 2.6, if playing { pal().bar_txt } else { pal().ink });
+            // (a title longer than the room ends in "...", never cut off mid-letter)
+            let title = crate::font::fit(&title, 2.6, room);
+            let tw = ptext(p, Pos2::new(hr.min.x, hr.center().y), Align::Min, &title, 2.6, if playing { pal().bar_txt } else { pal().ink });
             if !artist.is_empty() && tw < room && room - tw > 70.0 {
                 ptext_fit(p, Pos2::new(hr.min.x + tw + 12.0, hr.center().y + 2.0), Align::Min, &artist, 1.4, room - tw - 16.0, pal().ink2);
             }

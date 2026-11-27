@@ -844,7 +844,13 @@ fn scan_walk(shape: &egui::Shape, clip: Rect, layer: egui::LayerId, texts: &mut 
             let r = r.shrink2(Vec2::new(0.0, r.height() * 0.18));
             texts.push(Seen { layer, clip, r, text });
         }
-        egui::Shape::Rect(rs) if rs.stroke.width > 0.0 && rs.stroke.color.a() > 60 => boxes.push((layer, rs.rect)),
+        // (a box only where it shows: one its clip hides, or mostly hides, isn't one the words can run out of)
+        egui::Shape::Rect(rs) if rs.stroke.width > 0.0 && rs.stroke.color.a() > 60 => {
+            let shown = rs.rect.intersect(clip);
+            if shown.width() >= rs.rect.width() - 2.0 && shown.height() >= rs.rect.height() - 2.0 {
+                boxes.push((layer, rs.rect));
+            }
+        }
         _ => {}
     }
 }
@@ -895,7 +901,9 @@ pub(crate) fn scan_layout(ctx: &egui::Context) {
         // cut: the words run past the side of their clip (or the window), so part of them doesn't show
         let clip = t.clip.intersect(screen);
         let over = (t.r.max.x - clip.max.x).max(clip.min.x - t.r.min.x);
-        if over > 3.0 && !ok.iter().any(|o| near(*o, t.clip) || near(*o, clip)) {
+        // (a line scrolling through its box is cut, and runs past it, on purpose)
+        let scrolling = ok.iter().any(|o| near(*o, t.clip) || near(*o, clip));
+        if over > 3.0 && !scrolling {
             found.push(format!("cut \"{}\" by {:.0} px at {:.0},{:.0}", t.text, over, t.r.min.x, t.r.min.y));
         }
         // over other words on the same layer (not the same words drawn twice a hair apart, for weight)
@@ -912,17 +920,17 @@ pub(crate) fn scan_layout(ctx: &egui::Context) {
                 found.push(format!("over \"{}\" and \"{}\" at {:.0},{:.0}", t.text, u.text, x.min.x, x.min.y));
             }
         }
-        // out of its box: starts in a box (a button, a field, a tag) and runs out past its side
-        for (l, b) in &boxes {
+        // out of its box: starts in a box (a button, a field, a tag) and runs out past its side (what shows of it)
+        for (l, b) in boxes.iter().filter(|_| !scrolling) {
             if *l != t.layer || b.height() > 64.0 || b.width() < 12.0 {
                 continue;
             }
-            let cy = t.r.center().y;
+            let cy = v.center().y;
             if cy < b.min.y + 2.0 || cy > b.max.y - 2.0 || t.r.height() > b.height() + 4.0 {
                 continue;
             }
-            let right = t.r.min.x >= b.min.x - 2.0 && t.r.min.x < b.max.x - 4.0 && t.r.max.x > b.max.x + 2.0;
-            let left = t.r.max.x <= b.max.x + 2.0 && t.r.max.x > b.min.x + 4.0 && t.r.min.x < b.min.x - 2.0;
+            let right = v.min.x >= b.min.x - 2.0 && v.min.x < b.max.x - 4.0 && v.max.x > b.max.x + 2.0;
+            let left = v.max.x <= b.max.x + 2.0 && v.max.x > b.min.x + 4.0 && v.min.x < b.min.x - 2.0;
             if right || left {
                 found.push(format!("out of its box \"{}\" at {:.0},{:.0} (box {:.0} wide)", t.text, t.r.min.x, t.r.min.y, b.width()));
             }

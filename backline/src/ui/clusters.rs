@@ -541,7 +541,10 @@ impl App {
     /// A click picks that row.
     fn walk_table(ui: &mut egui::Ui, head: [&str; 4], rows: &[(String, String, usize, String)], sel: usize) -> Option<usize> {
         let w = ui.available_width().min(640.0);
-        let cols = [10.0, w * 0.16, w * 0.52, w * 0.68];
+        let mut cols = [10.0, w * 0.16, w * 0.52, w * 0.68];
+        // (MAKES starts after the widest "12 MODES": a wider font, or a narrow page, never runs one into the other)
+        let fits_w = rows.iter().map(|r| text_w(&if r.2 == 0 { "X".to_string() } else { format!("{} MODES", r.2) }, 2.0)).fold(0.0, f32::max);
+        cols[3] = cols[3].max(cols[2] + fits_w + 12.0);
         let (hr, _) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::hover());
         for (k, h) in head.iter().enumerate() {
             ptext(ui.painter(), Pos2::new(hr.min.x + cols[k], hr.center().y), Align::Min, h, 1.0, pal().dim);

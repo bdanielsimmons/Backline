@@ -184,8 +184,10 @@ impl App {
             // the chord on a piano, to look at (not to click)
             section_header(ui, "ON THE PIANO AND THE STAFF");
             let voiced = piano_voicing(&c);
-            ui.horizontal(|ui| {
-                let pw = (ui.available_width() - 270.0).clamp(240.0, 560.0);
+            // (the staff beside the piano, or under it when the page is too narrow for both)
+            let avail = ui.available_width();
+            let pw = if avail - 270.0 >= 240.0 { (avail - 270.0).min(560.0) } else { avail.min(560.0) };
+            ui.horizontal_wrapped(|ui| {
                 let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 96.0), Sense::hover());
                 // (over a seventh the piano names the sixth 13, as the staff and the grips do)
                 let seventh = c.pcs.iter().any(|p| matches!((p - c.root).rem_euclid(12), 10 | 11));
@@ -277,7 +279,7 @@ impl App {
             let rw = theory::written_root(&q);
             for (name, steps) in theory::scales_for(&c) {
                 let names = theory::scale_names(&rw, c.root, steps);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     crate::views::label(ui, &format!("{} {}", names[0], name), 260.0);
                     crate::views::label(ui, &names.join(" "), 300.0);
                 });
@@ -353,8 +355,10 @@ impl App {
         ui.add_space(8.0);
         // the same notes on a piano, as a picture (four octaves cover the guitar)
         let shape_now = self.an_frets;
-        ui.horizontal(|ui| {
-            let pw = (ui.available_width() - 270.0).clamp(240.0, 720.0);
+        // (the staff beside the piano, or under it when the page is too narrow for both)
+        let avail = ui.available_width();
+        let pw = if avail - 270.0 >= 240.0 { (avail - 270.0).min(720.0) } else { avail.min(720.0) };
+        ui.horizontal_wrapped(|ui| {
             let (pr, _) = ui.allocate_exact_size(Vec2::new(pw, 96.0), Sense::hover());
             piano_span(ui, pr.shrink2(Vec2::new(0.0, 13.0)), &notes, false, "an_piano", root, 36, 4);
             let (sr, _) = ui.allocate_exact_size(Vec2::new(260.0, 96.0), Sense::hover());
@@ -368,7 +372,7 @@ impl App {
             });
         });
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if retro_btn(ui, "STRUM", false).tip("Hear the chord, low string to high").clicked() && !notes.is_empty() {
                 acts.push(Action::PlayNotes(notes.clone()));
             }
@@ -463,18 +467,30 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for s in &found {
                 let key = s.key();
-                // a little warning triangle before a chord that might not work
-                if !s.warnings.is_empty() {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(16.0, bh()), Sense::hover());
-                    warn_triangle(ui.painter(), r);
-                    resp.tip(s.warnings.join("\n"));
-                }
+                let name = s.name(sp);
+                // (a warned chord and its triangle kept together: the pair goes to the next row whole)
+                let warn = !s.warnings.is_empty();
+                // (as wide as `retro_btn` makes it)
+                let bw = ((crate::text_w(&name, 2.0) + 20.0).max(44.0) * crate::font::ui_scale())
+                    .max(crate::winamp_ui::as_title(|| crate::text_w(&name, 2.0)) + 16.0);
+                let unit = Vec2::new(bw + if warn { 22.0 } else { 0.0 }, bh());
+                let r = ui
+                    .allocate_ui_with_layout(unit, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        // a little warning triangle before a chord that might not work
+                        if warn {
+                            let (r, resp) = ui.allocate_exact_size(Vec2::new(16.0, bh()), Sense::hover());
+                            warn_triangle(ui.painter(), r);
+                            resp.tip(s.warnings.join("\n"));
+                        }
+                        let picked = self.an_pick.as_deref() == Some(key.as_str());
+                        retro_btn(ui, &name, s.exact || picked).tip(if s.exact {
+                            "These notes make this chord"
+                        } else {
+                            "These notes are part of this chord. The faint rings show the rest."
+                        })
+                    })
+                    .inner;
                 let picked = self.an_pick.as_deref() == Some(key.as_str());
-                let r = retro_btn(ui, &s.name(sp), s.exact || picked).tip(if s.exact {
-                    "These notes make this chord"
-                } else {
-                    "These notes are part of this chord. The faint rings show the rest."
-                });
                 if r.hovered() {
                     hovered = Some(key.clone());
                 }
@@ -547,9 +563,13 @@ impl App {
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             for (name, pc) in [("ROOT", 0), ("3RD", 4), ("5TH", 7), ("6TH / 7TH", 10), ("9 / 11", 2)] {
-                let (r, _) = ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
-                ui.painter().circle_filled(r.center(), 6.0, degree(pc, 0).1);
-                crate::views::label(ui, name, 90.0);
+                // (each dot with its name: the pair goes to the next row whole)
+                let lw = (90.0 * crate::font::ui_scale()).max(crate::text_w(name, 2.0) + 6.0);
+                ui.allocate_ui_with_layout(Vec2::new(14.0 + 6.0 + lw, bh()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
+                    ui.painter().circle_filled(r.center(), 6.0, degree(pc, 0).1);
+                    crate::views::label(ui, name, 90.0);
+                });
             }
         });
     }
@@ -807,7 +827,8 @@ impl App {
                         Stroke::new(1.0_f32, pal().dim),
                     );
                 }
-                ui.vertical(|ui| {
+                // (its size asked for first: a grip that doesn't fit the row goes to the next one, never off the page)
+                ui.allocate_ui_with_layout(Vec2::new(112.0, 264.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                     // what is on the bottom and on top, one above the other with a small rule between
                     let (lr, _) = ui.allocate_exact_size(Vec2::new(112.0, 32.0), Sense::hover());
                     let (bass, top) = label.split_once("  ").unwrap_or((label.as_str(), ""));
@@ -1169,7 +1190,8 @@ impl App {
         const STRING: [&str; 6] = ["6", "5", "4", "3", "2", "1"];
         ui.horizontal_wrapped(|ui| {
             for v in list {
-                ui.vertical(|ui| {
+                // (its size asked for first, so one that doesn't fit the row goes to the next)
+                ui.allocate_ui_with_layout(Vec2::new(120.0, 158.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 140.0), Sense::click());
                     crate::fretboard::chord_box_coloured(ui.painter(), r, &v.frets, &|m| {
                         let (d, col) = degree_in(m, root, &pcs);

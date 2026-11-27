@@ -397,7 +397,25 @@ pub(crate) fn field_x(ui: &mut egui::Ui, ed: &mut Ed, id: u32, text: &mut String
     }
     let cp = p.with_clip_rect(inner);
     if chars.is_empty() {
-        ptext(&cp, Pos2::new(inner.min.x, inner.min.y + lh / 2.0), Align::Min, hint, px, pal().dim);
+        // (a hint wider than its box: a box of several lines wraps it; one line drops its "(...)", then ends in "...")
+        let mut h = hint.to_string();
+        if !multi && text_w(&h, px) > inner.width() {
+            if let Some(i) = h.find(" (") {
+                h.truncate(i);
+            }
+        }
+        let hc: Vec<char> = h.chars().collect();
+        let rows = if multi { layout_lines(&hc, px, inner.width()) } else { vec![(0, hc.len())] };
+        for (k, (s, e)) in rows.iter().enumerate() {
+            let mut line: String = hc[*s..*e].iter().collect::<String>().trim_end().to_string();
+            if text_w(&line, px) > inner.width() {
+                while line.chars().count() > 1 && text_w(&format!("{}...", line.trim_end()), px) > inner.width() {
+                    line.pop();
+                }
+                line = format!("{}...", line.trim_end());
+            }
+            ptext(&cp, Pos2::new(inner.min.x, inner.min.y + lh / 2.0 + k as f32 * lh), Align::Min, &line, px, pal().dim);
+        }
     }
     for (li, (s, e)) in lines.iter().enumerate() {
         let y = inner.min.y - voff + li as f32 * lh + lh / 2.0;

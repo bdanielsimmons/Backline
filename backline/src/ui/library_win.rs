@@ -1020,7 +1020,9 @@ impl App {
                         }
                     }
                     let nw = (crate::font::text_w(&name, 2.4) + 10.0).clamp(140.0, 360.0);
-                    ui.vertical(|ui| {
+                    // (its size asked for first: on a narrow page it goes to the next row whole)
+                    let nw = nw.min(ui.max_rect().width().max(140.0));
+                    ui.allocate_ui_with_layout(Vec2::new(nw, 26.0 * sc + 24.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.set_width(nw);
                         crate::views::dim_line(ui, "WEARING", 1.0, pal().ink2);
                         let (r, _) = ui.allocate_exact_size(Vec2::new(nw, 26.0 * sc), Sense::hover());

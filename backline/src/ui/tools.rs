@@ -1293,6 +1293,8 @@ impl App {
                 )
             });
         }
+        let pid = playing.as_ref().map(|t| t.id);
+        let mut tools_below = false;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             if retro_btn_w(ui, "-", 28.0, false).tip("Down a half step").clicked() {
@@ -1339,35 +1341,20 @@ impl App {
             {
                 acts.push(Action::ToggleNumerals);
             }
-            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                self.sheet_lock(ui, playing.as_ref().map(|t| t.id));
-                if let Some(i) = ti {
-                    let tip = if self.chart_edit { "Done editing" } else { "Edit the changes" };
-                    if ibutton(ui, "pencil", tip, self.chart_edit).clicked() {
-                        self.chart_edit = !self.chart_edit;
-                        self.ed.id = 0;
-                    }
-                    if ibutton(ui, "refresh", if busy { "Searching..." } else { "Search for the chart again" }, busy).clicked() {
-                        acts.push(Action::FindChart(i, None));
-                    }
-                } else if self.prac_chart.is_some() {
-                    if ibutton(ui, "close", "Close", false).clicked() {
-                        self.prac_chart = None;
-                    }
-                } else {
-                    if ibutton(ui, "refresh", if busy { "Searching..." } else { "Search for the chart again" }, busy).clicked() {
-                        self.live_q.clear();
-                    }
-                    if has
-                        && retro_btn(ui, "SAVE TO TUNES", false)
-                            .tip("Save this song and its chart as a tune, so you can edit it.")
-                            .clicked()
-                    {
-                        acts.push(Action::SaveLive);
-                    }
-                }
-            });
+            // (Follow / Lock and the tools on the right; a row too narrow for them too, they go on a row of their own)
+            let save_w = if ti.is_none() && self.prac_chart.is_none() && has { text_w("SAVE TO TUNES", 2.0) + 24.0 } else { 0.0 };
+            let need = text_w("FOLLOWING", 1.6) + 34.0 + 2.0 * (bh() + 8.0) + save_w;
+            if ui.available_width() >= need + 8.0 {
+                ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| self.sheet_tools(ui, acts, ti, busy, has, pid));
+            } else {
+                tools_below = true;
+            }
         });
+        if tools_below {
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| self.sheet_tools(ui, acts, ti, busy, has, pid));
+            });
+        }
         let mut sub = String::new();
         if !key.is_empty() {
             sub.push_str(&format!("Key {}    ", key));
@@ -1409,6 +1396,36 @@ impl App {
                     ui.ctx().request_repaint();
                 }
             });
+        }
+    }
+
+    /// The lead sheet's tools on the right of its header: Follow / Lock, edit, look again, save.
+    fn sheet_tools(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Action>, ti: Option<usize>, busy: bool, has: bool, pid: Option<i64>) {
+        self.sheet_lock(ui, pid);
+        if let Some(i) = ti {
+            let tip = if self.chart_edit { "Done editing" } else { "Edit the changes" };
+            if ibutton(ui, "pencil", tip, self.chart_edit).clicked() {
+                self.chart_edit = !self.chart_edit;
+                self.ed.id = 0;
+            }
+            if ibutton(ui, "refresh", if busy { "Searching..." } else { "Search for the chart again" }, busy).clicked() {
+                acts.push(Action::FindChart(i, None));
+            }
+        } else if self.prac_chart.is_some() {
+            if ibutton(ui, "close", "Close", false).clicked() {
+                self.prac_chart = None;
+            }
+        } else {
+            if ibutton(ui, "refresh", if busy { "Searching..." } else { "Search for the chart again" }, busy).clicked() {
+                self.live_q.clear();
+            }
+            if has
+                && retro_btn(ui, "SAVE TO TUNES", false)
+                    .tip("Save this song and its chart as a tune, so you can edit it.")
+                    .clicked()
+            {
+                acts.push(Action::SaveLive);
+            }
         }
     }
 

@@ -800,6 +800,20 @@ pub fn wrap(text: &str, px: f32, max_w: f32) -> Vec<String> {
                 } else {
                     line = t;
                 }
+                // (a word wider than the line itself - a folder's path - broken where it reaches the edge)
+                while sw(&line, px) > max_w && line.chars().count() > 1 {
+                    let mut cut = String::new();
+                    for c in line.chars() {
+                        let next = format!("{}{}", cut, c);
+                        if sw(&next, px) > max_w && !cut.is_empty() {
+                            break;
+                        }
+                        cut = next;
+                    }
+                    let rest = line[cut.len()..].to_string();
+                    out.push(cut);
+                    line = rest;
+                }
             }
             out.push(line);
         }
