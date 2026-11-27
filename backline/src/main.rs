@@ -1119,6 +1119,11 @@ app_state! {
     /// stereo correlation and K-weighted loudness its meters
     /// read (eased), its three small meters' needles, until when each peak light stays lit, its tolex and cloth
     hw_show: u8,
+    /// Hardware's close-up on the cover and the deck: wanted, and how far in the view is (eased)
+    hw_big: bool,
+    hw_big_t: f32,
+    /// (a test copy holding the view part of the way in, for pictures)
+    hw_big_hold: bool,
     /// Hardware's Up Next screen scrolled: the first song shown (after the playing one) wanted and as shown, eased;
     /// the place it was for (a new song starts it over)
     hw_q_want: f32,

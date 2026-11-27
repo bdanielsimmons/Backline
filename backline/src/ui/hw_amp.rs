@@ -6,7 +6,8 @@
 //! Up Next, the credits or the song's loops on an amber screen. Practising, it holds the practice tools.
 //!
 //! Everything is laid out in the style sheet's own units (the amp at 300..936 by 34..538, the deck and the cover to its
-//! left from `hw_deck::GEAR_X0`) and scaled to fit, so the gear keeps its shape at any window size.
+//! left, `hw_deck::scene`) and scaled to fit, so the gear keeps its shape at any window size. A click on the cover
+//! steps up close: the view moves in on the cover and the deck, the cover growing, the amp sliding away.
 
 use super::*;
 
@@ -42,12 +43,24 @@ const SHOW_NAMES: [&str; 6] = ["METERS", "LIGHT", "LYRICS", "UP NEXT", "CREDITS"
 impl App {
     /// The amp, fitted into `r`.
     pub(crate) fn np_amp(&mut self, ui: &mut egui::Ui, r: Rect, tex: Option<egui::TextureId>, dt: f32, acts: &mut Vec<Action>) {
-        let p = ui.painter().clone();
+        let mut p = ui.painter().clone();
         let now = ui.input(|i| i.time);
-        // (the whole row of gear, from the cover's left edge to the amp's right, centred)
-        let (gx0, gx1) = (crate::hw_deck::GEAR_X0, 936.0);
-        let s = (r.width() / (gx1 - gx0 + 16.0)).min(r.height() / 520.0).max(0.3);
-        let m = Mu { o: r.center() - Vec2::new(((gx0 + gx1) / 2.0 - 12.0) * s, 252.0 * s), s };
+        // ---- the view: the whole row of gear, or close up on the cover and the deck (easing between; never while
+        // practising, the amp holding the practice tools)
+        let prac = practice_tools() && self.practice;
+        let want = if self.hw_big && !prac { 1.0 } else { 0.0 };
+        if !self.hw_big_hold {
+            self.hw_big_t += (want - self.hw_big_t) * (1.0 - (-dt * 5.0).exp());
+            if (want - self.hw_big_t).abs() < 0.002 {
+                self.hw_big_t = want;
+            } else {
+                ui.ctx().request_repaint();
+            }
+        }
+        let sc = crate::hw_deck::scene(self.hw_big_t);
+        let [vx0, vx1, vy0, vy1] = sc.view;
+        let s = (r.width() / (vx1 - vx0)).min(r.height() / (vy1 - vy0)).max(0.3);
+        let m = Mu { o: r.center() - Vec2::new(((vx0 + vx1) / 2.0 - 12.0) * s, ((vy0 + vy1) / 2.0 - 34.0) * s), s };
         self.hw_textures(ui.ctx());
         self.hw_measure(dt, now);
         let playing = self.cur.is_some() && !self.stopped && !self.paused;
@@ -59,14 +72,23 @@ impl App {
         let floor_y = m.p(0.0, 538.0).y;
         let whole = ui.max_rect();
         vgrad(&p, Rect::from_min_max(Pos2::new(whole.min.x, floor_y - m.v(30.0)), whole.max), Color32::TRANSPARENT, Color32::from_black_alpha(120));
-        for (x0, x1) in crate::hw_deck::FEET.iter().copied().chain([(300.0, 936.0)]) {
-            let (a, b) = (m.p(x0, 538.0), m.p(x1, 538.0));
-            shadow(&p, Pos2::new((a.x + b.x) / 2.0, a.y + m.v(4.0)), (b.x - a.x) * 0.56, m.v(14.0), 0.75);
+        let (cx, _, cw) = sc.cover;
+        let (fx0, fx1) = crate::hw_deck::DECK_FEET;
+        for (x0, x1, a) in [(cx, cx + cw, 0.75), (fx0, fx1, 0.75), (300.0 + sc.amp_dx, 936.0 + sc.amp_dx, 0.75 * sc.amp_a)] {
+            let (l, rr) = (m.p(x0, 538.0), m.p(x1, 538.0));
+            shadow(&p, Pos2::new((l.x + rr.x) / 2.0, l.y + m.v(4.0)), (rr.x - l.x) * 0.56, m.v(14.0), a);
         }
 
         // ---- at the left: the album's cover standing on the floor, and the reel-to-reel deck playing the song
-        self.hw_cover(ui, &p, m, tex, acts);
+        self.hw_cover(ui, &p, m, sc.cover, tex);
         self.hw_deck(ui, &p, m, dt, acts);
+
+        // ---- the amp, sliding away to the right for the close-up
+        if sc.amp_a <= 0.0 {
+            return;
+        }
+        let m = Mu { o: m.o + Vec2::new(m.v(sc.amp_dx), 0.0), s: m.s };
+        p.set_opacity(sc.amp_a);
 
         // ---- the amp's cabinet: black tolex
         cabinet(&p, m, m.r(300.0, 34.0, 636.0, 504.0), self.hw_tex.as_ref().map(|t| t[0].id()));
@@ -87,7 +109,7 @@ impl App {
         let pan_at = |x: f32, y: f32| m.p(314.0 + x, 48.0 + y);
         for (c, name) in ["LEFT", "RIGHT"].iter().enumerate() {
             let b = m.r(314.0 + 14.0 + 248.0 * c as f32, 58.0, 236.0, 140.0);
-            bezel(&p, m, b, 5.0, true);
+            bezel(&p, m, b, 5.0);
             let win = Rect::from_min_max(b.min + Vec2::new(m.v(11.0), m.v(9.0)), b.max - Vec2::new(m.v(11.0), m.v(9.0)));
             vu_face(&p, win, self.vu[c], name, now < self.hw_peak[c]);
         }
@@ -158,7 +180,6 @@ impl App {
             cream_knob(&p, m, c, *v);
         }
         // DISPLAY: six push buttons with lamps in two columns (LYRICS on a song with none says so behind the cloth)
-        let prac = practice_tools() && self.practice;
         let showing = self.hw_show.min(5);
         let dc = pan_at(kx[6], ky);
         caps(&p, Pos2::new(dc.x, dc.y - m.v(39.0)), egui::Align2::CENTER_TOP, "DISPLAY", m.v(8.5), m.v(1.5), INK, true);
@@ -210,7 +231,7 @@ impl App {
             3..=5 => {
                 // (Up Next, the credits, the loops: on an amber screen in a bezel)
                 let b = inner.shrink(m.v(10.0));
-                bezel(&p, m, b, 4.0, false);
+                bezel(&p, m, b, 4.0);
                 let w = b.shrink(m.v(6.0));
                 crate::styles::lcd(&p, w);
                 match showing {
@@ -226,13 +247,13 @@ impl App {
                 let tips = ["Left/right balance", "Stereo correlation", "Loudness (LUFS)"];
                 for (k, sub) in ["dB", "CORRELATION", "LUFS"].iter().enumerate() {
                     let b = at(14.0 + 202.0 * k as f32, 9.0, 170.0, 96.0);
-                    bezel(&p, m, b, 4.0, false);
+                    bezel(&p, m, b, 4.0);
                     let win = b.shrink(m.v(6.0));
                     small_meter(&p, win, k, self.hw_need[k], sub);
                     ui.interact(b, ui.id().with(("hw_meter", k)), Sense::hover()).tip(tips[k]);
                 }
                 let strip = at(14.0, 114.0, 574.0, 107.0);
-                bezel(&p, m, strip, 4.0, false);
+                bezel(&p, m, strip, 4.0);
                 let lcd_r = strip.shrink(m.v(6.0));
                 crate::styles::lcd(&p, lcd_r);
                 let bands = crate::viz::resample(&self.bands, 32, 1.0);
@@ -886,29 +907,18 @@ pub(crate) fn shadow(p: &egui::Painter, c: Pos2, rx: f32, ry: f32, a: f32) {
     p.add(mesh);
 }
 
-/// The amp's black panel: a dark gradient, a soft sheen at the top, and a fine cream line just inside its edge.
+/// The amp's black panel: a dark gradient, a soft sheen at the top.
 fn black_panel(p: &egui::Painter, m: Mu, r: Rect) {
     p.rect_filled(r.translate(Vec2::new(0.0, 1.0)), m.v(4.0), Color32::from_black_alpha(160));
     p.rect_filled(r, m.v(4.0), Color32::from_rgb(28, 26, 24));
     vgrad(p, r.shrink(m.v(2.0)), Color32::from_rgb(37, 35, 33), Color32::from_rgb(21, 20, 19));
-    p.rect_stroke(r.shrink(m.v(5.0)), m.v(2.0), Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(239, 226, 194, 60)));
 }
 
-/// A meter's frame: a dark bezel with a light top edge (and screws at its corners when `screws`).
-pub(crate) fn bezel(p: &egui::Painter, m: Mu, r: Rect, rad: f32, screws: bool) {
+/// A meter's frame: a dark bezel with a light top edge.
+pub(crate) fn bezel(p: &egui::Painter, m: Mu, r: Rect, rad: f32) {
     p.rect_filled(r.translate(Vec2::new(0.0, m.v(2.0))), m.v(rad), Color32::from_black_alpha(140));
     p.rect_filled(r, m.v(rad), Color32::from_rgb(30, 28, 26));
     vgrad(p, r.shrink(m.v(1.5)), Color32::from_rgb(48, 45, 42), Color32::from_rgb(18, 17, 16));
-    if screws {
-        for (k, q) in [r.left_top(), r.right_top(), r.left_bottom(), r.right_bottom()].into_iter().enumerate() {
-            let c = Pos2::new(q.x + if k % 2 == 0 { m.v(5.5) } else { -m.v(5.5) }, q.y + if k < 2 { m.v(4.5) } else { -m.v(4.5) });
-            let rr = m.v(3.5);
-            ball(p, c, rr, Vec2::new(-0.3, -0.3), &[(0.0, Color32::from_rgb(244, 244, 244)), (0.6, Color32::from_rgb(154, 154, 154)), (1.0, Color32::from_rgb(90, 90, 90))]);
-            let a = [0.35f32, 1.2, 0.8, 1.9][k];
-            let d = Vec2::new(a.cos(), a.sin()) * rr * 0.75;
-            p.line_segment([c - d, c + d], Stroke::new(m.v(0.9), Color32::from_rgb(58, 58, 58)));
-        }
-    }
 }
 
 /// The cream VU meter: its face, the dB scale (placed by voltage, as a real VU's: -20 to +3, red from 0) over a

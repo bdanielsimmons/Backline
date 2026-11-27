@@ -259,7 +259,11 @@ Second line: comp lighter here.", m.1.note);
             // the tour song playing, on the library (for pictures of the decks)
             Ok("playing") => {
                 if let Some(p) = tour_song::ready() {
-                    let t = sources::ext_for_file(&p).to_track();
+                    let mut t = sources::ext_for_file(&p).to_track();
+                    // (BACKLINE_COVER=<picture file>: the song wears it as its cover)
+                    if let Ok(c) = std::env::var("BACKLINE_COVER") {
+                        t.cover = format!("img:{}", c);
+                    }
                     app.srcmap.insert(t.id, Src::File(p.clone()));
                     let mut q = vec![t.clone()];
                     // (BACKLINE_QUEUE=n: n more songs after it, for pictures of Up Next)
@@ -274,9 +278,14 @@ Second line: comp lighter here.", m.1.note);
                     app.queue = Arc::new(q);
                     app.play_index(0);
                 }
-                // (BACKLINE_NP=1: in Now Playing)
+                // (BACKLINE_NP=1: in Now Playing; BACKLINE_HW_BIG=1: Hardware's close-up on the cover, or =0.5 halfway in)
                 if std::env::var_os("BACKLINE_NP").is_some() {
                     app.art_view = true;
+                }
+                if let Some(t) = std::env::var("BACKLINE_HW_BIG").ok().and_then(|v| v.parse::<f32>().ok()) {
+                    app.hw_big = t >= 1.0;
+                    app.hw_big_t = t;
+                    app.hw_big_hold = t < 1.0;
                 }
             }
             // the New Playlist panel for the tour song (BACKLINE_ART=<picture file>: with that picture picked)

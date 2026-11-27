@@ -108,10 +108,6 @@ pub(crate) fn panel(p: &egui::Painter, r: Rect) {
             p.rect_filled(r, 6.0, HW_PANEL);
             p.rect_stroke(r, 6.0, Stroke::new(1.0_f32, Color32::from_black_alpha(200)));
             p.line_segment([r.left_top() + Vec2::new(6.0, 1.0), r.right_top() + Vec2::new(-6.0, 1.0)], Stroke::new(1.0_f32, white(10)));
-            // (four small screws, as a front panel has)
-            for c in [r.left_top() + Vec2::new(6.0, 6.0), r.right_top() + Vec2::new(-6.0, 6.0), r.left_bottom() + Vec2::new(6.0, -6.0), r.right_bottom() + Vec2::new(-6.0, -6.0)] {
-                p.circle_filled(c, 1.6, Color32::from_gray(52));
-            }
         }
         _ => {}
     }
@@ -191,12 +187,53 @@ pub(crate) fn screen_text(p: &egui::Painter, at: Pos2, align: Align, text: &str,
         Align::Center => egui::Align2::CENTER_CENTER,
         Align::Max => egui::Align2::RIGHT_CENTER,
     };
-    // (lit: a faint halo round the writing, then the words)
+    lit(p, at, anchor, &shown, fid, col);
+}
+
+/// Screen writing lit: a faint halo round the words, then the words.
+fn lit(p: &egui::Painter, at: Pos2, anchor: egui::Align2, text: &str, fid: egui::FontId, col: Color32) {
     let halo = col.gamma_multiply(0.08);
     for d in [Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0)] {
-        p.text(at + d * 1.3, anchor, &shown, fid.clone(), halo);
+        p.text(at + d * 1.3, anchor, text, fid.clone(), halo);
     }
-    p.text(at, anchor, &shown, fid, col);
+    p.text(at, anchor, text, fid, col);
+}
+
+/// Words on a Hardware screen as `screen_text` writes them, except that words too long for `max_w` scroll, as a deck's
+/// display does: held at the start a moment, then stepping left a letter at a time until the start comes round
+/// again, a gap between (filling the room from its left edge, however they're aligned). Both screen types are
+/// monospaced, so a step is one letter's width; four steps a second, so the app only redraws that often for it.
+/// Studio's screens stay put.
+pub(crate) fn screen_marquee(p: &egui::Painter, at: Pos2, align: Align, text: &str, px: f32, max_w: f32, col: Color32) {
+    let fits = screen_face().map(|(fam, k)| (egui::FontId::new(font::text_px(px) * k, fam), screen_w(p, text, px)));
+    let Some((fid, w)) = fits.filter(|(_, w)| *w > max_w) else {
+        screen_text(p, at, align, text, px, max_w, col);
+        return;
+    };
+    let x0 = match align {
+        Align::Min => at.x,
+        Align::Center => at.x - max_w / 2.0,
+        Align::Max => at.x - max_w,
+    };
+    const HOLD: f32 = 2.5;
+    const STEPS: f32 = 4.0;
+    const GAP: usize = 4;
+    let n = text.chars().count().max(1);
+    let cw = w / n as f32;
+    let cycle = HOLD + (n + GAP) as f32 / STEPS;
+    let ph = (p.ctx().input(|i| i.time) % cycle as f64) as f32;
+    let step = if ph < HOLD { 0.0 } else { ((ph - HOLD) * STEPS).floor() };
+    let off = step * cw;
+    // (whole letters only, as a display's character cells: the room cut to a whole number of them)
+    let cells = (max_w / cw).floor().max(1.0) * cw;
+    let clip = Rect::from_min_max(Pos2::new(x0, at.y - fid.size), Pos2::new(x0 + cells, at.y + fid.size)).intersect(p.clip_rect());
+    let cp = p.with_clip_rect(clip);
+    for x in [x0 - off, x0 - off + (n + GAP) as f32 * cw] {
+        lit(&cp, Pos2::new(x, at.y), egui::Align2::LEFT_CENTER, text, fid.clone(), col);
+    }
+    // (wake for the next step)
+    let next = if ph < HOLD { HOLD - ph } else { (step + 1.0) / STEPS - (ph - HOLD) };
+    p.ctx().request_repaint_after(std::time::Duration::from_secs_f32(next.max(0.02)));
 }
 
 /// Scanline screens (Hardware's SCREEN TYPE 0), its big digits: `draw` lit in bands two pixels tall with a pixel's gap between, as an
@@ -771,8 +808,8 @@ impl App {
             if let Some(tr) = self.cur_track().filter(|_| scr.width() - 190.0 >= 60.0) {
                 let w = scr.width() - 190.0;
                 // (the song as written, over its artist, in the screen's face)
-                screen_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w, amber());
-                screen_text(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w, amber().gamma_multiply(0.65));
+                screen_marquee(&p, Pos2::new(scr.max.x - 10.0, scr.center().y - 9.0), Align::Max, &tr.title, 1.3, w, amber());
+                screen_marquee(&p, Pos2::new(scr.max.x - 10.0, scr.center().y + 9.0), Align::Max, &tr.artists_text(), 1.1, w, amber().gamma_multiply(0.65));
             }
             if ui.interact(scr, id.with("screen"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).tip("Now Playing  (A)").clicked() {
                 acts.push(Action::ToggleArt);
@@ -1269,7 +1306,7 @@ impl App {
             }
             let tx = row_a.min.x + row_a.width() * 0.42;
             if let Some(tr) = self.cur_track() {
-                screen_text(&p, Pos2::new(tx, row_a.min.y + 11.0), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15, row_a.max.x - tx - 8.0, amber());
+                screen_marquee(&p, Pos2::new(tx, row_a.min.y + 11.0), Align::Min, &format!("{} · {}", tr.title, tr.artists_text()), 1.15, row_a.max.x - tx - 8.0, amber());
             }
             if self.mini_viz {
                 mini_viz(&p, Rect::from_min_max(Pos2::new(tx, row_a.min.y + 22.0), row_a.max - Vec2::new(8.0, 6.0)), &bands, amber(), true);
@@ -1404,8 +1441,8 @@ impl App {
             lcd(&p, scr);
             let w = scr.width() - 20.0;
             if let Some(tr) = &tr {
-                screen_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0 * s), Align::Min, &tr.title, 1.3, w, amber());
-                screen_text(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artists_text(), 1.05, w, amber().gamma_multiply(0.65));
+                screen_marquee(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 13.0 * s), Align::Min, &tr.title, 1.3, w, amber());
+                screen_marquee(&p, Pos2::new(scr.min.x + 10.0, scr.min.y + 29.0 * s), Align::Min, &tr.artists_text(), 1.05, w, amber().gamma_multiply(0.65));
             }
             let mid = scr.min.y + scr.height() * 0.58;
             let big = ((scr.height() / s - 50.0) / 9.0).clamp(2.6, 4.4);

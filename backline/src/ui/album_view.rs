@@ -70,7 +70,18 @@ impl App {
         let center = Pos2::new(art_zone.center().x, art_zone.min.y + (art_zone.height() - caption_h) / 2.0);
 
         // ---- the backdrop
-        let url = track.as_ref().map(|t| cover_url(&t.cover, 640)).unwrap_or_default();
+        // (Hardware's close-up shows the cover bigger than 640: the 1280 one, unless it can't be had, offline)
+        let url = track
+            .as_ref()
+            .map(|t| {
+                let big = cover_url(&t.cover, 1280);
+                if crate::hardware() && self.hw_big && !self.images.failed(&big) {
+                    big
+                } else {
+                    cover_url(&t.cover, 640)
+                }
+            })
+            .unwrap_or_default();
         let (tex, prev, fade) = self.images.held("album", &url, false, now);
         if fade < 1.0 {
             ui.ctx().request_repaint();
@@ -1048,6 +1059,19 @@ impl App {
             return;
         }
         if crate::skin::style() == crate::skin::STYLE_HARDWARE {
+            if menu_item(ui, &format!("{}Close-Up on the Cover", mark(self.hw_big))) {
+                self.hw_big = !self.hw_big;
+                self.dirty = true;
+                ui.close_menu();
+            }
+            if let Some(t) = self.cur_track().filter(|t| t.id > 0) {
+                if menu_item(ui, "   Go to the Album") {
+                    acts.push(Action::GoTo(t.id, crate::GoTo::Album));
+                    self.art_view = false;
+                    ui.close_menu();
+                }
+            }
+            ui.separator();
             for (i, name) in ["Meters", "Analyzer Light", "Lyrics", "Up Next", "Credits", "Loops"].iter().enumerate() {
                 if menu_item(ui, &format!("{}Under the Panel: {}", mark(self.hw_show as usize == i), name)) {
                     self.hw_show = i as u8;

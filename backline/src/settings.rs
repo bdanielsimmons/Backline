@@ -84,6 +84,7 @@ plain_settings! {
     mini_viz: bool,
     np_tab: u8 => min(3),
     hw_show: u8 => min(5),
+    hw_big: bool,
     studio_np: u8 => min(5),
     studio_vis: u8 => min(3),
     studio_terr_cam: u8 => min(2),

@@ -17,12 +17,11 @@
 use super::*;
 use crate::hw_amp::{ball, cabinet, caps, vgrad, Mu, FACE_INK};
 
-/// The left edge of the row of gear (the cover's), in the amp's units.
-pub(crate) const GEAR_X0: f32 = -238.0;
-/// Where each piece left of the amp stands on the floor (its shadow): the cover, the deck.
-pub(crate) const FEET: [(f32, f32); 2] = [(-238.0, -28.0), (-16.0, 288.0)];
-/// The cover: its left, top and size.
+/// The cover: its left, top and size, beside the deck; and in the close-up, as tall as the deck.
 const COVER: (f32, f32, f32) = (-238.0, 328.0, 210.0);
+const BIG: (f32, f32, f32) = (-440.0, 138.0, 400.0);
+/// Where the deck stands on the floor (its shadow).
+pub(crate) const DECK_FEET: (f32, f32) = (-16.0, 288.0);
 /// The deck's body: left, top, width, height (its reels stand a little above it).
 const DECK: (f32, f32, f32, f32) = (-16.0, 178.0, 304.0, 360.0);
 /// The reels: their radius, centres, and their packs' radius empty (the hub) and full, as shares of it.
@@ -48,11 +47,33 @@ const PLAY_V: f32 = 0.24 * std::f32::consts::TAU * FULL * R;
 const SPOKE: f32 = 0.98;
 const LIGHT: f32 = -2.2;
 
+/// Where everything stands in Hardware's Now Playing (in units): the cover (left, top, size), how far the amp has
+/// moved right and how much of it shows, and the part of the room in view (left, right, top, bottom).
+pub(crate) struct Scene {
+    pub(crate) cover: (f32, f32, f32),
+    pub(crate) amp_dx: f32,
+    pub(crate) amp_a: f32,
+    pub(crate) view: [f32; 4],
+}
+
+/// The scene `t` of the way into the close-up (0 the whole row of gear, 1 the cover and the deck): the view moves in
+/// and the cover grows to the deck's height while the amp slides away to the right.
+pub(crate) fn scene(t: f32) -> Scene {
+    let t = t * t * (3.0 - 2.0 * t);
+    let l = |a: f32, b: f32| a + (b - a) * t;
+    Scene {
+        cover: (l(COVER.0, BIG.0), l(COVER.1, BIG.1), l(COVER.2, BIG.2)),
+        amp_dx: 280.0 * t,
+        amp_a: (1.0 - t * 2.4).max(0.0),
+        view: [l(COVER.0 - 8.0, BIG.0 - 8.0), l(944.0, 296.0), l(26.0, BIG.1 - 16.0), 546.0],
+    }
+}
+
 impl App {
-    /// The album's cover standing upright on the floor beside the deck, in full view; a click on a Tidal song's goes
-    /// to its album.
-    pub(crate) fn hw_cover(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, tex: Option<egui::TextureId>, acts: &mut Vec<Action>) {
-        let r = m.r(COVER.0, COVER.1, COVER.2, COVER.2);
+    /// The album's cover standing upright on the floor beside the deck, in full view (`at`: its left, top and size);
+    /// a click steps up close to it, or back.
+    pub(crate) fn hw_cover(&mut self, ui: &mut egui::Ui, p: &egui::Painter, m: Mu, at: (f32, f32, f32), tex: Option<egui::TextureId>) {
+        let r = m.r(at.0, at.1, at.2, at.2);
         // (a box's depth: its top and right edge, a touch of its shadow on the wall behind)
         let d = m.v(4.0);
         p.rect_filled(r.translate(Vec2::new(d * 1.6, -d * 0.4)), m.v(1.0), Color32::from_black_alpha(90));
@@ -73,13 +94,11 @@ impl App {
         let sheen = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + r.height() * 0.45));
         vgrad(p, sheen, Color32::from_white_alpha(14), Color32::TRANSPARENT);
         p.rect_stroke(r, 0.0, Stroke::new(1.0_f32, Color32::from_black_alpha(150)));
-        let tidal = self.cur_track().filter(|t| t.id > 0);
         let h = ui.interact(r, ui.id().with("hw_cover"), Sense::click());
-        if let Some(t) = tidal {
-            if h.on_hover_cursor(egui::CursorIcon::PointingHand).tip("Go to the album").clicked() {
-                acts.push(Action::GoTo(t.id, crate::GoTo::Album));
-                self.art_view = false;
-            }
+        let tip = if self.hw_big { "Step back" } else { "Close-up: the cover bigger" };
+        if h.on_hover_cursor(egui::CursorIcon::PointingHand).tip(tip).clicked() {
+            self.hw_big = !self.hw_big;
+            self.dirty = true;
         }
     }
 
@@ -93,7 +112,7 @@ impl App {
         }
         let (dx, dy, dw, dh) = DECK;
         let body = m.r(dx, dy, dw, dh);
-        // ---- the body: tolex round a brushed aluminium faceplate, screwed on
+        // ---- the body: tolex round a brushed aluminium faceplate
         cabinet(p, m, body, self.hw_tex.as_ref().map(|t| t[0].id()));
         let face = body.shrink(m.v(7.0));
         p.rect_filled(face, m.v(3.0), Color32::from_rgb(150, 146, 138));
@@ -107,9 +126,6 @@ impl App {
             p.line_segment([Pos2::new(face.min.x + m.v(2.0), y), Pos2::new(face.max.x - m.v(2.0), y)], Stroke::new(1.0_f32, col));
         }
         p.rect_stroke(face, m.v(3.0), Stroke::new(1.0_f32, Color32::from_black_alpha(90)));
-        for q in [face.left_top() + Vec2::new(m.v(7.0), m.v(7.0)), face.right_top() + Vec2::new(-m.v(7.0), m.v(7.0)), face.left_bottom() + Vec2::new(m.v(7.0), -m.v(7.0)), face.right_bottom() + Vec2::new(-m.v(7.0), -m.v(7.0))] {
-            screw(p, q, m.v(3.2));
-        }
 
         // ---- the tape transport
         let (rl, rr) = packs(self.hw_tape);
@@ -213,8 +229,9 @@ impl App {
         crate::styles::screen_text(p, Pos2::new(gl.max.x - m.v(10.0), gl.min.y + m.v(13.0)), Align::Max, state, 0.95 * k, m.v(60.0), amber.gamma_multiply(0.8));
         let room = gl.width() - m.v(24.0);
         if let Some(t) = &tr {
-            crate::styles::screen_text(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(52.0)), Align::Min, &t.title, 1.3 * k, room, amber);
-            crate::styles::screen_text(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(70.0)), Align::Min, &t.artists_text(), 1.05 * k, room, amber.gamma_multiply(0.6));
+            // (a long title or artist scrolls across the glass, as a deck's display does)
+            crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(52.0)), Align::Min, &t.title, 1.3 * k, room, amber);
+            crate::styles::screen_marquee(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(70.0)), Align::Min, &t.artists_text(), 1.05 * k, room, amber.gamma_multiply(0.6));
         } else {
             crate::styles::screen_text(p, Pos2::new(gl.min.x + m.v(12.0), gl.min.y + m.v(60.0)), Align::Min, "No tape", 1.2 * k, room, amber.gamma_multiply(0.6));
         }
@@ -430,13 +447,6 @@ fn adapter(p: &egui::Painter, c: Pos2, k: f32, ang: f32, turn: f32) {
         }
     }
     ball(p, c, r * 0.32, Vec2::new(-0.3, -0.3), &[(0.0, Color32::from_rgb(240, 238, 232)), (0.7, Color32::from_rgb(150, 148, 142)), (1.0, Color32::from_rgb(96, 94, 90))]);
-}
-
-/// A screw head: a domed slot-head, its slot at a slant.
-fn screw(p: &egui::Painter, c: Pos2, r: f32) {
-    ball(p, c, r, Vec2::new(-0.3, -0.3), &[(0.0, Color32::from_rgb(244, 244, 244)), (0.6, Color32::from_rgb(154, 154, 154)), (1.0, Color32::from_rgb(90, 90, 90))]);
-    let d = Vec2::new(0.8f32.cos(), 0.8f32.sin()) * r * 0.75;
-    p.line_segment([c - d, c + d], Stroke::new((r * 0.26).max(0.8), Color32::from_rgb(58, 58, 58)));
 }
 
 /// Where the tape leaves circle `a` and meets circle `b`, going round each in its direction (`dir` +1 clockwise on
