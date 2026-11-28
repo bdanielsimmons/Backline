@@ -18,6 +18,7 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 ## What's new
 
 <!-- whats-new -->
+- Backline for Android phones: YouTube songs into the practice tools, on the download page
 - Hardware's Now Playing as a reel-to-reel tape deck
 - Studio style: every part a screen in a black body, LCD time, the song in dot type, lyrics and visuals on the screen
 - Styles: pick Streaming, Ambient Color or Hardware on the Skins page, each with its own colors
@@ -27,7 +28,6 @@ Unofficial: it talks to the same endpoints the Tidal apps and the open-source `t
 - Export a loop as full, no vocals and no vocals/bass/drums, or each stem on its own, with one save window
 - Updates come over Sync from your other computer
 - One Skins page: every Backline look shown as its player, Winamp skins a switch away; Greyscale and 15 more looks
-- Backline's looks give every window one unbroken border
 <!-- /whats-new -->
 
 Every release lists its full changes on the [Releases page](../../releases).
