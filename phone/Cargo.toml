@@ -103,6 +103,10 @@ extract_native_libs = true
 [package.metadata.android.application.activity]
 orientation = "portrait"
 
+# (a small library the time crate uses, fixed to build for iPhones: patches/num_threads)
+[patch.crates-io]
+num_threads = { path = "patches/num_threads" }
+
 [profile.release]
 opt-level = "s"
 strip = true
