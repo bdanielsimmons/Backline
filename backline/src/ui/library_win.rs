@@ -2010,6 +2010,10 @@ impl App {
 
         // back, forward, HOME and the search box: one row
         let side = self.side.is_some();
+        let online = !self.offline;
+        // the search box in this row: always without a skin; with one, on every Tidal page (Home, your Tidal
+        // library, an album, an artist, a search's results), where the row holds only Back and Forward
+        let inline_search = online && !side && (!crate::winamp_ui::chrome_on() || self.sec == Sec::Tidal);
         ui.horizontal(|ui| {
             for back in [true, false] {
                 let ok = self.can_go(back);
@@ -2055,8 +2059,7 @@ impl App {
             if pages {
                 self.page_path(ui, acts);
             }
-            // (no skin: the search box in this row, as ever)
-            if !self.offline && !side && !crate::winamp_ui::chrome_on() {
+            if inline_search {
                 let go_w = 54.0;
                 let w = (ui.available_width() - go_w - ui.spacing().item_spacing.x).max(80.0);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(w, bh()), Sense::hover());
@@ -2066,9 +2069,9 @@ impl App {
                 }
             }
         });
-        // a skin worn: the search box on a row of its own at the top of the page, when Search in the side list asked
-        // for it (or the keyboard is in it)
-        if crate::winamp_ui::chrome_on() && !self.offline && !side && (self.search_bar || self.ed.id == crate::tools::F_SEARCH) {
+        // a skin worn, anywhere else: the search box on a row of its own at the top of the page, when Search in the
+        // side list asked for it (or the keyboard is in it)
+        if crate::winamp_ui::chrome_on() && online && !side && !inline_search && (self.search_bar || self.ed.id == crate::tools::F_SEARCH) {
             self.search_bar = true;
             ui.add_space(4.0);
             ui.horizontal(|ui| {
