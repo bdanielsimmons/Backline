@@ -420,8 +420,19 @@ pub(crate) fn wave(bytes: &[u8]) -> (f32, Vec<u8>) {
     (dur.max(0.0), peaks)
 }
 
-/// What is on the phone's clipboard, through Android's ClipboardManager.
+/// The clipboard looked at without being asked (coming back to the app): an iPhone asks you each time an app reads
+/// it, so there only a newly copied link is read.
+pub(crate) fn clipboard_quiet() -> Option<String> {
+    #[cfg(target_os = "ios")]
+    return crate::ios::clipboard(false);
+    #[allow(unreachable_code)]
+    clipboard()
+}
+
+/// What is on the phone's clipboard, through Android's ClipboardManager (an iPhone's UIPasteboard).
 pub(crate) fn clipboard() -> Option<String> {
+    #[cfg(target_os = "ios")]
+    return crate::ios::clipboard(true);
     #[cfg(target_os = "android")]
     {
         use jni::objects::{JObject, JString};

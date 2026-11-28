@@ -65,6 +65,8 @@ impl App {
                     0 if f.is_empty() => "Tap the heart on a song to keep it here.",
                     1 if f.is_empty() && !self.keep => "Press SAVE on a song to keep it on this phone (Saving is off in Settings).",
                     1 if f.is_empty() => "Songs you add are saved here as they come in, or press SAVE on one.",
+                    // (an iPhone shows an app only its own folder)
+                    2 if f.is_empty() && cfg!(target_os = "ios") => "Put songs in the Files app, in On My iPhone > Backline. Folders show here as folders.",
                     2 if f.is_empty() => "No music files found on this phone.",
                     _ => "Nothing matches.",
                 },

@@ -1,7 +1,7 @@
 name: build
 on:
   push:
-    branches: ['**']
+    branches: ['**', '!iphone']
     # docs-only pushes (README etc.) and release-notes tweaks don't build or release
     # (the phone apps: android/ has its own workflow, phone/ is built on the PC; a change to them alone builds nothing)
     paths-ignore: ['**.md', '.github/release_notes.py', 'android/**', '.github/workflows/android.yml', 'phone/**']

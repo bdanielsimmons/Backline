@@ -1,4 +1,5 @@
-//! Backline as one of the phone's players (the Java side: phone/java/.../Bridge.java and Playback.java): audio focus
+//! Backline as one of the phone's players (on Android the Java side: phone/java/.../Bridge.java and Playback.java; on
+//! an iPhone src/ios.rs, which hands this the same numbers): audio focus
 //! (other players pause when Backline plays; Backline pauses when they play, and for a call, coming back after it),
 //! the media session (the lock screen, the notification's controls, headphone buttons) and the service that keeps the
 //! song going in the background. What the phone asks for is done to the player straight away where it can be (pause,
@@ -47,6 +48,26 @@ pub(crate) fn set_state(s: u8) {
     if !(STATE.load(Ordering::Relaxed) == 3 && s == 2) {
         STATE.store(s, Ordering::Relaxed);
     }
+}
+
+/// Whether a song is playing, as this side knows it (an iPhone's play/pause from headphones is one button).
+pub(crate) fn playing() -> bool {
+    STATE.load(Ordering::Relaxed) == 1
+}
+
+/// Something to the player straight away (an iPhone's output opened again after a call).
+pub(crate) fn send_player(c: Cmd) {
+    if let Some(link) = LINK.get() {
+        if let Ok(tx) = link.tx.lock() {
+            let _ = tx.send(c);
+        }
+    }
+}
+
+/// What an iPhone asked for (src/ios.rs), as Java's `event` is on Android.
+#[cfg(target_os = "ios")]
+pub(crate) fn from_phone(what: i32, arg: i64) -> Option<bool> {
+    handle(what, arg)
 }
 
 /// What the phone asked for (from Java): done to the player where it can be, passed on to the app. Returns whether
@@ -176,6 +197,8 @@ pub(crate) fn init(tx: Sender<Cmd>, ctx: eframe::egui::Context) {
             None => crate::api::log("the phone's media controls couldn't be set up"),
         }
     }
+    #[cfg(target_os = "ios")]
+    crate::ios::watch();
 }
 
 /// Ask for the phone's audio (other players pause), or give it back.
@@ -192,6 +215,8 @@ pub(crate) fn focus(on: bool) {
             Some(())
         });
     }
+    #[cfg(target_os = "ios")]
+    crate::ios::focus(on);
     #[cfg(not(target_os = "android"))]
     let _ = on;
 }
@@ -256,6 +281,8 @@ pub(crate) fn session(now: Option<Now>) {
             Some(())
         });
     }
+    #[cfg(target_os = "ios")]
+    crate::ios::now_playing(now.as_ref());
     #[cfg(not(target_os = "android"))]
     let _ = now;
 }

@@ -43,6 +43,8 @@ mod winamp_ui;
 mod bridge;
 mod deck;
 mod device;
+#[cfg(target_os = "ios")]
+mod ios;
 mod loops;
 mod metronome;
 mod mine;
@@ -1266,7 +1268,7 @@ impl App {
     /// A YouTube link on the clipboard (copied with Share > Copy link): offered on the Songs screen as you come back
     /// to the app.
     fn check_clipboard(&mut self) {
-        let Some(text) = clipboard() else { return };
+        let Some(text) = yt::clipboard_quiet() else { return };
         let Some(vid) = video_id(&text) else { return };
         if vid == self.clip_seen {
             return;
@@ -1353,17 +1355,45 @@ impl eframe::App for App {
             // (a song saving: how far it is, on its SAVE key)
             ctx.request_repaint_after(Duration::from_millis(250));
         }
+        // (room for the phone's status bar on top and its buttons along the bottom; an iPhone's notch or island and
+        // home bar, as it says)
+        #[allow(unused_mut)]
+        let (mut top, mut bottom) = (34.0, 30.0);
+        #[cfg(target_os = "ios")]
+        if let Some((w, _, t, b)) = ios::screen() {
+            let k = ctx.screen_rect().width() / w.max(1.0);
+            top = t * k + 6.0;
+            bottom = (b * k).max(8.0) + 2.0;
+        }
         egui::CentralPanel::default().frame(egui::Frame::none().fill(studio::BODY)).show(ctx, |ui| {
-            // (room for the phone's status bar on top and its buttons along the bottom)
             let full = ui.max_rect();
-            let r = Rect::from_min_max(Pos2::new(full.min.x + 10.0, full.min.y + 34.0), Pos2::new(full.max.x - 10.0, full.max.y - 30.0));
+            let r = Rect::from_min_max(Pos2::new(full.min.x + 10.0, full.min.y + top), Pos2::new(full.max.x - 10.0, full.max.y - bottom));
             font::with_scale(UI_SCALE, || self.screens(ui, r));
         });
     }
 
+    #[cfg(not(target_os = "ios"))]
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
         self.save_kept();
+    }
+
+    #[cfg(target_os = "ios")]
+    fn on_exit(&mut self) {
+        self.save_settings();
+        self.save_kept();
+    }
+
+    /// (an iPhone: the window library gives egui only the part of the screen clear of the notch and the home bar,
+    /// yet draws on all of it from the top; egui is given the whole screen, and the room on top and along the bottom
+    /// is kept clear below)
+    #[cfg(target_os = "ios")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some((w, h, _, _)) = ios::screen() {
+            let native = raw.viewports.get(&raw.viewport_id).and_then(|v| v.native_pixels_per_point).unwrap_or_else(ios::scale);
+            let k = ios::scale() / (native * ctx.zoom_factor()).max(0.1);
+            raw.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(w * k, h * k)));
+        }
     }
 }
 
@@ -1539,12 +1569,24 @@ impl App {
     }
 }
 
+/// The iPhone app (examples/ios.rs): Studio drawn with Metal, the phone's sound session set up first.
+#[cfg(target_os = "ios")]
+pub fn run_ios() {
+    ios::setup();
+    let options = eframe::NativeOptions::default();
+    if let Err(e) = eframe::run_native("Backline", options, Box::new(|cc| Ok(Box::new(App::new(cc))))) {
+        api::log(&format!("couldn't start: {}", e));
+    }
+}
+
 #[cfg(target_os = "android")]
 static ANDROID: std::sync::OnceLock<winit::platform::android::activity::AndroidApp> = std::sync::OnceLock::new();
 
 /// The screen kept on (a screen wake lock from Android's power service: callable from any thread, unlike the
 /// window's keep-on flag, which went through a lock the app's main thread also waits on, and froze it).
 fn keep_awake(on: bool) {
+    #[cfg(target_os = "ios")]
+    ios::keep_awake(on);
     #[cfg(target_os = "android")]
     {
         use jni::objects::{GlobalRef, JObject, JValue};

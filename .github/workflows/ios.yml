@@ -1,0 +1,55 @@
+name: iphone
+# The iPhone app, built on GitHub's Mac (there's no Mac here): phone/ios/build_ios.sh. Run by hand (Actions > iphone >
+# Run workflow) when the phone app changes; "publish" puts Backline.ipa on the "phone" release, which every Backline
+# release takes it from (as it does the Android app). Each run also tries the app in the iPhone simulator and keeps
+# pictures of its screens (the run's "iphone" download).
+on:
+  # (while the iPhone app is being made, a push to its branch builds and tries it)
+  push:
+    branches: [iphone]
+    paths: ['phone/**', 'backline/src/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Put the app on the phone release'
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  iphone:
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      BACKLINE_BUILD: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+      - name: Remember compiled dependencies between builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "phone -> target"
+          cache-on-failure: true
+      - name: Build for the simulator
+        run: bash phone/ios/build_ios.sh sim
+      - name: Try it in the simulator
+        run: bash phone/ios/try_sim.sh
+      - name: Build for iPhones
+        run: bash phone/ios/build_ios.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: iphone
+          path: |
+            phone/target/ios/Backline.ipa
+            phone/target/ios/shots/
+          if-no-files-found: ignore
+      - name: Put it on the phone release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view phone --repo "${{ github.repository }}" > /dev/null 2>&1 || gh release create phone --repo "${{ github.repository }}" --title "Phone apps" --notes "The phone apps, taken by every Backline release." --latest=false
+          gh release upload phone phone/target/ios/Backline.ipa --repo "${{ github.repository }}" --clobber

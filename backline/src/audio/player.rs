@@ -68,6 +68,10 @@ pub enum Cmd {
     Stop,
     /// play through this output (None = the system's default). What was playing stops; the app plays it again.
     Device(Option<String>),
+    /// the output opened again after the system took it away (an iPhone stops the app's sound for a call or another
+    /// app): the song carries on from where it was, paused if it was, and the metronome with it
+    #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+    Revive,
 }
 
 #[derive(Default)]
@@ -1456,10 +1460,14 @@ impl Player {
             // gapless: the song lined up to follow (its call-off switch, its bytes and rate), and starts seen so far
             let mut armed: Option<(Arc<AtomicBool>, Arc<Vec<u8>>, u32)> = None;
             let mut last_began = ctl_t.began.load(Ordering::Relaxed);
+            // (a command the thread gives itself: the song again after `Revive`)
+            let mut pending: Option<Cmd> = None;
+            // the metronome's sounds as last sent, for `Revive`
+            let mut slot_src: [Option<(Vec<i16>, Vec<i16>, f32)>; 2] = [None, None];
 
             loop {
                 let wait = if fading.is_some() || fade_in.is_some() { 15 } else { 50 };
-                match rx.recv_timeout(Duration::from_millis(wait)) {
+                match pending.take().map(Ok).unwrap_or_else(|| rx.recv_timeout(Duration::from_millis(wait))) {
                     Ok(cmd @ (Cmd::Play(_) | Cmd::Swap(..) | Cmd::PlayFade(..))) => {
                         let (bytes, swap, fade) = match cmd {
                             Cmd::Play(b) => (b, None, 0.0),
@@ -1548,6 +1556,43 @@ impl Player {
                             }
                         }
                     }
+                    Ok(Cmd::Revive) => match open_output() {
+                        Ok((s, h)) => {
+                            let at = sh.lock().unwrap().pos;
+                            let song = vz.lock().unwrap().song.as_ref().map(|(_, b)| b.clone());
+                            let had = sink.take();
+                            if let Some(old) = &had {
+                                old.stop();
+                            }
+                            if let Some((f, ..)) = fading.take() {
+                                f.stop();
+                            }
+                            fade_in = None;
+                            for slot in slots.iter_mut() {
+                                if let Some((m, _)) = slot.take() {
+                                    m.stop();
+                                }
+                            }
+                            _stream = s;
+                            handle = h;
+                            log("player: the output opened again");
+                            // the metronome clicking again (from its first beat)
+                            for (i, src) in slot_src.iter().enumerate() {
+                                if let Some((lead, body, gain)) = src {
+                                    if let Ok(m) = Sink::try_new(&handle) {
+                                        m.set_volume(out(if i == 0 { metro_vol } else { (vol * gain).min(1.0) }));
+                                        let _ = lead;
+                                        m.append(rodio::buffer::SamplesBuffer::new(1, 44100, body.clone()).repeat_infinite());
+                                        slots[i] = Some((m, *gain));
+                                    }
+                                }
+                            }
+                            if let (Some(_), Some(b)) = (had, song) {
+                                pending = Some(Cmd::Swap((*b).clone(), at, user_paused));
+                            }
+                        }
+                        Err(e) => log(&format!("player: the output couldn't be opened again: {}", e)),
+                    },
                     Ok(Cmd::Device(name)) => match open_named(name.as_deref()) {
                         Ok((s, h)) => {
                             // nothing can move to the new output: stop it all, the app starts the song again there
@@ -1633,6 +1678,7 @@ impl Player {
                             m.stop();
                         }
                         rec_slot_end(slot);
+                        slot_src[slot] = (!body.is_empty() && cfg!(target_os = "ios")).then(|| (lead.clone(), body.clone(), gain));
                         if !body.is_empty() {
                             rec_sound(&lead, &body, gain, Some(slot));
                             if let Ok(m) = Sink::try_new(&handle) {

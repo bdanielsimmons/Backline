@@ -78,6 +78,8 @@ pub(crate) fn civil(days: i64) -> (i64, u32, u32) {
 
 /// The phone's offset from UTC in seconds (from Android's own time zone, through Java).
 pub(crate) fn local_offset() -> i64 {
+    #[cfg(target_os = "ios")]
+    return crate::ios::local_offset();
     #[cfg(target_os = "android")]
     {
         let r = (|| -> Option<i64> {
@@ -97,6 +99,8 @@ pub(crate) fn local_offset() -> i64 {
 
 /// Whether the app may use the mic (asked for once with `ask_mic`).
 pub(crate) fn mic_allowed() -> bool {
+    #[cfg(target_os = "ios")]
+    return crate::ios::mic_allowed();
     #[cfg(target_os = "android")]
     {
         let r = (|| -> Option<bool> {
@@ -116,6 +120,8 @@ pub(crate) fn mic_allowed() -> bool {
 
 /// Android's question: may Backline use the mic?
 fn ask_mic() {
+    #[cfg(target_os = "ios")]
+    crate::ios::ask_mic();
     #[cfg(target_os = "android")]
     {
         let _ = (|| -> Option<()> {

@@ -11,11 +11,16 @@ pub(crate) fn is_file(vid: &str) -> bool {
     vid.starts_with("file:")
 }
 
-/// The phone's top folder (its own storage), which Files shows folders from.
+/// The phone's top folder (its own storage), which Files shows folders from. An iPhone lets an app see only its own
+/// folder: the one the Files app shows as On My iPhone > Backline.
 fn root() -> String {
     #[cfg(target_os = "android")]
     {
         return "/storage/emulated/0".to_string();
+    }
+    #[cfg(target_os = "ios")]
+    {
+        return crate::ios::documents().to_string_lossy().to_string();
     }
     #[allow(unreachable_code)]
     api::config_dir().join("Music").to_string_lossy().replace('\\', "/")
@@ -165,9 +170,12 @@ pub(crate) fn scan() -> Result<Vec<Song>, String> {
     }
     #[allow(unreachable_code)]
     {
-        // (the PC copy: the music in the profile's Music folder and the folders in it, for trying it out)
+        // (an iPhone: the songs put in Backline's folder in the Files app, and the folders in it; the PC copy: the
+        // music in the profile's Music folder, for trying it out)
         let mut out = Vec::new();
-        let mut dirs = vec![api::config_dir().join("Music")];
+        let top = std::path::PathBuf::from(root());
+        let _ = std::fs::create_dir_all(&top);
+        let mut dirs = vec![top];
         while let Some(dir) = dirs.pop() {
             for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
                 let p = e.path();
