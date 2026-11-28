@@ -1,0 +1,93 @@
+[package]
+name = "backline-phone"
+version = "0.1.0"
+edition = "2021"
+
+# Backline on an Android phone, kept small: YouTube songs into the practice tools (loop, slow down, pitch, trainer,
+# bookmarks), drawn in Studio by the desktop's own code (backline/src), so it looks like the desktop
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "android-native-activity"] }
+winit = { version = "0.30", features = ["android-native-activity"] }
+rodio = { version = "0.19", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+symphonia = { version = "0.5", default-features = false, features = ["aac", "isomp4", "flac", "mp3", "alac", "pcm", "wav", "ogg", "vorbis"] }
+# the pixel font's helpers (system fallback fonts, glyph metrics)
+memmap2 = "0.9"
+ab_glyph = "0.2"
+# the desktop's skin code (Studio is worn as a generated skin): skin files are zips, skin fonts drawn with swash
+zip = { version = "2", default-features = false, features = ["deflate"] }
+swash = "0.1"
+# YouTube thumbnails
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
+# YouTube's own API from Rust (yt-dlp needs Python, which a phone doesn't have)
+rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# (a copy on the PC, for trying it out and pictures: the player's Windows parts)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.44", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Media_Audio", "Win32_System_Com_StructuredStorage", "Win32_UI_Shell_PropertiesSystem", "Win32_Devices_FunctionDiscovery"] }
+
+# the clipboard (PASTE) through Android's own API
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
+# YouTube's player code is decoded by a small JavaScript engine; it has no ready-made Android bindings, so they are
+# generated when it builds
+rquickjs = { version = "0.9", features = ["bindgen"] }
+
+[package.metadata.android]
+package = "com.v9studio.backline.practice"
+apk_name = "backline-practice"
+resources = "res"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 34
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+# (the screen kept on while a song plays)
+[[package.metadata.android.uses_permission]]
+name = "android.permission.WAKE_LOCK"
+
+# (recording yourself: asked for the first time REC is pressed)
+[[package.metadata.android.uses_permission]]
+name = "android.permission.RECORD_AUDIO"
+
+# (MY TRACKS > On This Phone: the music already on the phone; asked for the first time it's opened)
+[[package.metadata.android.uses_permission]]
+name = "android.permission.READ_MEDIA_AUDIO"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.READ_EXTERNAL_STORAGE"
+max_sdk_version = 32
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.FOREGROUND_SERVICE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.POST_NOTIFICATIONS"
+
+[package.metadata.android.application]
+label = "Backline"
+icon = "@mipmap/ic_launcher"
+# (the libraries unpacked on install: yt-dlp's Python runs from there, see src/ytdlp.rs)
+extract_native_libs = true
+
+[package.metadata.android.application.activity]
+orientation = "portrait"
+
+[profile.release]
+opt-level = "s"
+strip = true

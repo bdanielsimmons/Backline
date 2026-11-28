@@ -4,7 +4,8 @@
 
 Pages swaps the whole site in on each deploy, so the folder holds everything the site should keep:
   builds/<n>/<file>  the newest build of each file. A file not built this time (the Mac one, when it's built less
-               often) is fetched from the live site and checked against its SHA-256 so it stays.
+               often) is fetched from the live site and checked against its SHA-256 so it stays; a file the same as the
+               site's (the phone app, built on the PC only when it changes) keeps its build number and place.
   latest.json  the newest build of each file, with its path, SHA-256 and size. The app reads this to update, and
                checks the download against the SHA-256.
   notes.json   the latest 30 releases' notes, newest first (the app's WHAT'S NEW).
@@ -27,7 +28,7 @@ import urllib.error
 import urllib.request
 import zipfile
 
-FILES = ["backline-practice.exe", "backline-setup.msi", "backline-practice-mac.tar.gz"]
+FILES = ["backline-practice.exe", "backline-setup.msi", "backline-practice-mac.tar.gz", "backline-phone.apk"]
 
 # The stem tool's runtime: ONNX Runtime 1.22 (the version the app's `ort` crate wants), one library per system, by
 # the names Microsoft's NuGet package gives them (runtimes/<system>/native/<library>). Microsoft's GitHub releases,
@@ -82,6 +83,18 @@ def page(latest):
     # Plain steps for people who don't download apps often. The SHA-256s stay in latest.json (the app checks them).
     win = link("backline-setup.msi", "Download for Windows", "big")
     mac = link("backline-practice-mac.tar.gz", "Download for Mac", "big")
+    apk = link("backline-phone.apk", "Download for Android", "big")
+    # the phone app: YouTube songs into the practice tools (it doesn't update itself: download it again)
+    android = f"""<section>
+<h2>Android</h2>
+{apk}
+<ol>
+<li>Open the file you downloaded{size("backline-phone.apk")}. If your phone asks, let your browser install apps: tap <b>Settings</b>, turn on <b>Allow from this source</b>, then go back.</li>
+<li>Tap <b>Install</b>. If Play Protect warns you, tap <b>More details</b>, then <b>Install anyway</b>.</li>
+<li>To update it, download it again and install it over the old one. Your songs, loops and notes stay.</li>
+</ol>
+<p class="small">Search YouTube or paste a link, then loop it, slow it down and play along.</p>
+</section>""" if apk else ""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
@@ -126,6 +139,7 @@ b {{ font-weight: 650; }}
 <li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>. Scroll down and click <b>Open Anyway</b>.</li>
 </ol>
 </section>
+{android}
 <p class="small">Just want the music player? In Backline, open Preferences and turn on <b>Hide the Practice Tools</b>.</p>
 </main></body></html>
 """
@@ -221,10 +235,16 @@ def main():
         path = os.path.join(folder, name)
         if not os.path.exists(path):
             continue
-        key = f"builds/{n}/{name}"
+        sha = sha256(path)
+        prev = old.get("files", {}).get(name)
+        if prev and prev.get("sha256") == sha:
+            # (the same file as the site's: it keeps its build and place)
+            key, build = prev["path"], prev["build"]
+        else:
+            key, build = f"builds/{n}/{name}", n
         os.makedirs(os.path.join(out, os.path.dirname(key)), exist_ok=True)
         shutil.copyfile(path, os.path.join(out, key))
-        latest["files"][name] = {"build": n, "path": key, "sha256": sha256(path), "size": os.path.getsize(path)}
+        latest["files"][name] = {"build": build, "path": key, "sha256": sha, "size": os.path.getsize(path)}
         print(f"{name}: {key}")
 
     # the files not built this time stay, fetched from the live site and checked

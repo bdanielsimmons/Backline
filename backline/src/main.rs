@@ -15,6 +15,10 @@ mod test_hooks;
 
 #[path = "audio/band.rs"]
 mod band;
+#[path = "audio/beats.rs"]
+mod beats;
+#[path = "audio/metro.rs"]
+mod metro;
 #[path = "audio/decode.rs"]
 mod decode;
 #[path = "audio/intro.rs"]
@@ -89,6 +93,8 @@ mod hw_amp;
 mod hw_deck;
 #[path = "ui/studio.rs"]
 mod studio;
+#[path = "ui/studio_app.rs"]
+mod studio_app;
 #[path = "ui/app_look.rs"]
 mod app_look;
 #[path = "ui/arpeggios.rs"]

@@ -347,7 +347,7 @@ impl App {
                 };
                 crate::skin::STYLE.store(st, std::sync::atomic::Ordering::Relaxed);
                 // (Studio reads in its typewriter face; the others in theirs)
-                crate::studio::fonts_for_style(&self.ctx);
+                crate::studio_app::fonts_for_style(&self.ctx);
                 // (the Classic look or skin, to come back to from a style)
                 if st == 0 {
                     self.classic_worn = Some((s.md5.clone(), s.name.clone()));

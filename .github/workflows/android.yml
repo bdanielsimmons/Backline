@@ -1,9 +1,7 @@
 name: android
+# The first phone port (android/), paused: built only when run by hand. (It built, and failed, on every push that
+# touched the desktop's audio or data files.) The small phone app is phone/, built on the PC (phone/build_apk.sh).
 on:
-  push:
-    branches: ['**']
-    # the phone app, and the desktop engine files it compiles in
-    paths: ['android/**', '.github/workflows/android.yml', 'backline/src/data/**', 'backline/src/audio/**']
   workflow_dispatch:
 jobs:
   apk:

@@ -1814,6 +1814,12 @@ impl Player {
     pub fn send(&self, c: Cmd) {
         let _ = self.tx.send(c);
     }
+
+    /// The way to the player for a part that runs apart from the app's frame (the phone's media controls).
+    #[allow(dead_code)]
+    pub fn sender(&self) -> Sender<Cmd> {
+        self.tx.clone()
+    }
 }
 
 /// How the song is being heard, for EXPORT WAV: speed, pitch (cents), ear mode, balance and the equalizer.

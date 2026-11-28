@@ -791,7 +791,7 @@ impl App {
                 // (Studio: the cover as every Studio cover is, in color or in the screen's ink; a click switches)
                 Some(_) if studio => {
                     self.studio_cover(ui, cover, "studio_bar", 160);
-                    crate::studio::cover_switch(ui, cover, acts, "bar");
+                    crate::studio_app::cover_switch(ui, cover, acts, "bar");
                 }
                 Some(c) if !c.is_empty() => crate::paint_held(ui, &mut self.images, "st_bar", &crate::cover_url(&c, 160), cover, false),
                 _ => crate::paint_page_art(ui, &mut self.images, "", cover, false),

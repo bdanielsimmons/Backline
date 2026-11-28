@@ -3,8 +3,8 @@ on:
   push:
     branches: ['**']
     # docs-only pushes (README etc.) and release-notes tweaks don't build or release
-    # (the phone app in android/ has its own workflow)
-    paths-ignore: ['**.md', '.github/release_notes.py', 'android/**', '.github/workflows/android.yml']
+    # (the phone apps: android/ has its own workflow, phone/ is built on the PC; a change to them alone builds nothing)
+    paths-ignore: ['**.md', '.github/release_notes.py', 'android/**', '.github/workflows/android.yml', 'phone/**']
   workflow_dispatch:
 jobs:
   # the Mac-only paths (yt-dlp's folder build, the stems runtime) on a real Mac: they don't compile on Windows
@@ -129,6 +129,10 @@ jobs:
           # the visualizers' library is for the site (tools/), not the release's downloads
           mkdir -p "$RUNNER_TEMP/tools"
           mv dist/retro.dll dist/retro-LICENSE.txt "$RUNNER_TEMP/tools/" 2>/dev/null || true
+          # the phone app (phone/) isn't built here: it's built on the PC when it changes (phone/build_apk.sh arm) and
+          # kept on the "phone" release, and every release takes that copy (the site keeps its build number while it's
+          # the same file)
+          gh release download phone --repo "${{ github.repository }}" --pattern backline-phone.apk --dir dist || echo "no phone app yet"
           tag="v9.${{ github.run_number }}"
           prev=$(git tag --list 'v9.*' --sort=-v:refname | head -1)
           python3 .github/release_notes.py "$tag" "$prev" "$RUNNER_TEMP/notes.md"

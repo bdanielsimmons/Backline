@@ -10,6 +10,9 @@ reading_book.txt
 
 # the phone app's build output
 /android/target/
+/phone/target/
+# what phone/fetch_libs.sh downloads (Python, QuickJS and yt-dlp for Android)
+/phone/android_libs/
 
 # the classic visualizers' library's build output (retro/)
 /retro/target/

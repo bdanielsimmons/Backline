@@ -744,32 +744,8 @@ pub(crate) const STREAMING_MD5: &str = "gen:streaming";
 pub(crate) const HARDWARE_MD5: &str = "gen:hardware";
 pub(crate) const STUDIO_MD5: &str = "gen:studio";
 
-/// Studio's palette: everything on its screens (the glass the pages' and lists' colour, the ink their writing, the
-/// keys a shade darker), the body black round them.
-pub(crate) fn studio_pal() -> Pal {
-    let (_, glass, keys, ink, _) = crate::skin::studio_screen();
-    let mut p = crate::skin::look_pal(glass, glass, ink);
-    p.app_bg = crate::studio::BODY;
-    p.panel = glass;
-    p.panel_lt = glass.lerp_to_gamma(ink, 0.06);
-    p.panel_dk = keys;
-    p.panel_hover = keys;
-    p.display = glass;
-    p.display_ghost = glass.lerp_to_gamma(ink, 0.08);
-    p.groove = keys;
-    p.sel = glass.lerp_to_gamma(ink, 0.16);
-    p.ink = ink;
-    p.ink2 = ink.lerp_to_gamma(glass, 0.22);
-    p.dim = ink.lerp_to_gamma(glass, 0.45);
-    p.btn_face = keys;
-    p.btn_hi = keys.lerp_to_gamma(glass, 0.5);
-    p.row_alt = glass.lerp_to_gamma(ink, 0.045);
-    p.row_sel = glass.lerp_to_gamma(ink, 0.16);
-    p.bar_txt = ink;
-    p.accent = ink;
-    p.edge = Color32::from_rgb(10, 11, 8);
-    p
-}
+/// Studio's palette (with the kit, shared with the phone app).
+pub(crate) use crate::studio::studio_pal;
 
 /// Studio as a skin.
 pub(crate) fn studio_skin() -> Result<(winamp::WaSkin, Pal, winamp::Art), String> {
