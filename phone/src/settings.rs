@@ -49,6 +49,11 @@ impl App {
             para(ui, &format!("{} of your {} songs saved, {} used.{}", n.min(self.songs.len().max(n)), self.songs.len(), fmt_size(bytes), busy), pal().ink);
 
             ui.add_space(8.0);
+            // (an iPhone has no yt-dlp: songs come straight from YouTube, and your own files through the Files app)
+            if cfg!(target_os = "ios") {
+                section_header(ui, "YOUR FILES");
+                crate::mine::hint(ui, "Put songs in the Files app, in On My iPhone > Backline (folders and all). They show in My Tracks > Files.");
+            } else {
             section_header(ui, "YOUTUBE");
             if self.ytdlp_ver.is_none() && !self.ytdlp_busy {
                 // (asked once each time Settings opens after a change)
@@ -76,6 +81,7 @@ impl App {
             });
             if !self.ytdlp_note.is_empty() {
                 para(ui, &self.ytdlp_note.clone(), pal().ink);
+            }
             }
 
             ui.add_space(8.0);

@@ -8,15 +8,16 @@ SIM=0; [ "${1:-}" = sim ] && SIM=1
 OUT="$PWD/target/ios"; mkdir -p "$OUT"
 BUILD="${BACKLINE_BUILD:-0}"
 if [ $SIM = 1 ]; then
-  T=aarch64-apple-ios-sim; SDK=iphonesimulator; PLAT=iPhoneSimulator; APP="$OUT/Backline-sim.app"
+  T=aarch64-apple-ios-sim; SDK=iphonesimulator; PLAT=iPhoneSimulator; APP="$OUT/Backline-sim.app"; CT=arm64-apple-ios15.0-simulator
 else
-  T=aarch64-apple-ios; SDK=iphoneos; PLAT=iPhoneOS; APP="$OUT/Payload/Backline.app"
+  T=aarch64-apple-ios; SDK=iphoneos; PLAT=iPhoneOS; APP="$OUT/Payload/Backline.app"; CT=arm64-apple-ios15.0
 fi
 export IPHONEOS_DEPLOYMENT_TARGET=15.0
 SDKP="$(xcrun --sdk $SDK --show-sdk-path)"
 # (YouTube's player-code engine has its bindings made for the phone, from the phone's own headers)
 export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
-export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$SDKP"
+# (clang's own name for the target: it doesn't know Rust's "-sim")
+export BINDGEN_EXTRA_CLANG_ARGS="--target=$CT --sysroot=$SDKP"
 cargo build --release --target $T --example ios
 BIN="target/$T/release/examples/ios"
 
