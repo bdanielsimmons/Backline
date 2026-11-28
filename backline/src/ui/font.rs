@@ -429,10 +429,34 @@ fn case(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// The '#'s in note and chord names as music sharps: after a note's letter ("C#", "F#m7") or before a number in a
-/// chord ("#11", "7#9", "(#5)"); any other '#' ("#1 hit") stays as it is.
+/// Whether a line is about chords: at least two words in it are degrees ("#9", "b5", "R"), note names with a sharp or
+/// flat ("Eb", "F#"), chord names ("G7b9", "Bmaj7#5") or chord words ("grip", "voicing"). A title like "Symphony #5"
+/// isn't.
+fn about_chords(text: &str) -> bool {
+    const WORDS: [&str; 14] =
+        ["grip", "grips", "voicing", "voicings", "chord", "chords", "inversion", "voice", "voices", "degree", "degrees", "tritone", "altered", "root"];
+    let hint = |w: &str| {
+        let cs: Vec<char> = w.chars().collect();
+        let acc = |c: char| matches!(c, '#' | 'b' | '\u{266F}' | '\u{266D}');
+        let num: String = cs.iter().skip(1).collect();
+        match cs.as_slice() {
+            ['R'] => true,
+            [a, rest @ ..] if acc(*a) && !rest.is_empty() => matches!(num.as_str(), "2" | "3" | "4" | "5" | "6" | "7" | "9" | "11" | "13"),
+            ['A'..='G', b] => acc(*b),
+            ['A'..='G', b, ..] => b.is_ascii_digit() || acc(*b) || w[1..].starts_with('m') || w[1..].starts_with("dim") || w[1..].starts_with("sus"),
+            _ => WORDS.contains(&w.to_lowercase().as_str()),
+        }
+    };
+    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '#' | '\u{266F}' | '\u{266D}'))).filter(|w| hint(w)).take(2).count() == 2
+}
+
+/// The '#'s in note and chord names as music sharps: after a note's letter ("C#", "F#m7"), before a number in a
+/// chord ("#11", "7#9", "(#5)"), or a degree on its own ("3 R #9 b5": #2, #4, #5, #9, #11, #13) when the line is
+/// about chords or is just that degree (a dot on a chord box); any other '#' ("#1 hit", "Symphony #5") stays as it
+/// is.
 pub(crate) fn music_sharps(text: &str) -> String {
     let cs: Vec<char> = text.chars().collect();
+    let chords = about_chords(text) || cs.len() <= 3;
     cs.iter()
         .enumerate()
         .map(|(i, &c)| {
@@ -442,8 +466,10 @@ pub(crate) fn music_sharps(text: &str) -> String {
             let prev = if i > 0 { cs[i - 1] } else { ' ' };
             let next = cs.get(i + 1).copied().unwrap_or(' ');
             let note = matches!(prev, 'A'..='G');
-            let ext = next.is_ascii_digit() && (prev.is_ascii_alphanumeric() || prev == '(' || prev == '/');
-            if note || ext {
+            let ext = next.is_ascii_digit() && (prev.is_ascii_alphanumeric() || prev == '(' || prev == '/' || prev == ',');
+            let num: String = cs[i + 1..].iter().take_while(|d| d.is_ascii_digit()).collect();
+            let degree = chords && !prev.is_alphanumeric() && matches!(num.as_str(), "2" | "4" | "5" | "9" | "11" | "13");
+            if note || ext || degree {
                 '\u{266F}'
             } else {
                 c
@@ -620,7 +646,7 @@ fn drawn_w(c: char, px: f32) -> f32 {
     } else if c == '\u{266D}' {
         h * 0.62
     } else if c == '\u{266F}' {
-        h * 0.66
+        h * 0.86
     } else {
         h * 1.05 + h * 0.2
     }
@@ -662,15 +688,18 @@ fn ptext_drawn(p: &egui::Painter, anchor: Pos2, h: Align, text: &str, px: f32, c
                 x += drawn_w('\u{266D}', px);
             }
             Err('\u{266F}') => {
-                // a sharp: two upright strokes, the right one a touch higher, crossed by two heavier bars rising to the
-                // right
-                let s = egui::Stroke::new(line, color);
-                let (l, r) = (x + ch * 0.2, x + ch * 0.44);
-                p.line_segment([Pos2::new(l, anchor.y - ch * 0.48), Pos2::new(l, anchor.y + ch * 0.62)], s);
-                p.line_segment([Pos2::new(r, anchor.y - ch * 0.62), Pos2::new(r, anchor.y + ch * 0.48)], s);
-                let bar = egui::Stroke::new(line * 1.7, color);
-                for dy in [-0.2f32, 0.2] {
-                    p.line_segment([Pos2::new(x + ch * 0.06, anchor.y + ch * (dy + 0.07)), Pos2::new(x + ch * 0.58, anchor.y + ch * (dy - 0.07))], bar);
+                // a sharp: two thin upright strokes well apart (the right one a touch higher), crossed by two bars
+                // rising gently to the right, with room on both sides so it never runs into the next letter. The
+                // strokes sit on whole pixels, so they stay crisp at small sizes.
+                let ppp = p.ctx().pixels_per_point();
+                let snap = |v: f32| ((v * ppp).floor() + 0.5) / ppp;
+                let s = egui::Stroke::new(line.min(1.6), color);
+                let (l, r) = (snap(x + ch * 0.26), snap(x + ch * 0.58));
+                p.line_segment([Pos2::new(l, anchor.y - ch * 0.5), Pos2::new(l, anchor.y + ch * 0.64)], s);
+                p.line_segment([Pos2::new(r, anchor.y - ch * 0.64), Pos2::new(r, anchor.y + ch * 0.5)], s);
+                let bar = egui::Stroke::new(line * 1.25, color);
+                for dy in [-0.24f32, 0.2] {
+                    p.line_segment([Pos2::new(x + ch * 0.1, anchor.y + ch * (dy + 0.06)), Pos2::new(x + ch * 0.74, anchor.y + ch * (dy - 0.06))], bar);
                 }
                 x += drawn_w('\u{266F}', px);
             }
@@ -788,6 +817,13 @@ pub fn fit(text: &str, px: f32, max_w: f32) -> String {
 
 /// Greedy word wrap.
 pub fn wrap(text: &str, px: f32, max_w: f32) -> Vec<String> {
+    // (Studio's music sharps worked out on the whole text: a line cut from it can't tell "The standard #9" is about
+    // a chord once "grip." went on to the next line)
+    let text = &*if crate::studio::on() && text.contains('#') {
+        std::borrow::Cow::Owned(music_sharps(text))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    };
     if skinned() || modern() {
         let mut out: Vec<String> = Vec::new();
         for raw in text.split('\n') {
@@ -906,6 +942,19 @@ mod script_tests {
         if cfg!(windows) {
             assert!(!super::system_fallbacks().is_empty(), "Windows has fonts for other scripts");
         }
+    }
+
+    #[test]
+    fn sharps_in_music_become_music_signs() {
+        let s = '\u{266F}';
+        assert_eq!(super::music_sharps("F#m7 G7(b9,#5)/B"), format!("F{s}m7 G7(b9,{s}5)/B"));
+        assert_eq!(super::music_sharps("B G Ab Eb   (3 R #9 b5)"), format!("B G Ab Eb   (3 R {s}9 b5)"));
+        assert_eq!(super::music_sharps("#5 and #9: a"), format!("{s}5 and {s}9: a"));
+        assert_eq!(super::music_sharps("The standard #9 grip."), format!("The standard {s}9 grip."));
+        assert_eq!(super::music_sharps("#9"), format!("{s}9"));
+        assert_eq!(super::music_sharps("#1 hit, #10 of 12, #3"), "#1 hit, #10 of 12, #3");
+        assert_eq!(super::music_sharps("Symphony #5 in C minor"), "Symphony #5 in C minor");
+        assert_eq!(super::music_sharps("Nocturne #2"), "Nocturne #2");
     }
 }
 
